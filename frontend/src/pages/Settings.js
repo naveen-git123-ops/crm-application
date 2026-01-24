@@ -85,44 +85,44 @@ export const Settings = () => {
     <div className="space-y-6" data-testid="settings-page">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Settings</h1>
-        <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">Manage your account settings and preferences</p>
+        <h1 className="text-3xl font-bold tracking-tight text-gray-900">Settings</h1>
+        <p className="text-gray-600 text-sm mt-1">Manage your account settings and preferences</p>
       </div>
 
       {/* User Profile */}
-      <Card className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <h3 className="text-lg font-semibold mb-4 text-slate-900 dark:text-slate-50">User Profile</h3>
+      <Card className="p-6 border border-gray-200 bg-white">
+        <h3 className="text-lg font-semibold mb-4 text-gray-900">User Profile</h3>
         <div className="space-y-3">
-          <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-            <User className="h-10 w-10 text-indigo-600 dark:text-indigo-400" />
+          <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <User className="h-10 w-10 text-indigo-600" />
             <div className="flex-1">
-              <p className="text-xs text-slate-600 dark:text-slate-400 font-medium uppercase tracking-wider">Full Name</p>
-              <p className="font-medium text-slate-900 dark:text-slate-50">{user?.name}</p>
+              <p className="text-xs text-gray-600 font-medium uppercase tracking-wider">Full Name</p>
+              <p className="font-medium text-gray-900">{user?.name}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-            <Mail className="h-10 w-10 text-indigo-600 dark:text-indigo-400" />
+          <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <Mail className="h-10 w-10 text-indigo-600" />
             <div className="flex-1">
-              <p className="text-xs text-slate-600 dark:text-slate-400 font-medium uppercase tracking-wider">Email Address</p>
-              <p className="font-medium text-slate-900 dark:text-slate-50">{user?.email}</p>
+              <p className="text-xs text-gray-600 font-medium uppercase tracking-wider">Email Address</p>
+              <p className="font-medium text-gray-900">{user?.email}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-            <Shield className="h-10 w-10 text-indigo-600 dark:text-indigo-400" />
+          <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <Shield className="h-10 w-10 text-indigo-600" />
             <div className="flex-1">
-              <p className="text-xs text-slate-600 dark:text-slate-400 font-medium uppercase tracking-wider">Role</p>
-              <p className="font-medium text-slate-900 dark:text-slate-50">{user?.role}</p>
+              <p className="text-xs text-gray-600 font-medium uppercase tracking-wider">Role</p>
+              <p className="font-medium text-gray-900">{user?.role}</p>
             </div>
           </div>
 
           {user?.employee_id && (
-            <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-              <Calendar className="h-10 w-10 text-indigo-600 dark:text-indigo-400" />
+            <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <Calendar className="h-10 w-10 text-indigo-600" />
               <div className="flex-1">
-                <p className="text-xs text-slate-600 dark:text-slate-400 font-medium uppercase tracking-wider">Employee ID</p>
-                <p className="font-mono font-medium text-slate-900 dark:text-slate-50">{user.employee_id}</p>
+                <p className="text-xs text-gray-600 font-medium uppercase tracking-wider">Employee ID</p>
+                <p className="font-mono font-medium text-gray-900">{user.employee_id}</p>
               </div>
             </div>
           )}
@@ -130,13 +130,13 @@ export const Settings = () => {
       </Card>
 
       {/* Editable Profile Information */}
-      <Card className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <h3 className="text-lg font-semibold mb-6 text-slate-900 dark:text-slate-50">Update Profile Information</h3>
+      <Card className="p-6 border border-gray-200 bg-white">
+        <h3 className="text-lg font-semibold mb-6 text-gray-900">Update Profile Information</h3>
         
         <div className="space-y-6">
           {/* Mobile Number Section */}
           <div className="space-y-3">
-            <Label htmlFor="mobile" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+            <Label htmlFor="mobile" className="text-sm font-medium text-gray-700">
               Mobile Number
             </Label>
             <div className="flex gap-2">
@@ -146,7 +146,7 @@ export const Settings = () => {
                 placeholder="Enter your mobile number"
                 value={mobileNumber}
                 onChange={(e) => setMobileNumber(e.target.value)}
-                className="flex-1 border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50"
+                className="flex-1 border border-gray-200"
               />
               <Button
                 onClick={handleUpdateMobileNumber}
@@ -156,27 +156,27 @@ export const Settings = () => {
                 {loading ? 'Saving...' : 'Save'}
               </Button>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-gray-500">
               Your mobile number will appear on your ID card
             </p>
           </div>
 
           {/* Profile Photo Section */}
           <div className="space-y-3">
-            <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+            <Label className="text-sm font-medium text-gray-700">
               Profile Photo
             </Label>
             
             <div className="flex gap-4">
               {/* Photo Preview */}
               <div className="flex-shrink-0">
-                <div className="w-24 h-24 bg-indigo-100 dark:bg-indigo-950 rounded-lg flex items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 overflow-hidden">
+                <div className="w-24 h-24 bg-indigo-100 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300 overflow-hidden">
                   {photoPreview ? (
                     <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
                   ) : user?.profile_photo ? (
                     <img src={BACKEND_URL + user.profile_photo} alt="Profile" className="w-full h-full object-cover" />
                   ) : (
-                    <User className="h-12 w-12 text-slate-400" />
+                    <User className="h-12 w-12 text-gray-400" />
                   )}
                 </div>
               </div>
@@ -189,7 +189,7 @@ export const Settings = () => {
                     type="file"
                     accept="image/*"
                     onChange={handlePhotoChange}
-                    className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50"
+                    className="border border-gray-200"
                   />
                 </div>
                 
@@ -204,7 +204,7 @@ export const Settings = () => {
                   </Button>
                 )}
                 
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs text-gray-500">
                   Supported formats: JPG, PNG, GIF (Max 5MB). Your photo will appear on your ID card.
                 </p>
               </div>
@@ -214,20 +214,20 @@ export const Settings = () => {
       </Card>
 
       {/* System Info */}
-      <Card className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <h3 className="text-lg font-semibold mb-4 text-slate-900 dark:text-slate-50">System Information</h3>
-        <div className="space-y-3 text-sm bg-slate-50 dark:bg-slate-800 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+      <Card className="p-6 border border-gray-200 bg-white">
+        <h3 className="text-lg font-semibold mb-4 text-gray-900">System Information</h3>
+        <div className="space-y-3 text-sm bg-gray-50 p-4 rounded-lg border border-gray-200">
           <div className="flex justify-between">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Application Version</span>
-            <span className="font-mono font-medium text-slate-900 dark:text-slate-50">1.0.0</span>
+            <span className="text-gray-600 font-medium">Application Version</span>
+            <span className="font-mono font-medium text-gray-900">1.0.0</span>
           </div>
-          <div className="flex justify-between border-t border-slate-300 dark:border-slate-600 pt-3">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Theme</span>
-            <span className="font-medium text-slate-900 dark:text-slate-50">RESOLINE TECHBIS Professional</span>
+          <div className="flex justify-between border-t border-gray-300 pt-3">
+            <span className="text-gray-600 font-medium">Theme</span>
+            <span className="font-medium text-gray-900">RESOLINE TECHBIS Professional</span>
           </div>
-          <div className="flex justify-between border-t border-slate-300 dark:border-slate-600 pt-3">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Last Login</span>
-            <span className="font-mono text-xs text-slate-600 dark:text-slate-400">{new Date().toLocaleString()}</span>
+          <div className="flex justify-between border-t border-gray-300 pt-3">
+            <span className="text-gray-600 font-medium">Last Login</span>
+            <span className="font-mono text-xs text-gray-600">{new Date().toLocaleString()}</span>
           </div>
         </div>
       </Card>

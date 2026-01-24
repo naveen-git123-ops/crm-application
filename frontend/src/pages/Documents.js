@@ -140,30 +140,30 @@ export const Documents = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Documents</h1>
-          <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">Manage employee documents securely</p>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Documents</h1>
+          <p className="text-gray-600 text-sm mt-1">Manage employee documents securely</p>
         </div>
         {canManageDocuments && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-indigo-600 text-white font-medium hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-700 h-10" data-testid="upload-document-button">
+              <Button className="bg-indigo-600 text-white font-medium hover:bg-indigo-700 h-10" data-testid="upload-document-button">
                 <Upload className="h-4 w-4 mr-2" />
                 Upload Document
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg dark:bg-slate-900 dark:border-slate-800">
+            <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle className="text-slate-900 dark:text-slate-50">Upload Document</DialogTitle>
+                <DialogTitle className="text-gray-900">Upload Document</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="employee" className="text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</Label>
+                  <Label htmlFor="employee" className="text-sm font-medium text-gray-700">Employee *</Label>
                   <select
                     id="employee"
                     data-testid="document-employee-select"
                     value={formData.employee_id}
                     onChange={(e) => handleEmployeeChange(e.target.value)}
-                    className="flex h-10 w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-50 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:focus:ring-indigo-400"
+                    className="flex h-10 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     required
                   >
                     <option value="">Select employee</option>
@@ -176,13 +176,13 @@ export const Documents = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="document_type" className="text-sm font-medium text-slate-700 dark:text-slate-300">Document Type *</Label>
+                  <Label htmlFor="document_type" className="text-sm font-medium text-gray-700">Document Type *</Label>
                   <select
                     id="document_type"
                     data-testid="document-type-select"
                     value={formData.document_type}
                     onChange={(e) => setFormData({ ...formData, document_type: e.target.value })}
-                    className="flex h-10 w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-50 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:focus:ring-indigo-400"
+                    className="flex h-10 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     required
                   >
                     <option value="Aadhar">Aadhar Card</option>
@@ -195,32 +195,32 @@ export const Documents = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="expiry_date" className="text-sm font-medium text-slate-700 dark:text-slate-300">Expiry Date (Optional)</Label>
+                  <Label htmlFor="expiry_date" className="text-sm font-medium text-gray-700">Expiry Date (Optional)</Label>
                   <Input
                     id="expiry_date"
                     type="date"
                     data-testid="document-expiry-date"
                     value={formData.expiry_date}
                     onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })}
-                    className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
+                    className="border border-gray-200 h-10"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="file" className="text-sm font-medium text-slate-700 dark:text-slate-300">File *</Label>
+                  <Label htmlFor="file" className="text-sm font-medium text-gray-700">File *</Label>
                   <Input
                     id="file"
                     type="file"
                     data-testid="document-file-input"
                     onChange={(e) => setFormData({ ...formData, file: e.target.files[0] })}
                     required
-                    className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50"
+                    className="border border-gray-200"
                   />
-                  <p className="text-xs text-slate-600 dark:text-slate-400">Max file size: 10MB</p>
+                  <p className="text-xs text-gray-600">Max file size: 10MB</p>
                 </div>
 
                 <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-200 text-gray-700 hover:bg-gray-50">
                     Cancel
                   </Button>
                   <Button type="submit" disabled={uploading} className="bg-indigo-600 text-white hover:bg-indigo-700 h-10" data-testid="submit-document-button">
@@ -242,15 +242,15 @@ export const Documents = () => {
             !isExpired;
 
           return (
-            <Card key={document.id} className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:shadow-md transition-shadow" data-testid={`document-card-${document.id}`}>
+            <Card key={document.id} className="p-6 border border-gray-200 bg-white hover:shadow-md transition-shadow" data-testid={`document-card-${document.id}`}>
               <div className="space-y-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                      <h3 className="text-lg font-semibold truncate text-slate-900 dark:text-slate-50">{document.document_type}</h3>
+                      <FileText className="h-5 w-5 text-indigo-600" />
+                      <h3 className="text-lg font-semibold truncate text-gray-900">{document.document_type}</h3>
                     </div>
-                    <p className="text-sm text-slate-600 dark:text-slate-400">{document.employee_name}</p>
+                    <p className="text-sm text-gray-600">{document.employee_name}</p>
                   </div>
                   {(isExpired || isExpiringSoon) && (
                     <AlertCircle className={`h-5 w-5 ${isExpired ? 'text-rose-500' : 'text-amber-500'}`} />
@@ -259,14 +259,14 @@ export const Documents = () => {
 
                 <div className="space-y-2 text-sm">
                   <div>
-                    <p className="text-slate-600 dark:text-slate-400">File Name</p>
-                    <p className="font-medium truncate text-slate-900 dark:text-slate-50">{document.file_name}</p>
+                    <p className="text-gray-600">File Name</p>
+                    <p className="font-medium truncate text-gray-900">{document.file_name}</p>
                   </div>
                   {document.expiry_date && (
                     <div>
-                      <p className="text-slate-600 dark:text-slate-400">Expiry Date</p>
+                      <p className="text-gray-600">Expiry Date</p>
                       <p className={`font-mono font-medium ${
-                        isExpired ? 'text-rose-500' : isExpiringSoon ? 'text-amber-500' : 'text-slate-900 dark:text-slate-50'
+                        isExpired ? 'text-rose-500' : isExpiringSoon ? 'text-amber-500' : 'text-gray-900'
                       }`}>
                         {document.expiry_date}
                         {isExpired && ' (Expired)'}
@@ -275,14 +275,14 @@ export const Documents = () => {
                     </div>
                   )}
                   <div>
-                    <p className="text-slate-600 dark:text-slate-400">Uploaded</p>
-                    <p className="font-mono text-xs text-slate-600 dark:text-slate-400">{new Date(document.uploaded_at).toLocaleDateString()}</p>
+                    <p className="text-gray-600">Uploaded</p>
+                    <p className="font-mono text-xs text-gray-600">{new Date(document.uploaded_at).toLocaleDateString()}</p>
                   </div>
                 </div>
 
                 <Button
                   variant="outline"
-                  className="w-full border-slate-200 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 h-10"
+                  className="w-full border-gray-200 text-indigo-600 hover:bg-indigo-50 h-10"
                   onClick={() => handleDownload(document.id, document.file_name)}
                   data-testid={`download-document-${document.id}`}
                 >
@@ -296,9 +296,9 @@ export const Documents = () => {
       </div>
 
       {filteredDocuments.length === 0 && (
-        <Card className="p-12 text-center border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+        <Card className="p-12 text-center border border-gray-200 bg-white">
           <FileText className="h-12 w-12 mx-auto mb-2 opacity-20" />
-          <p className="text-slate-600 dark:text-slate-400">No documents uploaded yet</p>
+          <p className="text-gray-600">No documents uploaded yet</p>
         </Card>
       )}
     </div>

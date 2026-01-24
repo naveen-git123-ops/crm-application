@@ -58,7 +58,7 @@ export const Dashboard = () => {
       value: stats?.total_employees || 0,
       icon: Users,
       color: 'text-indigo-600',
-      bgColor: 'bg-indigo-50 dark:bg-slate-900 dark:border-slate-800',
+      bgColor: 'bg-indigo-50',
       testId: 'total-employees-card'
     },
     {
@@ -66,7 +66,7 @@ export const Dashboard = () => {
       value: stats?.present_today || 0,
       icon: TrendingUp,
       color: 'text-emerald-600',
-      bgColor: 'bg-emerald-50 dark:bg-slate-900 dark:border-slate-800',
+      bgColor: 'bg-emerald-50',
       testId: 'present-today-card'
     },
     {
@@ -74,7 +74,7 @@ export const Dashboard = () => {
       value: stats?.absent_today || 0,
       icon: TrendingDown,
       color: 'text-rose-600',
-      bgColor: 'bg-rose-50 dark:bg-slate-900 dark:border-slate-800',
+      bgColor: 'bg-rose-50',
       testId: 'absent-today-card'
     },
     {
@@ -82,7 +82,7 @@ export const Dashboard = () => {
       value: stats?.pending_leaves || 0,
       icon: FileText,
       color: 'text-amber-600',
-      bgColor: 'bg-amber-50 dark:bg-slate-900 dark:border-slate-800',
+      bgColor: 'bg-amber-50',
       testId: 'pending-leaves-card'
     },
     {
@@ -90,7 +90,7 @@ export const Dashboard = () => {
       value: stats?.total_departments || 0,
       icon: Building2,
       color: 'text-indigo-600',
-      bgColor: 'bg-indigo-50 dark:bg-slate-900 dark:border-slate-800',
+      bgColor: 'bg-indigo-50',
       testId: 'departments-card'
     },
   ];
@@ -104,8 +104,8 @@ export const Dashboard = () => {
     <div className="space-y-6" data-testid="dashboard-page">
       {/* Welcome Section */}
       <div className="space-y-1 mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Welcome back, {user?.name}!</h1>
-        <p className="text-slate-600 dark:text-slate-400 text-sm">Here's an overview of your organization.</p>
+        <h1 className="text-3xl font-bold tracking-tight text-gray-900">Welcome back, {user?.name}!</h1>
+        <p className="text-gray-600 text-sm">Here's an overview of your organization.</p>
       </div>
 
       {/* Stats Grid */}
@@ -113,14 +113,14 @@ export const Dashboard = () => {
         {statCards.map((stat) => {
           const Icon = stat.icon;
           return (
-            <Card key={stat.title} className="p-5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:shadow-md transition-shadow" data-testid={stat.testId}>
+            <Card key={stat.title} className="p-5 border border-gray-200 bg-white hover:shadow-md transition-shadow" data-testid={stat.testId}>
               <div className="flex items-start justify-between mb-3">
-                <div className={`p-2.5 rounded-lg ${stat.bgColor} border border-slate-200 dark:border-slate-800`}>
+                <div className={`p-2.5 rounded-lg ${stat.bgColor} border border-gray-200`}>
                   <Icon className={`h-5 w-5 ${stat.color}`} />
                 </div>
               </div>
-              <p className="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wider">{stat.title}</p>
-              <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50 mt-1">{stat.value}</p>
+              <p className="text-xs font-medium text-gray-600 uppercase tracking-wider">{stat.title}</p>
+              <p className="text-2xl font-bold tracking-tight text-gray-900 mt-1">{stat.value}</p>
             </Card>
           );
         })}
@@ -129,8 +129,8 @@ export const Dashboard = () => {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Attendance Chart */}
-        <Card className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-50 mb-4">Today's Attendance</h3>
+        <Card className="p-6 border border-gray-200 bg-white">
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">Today's Attendance</h3>
           <ResponsiveContainer width="100%" height={250}>
             <PieChart>
               <Pie
@@ -153,24 +153,24 @@ export const Dashboard = () => {
         </Card>
 
         {/* Quick Stats */}
-        <Card className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-50 mb-4">Quick Overview</h3>
+        <Card className="p-6 border border-gray-200 bg-white">
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">Quick Overview</h3>
           <div className="space-y-3">
-            <div className="flex justify-between items-center p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Attendance Rate</span>
-              <span className="text-lg font-semibold font-mono text-slate-900 dark:text-slate-50">
+            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <span className="text-sm font-medium text-gray-700">Attendance Rate</span>
+              <span className="text-lg font-semibold font-mono text-gray-900">
                 {stats?.total_employees > 0
                   ? `${((stats.present_today / stats.total_employees) * 100).toFixed(1)}%`
                   : '0%'}
               </span>
             </div>
-            <div className="flex justify-between items-center p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Total Departments</span>
-              <span className="text-lg font-semibold font-mono text-slate-900 dark:text-slate-50">{stats?.total_departments || 0}</span>
+            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <span className="text-sm font-medium text-gray-700">Total Departments</span>
+              <span className="text-lg font-semibold font-mono text-gray-900">{stats?.total_departments || 0}</span>
             </div>
-            <div className="flex justify-between items-center p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Pending Approvals</span>
-              <span className="text-lg font-semibold font-mono text-slate-900 dark:text-slate-50">{stats?.pending_leaves || 0}</span>
+            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <span className="text-sm font-medium text-gray-700">Pending Approvals</span>
+              <span className="text-lg font-semibold font-mono text-gray-900">{stats?.pending_leaves || 0}</span>
             </div>
           </div>
         </Card>
@@ -178,22 +178,22 @@ export const Dashboard = () => {
 
       {/* Employee Leave Applications */}
       {user?.role === 'Employee' && (
-        <Card className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50 mb-4">My Leave Applications</h3>
+        <Card className="p-6 border border-gray-200 bg-white">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">My Leave Applications</h3>
           {myLeaves.length > 0 ? (
             <div className="space-y-3">
               {myLeaves.map((leave) => (
-                <div key={leave.id} className="p-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800">
+                <div key={leave.id} className="p-3 border border-gray-200 rounded-lg bg-gray-50">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
-                      <p className="font-medium text-slate-900 dark:text-slate-50">{leave.leave_type} Leave</p>
-                      <p className="text-sm text-slate-600 dark:text-slate-400">{leave.start_date} to {leave.end_date}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">{leave.reason}</p>
+                      <p className="font-medium text-gray-900">{leave.leave_type} Leave</p>
+                      <p className="text-sm text-gray-600">{leave.start_date} to {leave.end_date}</p>
+                      <p className="text-xs text-gray-500 mt-1">{leave.reason}</p>
                     </div>
                     <span className={`px-3 py-1 rounded text-xs font-medium whitespace-nowrap ml-2 ${
-                      leave.status === 'Pending' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' :
-                      leave.status === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
-                      'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
+                      leave.status === 'Pending' ? 'bg-amber-100 text-amber-700' :
+                      leave.status === 'Approved' ? 'bg-green-100 text-green-700' :
+                      'bg-red-100 text-red-700'
                     }`}>
                       {leave.status}
                     </span>
@@ -202,30 +202,30 @@ export const Dashboard = () => {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-slate-600 dark:text-slate-400">No leave applications yet</p>
+            <p className="text-sm text-gray-600">No leave applications yet</p>
           )}
         </Card>
       )}
 
       {/* Role-based Quick Actions */}
       {(user?.role === 'Admin' || user?.role === 'HR') && (
-        <Card className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-50 mb-4">Quick Actions</h3>
+        <Card className="p-6 border border-gray-200 bg-white">
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">Quick Actions</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <button className="p-4 border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left bg-white dark:bg-slate-900">
+            <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left bg-white">
               <Users className="h-5 w-5 mb-2 text-indigo-600" />
-              <p className="font-medium text-sm text-slate-900 dark:text-slate-50">Add Employee</p>
-              <p className="text-xs text-slate-600 dark:text-slate-400">Create new record</p>
+              <p className="font-medium text-sm text-gray-900">Add Employee</p>
+              <p className="text-xs text-gray-600">Create new record</p>
             </button>
-            <button className="p-4 border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left bg-white dark:bg-slate-900">
+            <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left bg-white">
               <FileText className="h-5 w-5 mb-2 text-indigo-600" />
-              <p className="font-medium text-sm text-slate-900 dark:text-slate-50">Review Leaves</p>
-              <p className="text-xs text-slate-600 dark:text-slate-400">Approve requests</p>
+              <p className="font-medium text-sm text-gray-900">Review Leaves</p>
+              <p className="text-xs text-gray-600">Approve requests</p>
             </button>
-            <button className="p-4 border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left bg-white dark:bg-slate-900">
+            <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left bg-white">
               <Calendar className="h-5 w-5 mb-2 text-indigo-600" />
-              <p className="font-medium text-sm text-slate-900 dark:text-slate-50">View Reports</p>
-              <p className="text-xs text-slate-600 dark:text-slate-400">Generate reports</p>
+              <p className="font-medium text-sm text-gray-900">View Reports</p>
+              <p className="text-xs text-gray-600">Generate reports</p>
             </button>
           </div>
         </Card>

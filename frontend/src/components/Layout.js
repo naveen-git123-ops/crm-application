@@ -40,16 +40,15 @@ export const Layout = ({ children }) => {
   const filteredNavItems = navItems.filter(item => item.roles.includes(user?.role));
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
+    <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Sidebar - Desktop */}
-      <aside className="hidden lg:flex flex-col w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <div className="p-6 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-slate-800 dark:to-slate-700">
+      <aside className="hidden lg:flex flex-col w-64 border-r border-gray-200 bg-white">
+        <div className="p-6 border-b border-gray-200 bg-white">
           <img 
             src={`${process.env.PUBLIC_URL}/logo1.png`}
             alt="Company Logo" 
             className="h-12 object-contain"
           />
-         
         </div>
         
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto scrollbar-hide">
@@ -61,8 +60,8 @@ export const Layout = ({ children }) => {
               className={({ isActive }) =>
                 `flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors text-sm ${
                   isActive
-                    ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-medium'
-                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    ? 'bg-blue-100 text-blue-700 font-medium'
+                    : 'text-gray-700 hover:bg-gray-100'
                 }`
               }
             >
@@ -72,14 +71,14 @@ export const Layout = ({ children }) => {
           ))}
         </nav>
 
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-2">
+        <div className="p-4 border-t border-gray-200 space-y-2">
           <div className="px-4 py-2">
-            <p className="text-sm font-medium text-slate-900 dark:text-slate-50">{user?.name}</p>
-            <p className="text-xs text-slate-600 dark:text-slate-400">{user?.role}</p>
+            <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+            <p className="text-xs text-gray-600">{user?.role}</p>
           </div>
           <Button
             variant="ghost"
-            className="w-full justify-start text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 font-medium text-sm h-10"
+            className="w-full justify-start text-red-600 hover:bg-red-50 font-medium text-sm h-10"
             onClick={handleLogout}
             data-testid="logout-button"
           >
@@ -93,15 +92,15 @@ export const Layout = ({ children }) => {
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
-          <aside className="fixed left-0 top-0 bottom-0 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
-            <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-slate-800 dark:to-slate-700">
+          <aside className="fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between bg-white">
               <img 
                 src={`${process.env.PUBLIC_URL}/logo1.png`}
                 alt="Company Logo" 
                 className="h-10 object-contain"
               />
               <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
-                <X className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+                <X className="h-5 w-5 text-gray-600" />
               </Button>
             </div>
             
@@ -114,8 +113,8 @@ export const Layout = ({ children }) => {
                   className={({ isActive }) =>
                     `flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors text-sm ${
                       isActive
-                        ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-medium'
-                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        ? 'bg-blue-100 text-blue-700 font-medium'
+                        : 'text-gray-700 hover:bg-gray-100'
                     }`
                   }
                 >
@@ -125,14 +124,14 @@ export const Layout = ({ children }) => {
               ))}
             </nav>
 
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-2">
+            <div className="p-4 border-t border-gray-200 space-y-2">
               <div className="px-4 py-2">
-                <p className="text-sm font-medium text-slate-900 dark:text-slate-50">{user?.name}</p>
-                <p className="text-xs text-slate-600 dark:text-slate-400">{user?.role}</p>
+                <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+                <p className="text-xs text-gray-600">{user?.role}</p>
               </div>
               <Button
                 variant="ghost"
-                className="w-full justify-start text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 font-medium text-sm h-10"
+                className="w-full justify-start text-red-600 hover:bg-red-50 font-medium text-sm h-10"
                 onClick={handleLogout}
               >
                 <LogOut className="h-4 w-4 mr-2" />
@@ -146,23 +145,23 @@ export const Layout = ({ children }) => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center px-6">
+        <header className="h-16 border-b border-gray-200 bg-white flex items-center px-6 shadow-sm">
           <Button
             variant="ghost"
             size="icon"
-            className="lg:hidden mr-2 text-slate-600 dark:text-slate-400"
+            className="lg:hidden mr-2 text-gray-600"
             onClick={() => setSidebarOpen(true)}
             data-testid="mobile-menu-button"
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+          <h2 className="text-lg font-semibold tracking-tight text-gray-900">
             {filteredNavItems.find(item => window.location.pathname === item.path)?.label || 'Dashboard'}
           </h2>
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-6 bg-gray-50">
           {children}
         </main>
       </div>
