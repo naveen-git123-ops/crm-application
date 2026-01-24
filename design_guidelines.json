@@ -1,0 +1,186 @@
+{
+  "identity": {
+    "persona": "E1: The Anti-AI Designer",
+    "mission": "Create a 'Glass HQ' - a digital workspace that feels like a high-end physical office. Fusion of Swiss Precision (Typography) and Soft Utility (Layout).",
+    "principles": [
+      "Fusion over Imitation: Mix Enterprise density with Consumer app fluidity.",
+      "Emotion First: Trust and Efficiency. Every pixel must feel 'stable'.",
+      "Content is King: Data is the hero. Use 'JetBrains Mono' for all financial/time data.",
+      "Negative Space: Use 'p-6' or 'p-8' inside cards. Don't cram.",
+      "Contrast: High contrast text for readability. No gray-on-gray text."
+    ]
+  },
+  "typography": {
+    "fonts": {
+      "headings": {
+        "family": "Manrope",
+        "weights": ["600", "700", "800"],
+        "usage": "Page titles, Card headers, Modal titles. Tracking-tight.",
+        "fallback": "sans-serif"
+      },
+      "body": {
+        "family": "Inter",
+        "weights": ["400", "500"],
+        "usage": "General text, form labels, table content.",
+        "fallback": "sans-serif"
+      },
+      "data": {
+        "family": "JetBrains Mono",
+        "weights": ["500"],
+        "usage": "Salaries, Dates, Employee IDs, Attendance Hours.",
+        "fallback": "monospace"
+      }
+    },
+    "rules": [
+      "Headings > 32px must use tracking-tight.",
+      "Overlines (e.g., 'EMPLOYEE ID') must be Uppercase + text-xs + tracking-widest.",
+      "Line height: leading-none for headings, leading-relaxed for body."
+    ]
+  },
+  "colors": {
+    "theme_strategy": "Professional Light Mode with 'Deep Space' Dark Mode Toggle",
+    "palette": {
+      "light": {
+        "background": "#F8FAFC",
+        "foreground": "#0F172A",
+        "card": "#FFFFFF",
+        "card_foreground": "#0F172A",
+        "primary": "#4F46E5",
+        "primary_foreground": "#FFFFFF",
+        "secondary": "#F1F5F9",
+        "secondary_foreground": "#0F172A",
+        "muted": "#F1F5F9",
+        "muted_foreground": "#64748B",
+        "accent": "#EEF2FF",
+        "accent_foreground": "#4F46E5",
+        "destructive": "#EF4444",
+        "destructive_foreground": "#FFFFFF",
+        "border": "#E2E8F0",
+        "input": "#E2E8F0",
+        "ring": "#4F46E5"
+      },
+      "dark": {
+        "background": "#020617",
+        "foreground": "#F8FAFC",
+        "card": "#0F172A",
+        "card_foreground": "#F8FAFC",
+        "primary": "#6366F1",
+        "primary_foreground": "#FFFFFF",
+        "secondary": "#1E293B",
+        "secondary_foreground": "#F8FAFC",
+        "muted": "#1E293B",
+        "muted_foreground": "#94A3B8",
+        "accent": "#1E293B",
+        "accent_foreground": "#6366F1",
+        "destructive": "#7F1D1D",
+        "destructive_foreground": "#F8FAFC",
+        "border": "#1E293B",
+        "input": "#1E293B",
+        "ring": "#6366F1"
+      }
+    },
+    "usage_rules": [
+      "Never use pure black (#000000). Use #0F172A (Slate 900).",
+      "Primary color is for Actions (Buttons, Links) and Active States only.",
+      "Status Colors: Success = Emerald (#10B981), Warning = Amber (#F59E0B), Error = Rose (#F43F5E).",
+      "Gradients: Use subtle 'mesh' gradients for the Sidebar background only, never for buttons."
+    ]
+  },
+  "layout": {
+    "grid_system": {
+      "dashboard": "Bento Grid Mode B (High Density)",
+      "specs": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+      "rules": [
+        "Summary Cards: col-span-1",
+        "Main Chart: col-span-2 row-span-2 or col-span-3",
+        "Activity Feed: col-span-1 row-span-2 (Vertical list)",
+        "Every pixel utilized. Use h-full on children."
+      ]
+    },
+    "spacing": {
+      "scale": "Tailwind Scale (p-4, p-6, p-8)",
+      "philosophy": "Generous internal padding (p-6) for cards to prevent 'spreadsheet look'.",
+      "containers": "Max-width-7xl for main content. Centered."
+    }
+  },
+  "components": {
+    "style_guide": {
+      "radius": "rounded-md (Sharp, Professional)",
+      "shadows": "shadow-sm (Subtle) for cards. shadow-md for dropdowns.",
+      "borders": "1px solid border-border. No borderless cards in this Enterprise context."
+    },
+    "customization_instructions": [
+      "Buttons: Use h-10 px-4 py-2. Font-medium. No pill shapes.",
+      "Inputs: Background-white (light mode). Border-input. Focus: ring-2 ring-primary/20.",
+      "Tables: Use 'compact' density. Row height 48px. Header text-xs uppercase tracking-wider text-muted-foreground.",
+      "Sidebar: Fixed left. Width 256px. Glassmorphism effect (bg-background/95 backdrop-blur-sm) border-r.",
+      "Avatars: Square with rounded-md (not full circle) for a modern tech feel."
+    ]
+  },
+  "visual_enhancers": {
+    "glassmorphism": {
+      "usage": "Sidebar, Sticky Headers, Modals",
+      "classes": "bg-background/80 backdrop-blur-md border-b border-border/50"
+    },
+    "micro_interactions": {
+      "hover": "Cards: hover:border-primary/50 transition-colors duration-200.",
+      "buttons": "Active: scale-95 transition-transform."
+    },
+    "empty_states": "Use ASCII art or minimal SVG icons for empty states. No generic illustrations."
+  },
+  "media": {
+    "image_urls": {
+      "login_background": {
+        "url": "https://images.unsplash.com/photo-1566476927456-446189d7b1ca?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "description": "Minimalist Macbook on white table. Clean, professional start.",
+        "category": "background"
+      },
+      "dashboard_empty": {
+        "url": "https://images.unsplash.com/photo-1558276651-1efdd2476f37?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "description": "Yellow penny board. Playful touch for 'No Data Yet'.",
+        "category": "illustration"
+      },
+      "team_placeholder": {
+        "url": "https://images.unsplash.com/photo-1758873268631-fa944fc5cad2?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "description": "Diverse professional team.",
+        "category": "content"
+      },
+      "office_interior": {
+        "url": "https://images.unsplash.com/photo-1758691736975-9f7f643d178e?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "description": "Modern office hallway.",
+        "category": "content"
+      }
+    }
+  },
+  "accessibility": {
+    "rules": [
+      "Contrast: Ensure 4.5:1 for normal text.",
+      "Focus: Visible focus rings on all interactive elements.",
+      "ARIA: Use aria-label for icon-only buttons.",
+      "Testing: All interactive elements MUST have data-testid attribute."
+    ]
+  },
+  "instructions_to_main_agent": [
+    "1. Install 'lucide-react' for icons. Use specific icons: 'LayoutDashboard', 'Users', 'Calendar', 'FileText', 'CreditCard', 'Settings'.",
+    "2. Create a 'Layout' component that handles the Sidebar and Header structure.",
+    "3. Use 'recharts' for the Dashboard analytics (Attendance, Leave trends).",
+    "4. Implement Dark Mode using the 'next-themes' or custom context approach (Tailwind 'dark' class).",
+    "5. For the Employee Table, use '@tanstack/react-table' (if available) or standard Shadcn Table.",
+    "6. CRITICAL: Do not use 'Inter' for Headings. Import 'Manrope' from Google Fonts.",
+    "7. Ensure the 'Login' page is split 50/50: Left side Form, Right side Image (login_background)."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Avoid 'AI Slop': No generic centered layouts. Use asymmetry.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "You MUST NOT apply universal transition. Eg: 'transition: all'.",
+    "You MUST NOT center align the app container.",
+    "Always use modern button styles (sharp/rounded-md).",
+    "NEVER use AI assistant Emoji characters.",
+    "Every interaction needs micro-animations.",
+    "Use 2-3x more spacing than feels comfortable.",
+    "Components MUST use named exports.",
+    "Use 'sonner' for toasts."
+  ]
+}
