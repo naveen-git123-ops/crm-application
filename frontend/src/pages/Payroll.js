@@ -82,22 +82,22 @@ export const Payroll = () => {
     <div className="space-y-6" data-testid="payroll-page">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Payroll & Payslips</h1>
-        <p className="text-muted-foreground mt-1">Generate and download employee payslips</p>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Payroll & Payslips</h1>
+        <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">Generate and download employee payslips</p>
       </div>
 
       {/* Payslip Generator */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-4">Generate Payslip</h3>
+      <Card className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+        <h3 className="text-lg font-semibold mb-4 text-slate-900 dark:text-slate-50">Generate Payslip</h3>
         <div className="space-y-4">
           {canManagePayroll && (
             <div>
-              <label className="block text-sm font-medium mb-2">Select Employee</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Employee</label>
               <select
                 data-testid="payroll-employee-select"
                 value={selectedEmployee}
                 onChange={(e) => setSelectedEmployee(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="flex h-10 w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-50 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:focus:ring-indigo-400 transition-all"
               >
                 <option value="">Select an employee</option>
                 {employees.map((emp) => (
@@ -110,60 +110,60 @@ export const Payroll = () => {
           )}
 
           <div>
-            <label className="block text-sm font-medium mb-2">Select Month</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Month</label>
             <Input
               type="month"
               data-testid="payroll-month-input"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
             />
           </div>
 
           {selectedEmp && (
-            <Card className="p-4 bg-muted">
-              <h4 className="font-semibold mb-3">Salary Breakdown</h4>
+            <Card className="p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <h4 className="font-semibold mb-3 text-slate-900 dark:text-slate-50">Salary Breakdown</h4>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Employee Name:</span>
-                  <span className="font-medium">{selectedEmp.name}</span>
+                  <span className="text-slate-600 dark:text-slate-400">Employee Name:</span>
+                  <span className="font-medium text-slate-900 dark:text-slate-50">{selectedEmp.name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Employee ID:</span>
-                  <span className="font-mono font-medium">{selectedEmp.employee_id}</span>
+                  <span className="text-slate-600 dark:text-slate-400">Employee ID:</span>
+                  <span className="font-mono font-medium text-slate-900 dark:text-slate-50">{selectedEmp.employee_id}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Department:</span>
-                  <span className="font-medium">{selectedEmp.department}</span>
+                  <span className="text-slate-600 dark:text-slate-400">Department:</span>
+                  <span className="font-medium text-slate-900 dark:text-slate-50">{selectedEmp.department}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Job Role:</span>
-                  <span className="font-medium">{selectedEmp.job_role}</span>
+                  <span className="text-slate-600 dark:text-slate-400">Job Role:</span>
+                  <span className="font-medium text-slate-900 dark:text-slate-50">{selectedEmp.job_role}</span>
                 </div>
-                <div className="h-px bg-border my-3" />
+                <div className="h-px bg-slate-300 dark:bg-slate-600 my-3" />
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Basic Salary (50%):</span>
-                  <span className="font-mono font-medium">₹{(selectedEmp.salary * 0.5).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">HRA (20%):</span>
-                  <span className="font-mono font-medium">₹{(selectedEmp.salary * 0.2).toLocaleString()}</span>
+                  <span className="text-slate-600 dark:text-slate-400">Basic Salary (50%):</span>
+                  <span className="font-mono font-medium text-slate-900 dark:text-slate-50">₹{(selectedEmp.salary * 0.5).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Allowances (30%):</span>
-                  <span className="font-mono font-medium">₹{(selectedEmp.salary * 0.3).toLocaleString()}</span>
+                  <span className="text-slate-600 dark:text-slate-400">HRA (20%):</span>
+                  <span className="font-mono font-medium text-slate-900 dark:text-slate-50">₹{(selectedEmp.salary * 0.2).toLocaleString()}</span>
                 </div>
-                <div className="h-px bg-border my-3" />
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Allowances (30%):</span>
+                  <span className="font-mono font-medium text-slate-900 dark:text-slate-50">₹{(selectedEmp.salary * 0.3).toLocaleString()}</span>
+                </div>
+                <div className="h-px bg-slate-300 dark:bg-slate-600 my-3" />
                 <div className="flex justify-between text-base">
-                  <span className="font-semibold">Gross Salary:</span>
-                  <span className="font-mono font-bold text-primary">₹{selectedEmp.salary.toLocaleString()}</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-50">Gross Salary:</span>
+                  <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">₹{selectedEmp.salary.toLocaleString()}</span>
                 </div>
               </div>
             </Card>
           )}
 
           <Button
-            className="w-full"
+            className="w-full bg-indigo-600 text-white font-medium hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-700 h-10"
             onClick={handleDownloadPayslip}
             disabled={!selectedEmployee || !selectedMonth}
             data-testid="download-payslip-button"
@@ -175,12 +175,12 @@ export const Payroll = () => {
       </Card>
 
       {/* Info Card */}
-      <Card className="p-6">
+      <Card className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         <div className="flex items-start gap-4">
-          <CreditCard className="h-6 w-6 text-primary mt-1" />
+          <CreditCard className="h-6 w-6 text-indigo-600 dark:text-indigo-400 mt-1" />
           <div>
-            <h3 className="font-semibold mb-2">About Payroll</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">
+            <h3 className="font-semibold mb-2 text-slate-900 dark:text-slate-50">About Payroll</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
               Payslips are automatically generated based on employee attendance records for the selected month. 
               The calculation includes basic salary, HRA, and allowances. Working days and total hours are 
               derived from the attendance system.
@@ -195,7 +195,7 @@ export const Payroll = () => {
 const Input = ({ className, ...props }) => {
   return (
     <input
-      className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${className}`}
+      className={`flex h-10 w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-50 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:focus:ring-indigo-400 ${className}`}
       {...props}
     />
   );

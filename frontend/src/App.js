@@ -13,6 +13,7 @@ import { Attendance } from '@/pages/Attendance';
 import { Leaves } from '@/pages/Leaves';
 import { Documents } from '@/pages/Documents';
 import { Payroll } from '@/pages/Payroll';
+import { IDCards } from '@/pages/IDCards';
 import { Settings } from '@/pages/Settings';
 
 function App() {
@@ -85,6 +86,17 @@ function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Payroll />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/idcards"
+              element={
+                <ProtectedRoute allowedRoles={['Admin', 'HR', 'Manager']}>
+                  <Layout>
+                    <IDCards />
                   </Layout>
                 </ProtectedRoute>
               }

@@ -6,44 +6,24 @@
 
 @layer base {
   :root {
-    --background: 248 250 252;
-    --foreground: 15 23 42;
+    --background: 240 249 255;
+    --foreground: 30 64 175;
     --card: 255 255 255;
-    --card-foreground: 15 23 42;
-    --primary: 79 70 229;
+    --card-foreground: 30 64 175;
+    --primary: 6 182 212;
     --primary-foreground: 255 255 255;
-    --secondary: 241 245 249;
-    --secondary-foreground: 15 23 42;
-    --muted: 241 245 249;
-    --muted-foreground: 100 116 139;
-    --accent: 238 242 255;
-    --accent-foreground: 79 70 229;
+    --secondary: 224 242 254;
+    --secondary-foreground: 30 64 175;
+    --muted: 224 242 254;
+    --muted-foreground: 96 125 139;
+    --accent: 219 234 254;
+    --accent-foreground: 6 182 212;
     --destructive: 239 68 68;
     --destructive-foreground: 255 255 255;
-    --border: 226 232 240;
-    --input: 226 232 240;
-    --ring: 79 70 229;
+    --border: 186 230 253;
+    --input: 186 230 253;
+    --ring: 6 182 212;
     --radius: 0.375rem;
-  }
-
-  .dark {
-    --background: 2 6 23;
-    --foreground: 248 250 252;
-    --card: 15 23 42;
-    --card-foreground: 248 250 252;
-    --primary: 99 102 241;
-    --primary-foreground: 255 255 255;
-    --secondary: 30 41 59;
-    --secondary-foreground: 248 250 252;
-    --muted: 30 41 59;
-    --muted-foreground: 148 163 184;
-    --accent: 30 41 59;
-    --accent-foreground: 99 102 241;
-    --destructive: 127 29 29;
-    --destructive-foreground: 248 250 252;
-    --border: 30 41 59;
-    --input: 30 41 59;
-    --ring: 99 102 241;
   }
   
   * {

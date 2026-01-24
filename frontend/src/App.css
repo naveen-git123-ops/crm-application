@@ -1,16 +1,11 @@
 .App {
   min-height: 100vh;
-  background-color: rgb(248, 250, 252);
-  color: rgb(15, 23, 42);
-}
-
-.dark .App {
-  background-color: rgb(2, 6, 23);
-  color: rgb(248, 250, 252);
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #f0f9ff 100%);
+  color: #1e40af;
 }
 
 .gradient-bg {
-  background: linear-gradient(135deg, rgb(79, 70, 229) 0%, rgba(79, 70, 229, 0.8) 100%);
+  background: linear-gradient(135deg, #0284c7 0%, #06b6d4 100%);
 }
 
 .glass-effect {
@@ -19,16 +14,8 @@
   -webkit-backdrop-filter: blur(12px);
 }
 
-.dark .glass-effect {
-  background: rgba(2, 6, 23, 0.8);
-}
-
 .sidebar-gradient {
-  background: linear-gradient(180deg, rgb(248, 250, 252) 0%, rgba(241, 245, 249, 0.3) 100%);
-}
-
-.dark .sidebar-gradient {
-  background: linear-gradient(180deg, rgb(2, 6, 23) 0%, rgba(30, 41, 59, 0.3) 100%);
+  background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 100%);
 }
 
 .card-hover {
@@ -36,16 +23,7 @@
 }
 
 .card-hover:hover {
-  border-color: rgba(79, 70, 229, 0.5);
-}
-
-.dark .card-hover:hover {
-  border-color: rgba(99, 102, 241, 0.5);
-}
-
-.btn-active {
-  transform: scale(0.95);
-  transition: transform 0.1s ease;
+  border-color: rgba(6, 182, 212, 0.5);
 }
 
 .scrollbar-hide::-webkit-scrollbar {

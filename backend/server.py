@@ -1,9 +1,12 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
 import os
 import logging
 from pathlib import Path
@@ -14,17 +17,17 @@ import jwt
 import bcrypt
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
-from reportlab.lib.utils import ImageReader
 import io
 import uuid
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# SQLite Database Setup
+DATABASE_URL = "sqlite:///./glasshq.db"
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
 # JWT Configuration
 JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-in-production')
@@ -39,11 +42,81 @@ app = FastAPI()
 api_router = APIRouter(prefix="/api")
 security = HTTPBearer()
 
-# ============= MODELS =============
+# ============= DATABASE MODELS =============
+
+class UserModel(Base):
+    __tablename__ = "users"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String, unique=True, index=True)
+    password = Column(String)
+    name = Column(String)
+    role = Column(String)
+    employee_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+class EmployeeModel(Base):
+    __tablename__ = "employees"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String, unique=True, index=True)
+    name = Column(String)
+    email = Column(String, unique=True, index=True)
+    phone = Column(String, nullable=True)
+    department = Column(String)
+    job_role = Column(String)
+    joining_date = Column(String)
+    salary = Column(Float)
+    status = Column(String, default='Active')
+    profile_photo = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+    emergency_contact = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+class AttendanceModel(Base):
+    __tablename__ = "attendance"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String, index=True)
+    employee_name = Column(String)
+    date = Column(String, index=True)
+    punch_in = Column(String, nullable=True)
+    punch_out = Column(String, nullable=True)
+    work_hours = Column(Float, default=0.0)
+    status = Column(String, default='Present')
+    created_at = Column(DateTime, default=datetime.now)
+
+class LeaveModel(Base):
+    __tablename__ = "leaves"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String, index=True)
+    employee_name = Column(String)
+    leave_type = Column(String)
+    start_date = Column(String)
+    end_date = Column(String)
+    days = Column(Integer)
+    reason = Column(String)
+    status = Column(String, default='Pending')
+    approver_id = Column(String, nullable=True)
+    approver_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+class DocumentModel(Base):
+    __tablename__ = "documents"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String, index=True)
+    employee_name = Column(String)
+    document_type = Column(String)
+    file_name = Column(String)
+    file_path = Column(String)
+    expiry_date = Column(String, nullable=True)
+    uploaded_at = Column(DateTime, default=datetime.now)
+
+# Create all tables
+Base.metadata.create_all(bind=engine)
+
+# ============= PYDANTIC MODELS =============
 
 class UserRole(BaseModel):
     role: Literal['Admin', 'HR', 'Manager', 'Employee']
-    
+
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -57,6 +130,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     name: str
+    employee_id: str
     role: Literal['Admin', 'HR', 'Manager', 'Employee'] = 'Employee'
 
 class UserLogin(BaseModel):
@@ -90,6 +164,11 @@ class EmployeeCreate(BaseModel):
     salary: float
     address: Optional[str] = None
     emergency_contact: Optional[str] = None
+    profile_photo: Optional[str] = None
+
+class EmployeeUpdateProfile(BaseModel):
+    phone: Optional[str] = None
+    profile_photo: Optional[str] = None
 
 class Attendance(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -154,6 +233,15 @@ class DashboardStats(BaseModel):
     pending_leaves: int
     total_departments: int
 
+# ============= DEPENDENCY =============
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 # ============= HELPER FUNCTIONS =============
 
 def hash_password(password: str) -> str:
@@ -172,11 +260,11 @@ def create_access_token(user_id: str, email: str, role: str) -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
     try:
         token = credentials.credentials
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user = await db.users.find_one({'id': payload['user_id']}, {'_id': 0, 'password': 0})
+        user = db.query(UserModel).filter(UserModel.id == payload['user_id']).first()
         if not user:
             raise HTTPException(status_code=401, detail='User not found')
         return user
@@ -188,120 +276,193 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 # ============= AUTH ROUTES =============
 
 @api_router.post('/auth/register')
-async def register(user_data: UserCreate):
-    existing = await db.users.find_one({'email': user_data.email})
-    if existing:
+def register(user_data: UserCreate, db: Session = Depends(get_db)):
+    # Check if email is already registered
+    existing_user = db.query(UserModel).filter(UserModel.email == user_data.email).first()
+    if existing_user:
         raise HTTPException(status_code=400, detail='Email already registered')
     
+    # Check if employee exists with the provided employee_id
+    employee = db.query(EmployeeModel).filter(EmployeeModel.employee_id == user_data.employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Employee ID not found. Please contact HR to get registered as an employee first.')
+    
+    # Check if this employee already has a registered user account
+    existing_employee_user = db.query(UserModel).filter(UserModel.employee_id == user_data.employee_id).first()
+    if existing_employee_user:
+        raise HTTPException(status_code=400, detail='This employee ID is already registered. Please login instead.')
+    
+    # Verify that the email matches the employee's email
+    if employee.email != user_data.email:
+        raise HTTPException(status_code=400, detail='Email does not match the registered employee email.')
+    
     hashed_pw = hash_password(user_data.password)
-    user = User(
+    new_user = UserModel(
         email=user_data.email,
+        password=hashed_pw,
         name=user_data.name,
-        role=user_data.role
+        role=user_data.role,
+        employee_id=user_data.employee_id
     )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
     
-    doc = user.model_dump()
-    doc['password'] = hashed_pw
-    doc['created_at'] = doc['created_at'].isoformat()
-    
-    await db.users.insert_one(doc)
-    
-    token = create_access_token(user.id, user.email, user.role)
-    return {'token': token, 'user': user}
+    token = create_access_token(new_user.id, new_user.email, new_user.role)
+    return {'token': token, 'user': {'id': new_user.id, 'email': new_user.email, 'name': new_user.name, 'role': new_user.role, 'employee_id': new_user.employee_id}}
 
 @api_router.post('/auth/login')
-async def login(credentials: UserLogin):
-    user_doc = await db.users.find_one({'email': credentials.email})
-    if not user_doc or not verify_password(credentials.password, user_doc['password']):
+def login(credentials: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(UserModel).filter(UserModel.email == credentials.email).first()
+    if not user or not verify_password(credentials.password, user.password):
         raise HTTPException(status_code=401, detail='Invalid credentials')
     
-    user_doc.pop('_id', None)
-    user_doc.pop('password', None)
-    
-    token = create_access_token(user_doc['id'], user_doc['email'], user_doc['role'])
-    return {'token': token, 'user': user_doc}
+    token = create_access_token(user.id, user.email, user.role)
+    return {'token': token, 'user': {'id': user.id, 'email': user.email, 'name': user.name, 'role': user.role}}
 
 @api_router.get('/auth/me')
-async def get_me(current_user: dict = Depends(get_current_user)):
-    return current_user
+async def get_me(current_user: UserModel = Depends(get_current_user)):
+    return {'id': current_user.id, 'email': current_user.email, 'name': current_user.name, 'role': current_user.role}
 
 # ============= EMPLOYEE ROUTES =============
 
 @api_router.post('/employees', response_model=Employee)
-async def create_employee(emp_data: EmployeeCreate, current_user: dict = Depends(get_current_user)):
-    if current_user['role'] not in ['Admin', 'HR']:
+def create_employee(emp_data: EmployeeCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR']:
         raise HTTPException(status_code=403, detail='Not authorized')
     
-    # Generate employee ID
-    count = await db.employees.count_documents({})
+    count = db.query(EmployeeModel).count()
     emp_id = f'EMP{str(count + 1).zfill(4)}'
     
-    employee = Employee(
+    new_employee = EmployeeModel(
         employee_id=emp_id,
-        **emp_data.model_dump()
+        name=emp_data.name,
+        email=emp_data.email,
+        phone=emp_data.phone,
+        department=emp_data.department,
+        job_role=emp_data.job_role,
+        joining_date=emp_data.joining_date,
+        salary=emp_data.salary,
+        address=emp_data.address,
+        emergency_contact=emp_data.emergency_contact
     )
+    db.add(new_employee)
+    db.commit()
+    db.refresh(new_employee)
     
-    doc = employee.model_dump()
-    doc['created_at'] = doc['created_at'].isoformat()
-    await db.employees.insert_one(doc)
-    
-    return employee
+    return new_employee
 
 @api_router.get('/employees', response_model=List[Employee])
-async def get_employees(current_user: dict = Depends(get_current_user)):
-    employees = await db.employees.find({}, {'_id': 0}).to_list(1000)
+def get_employees(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    employees = db.query(EmployeeModel).all()
     return employees
 
 @api_router.get('/employees/{employee_id}', response_model=Employee)
-async def get_employee(employee_id: str, current_user: dict = Depends(get_current_user)):
-    employee = await db.employees.find_one({'id': employee_id}, {'_id': 0})
+def get_employee(employee_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    employee = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail='Employee not found')
     return employee
 
 @api_router.put('/employees/{employee_id}', response_model=Employee)
-async def update_employee(employee_id: str, emp_data: EmployeeCreate, current_user: dict = Depends(get_current_user)):
-    if current_user['role'] not in ['Admin', 'HR']:
+def update_employee(employee_id: str, emp_data: EmployeeCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR']:
         raise HTTPException(status_code=403, detail='Not authorized')
     
-    result = await db.employees.update_one(
-        {'id': employee_id},
-        {'$set': emp_data.model_dump()}
-    )
-    
-    if result.matched_count == 0:
+    employee = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
+    if not employee:
         raise HTTPException(status_code=404, detail='Employee not found')
     
-    updated = await db.employees.find_one({'id': employee_id}, {'_id': 0})
-    return updated
+    for key, value in emp_data.model_dump().items():
+        setattr(employee, key, value)
+    db.commit()
+    db.refresh(employee)
+    
+    return employee
 
 @api_router.delete('/employees/{employee_id}')
-async def delete_employee(employee_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user['role'] not in ['Admin', 'HR']:
+def delete_employee(employee_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR']:
         raise HTTPException(status_code=403, detail='Not authorized')
     
-    result = await db.employees.delete_one({'id': employee_id})
-    if result.deleted_count == 0:
+    employee = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
+    if not employee:
         raise HTTPException(status_code=404, detail='Employee not found')
     
+    db.delete(employee)
+    db.commit()
+    
     return {'message': 'Employee deleted successfully'}
+
+@api_router.post('/employees/profile/photo-upload')
+def upload_profile_photo(
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload profile photo for current employee"""
+    try:
+        # Find employee by email
+        employee = db.query(EmployeeModel).filter(EmployeeModel.email == current_user.email).first()
+        if not employee:
+            raise HTTPException(status_code=404, detail='Employee record not found')
+        
+        # Create employee folder
+        emp_folder = UPLOAD_DIR / employee.id
+        emp_folder.mkdir(exist_ok=True)
+        
+        # Save file
+        filename = f"profile_{uuid.uuid4()}{Path(file.filename).suffix}"
+        filepath = emp_folder / filename
+        
+        with open(filepath, 'wb') as f:
+            f.write(file.file.read())
+        
+        # Update employee profile_photo path
+        photo_path = f"/uploads/{employee.id}/{filename}"
+        employee.profile_photo = photo_path
+        db.commit()
+        db.refresh(employee)
+        
+        return {'photo_path': photo_path, 'message': 'Profile photo uploaded successfully'}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.put('/employees/profile/update')
+def update_employee_profile(
+    data: EmployeeUpdateProfile,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update employee profile (phone and profile photo) - self-service"""
+    employee = db.query(EmployeeModel).filter(EmployeeModel.email == current_user.email).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Employee record not found')
+    
+    if data.phone:
+        employee.phone = data.phone
+    if data.profile_photo:
+        employee.profile_photo = data.profile_photo
+    
+    db.commit()
+    db.refresh(employee)
+    
+    return employee
 
 # ============= ATTENDANCE ROUTES =============
 
 @api_router.post('/attendance/punch')
-async def punch_attendance(punch_data: AttendancePunch, current_user: dict = Depends(get_current_user)):
+def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     
-    # Get employee
-    employee = await db.employees.find_one({'id': punch_data.employee_id}, {'_id': 0})
+    employee = db.query(EmployeeModel).filter(EmployeeModel.id == punch_data.employee_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail='Employee not found')
     
-    # Check existing attendance
-    existing = await db.attendance.find_one({
-        'employee_id': punch_data.employee_id,
-        'date': today
-    })
+    existing = db.query(AttendanceModel).filter(
+        AttendanceModel.employee_id == punch_data.employee_id,
+        AttendanceModel.date == today
+    ).first()
     
     current_time = datetime.now(timezone.utc).strftime('%H:%M:%S')
     
@@ -309,131 +470,123 @@ async def punch_attendance(punch_data: AttendancePunch, current_user: dict = Dep
         if existing:
             raise HTTPException(status_code=400, detail='Already punched in today')
         
-        attendance = Attendance(
+        status = 'Late' if int(current_time.split(':')[0]) > 9 else 'Present'
+        new_attendance = AttendanceModel(
             employee_id=punch_data.employee_id,
-            employee_name=employee['name'],
+            employee_name=employee.name,
             date=today,
             punch_in=current_time,
-            status='Late' if int(current_time.split(':')[0]) > 9 else 'Present'
+            status=status
         )
+        db.add(new_attendance)
+        db.commit()
         
-        doc = attendance.model_dump()
-        doc['created_at'] = doc['created_at'].isoformat()
-        await db.attendance.insert_one(doc)
-        
-        return {'message': 'Punched in successfully', 'attendance': attendance}
+        return {'message': 'Punched in successfully', 'attendance': new_attendance}
     
     else:  # punch_out
         if not existing:
             raise HTTPException(status_code=400, detail='No punch in record found')
         
-        if existing.get('punch_out'):
+        if existing.punch_out:
             raise HTTPException(status_code=400, detail='Already punched out today')
         
-        # Calculate work hours
-        punch_in_time = datetime.strptime(existing['punch_in'], '%H:%M:%S')
+        punch_in_time = datetime.strptime(existing.punch_in, '%H:%M:%S')
         punch_out_time = datetime.strptime(current_time, '%H:%M:%S')
         work_hours = (punch_out_time - punch_in_time).total_seconds() / 3600
         
-        await db.attendance.update_one(
-            {'id': existing['id']},
-            {'$set': {'punch_out': current_time, 'work_hours': round(work_hours, 2)}}
-        )
+        existing.punch_out = current_time
+        existing.work_hours = round(work_hours, 2)
+        db.commit()
         
-        updated = await db.attendance.find_one({'id': existing['id']}, {'_id': 0})
-        return {'message': 'Punched out successfully', 'attendance': updated}
+        return {'message': 'Punched out successfully', 'attendance': existing}
 
 @api_router.get('/attendance', response_model=List[Attendance])
-async def get_attendance(month: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    query = {}
+def get_attendance(month: Optional[str] = None, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = db.query(AttendanceModel)
     if month:
-        query['date'] = {'$regex': f'^{month}'}
-    
-    attendance = await db.attendance.find(query, {'_id': 0}).sort('date', -1).to_list(1000)
-    return attendance
+        query = query.filter(AttendanceModel.date.like(f'{month}%'))
+    return query.order_by(AttendanceModel.date.desc()).all()
 
 @api_router.get('/attendance/employee/{employee_id}', response_model=List[Attendance])
-async def get_employee_attendance(employee_id: str, current_user: dict = Depends(get_current_user)):
-    attendance = await db.attendance.find(
-        {'employee_id': employee_id},
-        {'_id': 0}
-    ).sort('date', -1).to_list(1000)
-    return attendance
+def get_employee_attendance(employee_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    return db.query(AttendanceModel).filter(
+        AttendanceModel.employee_id == employee_id
+    ).order_by(AttendanceModel.date.desc()).all()
 
 # ============= LEAVE ROUTES =============
 
 @api_router.post('/leaves', response_model=Leave)
-async def create_leave(leave_data: LeaveCreate, current_user: dict = Depends(get_current_user)):
-    leave = Leave(**leave_data.model_dump())
+def create_leave(leave_data: LeaveCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    new_leave = LeaveModel(
+        employee_id=leave_data.employee_id,
+        employee_name=leave_data.employee_name,
+        leave_type=leave_data.leave_type,
+        start_date=leave_data.start_date,
+        end_date=leave_data.end_date,
+        days=leave_data.days,
+        reason=leave_data.reason
+    )
+    db.add(new_leave)
+    db.commit()
+    db.refresh(new_leave)
     
-    doc = leave.model_dump()
-    doc['created_at'] = doc['created_at'].isoformat()
-    await db.leaves.insert_one(doc)
-    
-    return leave
+    return new_leave
 
 @api_router.get('/leaves', response_model=List[Leave])
-async def get_leaves(
+def get_leaves(
     status: Optional[str] = None,
     employee_id: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    query = {}
+    query = db.query(LeaveModel)
     if status:
-        query['status'] = status
+        query = query.filter(LeaveModel.status == status)
     if employee_id:
-        query['employee_id'] = employee_id
-    
-    leaves = await db.leaves.find(query, {'_id': 0}).sort('created_at', -1).to_list(1000)
-    return leaves
+        query = query.filter(LeaveModel.employee_id == employee_id)
+    return query.order_by(LeaveModel.created_at.desc()).all()
 
 @api_router.put('/leaves/{leave_id}/action')
-async def update_leave_status(
+def update_leave_status(
     leave_id: str,
     action: LeaveAction,
-    current_user: dict = Depends(get_current_user)
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    if current_user['role'] not in ['Admin', 'HR', 'Manager']:
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
         raise HTTPException(status_code=403, detail='Not authorized')
     
-    result = await db.leaves.update_one(
-        {'id': leave_id},
-        {'$set': {
-            'status': action.status,
-            'approver_id': action.approver_id,
-            'approver_name': action.approver_name
-        }}
-    )
-    
-    if result.matched_count == 0:
+    leave = db.query(LeaveModel).filter(LeaveModel.id == leave_id).first()
+    if not leave:
         raise HTTPException(status_code=404, detail='Leave not found')
     
-    updated = await db.leaves.find_one({'id': leave_id}, {'_id': 0})
-    return updated
+    leave.status = action.status
+    leave.approver_id = action.approver_id
+    leave.approver_name = action.approver_name
+    db.commit()
+    
+    return leave
 
 # ============= DOCUMENT ROUTES =============
 
 @api_router.post('/documents/upload')
-async def upload_document(
+def upload_document(
     employee_id: str,
     employee_name: str,
     document_type: str,
     file: UploadFile = File(...),
     expiry_date: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    # Create employee folder
     emp_folder = UPLOAD_DIR / employee_id
     emp_folder.mkdir(exist_ok=True)
     
-    # Save file
     file_path = emp_folder / file.filename
     with open(file_path, 'wb') as f:
-        content = await file.read()
-        f.write(content)
+        f.write(file.file.read())
     
-    # Create document record
-    document = Document(
+    new_document = DocumentModel(
         employee_id=employee_id,
         employee_name=employee_name,
         document_type=document_type,
@@ -441,78 +594,70 @@ async def upload_document(
         file_path=str(file_path),
         expiry_date=expiry_date
     )
+    db.add(new_document)
+    db.commit()
+    db.refresh(new_document)
     
-    doc = document.model_dump()
-    doc['uploaded_at'] = doc['uploaded_at'].isoformat()
-    await db.documents.insert_one(doc)
-    
-    return document
+    return new_document
 
 @api_router.get('/documents', response_model=List[Document])
-async def get_documents(employee_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    query = {}
+def get_documents(employee_id: Optional[str] = None, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = db.query(DocumentModel)
     if employee_id:
-        query['employee_id'] = employee_id
-    
-    documents = await db.documents.find(query, {'_id': 0}).sort('uploaded_at', -1).to_list(1000)
-    return documents
+        query = query.filter(DocumentModel.employee_id == employee_id)
+    return query.order_by(DocumentModel.uploaded_at.desc()).all()
 
 @api_router.get('/documents/{document_id}/download')
-async def download_document(document_id: str, current_user: dict = Depends(get_current_user)):
-    document = await db.documents.find_one({'id': document_id}, {'_id': 0})
+def download_document(document_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    document = db.query(DocumentModel).filter(DocumentModel.id == document_id).first()
     if not document:
         raise HTTPException(status_code=404, detail='Document not found')
     
-    file_path = Path(document['file_path'])
+    file_path = Path(document.file_path)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail='File not found')
     
-    return FileResponse(file_path, filename=document['file_name'])
+    return FileResponse(file_path, filename=document.file_name)
 
 # ============= PAYROLL ROUTES =============
 
 @api_router.get('/payroll/payslip/{employee_id}')
-async def generate_payslip(
+def generate_payslip(
     employee_id: str,
     month: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    # Get employee
-    employee = await db.employees.find_one({'id': employee_id}, {'_id': 0})
+    employee = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail='Employee not found')
     
-    # Get attendance for the month
-    attendance_records = await db.attendance.find({
-        'employee_id': employee_id,
-        'date': {'$regex': f'^{month}'}
-    }, {'_id': 0}).to_list(1000)
+    attendance_records = db.query(AttendanceModel).filter(
+        AttendanceModel.employee_id == employee_id,
+        AttendanceModel.date.like(f'{month}%')
+    ).all()
     
     working_days = len(attendance_records)
-    total_hours = sum(rec.get('work_hours', 0) for rec in attendance_records)
+    total_hours = sum(rec.work_hours for rec in attendance_records)
     
-    # Calculate salary
-    monthly_salary = employee['salary']
+    monthly_salary = employee.salary
     basic = monthly_salary * 0.5
     hra = monthly_salary * 0.2
     allowances = monthly_salary * 0.3
     
-    # Generate PDF
     buffer = io.BytesIO()
     p = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
     
-    # Header
     p.setFont('Helvetica-Bold', 20)
     p.drawString(50, height - 50, 'PAYSLIP')
     
     p.setFont('Helvetica', 12)
-    p.drawString(50, height - 80, f'Employee: {employee["name"]}')
-    p.drawString(50, height - 100, f'Employee ID: {employee["employee_id"]}')
-    p.drawString(50, height - 120, f'Department: {employee["department"]}')
+    p.drawString(50, height - 80, f'Employee: {employee.name}')
+    p.drawString(50, height - 100, f'Employee ID: {employee.employee_id}')
+    p.drawString(50, height - 120, f'Department: {employee.department}')
     p.drawString(50, height - 140, f'Month: {month}')
     
-    # Salary breakdown
     y = height - 180
     p.drawString(50, y, 'Salary Breakdown:')
     y -= 30
@@ -525,7 +670,6 @@ async def generate_payslip(
     p.setFont('Helvetica-Bold', 12)
     p.drawString(70, y, f'Gross Salary: ₹{monthly_salary:.2f}')
     
-    # Attendance
     y -= 40
     p.setFont('Helvetica', 12)
     p.drawString(50, y, f'Working Days: {working_days}')
@@ -537,24 +681,23 @@ async def generate_payslip(
     
     buffer.seek(0)
     return FileResponse(
-        io.BytesIO(buffer.read()),
+        io.BytesIO(buffer.getvalue()),
         media_type='application/pdf',
-        filename=f'payslip_{employee["employee_id"]}_{month}.pdf'
+        filename=f'payslip_{employee.employee_id}_{month}.pdf'
     )
 
 # ============= DASHBOARD ROUTES =============
 
 @api_router.get('/dashboard/stats', response_model=DashboardStats)
-async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
+def get_dashboard_stats(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     
-    total_employees = await db.employees.count_documents({'status': 'Active'})
-    present_today = await db.attendance.count_documents({'date': today})
-    pending_leaves = await db.leaves.count_documents({'status': 'Pending'})
+    total_employees = db.query(EmployeeModel).filter(EmployeeModel.status == 'Active').count()
+    present_today = db.query(AttendanceModel).filter(AttendanceModel.date == today).count()
+    pending_leaves = db.query(LeaveModel).filter(LeaveModel.status == 'Pending').count()
     
-    # Get unique departments
-    employees = await db.employees.find({}, {'_id': 0, 'department': 1}).to_list(1000)
-    departments = set(emp['department'] for emp in employees)
+    employees = db.query(EmployeeModel).all()
+    departments = set(emp.department for emp in employees)
     
     return DashboardStats(
         total_employees=total_employees,
@@ -567,6 +710,10 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
 # ============= MIDDLEWARE & CONFIG =============
 
 app.include_router(api_router)
+
+# Mount static files for uploads
+if UPLOAD_DIR.exists():
+    app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -581,7 +728,3 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-@app.on_event('shutdown')
-async def shutdown_db_client():
-    client.close()

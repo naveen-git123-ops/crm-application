@@ -133,8 +133,8 @@ export const Employees = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Employees</h1>
-          <p className="text-muted-foreground mt-1">{employees.length} total employees</p>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Employees</h1>
+          <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">{employees.length} total employees</p>
         </div>
         {canManageEmployees && (
           <Dialog open={dialogOpen} onOpenChange={(open) => {
@@ -142,29 +142,30 @@ export const Employees = () => {
             if (!open) resetForm();
           }}>
             <DialogTrigger asChild>
-              <Button data-testid="add-employee-button">
+              <Button className="bg-indigo-600 text-white font-medium hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-700 h-10" data-testid="add-employee-button">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Employee
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-slate-900 dark:border-slate-800">
               <DialogHeader>
-                <DialogTitle>{editingEmployee ? 'Edit Employee' : 'Add New Employee'}</DialogTitle>
+                <DialogTitle className="text-slate-900 dark:text-slate-50">{editingEmployee ? 'Edit Employee' : 'Add New Employee'}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="name">Full Name *</Label>
+                    <Label htmlFor="name" className="text-sm font-medium text-slate-700 dark:text-slate-300">Full Name *</Label>
                     <Input
                       id="name"
                       data-testid="employee-name-input"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       required
+                      className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email *</Label>
+                    <Label htmlFor="email" className="text-sm font-medium text-slate-700 dark:text-slate-300">Email *</Label>
                     <Input
                       id="email"
                       type="email"
@@ -172,39 +173,43 @@ export const Employees = () => {
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       required
+                      className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="phone">Phone</Label>
+                    <Label htmlFor="phone" className="text-sm font-medium text-slate-700 dark:text-slate-300">Phone</Label>
                     <Input
                       id="phone"
                       data-testid="employee-phone-input"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="department">Department *</Label>
+                    <Label htmlFor="department" className="text-sm font-medium text-slate-700 dark:text-slate-300">Department *</Label>
                     <Input
                       id="department"
                       data-testid="employee-department-input"
                       value={formData.department}
                       onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                       required
+                      className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="job_role">Job Role *</Label>
+                    <Label htmlFor="job_role" className="text-sm font-medium text-slate-700 dark:text-slate-300">Job Role *</Label>
                     <Input
                       id="job_role"
                       data-testid="employee-job-role-input"
                       value={formData.job_role}
                       onChange={(e) => setFormData({ ...formData, job_role: e.target.value })}
                       required
+                      className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="joining_date">Joining Date *</Label>
+                    <Label htmlFor="joining_date" className="text-sm font-medium text-slate-700 dark:text-slate-300">Joining Date *</Label>
                     <Input
                       id="joining_date"
                       type="date"
@@ -212,10 +217,11 @@ export const Employees = () => {
                       value={formData.joining_date}
                       onChange={(e) => setFormData({ ...formData, joining_date: e.target.value })}
                       required
+                      className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="salary">Salary *</Label>
+                    <Label htmlFor="salary" className="text-sm font-medium text-slate-700 dark:text-slate-300">Salary *</Label>
                     <Input
                       id="salary"
                       type="number"
@@ -223,25 +229,28 @@ export const Employees = () => {
                       value={formData.salary}
                       onChange={(e) => setFormData({ ...formData, salary: e.target.value })}
                       required
+                      className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="emergency_contact">Emergency Contact</Label>
+                    <Label htmlFor="emergency_contact" className="text-sm font-medium text-slate-700 dark:text-slate-300">Emergency Contact</Label>
                     <Input
                       id="emergency_contact"
                       data-testid="employee-emergency-input"
                       value={formData.emergency_contact}
                       onChange={(e) => setFormData({ ...formData, emergency_contact: e.target.value })}
+                      className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="address">Address</Label>
+                  <Label htmlFor="address" className="text-sm font-medium text-slate-700 dark:text-slate-300">Address</Label>
                   <Input
                     id="address"
                     data-testid="employee-address-input"
                     value={formData.address}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
                   />
                 </div>
                 <div className="flex justify-end gap-2">
@@ -259,15 +268,15 @@ export const Employees = () => {
       </div>
 
       {/* Search */}
-      <Card className="p-4">
+      <Card className="p-4 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
           <Input
             data-testid="employee-search-input"
             placeholder="Search by name, email, department, or employee ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
+            className="pl-10 border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
           />
         </div>
       </Card>
@@ -275,46 +284,46 @@ export const Employees = () => {
       {/* Employees Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredEmployees.map((employee) => (
-          <Card key={employee.id} className="p-6 card-hover" data-testid={`employee-card-${employee.employee_id}`}>
+          <Card key={employee.id} className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:shadow-md transition-shadow" data-testid={`employee-card-${employee.employee_id}`}>
             <div className="space-y-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">
+                  <p className="text-xs uppercase tracking-widest text-slate-600 dark:text-slate-400 mb-1">
                     {employee.employee_id}
                   </p>
-                  <h3 className="text-lg font-semibold">{employee.name}</h3>
-                  <p className="text-sm text-muted-foreground">{employee.job_role}</p>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">{employee.name}</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">{employee.job_role}</p>
                 </div>
-                <span className={`px-2 py-1 rounded-md text-xs font-medium ${
+                <span className={`px-2.5 py-1 rounded text-xs font-medium ${
                   employee.status === 'Active'
-                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
-                    : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                 }`}>
                   {employee.status}
                 </span>
               </div>
 
               <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
+                <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
                   <Mail className="h-4 w-4" />
                   <span className="truncate">{employee.email}</span>
                 </div>
                 {employee.phone && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
+                  <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
                     <Phone className="h-4 w-4" />
                     <span>{employee.phone}</span>
                   </div>
                 )}
               </div>
 
-              <div className="pt-4 border-t border-border flex justify-between items-center">
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
                 <div>
-                  <p className="text-xs text-muted-foreground">Department</p>
-                  <p className="text-sm font-medium">{employee.department}</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">Department</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-50">{employee.department}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-muted-foreground">Salary</p>
-                  <p className="text-sm font-mono font-medium">₹{employee.salary.toLocaleString()}</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">Salary</p>
+                  <p className="text-sm font-mono font-medium text-slate-900 dark:text-slate-50">₹{employee.salary.toLocaleString()}</p>
                 </div>
               </div>
 
@@ -323,7 +332,7 @@ export const Employees = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1"
+                    className="flex-1 h-9 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
                     onClick={() => handleEdit(employee)}
                     data-testid={`edit-employee-${employee.employee_id}`}
                   >
@@ -333,7 +342,7 @@ export const Employees = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 text-destructive hover:text-destructive"
+                    className="flex-1 h-9 border-slate-200 dark:border-slate-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30"
                     onClick={() => handleDelete(employee.id)}
                     data-testid={`delete-employee-${employee.employee_id}`}
                   >
@@ -348,8 +357,8 @@ export const Employees = () => {
       </div>
 
       {filteredEmployees.length === 0 && (
-        <Card className="p-12 text-center">
-          <p className="text-muted-foreground">No employees found</p>
+        <Card className="p-12 text-center border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+          <p className="text-slate-600 dark:text-slate-400">No employees found</p>
         </Card>
       )}
     </div>

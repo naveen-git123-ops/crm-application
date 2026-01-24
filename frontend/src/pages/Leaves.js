@@ -19,6 +19,7 @@ export const Leaves = () => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('All');
   const [formData, setFormData] = useState({
     employee_id: '',
     employee_name: '',
@@ -33,6 +34,17 @@ export const Leaves = () => {
     fetchEmployees();
     fetchLeaves();
   }, []);
+
+  useEffect(() => {
+    // When dialog opens, if user is an employee, auto-fill their employee ID
+    if (dialogOpen && user?.employee_id && !formData.employee_id) {
+      setFormData(prev => ({
+        ...prev,
+        employee_id: user.employee_id,
+        employee_name: user.name
+      }));
+    }
+  }, [dialogOpen, user]);
 
   const fetchEmployees = async () => {
     try {
@@ -57,7 +69,16 @@ export const Leaves = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(`${API}/leaves`, formData);
+      // Ensure employee_name is included
+      const submitData = {
+        ...formData,
+        employee_name: formData.employee_name || user?.name
+      };
+      await axios.post(`${API}/leaves`, submitData, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
       toast.success('Leave application submitted successfully');
       setDialogOpen(false);
       resetForm();
@@ -93,13 +114,15 @@ export const Leaves = () => {
     });
   };
 
-  const handleEmployeeChange = (employeeId) => {
-    const employee = employees.find(emp => emp.id === employeeId);
-    setFormData({
-      ...formData,
-      employee_id: employeeId,
-      employee_name: employee ? employee.name : ''
-    });
+  const handleEmployeeChange = (selectedEmployeeId) => {
+    const employee = employees.find(emp => emp.id === selectedEmployeeId);
+    if (employee) {
+      setFormData({
+        ...formData,
+        employee_id: employee.employee_id,
+        employee_name: employee.name
+      });
+    }
   };
 
   const calculateDays = () => {
@@ -127,7 +150,6 @@ export const Leaves = () => {
   }
 
   const statusTabs = ['All', 'Pending', 'Approved', 'Rejected'];
-  const [activeTab, setActiveTab] = useState('All');
 
   const filteredLeaves = leaves.filter(leave => {
     if (activeTab !== 'All' && leave.status !== activeTab) return false;
@@ -140,48 +162,57 @@ export const Leaves = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Leave Management</h1>
-          <p className="text-muted-foreground mt-1">Apply and manage leave requests</p>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Leave Management</h1>
+          <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">Apply and manage leave requests</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button data-testid="apply-leave-button">
+            <Button className="bg-indigo-600 text-white font-medium hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-700 h-10" data-testid="apply-leave-button">
               <Plus className="h-4 w-4 mr-2" />
               Apply Leave
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-lg dark:bg-slate-900 dark:border-slate-800">
             <DialogHeader>
-              <DialogTitle>Apply for Leave</DialogTitle>
+              <DialogTitle className="text-slate-900 dark:text-slate-50">Apply for Leave</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="employee">Employee *</Label>
-                <select
-                  id="employee"
-                  data-testid="leave-employee-select"
-                  value={formData.employee_id}
-                  onChange={(e) => handleEmployeeChange(e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  required
-                >
-                  <option value="">Select employee</option>
-                  {employees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} ({emp.employee_id})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {canApprove ? (
+                <div className="space-y-2">
+                  <Label htmlFor="employee" className="text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</Label>
+                  <select
+                    id="employee"
+                    data-testid="leave-employee-select"
+                    value={formData.employee_id}
+                    onChange={(e) => handleEmployeeChange(e.target.value)}
+                    className="flex h-10 w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-50 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:focus:ring-indigo-400 transition-all"
+                    required
+                  >
+                    <option value="">Select employee</option>
+                    {employees.map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name} ({emp.employee_id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="space-y-2 p-3 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                  <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Employee</Label>
+                  <div className="text-sm font-medium text-slate-900 dark:text-slate-50">
+                    {formData.employee_name} ({user?.employee_id})
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
-                <Label htmlFor="leave_type">Leave Type *</Label>
+                <Label htmlFor="leave_type" className="text-sm font-medium text-slate-700 dark:text-slate-300">Leave Type *</Label>
                 <select
                   id="leave_type"
                   data-testid="leave-type-select"
                   value={formData.leave_type}
                   onChange={(e) => setFormData({ ...formData, leave_type: e.target.value })}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  className="flex h-10 w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-50 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:focus:ring-indigo-400"
                   required
                 >
                   <option value="Casual">Casual Leave</option>
@@ -193,7 +224,7 @@ export const Leaves = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="start_date">Start Date *</Label>
+                  <Label htmlFor="start_date" className="text-sm font-medium text-slate-700 dark:text-slate-300">Start Date *</Label>
                   <Input
                     id="start_date"
                     type="date"
@@ -201,10 +232,11 @@ export const Leaves = () => {
                     value={formData.start_date}
                     onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
                     required
+                    className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="end_date">End Date *</Label>
+                  <Label htmlFor="end_date" className="text-sm font-medium text-slate-700 dark:text-slate-300">End Date *</Label>
                   <Input
                     id="end_date"
                     type="date"
@@ -212,22 +244,23 @@ export const Leaves = () => {
                     value={formData.end_date}
                     onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
                     required
+                    className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50 h-10"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label>Number of Days</Label>
+                <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Number of Days</Label>
                 <Input
                   type="number"
                   value={formData.days}
                   readOnly
-                  className="bg-muted"
+                  className="border border-slate-200 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-50 h-10"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="reason">Reason *</Label>
+                <Label htmlFor="reason" className="text-sm font-medium text-slate-700 dark:text-slate-300">Reason *</Label>
                 <Textarea
                   id="reason"
                   data-testid="leave-reason"
@@ -236,14 +269,15 @@ export const Leaves = () => {
                   required
                   placeholder="Reason for leave..."
                   rows={3}
+                  className="border border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-50"
                 />
               </div>
 
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
                   Cancel
                 </Button>
-                <Button type="submit" data-testid="submit-leave-button">
+                <Button type="submit" className="bg-indigo-600 text-white hover:bg-indigo-700 h-10" data-testid="submit-leave-button">
                   Submit Application
                 </Button>
               </div>
@@ -253,13 +287,18 @@ export const Leaves = () => {
       </div>
 
       {/* Status Tabs */}
-      <Card className="p-2">
+      <Card className="p-3 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         <div className="flex gap-2">
           {statusTabs.map((tab) => (
             <Button
               key={tab}
               variant={activeTab === tab ? 'default' : 'ghost'}
               size="sm"
+              className={`h-9 ${
+                activeTab === tab
+                  ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-medium'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
               onClick={() => setActiveTab(tab)}
               data-testid={`status-tab-${tab.toLowerCase()}`}
             >
@@ -272,20 +311,20 @@ export const Leaves = () => {
       {/* Leaves List */}
       <div className="space-y-4">
         {filteredLeaves.map((leave) => (
-          <Card key={leave.id} className="p-6" data-testid={`leave-card-${leave.id}`}>
+          <Card key={leave.id} className="p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900" data-testid={`leave-card-${leave.id}`}>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex-1 space-y-3">
                 <div className="flex items-start justify-between">
                   <div>
-                    <h3 className="text-lg font-semibold">{leave.employee_name}</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">{leave.employee_name}</h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
                       {leave.leave_type} Leave • {leave.days} {leave.days === 1 ? 'day' : 'days'}
                     </p>
                   </div>
-                  <span className={`px-3 py-1 rounded-md text-xs font-medium ${
-                    leave.status === 'Pending' ? 'bg-amber-50 text-amber-700 dark:bg-amber-950' :
-                    leave.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950' :
-                    'bg-rose-50 text-rose-700 dark:bg-rose-950'
+                  <span className={`px-3 py-1 rounded text-xs font-medium ${
+                    leave.status === 'Pending' ? 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300' :
+                    leave.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' :
+                    'bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
                   }`}>
                     {leave.status}
                   </span>
@@ -293,26 +332,26 @@ export const Leaves = () => {
 
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                   <div>
-                    <p className="text-muted-foreground">Start Date</p>
-                    <p className="font-mono font-medium">{leave.start_date}</p>
+                    <p className="text-slate-600 dark:text-slate-400">Start Date</p>
+                    <p className="font-mono font-medium text-slate-900 dark:text-slate-50">{leave.start_date}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">End Date</p>
-                    <p className="font-mono font-medium">{leave.end_date}</p>
+                    <p className="text-slate-600 dark:text-slate-400">End Date</p>
+                    <p className="font-mono font-medium text-slate-900 dark:text-slate-50">{leave.end_date}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Applied On</p>
-                    <p className="font-mono text-xs">{new Date(leave.created_at).toLocaleDateString()}</p>
+                    <p className="text-slate-600 dark:text-slate-400">Applied On</p>
+                    <p className="font-mono text-xs text-slate-600 dark:text-slate-400">{new Date(leave.created_at).toLocaleDateString()}</p>
                   </div>
                 </div>
 
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">Reason:</p>
-                  <p className="text-sm">{leave.reason}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">Reason:</p>
+                  <p className="text-sm text-slate-900 dark:text-slate-50">{leave.reason}</p>
                 </div>
 
                 {leave.approver_name && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
                     {leave.status} by {leave.approver_name}
                   </p>
                 )}
@@ -322,7 +361,7 @@ export const Leaves = () => {
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white h-9"
                     onClick={() => handleLeaveAction(leave.id, 'Approved')}
                     data-testid={`approve-leave-${leave.id}`}
                   >
@@ -331,7 +370,7 @@ export const Leaves = () => {
                   </Button>
                   <Button
                     size="sm"
-                    variant="destructive"
+                    className="bg-rose-600 hover:bg-rose-700 text-white h-9"
                     onClick={() => handleLeaveAction(leave.id, 'Rejected')}
                     data-testid={`reject-leave-${leave.id}`}
                   >
@@ -346,9 +385,9 @@ export const Leaves = () => {
       </div>
 
       {filteredLeaves.length === 0 && (
-        <Card className="p-12 text-center">
+        <Card className="p-12 text-center border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           <Clock className="h-12 w-12 mx-auto mb-2 opacity-20" />
-          <p className="text-muted-foreground">No leave requests found</p>
+          <p className="text-slate-600 dark:text-slate-400">No leave requests found</p>
         </Card>
       )}
     </div>
