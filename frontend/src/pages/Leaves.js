@@ -203,7 +203,7 @@ export const Leaves = () => {
               Apply Leave
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg bg-white border-0 shadow-2xl">
+          <DialogContent className="max-w-lg bg-white border-0 shadow-2xl p-0">
             <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6">
               <DialogHeader>
                 <DialogTitle className="text-xl font-bold text-white">

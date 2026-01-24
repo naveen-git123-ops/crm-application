@@ -286,7 +286,7 @@ export const IDCards = () => {
                   </Button>
                 </DialogTrigger>
                 {selectedEmployee?.id === employee.id && (
-                  <DialogContent className="max-w-6xl bg-gray-50 border-0 shadow-2xl">
+                  <DialogContent className="max-w-6xl bg-gray-50 border-0 shadow-2xl p-0">
                     <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6">
                       <DialogHeader>
                         <DialogTitle className="text-2xl font-bold text-white">
@@ -298,7 +298,7 @@ export const IDCards = () => {
                       </DialogHeader>
                     </div>
 
-                    <div className="space-y-6">
+                    <div className="space-y-6 p-6">
                       {/* Card Side Toggle with better styling */}
                       <div className="flex justify-center">
                         <div className="inline-flex bg-gray-200 rounded-lg p-1">

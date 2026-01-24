@@ -151,11 +151,14 @@ export const Documents = () => {
                 Upload Document
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle className="text-gray-900">Upload Document</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
+            <DialogContent className="max-w-lg bg-white border-0 shadow-2xl p-0">
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6">
+                <DialogHeader>
+                  <DialogTitle className="text-xl font-bold text-white">Upload Document</DialogTitle>
+                  <p className="text-blue-100 text-sm">Attach employee documents securely</p>
+                </DialogHeader>
+              </div>
+              <form onSubmit={handleSubmit} className="space-y-6 p-6">
                 <div className="space-y-2">
                   <Label htmlFor="employee" className="text-sm font-medium text-gray-700">Employee *</Label>
                   <select
@@ -163,7 +166,7 @@ export const Documents = () => {
                     data-testid="document-employee-select"
                     value={formData.employee_id}
                     onChange={(e) => handleEmployeeChange(e.target.value)}
-                    className="flex h-10 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                     required
                   >
                     <option value="">Select employee</option>
@@ -182,7 +185,7 @@ export const Documents = () => {
                     data-testid="document-type-select"
                     value={formData.document_type}
                     onChange={(e) => setFormData({ ...formData, document_type: e.target.value })}
-                    className="flex h-10 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                     required
                   >
                     <option value="Aadhar">Aadhar Card</option>
@@ -202,7 +205,7 @@ export const Documents = () => {
                     data-testid="document-expiry-date"
                     value={formData.expiry_date}
                     onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })}
-                    className="border border-gray-200 h-10"
+                    className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                   />
                 </div>
 
@@ -214,17 +217,17 @@ export const Documents = () => {
                     data-testid="document-file-input"
                     onChange={(e) => setFormData({ ...formData, file: e.target.files[0] })}
                     required
-                    className="border border-gray-200"
+                    className="border border-gray-300"
                   />
                   <p className="text-xs text-gray-600">Max file size: 10MB</p>
                 </div>
 
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-200 text-gray-700 hover:bg-gray-50">
+                <div className="flex justify-end gap-3 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-300 text-gray-700 hover:bg-gray-50">
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={uploading} className="bg-indigo-600 text-white hover:bg-indigo-700 h-10" data-testid="submit-document-button">
-                    {uploading ? 'Uploading...' : 'Upload'}
+                  <Button type="submit" data-testid="upload-submit-button" className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-lg">
+                    Upload
                   </Button>
                 </div>
               </form>

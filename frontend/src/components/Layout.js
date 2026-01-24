@@ -7,7 +7,6 @@ import {
   Users, 
   Calendar, 
   FileText, 
-  CreditCard, 
   Settings, 
   LogOut,
   Menu,
@@ -32,7 +31,6 @@ export const Layout = ({ children }) => {
     { icon: Calendar, label: 'Attendance', path: '/attendance', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
     { icon: FileText, label: 'Leaves', path: '/leaves', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
     { icon: FileText, label: 'Documents', path: '/documents', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: CreditCard, label: 'Payroll', path: '/payroll', roles: ['Admin', 'HR', 'Employee'] },
     { icon: IDCard, label: 'ID Cards', path: '/idcards', roles: ['Admin', 'HR', 'Manager'] },
     { icon: Settings, label: 'Settings', path: '/settings', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
   ];
