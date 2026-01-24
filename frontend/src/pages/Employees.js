@@ -142,16 +142,23 @@ export const Employees = () => {
             if (!open) resetForm();
           }}>
             <DialogTrigger asChild>
-              <Button className="bg-indigo-600 text-white font-medium hover:bg-indigo-700 h-10" data-testid="add-employee-button">
+              <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-lg" data-testid="add-employee-button">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Employee
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle className="text-gray-900">{editingEmployee ? 'Edit Employee' : 'Add New Employee'}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white border-0 shadow-2xl p-0">
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6">
+                <DialogHeader>
+                  <DialogTitle className="text-xl font-bold text-white">
+                    {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
+                  </DialogTitle>
+                  <p className="text-blue-100 text-sm">
+                    {editingEmployee ? 'Update employee details and save changes' : 'Create a new employee profile'}
+                  </p>
+                </DialogHeader>
+              </div>
+              <form onSubmit={handleSubmit} className="space-y-6 p-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="name" className="text-sm font-medium text-gray-700">Full Name *</Label>
@@ -161,7 +168,7 @@ export const Employees = () => {
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       required
-                      className="border border-gray-200 h-10"
+                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     />
                   </div>
                   <div className="space-y-2">
@@ -173,7 +180,7 @@ export const Employees = () => {
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       required
-                      className="border border-gray-200 h-10"
+                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     />
                   </div>
                   <div className="space-y-2">
@@ -183,7 +190,7 @@ export const Employees = () => {
                       data-testid="employee-phone-input"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="border border-gray-200 h-10"
+                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     />
                   </div>
                   <div className="space-y-2">
@@ -194,7 +201,7 @@ export const Employees = () => {
                       value={formData.department}
                       onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                       required
-                      className="border border-gray-200 h-10"
+                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     />
                   </div>
                   <div className="space-y-2">
@@ -205,7 +212,7 @@ export const Employees = () => {
                       value={formData.job_role}
                       onChange={(e) => setFormData({ ...formData, job_role: e.target.value })}
                       required
-                      className="border border-gray-200 h-10"
+                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     />
                   </div>
                   <div className="space-y-2">
@@ -217,7 +224,7 @@ export const Employees = () => {
                       value={formData.joining_date}
                       onChange={(e) => setFormData({ ...formData, joining_date: e.target.value })}
                       required
-                      className="border border-gray-200 h-10"
+                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     />
                   </div>
                   <div className="space-y-2">
@@ -229,7 +236,7 @@ export const Employees = () => {
                       value={formData.salary}
                       onChange={(e) => setFormData({ ...formData, salary: e.target.value })}
                       required
-                      className="border border-gray-200 h-10"
+                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     />
                   </div>
                   <div className="space-y-2">
@@ -239,7 +246,7 @@ export const Employees = () => {
                       data-testid="employee-emergency-input"
                       value={formData.emergency_contact}
                       onChange={(e) => setFormData({ ...formData, emergency_contact: e.target.value })}
-                      className="border border-gray-200 h-10"
+                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     />
                   </div>
                 </div>
@@ -250,14 +257,14 @@ export const Employees = () => {
                     data-testid="employee-address-input"
                     value={formData.address}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    className="border border-gray-200 h-10"
+                    className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                   />
                 </div>
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                <div className="flex justify-end gap-3 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-300 text-gray-700 hover:bg-gray-50">
                     Cancel
                   </Button>
-                  <Button type="submit" data-testid="save-employee-button">
+                  <Button type="submit" data-testid="save-employee-button" className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-lg">
                     {editingEmployee ? 'Update' : 'Add'} Employee
                   </Button>
                 </div>
