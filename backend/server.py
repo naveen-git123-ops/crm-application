@@ -4,15 +4,17 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime
+from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, func, cast
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import IntegrityError
 import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import List, Optional, Literal
 from datetime import datetime, timezone, timedelta
+from calendar import monthrange
 import jwt
 import bcrypt
 from reportlab.lib.pagesizes import letter
@@ -206,12 +208,21 @@ class AttendancePunch(BaseModel):
     employee_id: str
     action: Literal['punch_in', 'punch_out']
 
+class AttendanceSummary(BaseModel):
+    employee_id: str
+    employee_name: str
+    total_days: int
+    present_days: int
+    absent_days: int
+    late_days: int
+    half_day_days: int
+
 class Leave(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     employee_id: str
     employee_name: str
-    leave_type: Literal['Casual', 'Sick', 'Paid', 'WFH']
+    leave_type: Literal['Casual', 'Sick', 'Paid', 'WFH', 'Half Day']
     start_date: str
     end_date: str
     days: int
@@ -224,7 +235,7 @@ class Leave(BaseModel):
 class LeaveCreate(BaseModel):
     employee_id: str
     employee_name: str
-    leave_type: Literal['Casual', 'Sick', 'Paid', 'WFH']
+    leave_type: Literal['Casual', 'Sick', 'Paid', 'WFH', 'Half Day']
     start_date: str
     end_date: str
     days: int
@@ -440,8 +451,11 @@ def create_employee(emp_data: EmployeeCreate, current_user: UserModel = Depends(
     if current_user.role not in ['Admin', 'HR']:
         raise HTTPException(status_code=403, detail='Not authorized')
     
-    count = db.query(EmployeeModel).count()
-    emp_id = f'EMP{str(count + 1).zfill(4)}'
+    max_emp_num = db.query(
+        func.max(cast(func.substr(EmployeeModel.employee_id, 4), Integer))
+    ).scalar()
+    next_emp_num = (max_emp_num or 0) + 1
+    emp_id = f'EMP{str(next_emp_num).zfill(4)}'
     
     new_employee = EmployeeModel(
         employee_id=emp_id,
@@ -456,9 +470,13 @@ def create_employee(emp_data: EmployeeCreate, current_user: UserModel = Depends(
         emergency_contact=emp_data.emergency_contact
     )
     db.add(new_employee)
-    db.commit()
-    db.refresh(new_employee)
-    
+    try:
+        db.commit()
+        db.refresh(new_employee)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Employee email or ID already exists')
+
     return new_employee
 
 @api_router.get('/employees', response_model=List[Employee])
@@ -615,6 +633,56 @@ def get_attendance(month: Optional[str] = None, current_user: UserModel = Depend
     if month:
         query = query.filter(AttendanceModel.date.like(f'{month}%'))
     return query.order_by(AttendanceModel.date.desc()).all()
+
+@api_router.get('/attendance/summary', response_model=List[AttendanceSummary])
+def get_attendance_summary(month: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    year, month_num = [int(part) for part in month.split('-')]
+    total_days = monthrange(year, month_num)[1]
+    today = datetime.now(timezone.utc).date()
+    if year == today.year and month_num == today.month:
+        total_days = today.day
+
+    employee_query = db.query(EmployeeModel)
+    record_query = db.query(AttendanceModel).filter(
+        AttendanceModel.date.like(f'{month}%')
+    )
+
+    if current_user.role == 'Employee':
+        if not current_user.employee_id:
+            raise HTTPException(status_code=404, detail='Employee record not found')
+        employee_query = employee_query.filter(EmployeeModel.employee_id == current_user.employee_id)
+        record_query = record_query.filter(AttendanceModel.employee_id == current_user.employee_id)
+
+    employees = employee_query.all()
+    records = record_query.all()
+
+    summary_map = {
+        emp.employee_id: {
+            'employee_id': emp.employee_id,
+            'employee_name': emp.name,
+            'total_days': total_days,
+            'present_days': 0,
+            'absent_days': 0,
+            'late_days': 0,
+            'half_day_days': 0,
+        }
+        for emp in employees
+    }
+
+    for record in records:
+        data = summary_map.get(record.employee_id)
+        if not data:
+            continue
+        data['present_days'] += 1
+        if record.status == 'Late':
+            data['late_days'] += 1
+        if record.status == 'Half Day':
+            data['half_day_days'] += 1
+
+    for data in summary_map.values():
+        data['absent_days'] = max(data['total_days'] - data['present_days'], 0)
+
+    return list(summary_map.values())
 
 @api_router.get('/attendance/employee/{employee_id}', response_model=List[Attendance])
 def get_employee_attendance(employee_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):

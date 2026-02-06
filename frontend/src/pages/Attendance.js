@@ -16,8 +16,11 @@ export const Attendance = () => {
   const [todayAttendance, setTodayAttendance] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [summaryMonth, setSummaryMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [attendanceSummary, setAttendanceSummary] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const canManageAttendance = ['Admin', 'HR', 'Manager'].includes(user?.role);
 
   useEffect(() => {
     fetchEmployees();
@@ -31,6 +34,18 @@ export const Attendance = () => {
       setSelectedEmployee(user.employee_id);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (selectedEmployee || user?.employee_id) {
+      fetchAttendance();
+    }
+  }, [selectedEmployee, user?.employee_id]);
+
+  useEffect(() => {
+    if (user) {
+      fetchAttendanceSummary(summaryMonth);
+    }
+  }, [summaryMonth, user]);
 
   const fetchEmployees = async () => {
     try {
@@ -63,12 +78,14 @@ export const Attendance = () => {
     }
   };
 
-  // Refetch attendance when selected employee changes (for admins)
-  useEffect(() => {
-    if (selectedEmployee || user?.employee_id) {
-      fetchAttendance();
+  const fetchAttendanceSummary = async (month) => {
+    try {
+      const response = await axios.get(`${API}/attendance/summary`, { params: { month } });
+      setAttendanceSummary(response.data);
+    } catch (error) {
+      toast.error('Failed to load attendance summary');
     }
-  }, [selectedEmployee, user?.employee_id]);
+  };
 
   const handlePunch = async (action) => {
     // For employees, always use their own employee_id
@@ -107,8 +124,6 @@ export const Attendance = () => {
       </div>
     );
   }
-
-  const canManageAttendance = ['Admin', 'HR', 'Manager'].includes(user?.role);
 
   return (
     <div className="space-y-6" data-testid="attendance-page">
@@ -227,6 +242,7 @@ export const Attendance = () => {
       {/* Attendance History */}
       <Card className="p-6 border border-gray-200 bg-white overflow-hidden">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Attendance History</h3>
+
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -270,6 +286,68 @@ export const Attendance = () => {
           <div className="text-center py-12 text-gray-600">
             <CalendarIcon className="h-12 w-12 mx-auto mb-2 opacity-30" />
             <p>No attendance records found</p>
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-6 border border-gray-200 bg-white overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Monthly Attendance Overview</h3>
+            <p className="text-sm text-gray-600">
+              {canManageAttendance
+                ? 'Present vs absent summary for the selected month'
+                : 'Your attendance summary for the selected month'}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-gray-700">Month</label>
+            <input
+              type="month"
+              value={summaryMonth}
+              onChange={(e) => setSummaryMonth(e.target.value)}
+              className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-200">
+                <th className="text-left p-3 text-xs uppercase tracking-wider text-gray-600 font-medium">
+                  {canManageAttendance ? 'Employee' : 'Summary'}
+                </th>
+                <th className="text-left p-3 text-xs uppercase tracking-wider text-gray-600 font-medium">Present</th>
+                <th className="text-left p-3 text-xs uppercase tracking-wider text-gray-600 font-medium">Late</th>
+                <th className="text-left p-3 text-xs uppercase tracking-wider text-gray-600 font-medium">Half Day</th>
+                <th className="text-left p-3 text-xs uppercase tracking-wider text-gray-600 font-medium">Absent</th>
+                <th className="text-left p-3 text-xs uppercase tracking-wider text-gray-600 font-medium">Total Days</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attendanceSummary.map((row) => (
+                <tr key={row.employee_id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
+                  <td className="p-3 text-sm text-gray-900">
+                    <div className="font-medium">
+                      {canManageAttendance ? row.employee_name : 'My Attendance'}
+                    </div>
+                    {canManageAttendance && (
+                      <div className="text-xs text-gray-500">{row.employee_id}</div>
+                    )}
+                  </td>
+                  <td className="p-3 text-sm text-emerald-700 font-medium">{row.present_days}</td>
+                  <td className="p-3 text-sm text-amber-700 font-medium">{row.late_days}</td>
+                  <td className="p-3 text-sm text-blue-700 font-medium">{row.half_day_days}</td>
+                  <td className="p-3 text-sm text-rose-700 font-medium">{row.absent_days}</td>
+                  <td className="p-3 text-sm text-gray-700 font-medium">{row.total_days}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {attendanceSummary.length === 0 && (
+          <div className="text-center py-8 text-gray-600">
+            <p>No summary available for this month.</p>
           </div>
         )}
       </Card>

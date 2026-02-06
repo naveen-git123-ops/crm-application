@@ -69,7 +69,7 @@ function App() {
               }
             />
             
-            <Route
+            {/* <Route
               path="/documents"
               element={
                 <ProtectedRoute>
@@ -78,7 +78,7 @@ function App() {
                   </Layout>
                 </ProtectedRoute>
               }
-            />
+            /> */}
             
             <Route
               path="/payroll"

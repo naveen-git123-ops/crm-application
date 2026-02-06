@@ -260,6 +260,7 @@ export const Leaves = () => {
                   <option value="Sick">Sick Leave</option>
                   <option value="Paid">Paid Leave</option>
                   <option value="WFH">Work From Home</option>
+                  <option value="Half Day">Half Day</option>
                 </select>
               </div>
 
