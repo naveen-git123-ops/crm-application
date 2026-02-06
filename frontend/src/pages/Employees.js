@@ -142,7 +142,7 @@ export const Employees = () => {
             if (!open) resetForm();
           }}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-lg" data-testid="add-employee-button">
+              <Button className="bg-blue-600 text-white hover:bg-blue-700" data-testid="add-employee-button">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Employee
               </Button>
@@ -264,7 +264,7 @@ export const Employees = () => {
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-300 text-gray-700 hover:bg-gray-50">
                     Cancel
                   </Button>
-                  <Button type="submit" data-testid="save-employee-button" className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-lg">
+                  <Button type="submit" data-testid="save-employee-button" className="bg-blue-600 text-white hover:bg-blue-700">
                     {editingEmployee ? 'Update' : 'Add'} Employee
                   </Button>
                 </div>
@@ -349,7 +349,7 @@ export const Employees = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 h-9 border-gray-200 text-rose-600 hover:bg-rose-50"
+                    className="flex-1 h-9 border-gray-200 text-red-600 hover:bg-red-50"
                     onClick={() => handleDelete(employee.id)}
                     data-testid={`delete-employee-${employee.employee_id}`}
                   >

@@ -15,6 +15,10 @@ import { Documents } from '@/pages/Documents';
 import { Payroll } from '@/pages/Payroll';
 import { IDCards } from '@/pages/IDCards';
 import { Settings } from '@/pages/Settings';
+import { Expenses } from '@/pages/Expenses';
+import { Roles } from '@/pages/Roles';
+import { Workspace } from '@/pages/Workspace';
+import { Leads } from '@/pages/Leads';
 
 function App() {
   return (
@@ -31,6 +35,17 @@ function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Dashboard />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/leads"
+              element={
+                <ProtectedRoute allowedRoles={['Admin', 'Manager']}>
+                  <Layout>
+                    <Leads />
                   </Layout>
                 </ProtectedRoute>
               }
@@ -64,6 +79,39 @@ function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Leaves />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/expenses"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Expenses />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/roles"
+              element={
+                <ProtectedRoute allowedRoles={['Admin']}>
+                  <Layout>
+                    <Roles />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/workspace"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Workspace />
                   </Layout>
                 </ProtectedRoute>
               }

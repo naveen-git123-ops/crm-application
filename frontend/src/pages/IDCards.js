@@ -241,7 +241,7 @@ export const IDCards = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="border border-gray-200 h-10"
           />
-          <Button className="bg-indigo-600 text-white font-medium hover:bg-indigo-700 h-10 gap-2">
+          <Button className="bg-blue-600 text-white font-medium hover:bg-blue-700 h-10 gap-2">
             <Search className="h-4 w-4" />
             Search
           </Button>
@@ -340,7 +340,7 @@ export const IDCards = () => {
                       <div className="flex gap-4 justify-center p-6 bg-white rounded-lg border border-gray-200">
                         <Button
                           onClick={handleDownload}
-                          className="px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 font-semibold shadow-lg transition-all duration-200"
+                          className="px-8 py-3 bg-green-600 text-white hover:bg-green-700 font-semibold"
                         >
                           <Download className="h-5 w-5 mr-2" />
                           Download HD
@@ -348,7 +348,7 @@ export const IDCards = () => {
                         <Button
                           onClick={handlePrint}
                           variant="outline"
-                          className="px-8 py-3 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-semibold transition-all duration-200"
+                          className="px-8 py-3 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-semibold"
                         >
                           <Printer className="h-5 w-5 mr-2" />
                           Print Card

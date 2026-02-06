@@ -198,13 +198,13 @@ export const Leaves = () => {
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-indigo-600 text-white font-medium hover:bg-indigo-700 h-10" data-testid="apply-leave-button">
+            <Button className="bg-blue-600 text-white font-medium hover:bg-blue-700 h-10" data-testid="apply-leave-button">
               <Plus className="h-4 w-4 mr-2" />
               Apply Leave
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg bg-white border-0 shadow-2xl p-0">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
               <DialogHeader>
                 <DialogTitle className="text-xl font-bold text-white">
                   Apply for Leave
@@ -326,7 +326,7 @@ export const Leaves = () => {
                 </Button>
                 <Button 
                   type="submit" 
-                  className="px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 font-medium shadow-lg"
+                  className="px-6 py-2 bg-blue-600 text-white hover:bg-blue-700 font-medium"
                   data-testid="submit-leave-button"
                 >
                   Submit Application
@@ -347,7 +347,7 @@ export const Leaves = () => {
               size="sm"
               className={`h-9 ${
                 activeTab === tab
-                  ? 'bg-indigo-50 text-indigo-600 font-medium'
+                  ? 'bg-blue-50 text-blue-700 font-medium'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
               onClick={() => setActiveTab(tab)}

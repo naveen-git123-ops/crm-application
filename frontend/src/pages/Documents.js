@@ -146,7 +146,7 @@ export const Documents = () => {
         {canManageDocuments && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-indigo-600 text-white font-medium hover:bg-indigo-700 h-10" data-testid="upload-document-button">
+              <Button className="bg-blue-600 text-white font-medium hover:bg-blue-700 h-10" data-testid="upload-document-button">
                 <Upload className="h-4 w-4 mr-2" />
                 Upload Document
               </Button>
@@ -226,7 +226,7 @@ export const Documents = () => {
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-300 text-gray-700 hover:bg-gray-50">
                     Cancel
                   </Button>
-                  <Button type="submit" data-testid="upload-submit-button" className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-lg">
+                  <Button type="submit" data-testid="upload-submit-button" className="bg-blue-600 text-white hover:bg-blue-700">
                     Upload
                   </Button>
                 </div>
@@ -285,7 +285,7 @@ export const Documents = () => {
 
                 <Button
                   variant="outline"
-                  className="w-full border-gray-200 text-indigo-600 hover:bg-indigo-50 h-10"
+                  className="w-full border-gray-200 text-blue-600 hover:bg-blue-50 h-10"
                   onClick={() => handleDownload(document.id, document.file_name)}
                   data-testid={`download-document-${document.id}`}
                 >

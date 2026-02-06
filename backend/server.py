@@ -111,6 +111,55 @@ class DocumentModel(Base):
     expiry_date = Column(String, nullable=True)
     uploaded_at = Column(DateTime, default=datetime.now)
 
+class ExpenseModel(Base):
+    __tablename__ = "expenses"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String, index=True)
+    employee_name = Column(String)
+    amount = Column(Float)
+    category = Column(String)
+    description = Column(String)
+    receipt_path = Column(String, nullable=True)
+    status = Column(String, default='Pending')
+    approver_id = Column(String, nullable=True)
+    approver_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+class DailyWorkLogModel(Base):
+    __tablename__ = "daily_work_logs"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String, index=True)
+    employee_name = Column(String)
+    log_date = Column(String, index=True)
+    summary = Column(String)
+    created_at = Column(DateTime, default=datetime.now)
+
+class LeadModel(Base):
+    __tablename__ = "leads"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    contact_name = Column(String, index=True)
+    company = Column(String, index=True)
+    email = Column(String, index=True)
+    phone = Column(String, nullable=True)
+    source = Column(String, default='Other')
+    status = Column(String, default='New', index=True)
+    value = Column(Float, nullable=True)
+    notes = Column(String, nullable=True)
+    assigned_to_employee_id = Column(String, nullable=True, index=True)
+    assigned_to_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class LeadActivityModel(Base):
+    __tablename__ = "lead_activities"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id = Column(String, index=True)
+    activity_type = Column(String)
+    summary = Column(String)
+    created_by_id = Column(String, nullable=True)
+    created_by_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
 # Create all tables
 Base.metadata.create_all(bind=engine)
 
@@ -256,6 +305,109 @@ class Document(BaseModel):
     file_path: str
     expiry_date: Optional[str] = None
     uploaded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class Expense(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    employee_id: str
+    employee_name: str
+    amount: float
+    category: str
+    description: str
+    receipt_path: Optional[str] = None
+    status: Literal['Pending', 'Approved', 'Rejected'] = 'Pending'
+    approver_id: Optional[str] = None
+    approver_name: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ExpenseCreate(BaseModel):
+    employee_id: str
+    employee_name: str
+    amount: float
+    category: str
+    description: str
+
+class ExpenseAction(BaseModel):
+    status: Literal['Approved', 'Rejected']
+    approver_id: str
+    approver_name: str
+
+class DailyWorkLog(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    employee_id: str
+    employee_name: str
+    log_date: str
+    summary: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class DailyWorkLogCreate(BaseModel):
+    employee_id: str
+    employee_name: str
+    log_date: str
+    summary: str
+
+class UserRoleUpdate(BaseModel):
+    role: Literal['Admin', 'HR', 'Manager', 'Employee']
+
+class Lead(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    contact_name: str
+    company: str
+    email: str
+    phone: Optional[str] = None
+    source: str = 'Other'
+    status: str = 'New'
+    value: Optional[float] = None
+    notes: Optional[str] = None
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+
+class LeadCreate(BaseModel):
+    contact_name: str
+    company: str
+    email: EmailStr
+    phone: Optional[str] = None
+    source: Literal['Website', 'Referral', 'Cold Call', 'Social Media', 'Partner', 'Exhibition', 'Other'] = 'Other'
+    status: Literal['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'] = 'New'
+    value: Optional[float] = None
+    notes: Optional[str] = None
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+
+class LeadUpdate(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    contact_name: Optional[str] = None
+    company: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    source: Optional[Literal['Website', 'Referral', 'Cold Call', 'Social Media', 'Partner', 'Exhibition', 'Other']] = None
+    status: Optional[Literal['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost']] = None
+    value: Optional[float] = None
+    notes: Optional[str] = None
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+
+class LeadActivity(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    lead_id: str
+    activity_type: Literal['Call', 'Email', 'Meeting', 'Note'] = 'Note'
+    summary: str
+    created_by_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class LeadActivityCreate(BaseModel):
+    activity_type: Literal['Call', 'Email', 'Meeting', 'Note'] = 'Note'
+    summary: str
+
+class LeadStats(BaseModel):
+    total: int
+    by_status: dict
 
 class DashboardStats(BaseModel):
     total_employees: int
@@ -795,6 +947,347 @@ def download_document(document_id: str, current_user: UserModel = Depends(get_cu
         raise HTTPException(status_code=404, detail='File not found')
     
     return FileResponse(file_path, filename=document.file_name)
+
+# ============= EXPENSE ROUTES =============
+
+@api_router.post('/expenses', response_model=Expense)
+def create_expense(expense_data: ExpenseCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    new_expense = ExpenseModel(
+        employee_id=expense_data.employee_id,
+        employee_name=expense_data.employee_name,
+        amount=expense_data.amount,
+        category=expense_data.category,
+        description=expense_data.description
+    )
+    db.add(new_expense)
+    db.commit()
+    db.refresh(new_expense)
+    return new_expense
+
+@api_router.post('/expenses/{expense_id}/receipt')
+def upload_expense_receipt(
+    expense_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    expense = db.query(ExpenseModel).filter(ExpenseModel.id == expense_id).first()
+    if not expense:
+        raise HTTPException(status_code=404, detail='Expense not found')
+    if expense.employee_id != current_user.employee_id and current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized to upload receipt for this expense')
+    expenses_folder = UPLOAD_DIR / 'expenses'
+    expenses_folder.mkdir(exist_ok=True)
+    emp_folder = expenses_folder / (expense.employee_id or 'unknown')
+    emp_folder.mkdir(exist_ok=True)
+    filename = f"receipt_{uuid.uuid4()}{Path(file.filename).suffix or '.jpg'}"
+    filepath = emp_folder / filename
+    with open(filepath, 'wb') as f:
+        f.write(file.file.read())
+    receipt_path = f"/uploads/expenses/{expense.employee_id or 'unknown'}/{filename}"
+    expense.receipt_path = receipt_path
+    db.commit()
+    db.refresh(expense)
+    return {'receipt_path': receipt_path, 'message': 'Receipt uploaded successfully'}
+
+@api_router.get('/expenses', response_model=List[Expense])
+def get_expenses(
+    status: Optional[str] = None,
+    employee_id: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(ExpenseModel)
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        query = query.filter(ExpenseModel.employee_id == current_user.employee_id)
+    elif employee_id:
+        query = query.filter(ExpenseModel.employee_id == employee_id)
+    if status:
+        query = query.filter(ExpenseModel.status == status)
+    return query.order_by(ExpenseModel.created_at.desc()).all()
+
+@api_router.put('/expenses/{expense_id}/action', response_model=Expense)
+def update_expense_status(
+    expense_id: str,
+    action: ExpenseAction,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    expense = db.query(ExpenseModel).filter(ExpenseModel.id == expense_id).first()
+    if not expense:
+        raise HTTPException(status_code=404, detail='Expense not found')
+    expense.status = action.status
+    expense.approver_id = action.approver_id
+    expense.approver_name = action.approver_name
+    db.commit()
+    db.refresh(expense)
+    return expense
+
+# ============= USERS / ROLES ROUTES =============
+
+@api_router.get('/users', response_model=List[UserDetails])
+def get_users(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can access user/role management')
+    users = db.query(UserModel).all()
+    result = []
+    for u in users:
+        data = {
+            'id': u.id,
+            'email': u.email,
+            'name': u.name,
+            'role': u.role,
+            'employee_id': u.employee_id,
+            'created_at': u.created_at,
+            'phone': None,
+            'department': None,
+            'job_role': None,
+            'joining_date': None,
+            'salary': None,
+            'status': None,
+            'profile_photo': None,
+            'address': None,
+            'emergency_contact': None
+        }
+        if u.employee_id:
+            emp = db.query(EmployeeModel).filter(EmployeeModel.employee_id == u.employee_id).first()
+            if emp:
+                data.update({
+                    'phone': emp.phone,
+                    'department': emp.department,
+                    'job_role': emp.job_role,
+                    'joining_date': emp.joining_date,
+                    'salary': emp.salary,
+                    'status': emp.status,
+                    'profile_photo': emp.profile_photo,
+                    'address': emp.address,
+                    'emergency_contact': emp.emergency_contact
+                })
+        result.append(data)
+    return result
+
+@api_router.put('/users/{user_id}/role', response_model=UserDetails)
+def update_user_role(
+    user_id: str,
+    payload: UserRoleUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can change user roles')
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail='User not found')
+    user.role = payload.role
+    db.commit()
+    db.refresh(user)
+    user_data = {
+        'id': user.id,
+        'email': user.email,
+        'name': user.name,
+        'role': user.role,
+        'employee_id': user.employee_id,
+        'created_at': user.created_at,
+        'phone': None,
+        'department': None,
+        'job_role': None,
+        'joining_date': None,
+        'salary': None,
+        'status': None,
+        'profile_photo': None,
+        'address': None,
+        'emergency_contact': None
+    }
+    if user.employee_id:
+        emp = db.query(EmployeeModel).filter(EmployeeModel.employee_id == user.employee_id).first()
+        if emp:
+            user_data.update({
+                'phone': emp.phone,
+                'department': emp.department,
+                'job_role': emp.job_role,
+                'joining_date': emp.joining_date,
+                'salary': emp.salary,
+                'status': emp.status,
+                'profile_photo': emp.profile_photo,
+                'address': emp.address,
+                'emergency_contact': emp.emergency_contact
+            })
+    return user_data
+
+# ============= DAILY WORK LOG ROUTES =============
+
+@api_router.post('/daily-work-logs', response_model=DailyWorkLog)
+def create_daily_work_log(
+    data: DailyWorkLogCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if data.employee_id != current_user.employee_id and current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to submit work log for another employee')
+    existing = db.query(DailyWorkLogModel).filter(
+        DailyWorkLogModel.employee_id == data.employee_id,
+        DailyWorkLogModel.log_date == data.log_date
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail='Work log already submitted for this date')
+    new_log = DailyWorkLogModel(
+        employee_id=data.employee_id,
+        employee_name=data.employee_name,
+        log_date=data.log_date,
+        summary=data.summary
+    )
+    db.add(new_log)
+    db.commit()
+    db.refresh(new_log)
+    return new_log
+
+@api_router.get('/daily-work-logs', response_model=List[DailyWorkLog])
+def get_daily_work_logs(
+    employee_id: Optional[str] = None,
+    month: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(DailyWorkLogModel)
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        query = query.filter(DailyWorkLogModel.employee_id == current_user.employee_id)
+    elif employee_id:
+        query = query.filter(DailyWorkLogModel.employee_id == employee_id)
+    if month:
+        query = query.filter(DailyWorkLogModel.log_date.like(f'{month}%'))
+    return query.order_by(DailyWorkLogModel.log_date.desc()).all()
+
+# ============= LEADS ROUTES (Admin, Manager only) =============
+
+def require_admin_or_manager(current_user: UserModel = Depends(get_current_user)):
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Only Admin and Manager can access leads')
+    return current_user
+
+@api_router.get('/leads', response_model=List[Lead])
+def get_leads(
+    status: Optional[str] = None,
+    source: Optional[str] = None,
+    assigned_to_employee_id: Optional[str] = None,
+    current_user: UserModel = Depends(require_admin_or_manager),
+    db: Session = Depends(get_db)
+):
+    query = db.query(LeadModel)
+    if status:
+        query = query.filter(LeadModel.status == status)
+    if source:
+        query = query.filter(LeadModel.source == source)
+    if assigned_to_employee_id:
+        query = query.filter(LeadModel.assigned_to_employee_id == assigned_to_employee_id)
+    return query.order_by(LeadModel.updated_at.desc()).all()
+
+@api_router.get('/leads/stats', response_model=LeadStats)
+def get_lead_stats(
+    current_user: UserModel = Depends(require_admin_or_manager),
+    db: Session = Depends(get_db)
+):
+    leads = db.query(LeadModel).all()
+    by_status = {}
+    for lead in leads:
+        by_status[lead.status] = by_status.get(lead.status, 0) + 1
+    return LeadStats(total=len(leads), by_status=by_status)
+
+@api_router.post('/leads', response_model=Lead)
+def create_lead(
+    data: LeadCreate,
+    current_user: UserModel = Depends(require_admin_or_manager),
+    db: Session = Depends(get_db)
+):
+    new_lead = LeadModel(
+        contact_name=data.contact_name,
+        company=data.company,
+        email=data.email,
+        phone=data.phone,
+        source=data.source,
+        status=data.status,
+        value=data.value,
+        notes=data.notes,
+        assigned_to_employee_id=data.assigned_to_employee_id,
+        assigned_to_name=data.assigned_to_name
+    )
+    db.add(new_lead)
+    db.commit()
+    db.refresh(new_lead)
+    return new_lead
+
+@api_router.get('/leads/{lead_id}', response_model=Lead)
+def get_lead(
+    lead_id: str,
+    current_user: UserModel = Depends(require_admin_or_manager),
+    db: Session = Depends(get_db)
+):
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    return lead
+
+@api_router.put('/leads/{lead_id}', response_model=Lead)
+def update_lead(
+    lead_id: str,
+    data: LeadUpdate,
+    current_user: UserModel = Depends(require_admin_or_manager),
+    db: Session = Depends(get_db)
+):
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(lead, key, value)
+    lead.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(lead)
+    return lead
+
+@api_router.delete('/leads/{lead_id}')
+def delete_lead(
+    lead_id: str,
+    current_user: UserModel = Depends(require_admin_or_manager),
+    db: Session = Depends(get_db)
+):
+    db.query(LeadActivityModel).filter(LeadActivityModel.lead_id == lead_id).delete()
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    db.delete(lead)
+    db.commit()
+    return {'message': 'Lead deleted'}
+
+@api_router.get('/leads/{lead_id}/activities', response_model=List[LeadActivity])
+def get_lead_activities(
+    lead_id: str,
+    current_user: UserModel = Depends(require_admin_or_manager),
+    db: Session = Depends(get_db)
+):
+    return db.query(LeadActivityModel).filter(LeadActivityModel.lead_id == lead_id).order_by(LeadActivityModel.created_at.desc()).all()
+
+@api_router.post('/leads/{lead_id}/activities', response_model=LeadActivity)
+def add_lead_activity(
+    lead_id: str,
+    data: LeadActivityCreate,
+    current_user: UserModel = Depends(require_admin_or_manager),
+    db: Session = Depends(get_db)
+):
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    activity = LeadActivityModel(
+        lead_id=lead_id,
+        activity_type=data.activity_type,
+        summary=data.summary,
+        created_by_id=current_user.id,
+        created_by_name=current_user.name
+    )
+    db.add(activity)
+    db.commit()
+    db.refresh(activity)
+    return activity
 
 # ============= PAYROLL ROUTES =============
 

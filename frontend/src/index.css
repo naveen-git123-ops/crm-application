@@ -68,4 +68,65 @@
   .font-mono {
     font-family: 'JetBrains Mono', monospace;
   }
+
+  /* Fix text visibility in form elements */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="time"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="search"],
+  textarea,
+  select {
+    color: rgb(17, 24, 39) !important; /* text-gray-900 */
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(156, 163, 175) !important; /* text-gray-400 */
+  }
+
+  select option {
+    color: rgb(17, 24, 39) !important; /* text-gray-900 */
+    background-color: white !important;
+  }
+
+  /* Ensure select dropdowns have visible text */
+  select {
+    background-color: white !important;
+  }
+
+  /* Fix for disabled inputs */
+  input:disabled,
+  textarea:disabled,
+  select:disabled {
+    color: rgb(107, 114, 128) !important; /* text-gray-500 */
+  }
+
+  /* Ensure all buttons have visible text */
+  button {
+    color: inherit;
+  }
+
+  button[class*="bg-blue"],
+  button[class*="bg-green"],
+  button[class*="bg-red"],
+  button[class*="bg-emerald"],
+  button[class*="bg-rose"] {
+    color: white !important;
+  }
+
+  button[class*="bg-white"],
+  button[class*="bg-gray"]:not([class*="text-"]) {
+    color: rgb(17, 24, 39) !important; /* text-gray-900 */
+  }
+
+  /* Remove yellow hover states */
+  button:hover[class*="yellow"],
+  button:hover[class*="amber"]:not([class*="text-amber"]):not([class*="bg-amber"]) {
+    background-color: inherit !important;
+  }
 }
