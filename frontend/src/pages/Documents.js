@@ -12,6 +12,17 @@ import { Upload, Download, FileText, AlertCircle } from 'lucide-react';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
+const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+
+const DOCUMENT_TYPES = [
+  { value: 'Aadhar', label: 'Aadhar Card' },
+  { value: 'PAN', label: 'PAN Card' },
+  { value: 'Education Certificate', label: 'Education Certificate' },
+  { value: 'Offer Letter', label: 'Offer Letter' },
+  { value: 'Resume', label: 'Resume' },
+  { value: 'Other', label: 'Other' },
+];
+
 export const Documents = () => {
   const { user } = useAuth();
   const [documents, setDocuments] = useState([]);
@@ -26,15 +37,29 @@ export const Documents = () => {
     expiry_date: '',
     file: null
   });
+  const [selectedEmployeeForView, setSelectedEmployeeForView] = useState('');
+
+  const canViewAllDocuments = ['Admin', 'HR', 'Manager'].includes(user?.role);
+  const canUploadForOthers = ['Admin', 'HR', 'Manager'].includes(user?.role);
 
   useEffect(() => {
     fetchEmployees();
     fetchDocuments();
   }, []);
 
+  useEffect(() => {
+    if (dialogOpen && !canUploadForOthers && user?.employee_id) {
+      setFormData(prev => ({
+        ...prev,
+        employee_id: user.employee_id,
+        employee_name: user.name || ''
+      }));
+    }
+  }, [dialogOpen, canUploadForOthers, user?.employee_id, user?.name]);
+
   const fetchEmployees = async () => {
     try {
-      const response = await axios.get(`${API}/employees`);
+      const response = await axios.get(`${API}/employees`, authHeaders());
       setEmployees(response.data);
     } catch (error) {
       toast.error('Failed to load employees');
@@ -43,7 +68,7 @@ export const Documents = () => {
 
   const fetchDocuments = async () => {
     try {
-      const response = await axios.get(`${API}/documents`);
+      const response = await axios.get(`${API}/documents`, authHeaders());
       setDocuments(response.data);
     } catch (error) {
       toast.error('Failed to load documents');
@@ -71,7 +96,10 @@ export const Documents = () => {
 
     try {
       await axios.post(`${API}/documents/upload`, uploadFormData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: {
+          ...authHeaders().headers,
+          'Content-Type': 'multipart/form-data'
+        }
       });
       toast.success('Document uploaded successfully');
       setDialogOpen(false);
@@ -87,6 +115,7 @@ export const Documents = () => {
   const handleDownload = async (documentId, fileName) => {
     try {
       const response = await axios.get(`${API}/documents/${documentId}/download`, {
+        ...authHeaders(),
         responseType: 'blob'
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -112,16 +141,14 @@ export const Documents = () => {
     });
   };
 
-  const handleEmployeeChange = (employeeId) => {
-    const employee = employees.find(emp => emp.id === employeeId);
+  const handleEmployeeChange = (businessEmployeeId) => {
+    const employee = employees.find(emp => emp.employee_id === businessEmployeeId);
     setFormData({
       ...formData,
-      employee_id: employeeId,
+      employee_id: businessEmployeeId,
       employee_name: employee ? employee.name : ''
     });
   };
-
-  const canManageDocuments = ['Admin', 'HR'].includes(user?.role);
 
   if (loading) {
     return (
@@ -131,9 +158,10 @@ export const Documents = () => {
     );
   }
 
-  const filteredDocuments = canManageDocuments
-    ? documents
-    : documents.filter(doc => doc.employee_id === user?.employee_id);
+  const baseDocuments = canViewAllDocuments ? documents : documents.filter(doc => String(doc.employee_id) === String(user?.employee_id));
+  const filteredDocuments = canViewAllDocuments && selectedEmployeeForView
+    ? baseDocuments.filter(doc => String(doc.employee_id) === String(selectedEmployeeForView))
+    : baseDocuments;
 
   return (
     <div className="space-y-6" data-testid="documents-page">
@@ -141,24 +169,24 @@ export const Documents = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Documents</h1>
-          <p className="text-gray-600 text-sm mt-1">Manage employee documents securely</p>
+          <p className="text-gray-600 text-sm mt-1">Upload essential documents (Aadhar, PAN, education certificates). Who can view is set in Role Management.</p>
         </div>
-        {canManageDocuments && (
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 text-white font-medium hover:bg-blue-700 h-10" data-testid="upload-document-button">
-                <Upload className="h-4 w-4 mr-2" />
-                Upload Document
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg bg-white border-0 shadow-2xl p-0">
-              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6">
-                <DialogHeader>
-                  <DialogTitle className="text-xl font-bold text-white">Upload Document</DialogTitle>
-                  <p className="text-blue-100 text-sm">Attach employee documents securely</p>
-                </DialogHeader>
-              </div>
-              <form onSubmit={handleSubmit} className="space-y-6 p-6">
+        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+          <DialogTrigger asChild>
+            <Button className="bg-blue-600 text-white font-medium hover:bg-blue-700 h-10" data-testid="upload-document-button">
+              <Upload className="h-4 w-4 mr-2" />
+              Upload Document
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-lg bg-white border-0 shadow-2xl p-0">
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold text-white">Upload Document</DialogTitle>
+                <p className="text-blue-100 text-sm">{canUploadForOthers ? 'Attach document for an employee' : 'Upload your essential documents after joining'}</p>
+              </DialogHeader>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-6 p-6">
+              {canUploadForOthers ? (
                 <div className="space-y-2">
                   <Label htmlFor="employee" className="text-sm font-medium text-gray-700">Employee *</Label>
                   <select
@@ -171,31 +199,37 @@ export const Documents = () => {
                   >
                     <option value="">Select employee</option>
                     {employees.map((emp) => (
-                      <option key={emp.id} value={emp.id}>
+                      <option key={emp.id} value={emp.employee_id}>
                         {emp.name} ({emp.employee_id})
                       </option>
                     ))}
                   </select>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="document_type" className="text-sm font-medium text-gray-700">Document Type *</Label>
-                  <select
-                    id="document_type"
-                    data-testid="document-type-select"
-                    value={formData.document_type}
-                    onChange={(e) => setFormData({ ...formData, document_type: e.target.value })}
-                    className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                    required
-                  >
-                    <option value="Aadhar">Aadhar Card</option>
-                    <option value="PAN">PAN Card</option>
-                    <option value="Resume">Resume</option>
-                    <option value="Certificate">Certificate</option>
-                    <option value="Offer Letter">Offer Letter</option>
-                    <option value="Other">Other</option>
-                  </select>
+              ) : (
+                <div className="space-y-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <Label className="text-sm font-medium text-gray-700">Uploading for</Label>
+                  <p className="font-medium text-gray-900">{user?.name}</p>
+                  <p className="text-sm text-gray-600">ID: {user?.employee_id}</p>
+                  <input type="hidden" name="employee_id" value={user?.employee_id || ''} />
+                  <input type="hidden" name="employee_name" value={user?.name || ''} />
                 </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="document_type" className="text-sm font-medium text-gray-700">Document Type *</Label>
+                <select
+                  id="document_type"
+                  data-testid="document-type-select"
+                  value={formData.document_type}
+                  onChange={(e) => setFormData({ ...formData, document_type: e.target.value })}
+                  className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  required
+                >
+                  {DOCUMENT_TYPES.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="expiry_date" className="text-sm font-medium text-gray-700">Expiry Date (Optional)</Label>
@@ -233,10 +267,41 @@ export const Documents = () => {
               </form>
             </DialogContent>
           </Dialog>
-        )}
       </div>
 
-      {/* Documents Grid */}
+      {/* Admin/HR: Select employee to view their documents */}
+      {canViewAllDocuments && (
+        <Card className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
+          <Label className="text-sm font-semibold text-gray-700">View documents for</Label>
+          <select
+            value={selectedEmployeeForView}
+            onChange={(e) => setSelectedEmployeeForView(e.target.value)}
+            className="mt-2 flex h-10 w-full max-w-sm rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+          >
+            <option value="">All employees</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.employee_id}>
+                {emp.name} ({emp.employee_id})
+              </option>
+            ))}
+          </select>
+          {selectedEmployeeForView && (
+            <p className="mt-2 text-sm text-gray-600">
+              Showing {filteredDocuments.length} document(s) for {employees.find(e => e.employee_id === selectedEmployeeForView)?.name || selectedEmployeeForView}
+            </p>
+          )}
+        </Card>
+      )}
+
+      {/* Employee: Your documents section */}
+      {!canViewAllDocuments && (
+        <div className="flex items-center gap-2">
+          <FileText className="h-5 w-5 text-blue-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Your documents</h2>
+        </div>
+      )}
+
+      {/* Documents list */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredDocuments.map((document) => {
           const isExpired = document.expiry_date && new Date(document.expiry_date) < new Date();

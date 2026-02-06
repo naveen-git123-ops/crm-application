@@ -8,10 +8,12 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Check, X, Clock } from 'lucide-react';
+import { Plus, Check, X, Clock, Calendar, Settings2 } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
+
+const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
 
 export const Leaves = () => {
   const { user } = useAuth();
@@ -20,6 +22,10 @@ export const Leaves = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
+  const [balance, setBalance] = useState(null);
+  const [policy, setPolicy] = useState(null);
+  const [policyInput, setPolicyInput] = useState('');
+  const [savingPolicy, setSavingPolicy] = useState(false);
   const [formData, setFormData] = useState({
     employee_id: '',
     employee_name: '',
@@ -33,7 +39,48 @@ export const Leaves = () => {
   useEffect(() => {
     fetchEmployees();
     fetchLeaves();
+    fetchLeaveBalance();
+    fetchLeavePolicy();
   }, []);
+
+  const fetchLeaveBalance = async () => {
+    try {
+      const res = await axios.get(`${API}/leave-balance`, authHeaders());
+      setBalance(res.data);
+    } catch {
+      setBalance({ allowed: 0, taken: 0, pending: 0, balance: 0 });
+    }
+  };
+
+  const fetchLeavePolicy = async () => {
+    try {
+      const res = await axios.get(`${API}/leave-policy`, authHeaders());
+      setPolicy(res.data);
+      if (res.data.paid_leaves_per_year != null) setPolicyInput(String(res.data.paid_leaves_per_year));
+    } catch {
+      setPolicy({ paid_leaves_per_year: 12 });
+      setPolicyInput('12');
+    }
+  };
+
+  const saveLeavePolicy = async () => {
+    const num = parseInt(policyInput, 10);
+    if (isNaN(num) || num < 0) {
+      toast.error('Enter a valid non-negative number');
+      return;
+    }
+    setSavingPolicy(true);
+    try {
+      await axios.put(`${API}/leave-policy`, { paid_leaves_per_year: num }, authHeaders());
+      setPolicy({ paid_leaves_per_year: num });
+      toast.success('Leave policy updated');
+      fetchLeaveBalance();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to update policy');
+    } finally {
+      setSavingPolicy(false);
+    }
+  };
 
   useEffect(() => {
     // When dialog opens, if user is an employee, auto-fill their employee ID
@@ -83,6 +130,7 @@ export const Leaves = () => {
       setDialogOpen(false);
       resetForm();
       fetchLeaves();
+      fetchLeaveBalance();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to submit leave');
     }
@@ -97,6 +145,7 @@ export const Leaves = () => {
       });
       toast.success(`Leave ${status.toLowerCase()} successfully`);
       fetchLeaves();
+      fetchLeaveBalance();
     } catch (error) {
       toast.error('Failed to update leave status');
     }
@@ -144,7 +193,7 @@ export const Leaves = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
       </div>
     );
   }
@@ -203,8 +252,8 @@ export const Leaves = () => {
               Apply Leave
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg bg-white border-0 shadow-2xl p-0">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
+          <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+            <div className="bg-blue-600 text-white p-6 rounded-t-lg">
               <DialogHeader>
                 <DialogTitle className="text-xl font-bold text-white">
                   Apply for Leave
@@ -337,15 +386,74 @@ export const Leaves = () => {
         </Dialog>
       </div>
 
+      {/* Leave balance (current user) */}
+      {balance != null && (
+        <Card className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <Calendar className="h-5 w-5 text-blue-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Your leave balance ({balance.year || new Date().getFullYear()})</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="rounded-lg bg-gray-50 p-3">
+              <p className="text-xs font-medium text-gray-500 uppercase">Allowed</p>
+              <p className="text-xl font-bold text-gray-900">{balance.allowed}</p>
+            </div>
+            <div className="rounded-lg bg-blue-50 p-3">
+              <p className="text-xs font-medium text-blue-600 uppercase">Taken</p>
+              <p className="text-xl font-bold text-blue-700">{balance.taken}</p>
+            </div>
+            <div className="rounded-lg bg-amber-50 p-3">
+              <p className="text-xs font-medium text-amber-600 uppercase">Pending approval</p>
+              <p className="text-xl font-bold text-amber-700">{balance.pending}</p>
+            </div>
+            <div className="rounded-lg bg-green-50 p-3">
+              <p className="text-xs font-medium text-green-600 uppercase">Remaining</p>
+              <p className="text-xl font-bold text-green-700">{balance.balance}</p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Admin: set paid leaves per year */}
+      {user?.role === 'Admin' && (
+        <Card className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <Settings2 className="h-5 w-5 text-gray-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Leave policy</h2>
+          </div>
+          <p className="text-sm text-gray-600 mb-3">Paid leaves allowed per employee per year. This applies to all employees.</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Input
+              type="number"
+              min={0}
+              value={policyInput}
+              onChange={(e) => setPolicyInput(e.target.value)}
+              className="w-24 h-10"
+              placeholder="e.g. 12"
+            />
+            <Button
+              onClick={saveLeavePolicy}
+              disabled={savingPolicy}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {savingPolicy ? 'Saving…' : 'Save'}
+            </Button>
+            {policy?.paid_leaves_per_year != null && (
+              <span className="text-sm text-gray-500">Current: {policy.paid_leaves_per_year} days/year</span>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* Status Tabs */}
-      <Card className="p-3 border border-gray-200 bg-white">
+      <Card className="p-3 rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex gap-2">
           {statusTabs.map((tab) => (
             <Button
               key={tab}
               variant={activeTab === tab ? 'default' : 'ghost'}
               size="sm"
-              className={`h-9 ${
+              className={`h-9 rounded-md ${
                 activeTab === tab
                   ? 'bg-blue-50 text-blue-700 font-medium'
                   : 'text-gray-600 hover:bg-gray-100'
@@ -362,7 +470,7 @@ export const Leaves = () => {
       {/* Leaves List */}
       <div className="space-y-4">
         {filteredLeaves.map((leave) => (
-          <Card key={leave.id} className="p-6 border border-gray-200 bg-white" data-testid={`leave-card-${leave.id}`}>
+          <Card key={leave.id} className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm" data-testid={`leave-card-${leave.id}`}>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex-1 space-y-3">
                 <div className="flex items-start justify-between">
@@ -372,10 +480,10 @@ export const Leaves = () => {
                       {leave.leave_type} Leave • {leave.days} {leave.days === 1 ? 'day' : 'days'}
                     </p>
                   </div>
-                  <span className={`px-3 py-1 rounded text-xs font-medium ${
+                  <span className={`px-3 py-1 rounded-md text-xs font-medium ${
                     leave.status === 'Pending' ? 'bg-amber-50 text-amber-700' :
-                    leave.status === 'Approved' ? 'bg-emerald-50 text-emerald-700' :
-                    'bg-rose-50 text-rose-700'
+                    leave.status === 'Approved' ? 'bg-green-50 text-green-700' :
+                    'bg-red-50 text-red-700'
                   }`}>
                     {leave.status}
                   </span>
@@ -412,7 +520,7 @@ export const Leaves = () => {
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white h-9"
+                    className="bg-green-600 hover:bg-green-700 text-white h-9"
                     onClick={() => handleLeaveAction(leave.id, 'Approved')}
                     data-testid={`approve-leave-${leave.id}`}
                   >
@@ -421,7 +529,7 @@ export const Leaves = () => {
                   </Button>
                   <Button
                     size="sm"
-                    className="bg-rose-600 hover:bg-rose-700 text-white h-9"
+                    className="bg-red-600 hover:bg-red-700 text-white h-9"
                     onClick={() => handleLeaveAction(leave.id, 'Rejected')}
                     data-testid={`reject-leave-${leave.id}`}
                   >
@@ -436,7 +544,7 @@ export const Leaves = () => {
       </div>
 
       {filteredLeaves.length === 0 && (
-        <Card className="p-12 text-center border border-gray-200 bg-white">
+        <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
           <Clock className="h-12 w-12 mx-auto mb-2 opacity-20" />
           <p className="text-gray-600">No leave requests found</p>
         </Card>

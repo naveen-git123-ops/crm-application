@@ -2,16 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Download, Printer, Plus, Search, CreditCard } from 'lucide-react';
+import { Download, Printer, Plus, Search, CreditCard, MapPin, Phone, AlertCircle } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
+
+// Company contact - update as needed
+const COMPANY_NAME = 'RESOLINE TECHBIS';
+const COMPANY_NUMBER = '+91 98765 43210';
 
 export const IDCards = () => {
   const { user } = useAuth();
@@ -78,146 +81,93 @@ export const IDCards = () => {
   };
 
   const IDCardPreview = ({ employee, layout, side }) => {
-    // Only vertical layout now
+    // Horizontal corporate ID card (CR80-style)
     if (side === 'front') {
       return (
         <div
           ref={cardRef}
-          className="w-[300px] bg-white shadow-2xl rounded-lg overflow-hidden border border-gray-300"
-          style={{ aspectRatio: '2/3' }}
+          className="bg-white shadow-2xl overflow-hidden rounded-lg border border-gray-200/80"
+          style={{ width: '380px', height: '240px', minWidth: '380px', minHeight: '240px' }}
         >
-          {/* Header with Logo */}
-          <div className="p-4 text-center border-b border-gray-200">
-            <img 
-              src={`${process.env.PUBLIC_URL}/logo1.png`}
-              alt="Company Logo" 
-              className="h-12 w-auto mx-auto mb-2 object-contain"
-              onError={(e) => {
-                e.target.style.display = 'none';
-                e.target.nextSibling.style.display = 'block';
-              }}
-            />
-            <div className="text-sm font-bold text-gray-800" style={{ display: 'none' }}>
-              RESOLINE TECHBIS
+          <div className="h-full flex flex-col">
+            {/* Top bar: logo + company */}
+            <div className="flex items-center justify-between px-5 py-2.5 bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 border-b border-slate-600/50">
+              <img
+                src={`${process.env.PUBLIC_URL}/logo1.png`}
+                alt="Logo"
+                className="h-9 w-auto object-contain"
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+              <span className="text-white text-sm font-semibold tracking-widest uppercase">{COMPANY_NAME}</span>
             </div>
-            <div className="text-xs text-gray-600">Employee Identification</div>
-          </div>
-
-          {/* Employee Photo */}
-          <div className="p-4 flex justify-center">
-            <div className="w-24 h-28 bg-gray-100 rounded-lg border-2 border-gray-200 flex items-center justify-center overflow-hidden">
-              {employee.profile_photo ? (
-                <img src={BACKEND_URL + employee.profile_photo} alt={employee.name} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
-                  <div className="text-3xl font-bold text-gray-600">
-                    {employee.name.charAt(0).toUpperCase()}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Employee Info */}
-          <div className="px-4 pb-4 space-y-3 text-center">
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 mb-1">{employee.name}</h1>
-              <div className="text-sm text-gray-600 font-medium">ID: {employee.employee_id}</div>
-            </div>
-            
-            <div className="bg-gray-50 rounded-lg p-3 text-xs">
-              <div className="font-semibold text-gray-800 mb-1">RESOLINE TECHBIS</div>
-              <div className="text-gray-600">Valid Until December 2027</div>
-            </div>
-          </div>
-        </div>
-      );
-    } else {
-      // Back side - All employee details
-      return (
-        <div
-          ref={cardRef}
-          className="w-[300px] bg-white shadow-2xl rounded-lg overflow-hidden border border-gray-300"
-          style={{ aspectRatio: '2/3' }}
-        >
-          {/* Header */}
-          <div className="bg-gray-800 text-white p-4 text-center">
-            <div className="text-sm font-bold">RESOLINE TECHBIS</div>
-            <div className="text-xs opacity-80">Employee Information</div>
-          </div>
-
-          <div className="p-4 space-y-4">
-            {/* Employee Basic Info */}
-            <div className="space-y-3">
-              <div className="pb-3 border-b border-gray-200">
-                <h2 className="text-lg font-bold text-gray-900">{employee.name}</h2>
-                <div className="text-sm text-gray-600">ID: {employee.employee_id}</div>
-              </div>
-
-              {/* Contact Information */}
-              <div className="space-y-3 text-sm">
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Department</div>
-                  <div className="font-medium text-gray-900">{employee.department || 'N/A'}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Designation</div>
-                  <div className="font-medium text-gray-900">{employee.job_role || employee.job_title || 'Employee'}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Email</div>
-                  <div className="font-medium text-gray-800 text-xs truncate">{employee.email || 'N/A'}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Phone</div>
-                  <div className="font-medium text-gray-900">{employee.phone || 'N/A'}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Blood Group</div>
-                  <div className="font-medium text-red-600">{employee.blood_group || 'N/A'}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Emergency Contact</div>
-                  <div className="font-medium text-gray-900">{employee.emergency_contact || 'N/A'}</div>
+            {/* Main: photo + details in one row */}
+            <div className="flex-1 flex items-stretch">
+              <div className="w-28 flex-shrink-0 p-3 flex items-center justify-center bg-slate-50/80 border-r border-slate-200">
+                <div className="w-20 h-24 rounded-md border border-slate-200 bg-white shadow-inner overflow-hidden flex items-center justify-center">
+                  {employee.profile_photo ? (
+                    <img src={BACKEND_URL + employee.profile_photo} alt={employee.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-2xl font-bold text-slate-400">{employee.name.charAt(0).toUpperCase()}</span>
+                  )}
                 </div>
               </div>
-            </div>
-
-            {/* Validity and Signature */}
-            <div className="pt-3 border-t border-gray-200 space-y-3">
-              <div className="flex justify-between text-sm">
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Issue Date</div>
-                  <div className="font-medium text-gray-900">{new Date().toLocaleDateString()}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase">Valid Until</div>
-                  <div className="font-medium text-gray-900">December 2027</div>
-                </div>
+              <div className="flex-1 flex flex-col justify-center px-5 py-3 min-w-0">
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight truncate">{employee.name}</h2>
+                <p className="text-sm font-medium text-slate-600 mt-0.5">{employee.job_role || employee.job_title || '—'}</p>
+                <p className="text-xs text-slate-500 mt-1 uppercase tracking-wide">{employee.department || '—'}</p>
               </div>
-
-              <div className="pt-2">
-                <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Authorized Signature</div>
-                <div className="h-10 border-b-2 border-gray-300"></div>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 mt-auto">
-            <div className="text-center text-xs text-gray-600">
-              www.resolinetechbis.com • This card is property of RESOLINE TECHBIS
             </div>
           </div>
         </div>
       );
     }
+    // Back side: horizontal layout
+    return (
+      <div
+        ref={cardRef}
+        className="bg-white shadow-2xl overflow-hidden rounded-lg border border-gray-200/80"
+        style={{ width: '380px', height: '240px', minWidth: '380px', minHeight: '240px' }}
+      >
+        <div className="h-full flex flex-col">
+          <div className="px-5 py-2.5 bg-gradient-to-r from-slate-800 to-slate-700 text-white text-center border-b border-slate-600/50">
+            <div className="text-sm font-semibold tracking-wide">{COMPANY_NAME}</div>
+            <div className="text-[10px] text-slate-300 uppercase tracking-widest mt-0.5">Contact & Emergency</div>
+          </div>
+          <div className="flex-1 grid grid-cols-1 gap-0 p-4">
+            <div className="flex gap-2 items-start">
+              <MapPin className="h-3.5 w-3.5 text-slate-500 flex-shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <div className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Address</div>
+                <div className="text-xs text-slate-800 leading-snug">{employee.address || '—'}</div>
+              </div>
+            </div>
+            <div className="flex gap-2 items-center">
+              <Phone className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
+              <div>
+                <div className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Company</div>
+                <div className="text-xs font-medium text-slate-800">{COMPANY_NUMBER}</div>
+              </div>
+            </div>
+            <div className="flex gap-2 items-center">
+              <AlertCircle className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
+              <div>
+                <div className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Emergency</div>
+                <div className="text-xs font-medium text-slate-800">{employee.emergency_contact || '—'}</div>
+              </div>
+            </div>
+          </div>
+          <div className="px-4 py-1.5 bg-slate-100/90 border-t border-slate-200 text-center text-[9px] text-slate-500">
+            This card is property of {COMPANY_NAME}. In case of emergency, contact the number above.
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
       </div>
     );
   }
@@ -233,7 +183,7 @@ export const IDCards = () => {
       </div>
 
       {/* Search Bar */}
-      <Card className="p-4 border border-gray-200 bg-white">
+      <Card className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex gap-3">
           <Input
             placeholder="Search by name, employee ID, or email..."
@@ -248,46 +198,41 @@ export const IDCards = () => {
         </div>
       </Card>
 
-      {/* Employees Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredEmployees.map((employee) => (
-          <Card
-            key={employee.id}
-            className="p-4 border border-gray-200 bg-white hover:shadow-md transition-shadow"
-          >
-            <div className="flex items-start gap-4">
-              <div className="w-14 h-14 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <div className="text-xl font-bold text-indigo-600">
-                  {employee.name.charAt(0).toUpperCase()}
-                </div>
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-gray-900 truncate">
-                  {employee.name}
-                </h3>
-                <p className="text-xs text-gray-600 truncate">
-                  {employee.employee_id}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {employee.job_title || 'Staff'}
-                </p>
-              </div>
-
-              <Dialog open={previewOpen && selectedEmployee?.id === employee.id} onOpenChange={setPreviewOpen}>
-                <DialogTrigger asChild>
-                  <Button
-                    size="sm"
-                    className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 h-9 whitespace-nowrap flex-shrink-0 shadow-lg transition-all duration-200"
-                    onClick={() => handlePreview(employee)}
-                  >
-                    <CreditCard className="h-4 w-4 mr-2" />
-                    Generate ID
-                  </Button>
-                </DialogTrigger>
-                {selectedEmployee?.id === employee.id && (
+      {/* Employees table */}
+      <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee ID</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Department</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Job Role</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredEmployees.map((employee) => (
+                <tr key={employee.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                  <td className="py-3 px-4 font-mono text-gray-900">{employee.employee_id}</td>
+                  <td className="py-3 px-4 font-medium text-gray-900">{employee.name}</td>
+                  <td className="py-3 px-4 text-gray-600">{employee.department || '—'}</td>
+                  <td className="py-3 px-4 text-gray-600">{employee.job_role || employee.job_title || '—'}</td>
+                  <td className="py-3 px-4">
+                    <Dialog open={previewOpen && selectedEmployee?.id === employee.id} onOpenChange={setPreviewOpen}>
+                      <DialogTrigger asChild>
+                        <Button
+                          size="sm"
+                          className="bg-blue-600 text-white hover:bg-blue-700 h-9"
+                          onClick={() => handlePreview(employee)}
+                        >
+                          <CreditCard className="h-4 w-4 mr-2" />
+                          Generate ID
+                        </Button>
+                      </DialogTrigger>
+                      {selectedEmployee?.id === employee.id && (
                   <DialogContent className="max-w-6xl bg-gray-50 border-0 shadow-2xl p-0">
-                    <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6">
+                    <div className="bg-blue-600 text-white p-6">
                       <DialogHeader>
                         <DialogTitle className="text-2xl font-bold text-white">
                           ID Card Generator
@@ -363,14 +308,17 @@ export const IDCards = () => {
                     </div>
                   </DialogContent>
                 )}
-              </Dialog>
-            </div>
-          </Card>
-        ))}
-      </div>
+                      </Dialog>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       {filteredEmployees.length === 0 && (
-        <Card className="p-12 text-center border border-gray-200 bg-white">
+        <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
           <Plus className="h-12 w-12 mx-auto mb-2 opacity-20" />
           <p className="text-gray-600">No employees found</p>
         </Card>

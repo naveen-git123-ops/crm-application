@@ -21,6 +21,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 import io
 import uuid
+import json
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -55,6 +56,17 @@ class UserModel(Base):
     role = Column(String)
     employee_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
+
+
+# Role definitions: name + which screens (permissions) the role can access. Admin is system and cannot be edited/deleted.
+class RoleModel(Base):
+    __tablename__ = "roles"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, unique=True, index=True)
+    permissions = Column(String)  # JSON array of permission keys, e.g. ["dashboard","leads","employees",...]
+    is_system = Column(Integer, default=0)  # 1 = Admin only, cannot edit/delete
+    created_at = Column(DateTime, default=datetime.now)
+
 
 class EmployeeModel(Base):
     __tablename__ = "employees"
@@ -99,6 +111,14 @@ class LeaveModel(Base):
     approver_id = Column(String, nullable=True)
     approver_name = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class LeavePolicyModel(Base):
+    __tablename__ = "leave_policy"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    paid_leaves_per_year = Column(Integer, default=12)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
 
 class DocumentModel(Base):
     __tablename__ = "documents"
@@ -147,6 +167,8 @@ class LeadModel(Base):
     notes = Column(String, nullable=True)
     assigned_to_employee_id = Column(String, nullable=True, index=True)
     assigned_to_name = Column(String, nullable=True)
+    created_by_employee_id = Column(String, nullable=True, index=True)
+    created_by_name = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -162,6 +184,48 @@ class LeadActivityModel(Base):
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
+
+def migrate_leads_add_created_by():
+    """Add created_by_employee_id, created_by_name to leads if missing (for Sales ownership)."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            r = conn.execute(text("PRAGMA table_info(leads)"))
+            cols = [row[1] for row in r.fetchall()]
+            if 'created_by_employee_id' not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN created_by_employee_id VARCHAR"))
+            if 'created_by_name' not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN created_by_name VARCHAR"))
+            conn.commit()
+        except Exception:
+            pass
+
+migrate_leads_add_created_by()
+
+# Seed default roles (Admin cannot be edited/deleted; others can)
+DEFAULT_PERMISSION_KEYS = [
+    "dashboard", "leads", "employees", "attendance", "leaves", "expenses",
+    "roles", "workspace", "idcards", "documents", "settings"
+]
+
+def seed_roles_if_needed():
+    db = SessionLocal()
+    try:
+        if db.query(RoleModel).first() is not None:
+            return
+        defaults = [
+            RoleModel(name="Admin", permissions=json.dumps(DEFAULT_PERMISSION_KEYS), is_system=1),
+            RoleModel(name="HR", permissions=json.dumps(["employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings"]), is_system=0),
+            RoleModel(name="Manager", permissions=json.dumps(["leads", "employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings"]), is_system=0),
+            RoleModel(name="Employee", permissions=json.dumps(["attendance", "leaves", "expenses", "workspace", "documents", "settings"]), is_system=0),
+        ]
+        for model in defaults:
+            db.add(model)
+        db.commit()
+    finally:
+        db.close()
+
+seed_roles_if_needed()
 
 # ============= PYDANTIC MODELS =============
 
@@ -182,7 +246,7 @@ class UserCreate(BaseModel):
     password: str
     name: str
     employee_id: str
-    role: Literal['Admin', 'HR', 'Manager', 'Employee'] = 'Employee'
+    role: str = 'Employee'
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -193,7 +257,8 @@ class UserDetails(BaseModel):
     id: str
     email: EmailStr
     name: str
-    role: Literal['Admin', 'HR', 'Manager', 'Employee']
+    role: str
+    permissions: Optional[List[str]] = None
     employee_id: Optional[str] = None
     created_at: datetime
     
@@ -290,6 +355,9 @@ class LeaveCreate(BaseModel):
     days: int
     reason: str
 
+class LeavePolicyUpdate(BaseModel):
+    paid_leaves_per_year: int
+
 class LeaveAction(BaseModel):
     status: Literal['Approved', 'Rejected']
     approver_id: str
@@ -348,7 +416,15 @@ class DailyWorkLogCreate(BaseModel):
     summary: str
 
 class UserRoleUpdate(BaseModel):
-    role: Literal['Admin', 'HR', 'Manager', 'Employee']
+    role: str  # must exist in roles table
+
+class RoleCreate(BaseModel):
+    name: str
+    permissions: List[str]
+
+class RoleUpdate(BaseModel):
+    name: Optional[str] = None
+    permissions: Optional[List[str]] = None
 
 class Lead(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -363,6 +439,8 @@ class Lead(BaseModel):
     notes: Optional[str] = None
     assigned_to_employee_id: Optional[str] = None
     assigned_to_name: Optional[str] = None
+    created_by_employee_id: Optional[str] = None
+    created_by_name: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 
@@ -479,12 +557,16 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     if employee.email != user_data.email:
         raise HTTPException(status_code=400, detail='Email does not match the registered employee email.')
     
+    role_name = user_data.role.strip()
+    if not db.query(RoleModel).filter(RoleModel.name == role_name).first():
+        raise HTTPException(status_code=400, detail='Invalid role name.')
+    
     hashed_pw = hash_password(user_data.password)
     new_user = UserModel(
         email=user_data.email,
         password=hashed_pw,
         name=user_data.name,
-        role=user_data.role,
+        role=role_name,
         employee_id=user_data.employee_id
     )
     db.add(new_user)
@@ -522,6 +604,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
                 'emergency_contact': employee.emergency_contact
             })
     
+    user_data['permissions'] = get_permissions_for_role(db, new_user.role)
     return {'token': token, 'user': user_data}
 
 @api_router.post('/auth/login')
@@ -561,6 +644,7 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
                 'emergency_contact': employee.emergency_contact
             })
     
+    user_data['permissions'] = get_permissions_for_role(db, user.role)
     return {'token': token, 'user': user_data}
 
 @api_router.get('/auth/me', response_model=UserDetails)
@@ -594,6 +678,7 @@ async def get_me(current_user: UserModel = Depends(get_current_user), db: Sessio
                 'emergency_contact': employee.emergency_contact
             })
     
+    user_data['permissions'] = get_permissions_for_role(db, current_user.role)
     return user_data
 
 # ============= EMPLOYEE ROUTES =============
@@ -748,8 +833,12 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
     if punch_data.action == 'punch_in':
         if existing:
             raise HTTPException(status_code=400, detail='Already punched in today')
-        
-        status = 'Late' if int(current_time.split(':')[0]) > 9 else 'Present'
+        # Login window: 10:00–10:30 = on time (Present). After 10:30 = Late. Before 10:00 = Present (early).
+        hour, minute = int(current_time.split(':')[0]), int(current_time.split(':')[1])
+        if hour > 10 or (hour == 10 and minute > 30):
+            status = 'Late'
+        else:
+            status = 'Present'
         new_attendance = AttendanceModel(
             employee_id=punch_data.employee_id,
             employee_name=employee.name,
@@ -780,10 +869,20 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         return {'message': 'Punched out successfully', 'attendance': existing}
 
 @api_router.get('/attendance', response_model=List[Attendance])
-def get_attendance(month: Optional[str] = None, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_attendance(
+    month: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     query = db.query(AttendanceModel)
     if month:
         query = query.filter(AttendanceModel.date.like(f'{month}%'))
+    if start_date:
+        query = query.filter(AttendanceModel.date >= start_date)
+    if end_date:
+        query = query.filter(AttendanceModel.date <= end_date)
     return query.order_by(AttendanceModel.date.desc()).all()
 
 @api_router.get('/attendance/summary', response_model=List[AttendanceSummary])
@@ -842,6 +941,112 @@ def get_employee_attendance(employee_id: str, current_user: UserModel = Depends(
         AttendanceModel.employee_id == employee_id
     ).order_by(AttendanceModel.date.desc()).all()
 
+
+# Late login threshold: 10:30
+ATTENDANCE_LATE_HOUR, ATTENDANCE_LATE_MINUTE = 10, 30
+
+
+@api_router.get('/attendance/late-details')
+def get_late_login_details(
+    start_date: str,
+    end_date: str,
+    employee_id: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all late punch-ins in date range. Admin and HR only."""
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Only Admin and HR can view late login details')
+    query = db.query(AttendanceModel).filter(
+        AttendanceModel.status == 'Late',
+        AttendanceModel.date >= start_date,
+        AttendanceModel.date <= end_date,
+        AttendanceModel.punch_in.isnot(None)
+    )
+    if employee_id:
+        query = query.filter(AttendanceModel.employee_id == employee_id)
+    records = query.order_by(AttendanceModel.date.desc()).all()
+    result = []
+    for r in records:
+        if not r.punch_in:
+            continue
+        parts = r.punch_in.split(':')
+        h, m = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+        minutes_late = (h - ATTENDANCE_LATE_HOUR) * 60 + (m - ATTENDANCE_LATE_MINUTE)
+        if minutes_late < 0:
+            minutes_late = 0
+        result.append({
+            'id': r.id,
+            'employee_id': r.employee_id,
+            'employee_name': r.employee_name,
+            'date': r.date,
+            'punch_in': r.punch_in,
+            'minutes_late': minutes_late,
+        })
+    return result
+
+
+@api_router.get('/attendance/report')
+def get_attendance_report(
+    start_date: str,
+    end_date: str,
+    employee_id: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Full attendance report: each day in range × each employee. No punch = Absent. Admin/HR see all; Employee sees self."""
+    from datetime import date as date_type
+    start = date_type(*[int(x) for x in start_date.split('-')])
+    end = date_type(*[int(x) for x in end_date.split('-')])
+    if start > end:
+        raise HTTPException(status_code=400, detail='start_date must be before or equal to end_date')
+    employees = db.query(EmployeeModel).filter(EmployeeModel.status == 'Active')
+    if current_user.role == 'Employee':
+        if not current_user.employee_id:
+            raise HTTPException(status_code=404, detail='Employee record not found')
+        employees = employees.filter(EmployeeModel.employee_id == current_user.employee_id)
+    elif employee_id:
+        employees = employees.filter(EmployeeModel.employee_id == employee_id)
+    employees = employees.all()
+    records_by_key = {}
+    for rec in db.query(AttendanceModel).filter(
+        AttendanceModel.date >= start_date,
+        AttendanceModel.date <= end_date
+    ).all():
+        key = (rec.date, rec.employee_id)
+        records_by_key[key] = rec
+    report = []
+    d = start
+    while d <= end:
+        date_str = d.strftime('%Y-%m-%d')
+        for emp in employees:
+            key = (date_str, emp.employee_id)
+            rec = records_by_key.get(key)
+            if rec:
+                report.append({
+                    'date': date_str,
+                    'employee_id': emp.employee_id,
+                    'employee_name': rec.employee_name or emp.name,
+                    'punch_in': rec.punch_in,
+                    'punch_out': rec.punch_out,
+                    'work_hours': rec.work_hours,
+                    'status': rec.status,
+                })
+            else:
+                report.append({
+                    'date': date_str,
+                    'employee_id': emp.employee_id,
+                    'employee_name': emp.name,
+                    'punch_in': None,
+                    'punch_out': None,
+                    'work_hours': 0,
+                    'status': 'Absent',
+                })
+        d += timedelta(days=1)
+    report.sort(key=lambda x: (x['date'], x['employee_id']), reverse=True)
+    return report
+
+
 # ============= LEAVE ROUTES =============
 
 @api_router.post('/leaves', response_model=Leave)
@@ -896,6 +1101,66 @@ def update_leave_status(
     
     return leave
 
+
+# --------------- Leave policy (admin) and balance ---------------
+def _get_or_create_policy(db: Session):
+    policy = db.query(LeavePolicyModel).first()
+    if not policy:
+        policy = LeavePolicyModel(paid_leaves_per_year=12)
+        db.add(policy)
+        db.commit()
+        db.refresh(policy)
+    return policy
+
+
+@api_router.get('/leave-policy')
+def get_leave_policy(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    policy = _get_or_create_policy(db)
+    return {"paid_leaves_per_year": policy.paid_leaves_per_year}
+
+
+@api_router.put('/leave-policy')
+def update_leave_policy(
+    body: LeavePolicyUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can update leave policy')
+    if body.paid_leaves_per_year < 0:
+        raise HTTPException(status_code=400, detail='paid_leaves_per_year must be non-negative')
+    policy = _get_or_create_policy(db)
+    policy.paid_leaves_per_year = body.paid_leaves_per_year
+    db.commit()
+    db.refresh(policy)
+    return {"paid_leaves_per_year": policy.paid_leaves_per_year}
+
+
+@api_router.get('/leave-balance')
+def get_leave_balance(
+    employee_id: Optional[str] = None,
+    year: Optional[int] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from datetime import datetime as dt
+    y = year or dt.now().year
+    eid = employee_id or current_user.employee_id
+    if not eid:
+        return {"allowed": 0, "taken": 0, "pending": 0, "balance": 0}
+    if eid != current_user.employee_id and current_user.role not in ('Admin', 'HR', 'Manager'):
+        raise HTTPException(status_code=403, detail='Not authorized to view other employee balance')
+    policy = _get_or_create_policy(db)
+    allowed = policy.paid_leaves_per_year
+    leaves = db.query(LeaveModel).filter(LeaveModel.employee_id == eid).all()
+    def in_year(d):
+        return d and (d.startswith(str(y)) if isinstance(d, str) else str(y) in str(d))
+    taken = sum(l.days or 0 for l in leaves if l.status == 'Approved' and in_year(l.start_date))
+    pending = sum(l.days or 0 for l in leaves if l.status == 'Pending' and in_year(l.start_date))
+    balance = max(0, allowed - taken)
+    return {"allowed": allowed, "taken": taken, "pending": pending, "balance": balance, "year": y}
+
+
 # ============= DOCUMENT ROUTES =============
 
 @api_router.post('/documents/upload')
@@ -908,32 +1173,39 @@ def upload_document(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    emp_folder = UPLOAD_DIR / employee_id
-    emp_folder.mkdir(exist_ok=True)
-    
-    file_path = emp_folder / file.filename
+    can_upload_any = current_user.role in ['Admin', 'HR', 'Manager']
+    if not can_upload_any and str(employee_id).strip() != str(current_user.employee_id or '').strip():
+        raise HTTPException(status_code=403, detail='You can only upload documents for yourself')
+    emp_folder = UPLOAD_DIR / str(employee_id).replace('/', '_')
+    emp_folder.mkdir(parents=True, exist_ok=True)
+    safe_name = file.filename or 'document'
+    file_path = emp_folder / safe_name
     with open(file_path, 'wb') as f:
         f.write(file.file.read())
-    
     new_document = DocumentModel(
-        employee_id=employee_id,
-        employee_name=employee_name,
+        employee_id=str(employee_id).strip(),
+        employee_name=employee_name or '',
         document_type=document_type,
-        file_name=file.filename,
+        file_name=safe_name,
         file_path=str(file_path),
         expiry_date=expiry_date
     )
     db.add(new_document)
     db.commit()
     db.refresh(new_document)
-    
     return new_document
 
 @api_router.get('/documents', response_model=List[Document])
 def get_documents(employee_id: Optional[str] = None, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     query = db.query(DocumentModel)
-    if employee_id:
-        query = query.filter(DocumentModel.employee_id == employee_id)
+    can_view_all = current_user.role in ['Admin', 'HR', 'Manager']
+    if can_view_all:
+        if employee_id:
+            query = query.filter(DocumentModel.employee_id == employee_id)
+    else:
+        if not current_user.employee_id:
+            return []
+        query = query.filter(DocumentModel.employee_id == current_user.employee_id)
     return query.order_by(DocumentModel.uploaded_at.desc()).all()
 
 @api_router.get('/documents/{document_id}/download')
@@ -941,11 +1213,12 @@ def download_document(document_id: str, current_user: UserModel = Depends(get_cu
     document = db.query(DocumentModel).filter(DocumentModel.id == document_id).first()
     if not document:
         raise HTTPException(status_code=404, detail='Document not found')
-    
+    can_view_all = current_user.role in ['Admin', 'HR', 'Manager']
+    if not can_view_all and str(document.employee_id) != str(current_user.employee_id or ''):
+        raise HTTPException(status_code=403, detail='Not authorized to download this document')
     file_path = Path(document.file_path)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail='File not found')
-    
     return FileResponse(file_path, filename=document.file_name)
 
 # ============= EXPENSE ROUTES =============
@@ -1013,8 +1286,9 @@ def update_expense_status(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # Only Admin, HR, Manager can approve/reject; Employee can only submit expenses
     if current_user.role not in ['Admin', 'HR', 'Manager']:
-        raise HTTPException(status_code=403, detail='Not authorized')
+        raise HTTPException(status_code=403, detail='Only Admin, HR, or Manager can approve or reject expenses')
     expense = db.query(ExpenseModel).filter(ExpenseModel.id == expense_id).first()
     if not expense:
         raise HTTPException(status_code=404, detail='Expense not found')
@@ -1024,6 +1298,48 @@ def update_expense_status(
     db.commit()
     db.refresh(expense)
     return expense
+
+
+@api_router.get('/expenses/summary-by-employee')
+def get_expenses_summary_by_employee(
+    month: Optional[int] = None,
+    year: Optional[int] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Admin only: total approved/rejected/pending expenses per employee for salary compensation."""
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can view expense summary')
+    from datetime import datetime as dt
+    now = dt.now()
+    y = year if year is not None else now.year
+    m = month if month is not None else now.month
+    all_expenses = db.query(ExpenseModel).all()
+    # Filter by created_at year/month
+    def in_month(exp):
+        if not getattr(exp, 'created_at', None):
+            return True
+        d = exp.created_at
+        return d.year == y and d.month == m
+    by_employee = {}
+    for exp in all_expenses:
+        if not in_month(exp):
+            continue
+        eid = exp.employee_id or 'unknown'
+        name = exp.employee_name or 'Unknown'
+        if eid not in by_employee:
+            by_employee[eid] = {'employee_id': eid, 'employee_name': name, 'total_approved': 0.0, 'total_rejected': 0.0, 'total_pending': 0.0}
+        amt = float(exp.amount or 0)
+        if exp.status == 'Approved':
+            by_employee[eid]['total_approved'] += amt
+        elif exp.status == 'Rejected':
+            by_employee[eid]['total_rejected'] += amt
+        else:
+            by_employee[eid]['total_pending'] += amt
+    result = list(by_employee.values())
+    result.sort(key=lambda x: (x['employee_name'].lower(), x['employee_id']))
+    return {'month': m, 'year': y, 'employees': result}
+
 
 # ============= USERS / ROLES ROUTES =============
 
@@ -1077,10 +1393,13 @@ def update_user_role(
 ):
     if current_user.role != 'Admin':
         raise HTTPException(status_code=403, detail='Only Admin can change user roles')
+    role_row = db.query(RoleModel).filter(RoleModel.name == payload.role.strip()).first()
+    if not role_row:
+        raise HTTPException(status_code=400, detail='Invalid role name')
     user = db.query(UserModel).filter(UserModel.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail='User not found')
-    user.role = payload.role
+    user.role = payload.role.strip()
     db.commit()
     db.refresh(user)
     user_data = {
@@ -1115,6 +1434,128 @@ def update_user_role(
                 'emergency_contact': emp.emergency_contact
             })
     return user_data
+
+
+# --------------- Role CRUD (create/edit/delete roles; Admin role protected) ---------------
+def get_permissions_for_role(db: Session, role_name: str) -> List[str]:
+    r = db.query(RoleModel).filter(RoleModel.name == role_name).first()
+    if not r:
+        return []
+    perms = []
+    if r.permissions:
+        try:
+            perms = json.loads(r.permissions)
+        except Exception:
+            perms = []
+    # Ensure "documents" is included for built-in roles if missing (e.g. DB seeded before documents was added)
+    if role_name in ('Admin', 'HR', 'Manager', 'Employee') and 'documents' not in perms:
+        perms.append('documents')
+    return perms
+
+
+def _role_to_dict(r: RoleModel):
+    perms = []
+    if r.permissions:
+        try:
+            perms = json.loads(r.permissions)
+        except Exception:
+            perms = []
+    return {
+        "id": r.id,
+        "name": r.name,
+        "permissions": perms,
+        "is_system": bool(r.is_system),
+    }
+
+
+@api_router.get('/roles')
+def list_roles(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can manage roles')
+    roles = db.query(RoleModel).order_by(RoleModel.name).all()
+    return [_role_to_dict(r) for r in roles]
+
+
+@api_router.get('/roles/permission-keys')
+def get_permission_keys(current_user: UserModel = Depends(get_current_user)):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can access')
+    return {"permission_keys": DEFAULT_PERMISSION_KEYS}
+
+
+@api_router.post('/roles')
+def create_role(
+    payload: RoleCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can create roles')
+    existing = db.query(RoleModel).filter(RoleModel.name == payload.name.strip()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail='Role name already exists')
+    valid = set(DEFAULT_PERMISSION_KEYS)
+    perms = [p for p in payload.permissions if p in valid]
+    role = RoleModel(
+        name=payload.name.strip(),
+        permissions=json.dumps(perms),
+        is_system=0
+    )
+    db.add(role)
+    db.commit()
+    db.refresh(role)
+    return _role_to_dict(role)
+
+
+@api_router.put('/roles/{role_id}')
+def update_role(
+    role_id: str,
+    payload: RoleUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can update roles')
+    role = db.query(RoleModel).filter(RoleModel.id == role_id).first()
+    if not role:
+        raise HTTPException(status_code=404, detail='Role not found')
+    if role.is_system or role.name == 'Admin':
+        raise HTTPException(status_code=400, detail='Admin role cannot be edited')
+    if payload.name is not None:
+        name = payload.name.strip()
+        if name != role.name:
+            other = db.query(RoleModel).filter(RoleModel.name == name).first()
+            if other:
+                raise HTTPException(status_code=400, detail='Role name already exists')
+            role.name = name
+    if payload.permissions is not None:
+        valid = set(DEFAULT_PERMISSION_KEYS)
+        role.permissions = json.dumps([p for p in payload.permissions if p in valid])
+    db.commit()
+    db.refresh(role)
+    return _role_to_dict(role)
+
+
+@api_router.delete('/roles/{role_id}')
+def delete_role(
+    role_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can delete roles')
+    role = db.query(RoleModel).filter(RoleModel.id == role_id).first()
+    if not role:
+        raise HTTPException(status_code=404, detail='Role not found')
+    if role.is_system or role.name == 'Admin':
+        raise HTTPException(status_code=400, detail='Admin role cannot be deleted')
+    count = db.query(UserModel).filter(UserModel.role == role.name).count()
+    if count > 0:
+        raise HTTPException(status_code=400, detail=f'Cannot delete: {count} user(s) have this role. Reassign them first.')
+    db.delete(role)
+    db.commit()
+    return {"message": "Role deleted"}
+
 
 # ============= DAILY WORK LOG ROUTES =============
 
@@ -1159,19 +1600,28 @@ def get_daily_work_logs(
         query = query.filter(DailyWorkLogModel.log_date.like(f'{month}%'))
     return query.order_by(DailyWorkLogModel.log_date.desc()).all()
 
-# ============= LEADS ROUTES (Admin, Manager only) =============
+# ============= LEADS ROUTES (Admin, Manager, Sales) =============
 
-def require_admin_or_manager(current_user: UserModel = Depends(get_current_user)):
-    if current_user.role not in ['Admin', 'Manager']:
-        raise HTTPException(status_code=403, detail='Only Admin and Manager can access leads')
+def require_leads_access(current_user: UserModel = Depends(get_current_user)):
+    """Allow Admin, Manager, or Sales to access leads (list, create, view)."""
+    if current_user.role not in ['Admin', 'Manager', 'Sales']:
+        raise HTTPException(status_code=403, detail='You do not have access to leads')
     return current_user
+
+def can_edit_lead(lead: LeadModel, current_user: UserModel) -> bool:
+    """Admin/Manager can edit any lead; Sales can edit only leads they created."""
+    if current_user.role in ['Admin', 'Manager']:
+        return True
+    if current_user.role == 'Sales':
+        return lead.created_by_employee_id and str(lead.created_by_employee_id) == str(current_user.employee_id or '')
+    return False
 
 @api_router.get('/leads', response_model=List[Lead])
 def get_leads(
     status: Optional[str] = None,
     source: Optional[str] = None,
     assigned_to_employee_id: Optional[str] = None,
-    current_user: UserModel = Depends(require_admin_or_manager),
+    current_user: UserModel = Depends(require_leads_access),
     db: Session = Depends(get_db)
 ):
     query = db.query(LeadModel)
@@ -1185,7 +1635,7 @@ def get_leads(
 
 @api_router.get('/leads/stats', response_model=LeadStats)
 def get_lead_stats(
-    current_user: UserModel = Depends(require_admin_or_manager),
+    current_user: UserModel = Depends(require_leads_access),
     db: Session = Depends(get_db)
 ):
     leads = db.query(LeadModel).all()
@@ -1194,10 +1644,79 @@ def get_lead_stats(
         by_status[lead.status] = by_status.get(lead.status, 0) + 1
     return LeadStats(total=len(leads), by_status=by_status)
 
+
+@api_router.get('/leads/dashboard-report')
+def get_leads_dashboard_report(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Lead report for dashboard: by status, monthly trend, by assignee. Admin, HR, Manager only."""
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        return {
+            'total': 0,
+            'by_status': {},
+            'monthly': [],
+            'by_assignee': [],
+            'total_value_won': 0,
+        }
+    leads = db.query(LeadModel).all()
+    by_status = {}
+    for lead in leads:
+        by_status[lead.status] = by_status.get(lead.status, 0) + 1
+    # Last 6 months count (newest first)
+    from datetime import date as date_type
+    today = date_type.today()
+    monthly = []
+    for i in range(6):
+        # i=0 -> current month, i=1 -> last month, ...
+        m = today.month - i
+        y = today.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        month_str = f'{y}-{m:02d}'
+        count = sum(1 for lead in leads if lead.created_at and lead.created_at.strftime('%Y-%m') == month_str)
+        monthly.append({'month': month_str, 'count': count})
+    monthly.reverse()
+    # By assignee (assigned_to_employee_id / assigned_to_name)
+    assignee_map = {}
+    for lead in leads:
+        key = (lead.assigned_to_employee_id or 'Unassigned', lead.assigned_to_name or 'Unassigned')
+        if key not in assignee_map:
+            assignee_map[key] = {'total': 0, 'Won': 0, 'Lost': 0, 'pipeline': 0}
+        assignee_map[key]['total'] += 1
+        if lead.status == 'Won':
+            assignee_map[key]['Won'] += 1
+        elif lead.status == 'Lost':
+            assignee_map[key]['Lost'] += 1
+        else:
+            assignee_map[key]['pipeline'] += 1
+    by_assignee = [
+        {
+            'employee_id': eid,
+            'employee_name': name,
+            'total': data['total'],
+            'won': data['Won'],
+            'lost': data['Lost'],
+            'pipeline': data['pipeline'],
+        }
+        for (eid, name), data in assignee_map.items()
+    ]
+    by_assignee.sort(key=lambda x: -x['total'])
+    total_value_won = sum((lead.value or 0) for lead in leads if lead.status == 'Won')
+    return {
+        'total': len(leads),
+        'by_status': by_status,
+        'monthly': monthly,
+        'by_assignee': by_assignee,
+        'total_value_won': round(total_value_won, 2),
+    }
+
+
 @api_router.post('/leads', response_model=Lead)
 def create_lead(
     data: LeadCreate,
-    current_user: UserModel = Depends(require_admin_or_manager),
+    current_user: UserModel = Depends(require_leads_access),
     db: Session = Depends(get_db)
 ):
     new_lead = LeadModel(
@@ -1210,7 +1729,9 @@ def create_lead(
         value=data.value,
         notes=data.notes,
         assigned_to_employee_id=data.assigned_to_employee_id,
-        assigned_to_name=data.assigned_to_name
+        assigned_to_name=data.assigned_to_name,
+        created_by_employee_id=current_user.employee_id,
+        created_by_name=current_user.name
     )
     db.add(new_lead)
     db.commit()
@@ -1220,7 +1741,7 @@ def create_lead(
 @api_router.get('/leads/{lead_id}', response_model=Lead)
 def get_lead(
     lead_id: str,
-    current_user: UserModel = Depends(require_admin_or_manager),
+    current_user: UserModel = Depends(require_leads_access),
     db: Session = Depends(get_db)
 ):
     lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
@@ -1232,12 +1753,14 @@ def get_lead(
 def update_lead(
     lead_id: str,
     data: LeadUpdate,
-    current_user: UserModel = Depends(require_admin_or_manager),
+    current_user: UserModel = Depends(require_leads_access),
     db: Session = Depends(get_db)
 ):
     lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user):
+        raise HTTPException(status_code=403, detail='You can only edit leads created by you')
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(lead, key, value)
     lead.updated_at = datetime.now(timezone.utc)
@@ -1248,13 +1771,15 @@ def update_lead(
 @api_router.delete('/leads/{lead_id}')
 def delete_lead(
     lead_id: str,
-    current_user: UserModel = Depends(require_admin_or_manager),
+    current_user: UserModel = Depends(require_leads_access),
     db: Session = Depends(get_db)
 ):
-    db.query(LeadActivityModel).filter(LeadActivityModel.lead_id == lead_id).delete()
     lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user):
+        raise HTTPException(status_code=403, detail='You can only delete leads created by you')
+    db.query(LeadActivityModel).filter(LeadActivityModel.lead_id == lead_id).delete()
     db.delete(lead)
     db.commit()
     return {'message': 'Lead deleted'}
@@ -1262,7 +1787,7 @@ def delete_lead(
 @api_router.get('/leads/{lead_id}/activities', response_model=List[LeadActivity])
 def get_lead_activities(
     lead_id: str,
-    current_user: UserModel = Depends(require_admin_or_manager),
+    current_user: UserModel = Depends(require_leads_access),
     db: Session = Depends(get_db)
 ):
     return db.query(LeadActivityModel).filter(LeadActivityModel.lead_id == lead_id).order_by(LeadActivityModel.created_at.desc()).all()
@@ -1271,12 +1796,14 @@ def get_lead_activities(
 def add_lead_activity(
     lead_id: str,
     data: LeadActivityCreate,
-    current_user: UserModel = Depends(require_admin_or_manager),
+    current_user: UserModel = Depends(require_leads_access),
     db: Session = Depends(get_db)
 ):
     lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user):
+        raise HTTPException(status_code=403, detail='You can only add comments/activities to leads created by you')
     activity = LeadActivityModel(
         lead_id=lead_id,
         activity_type=data.activity_type,

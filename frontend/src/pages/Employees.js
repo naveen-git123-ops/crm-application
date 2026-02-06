@@ -123,7 +123,7 @@ export const Employees = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
       </div>
     );
   }
@@ -147,13 +147,13 @@ export const Employees = () => {
                 Add Employee
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white border-0 shadow-2xl p-0">
-              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+              <div className="bg-blue-600 text-white p-6 rounded-t-lg">
                 <DialogHeader>
                   <DialogTitle className="text-xl font-bold text-white">
                     {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
                   </DialogTitle>
-                  <p className="text-blue-100 text-sm">
+                  <p className="text-blue-100 text-sm mt-1">
                     {editingEmployee ? 'Update employee details and save changes' : 'Create a new employee profile'}
                   </p>
                 </DialogHeader>
@@ -275,7 +275,7 @@ export const Employees = () => {
       </div>
 
       {/* Search */}
-      <Card className="p-4 border border-gray-200 bg-white">
+      <Card className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
@@ -283,88 +283,102 @@ export const Employees = () => {
             placeholder="Search by name, email, department, or employee ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 border border-gray-200 h-10"
+            className="pl-10 border border-gray-300 h-10 rounded-lg text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
           />
         </div>
       </Card>
 
-      {/* Employees Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredEmployees.map((employee) => (
-          <Card key={employee.id} className="p-6 border border-gray-200 bg-white hover:shadow-md transition-shadow" data-testid={`employee-card-${employee.employee_id}`}>
-            <div className="space-y-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <p className="text-xs uppercase tracking-widest text-gray-600 mb-1">
-                    {employee.employee_id}
-                  </p>
-                  <h3 className="text-lg font-semibold text-gray-900">{employee.name}</h3>
-                  <p className="text-sm text-gray-600">{employee.job_role}</p>
-                </div>
-                <span className={`px-2.5 py-1 rounded text-xs font-medium ${
-                  employee.status === 'Active'
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-gray-100 text-gray-700'
-                }`}>
-                  {employee.status}
-                </span>
-              </div>
-
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Mail className="h-4 w-4" />
-                  <span className="truncate">{employee.email}</span>
-                </div>
-                {employee.phone && (
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Phone className="h-4 w-4" />
-                    <span>{employee.phone}</span>
-                  </div>
+      {/* Employees table grid */}
+      <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee ID</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Email</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Phone</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Department</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Job Role</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Joining Date</th>
+                <th className="text-right py-3 px-4 font-semibold text-gray-700">Salary</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
+                {canManageEmployees && (
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
                 )}
-              </div>
-
-              <div className="pt-4 border-t border-gray-200 flex justify-between items-center">
-                <div>
-                  <p className="text-xs text-gray-600">Department</p>
-                  <p className="text-sm font-medium text-gray-900">{employee.department}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-gray-600">Salary</p>
-                  <p className="text-sm font-mono font-medium text-gray-900">₹{employee.salary.toLocaleString()}</p>
-                </div>
-              </div>
-
-              {canManageEmployees && (
-                <div className="flex gap-2 pt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 h-9 border-gray-200 text-gray-700 hover:bg-gray-50"
-                    onClick={() => handleEdit(employee)}
-                    data-testid={`edit-employee-${employee.employee_id}`}
-                  >
-                    <Edit className="h-4 w-4 mr-1" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 h-9 border-gray-200 text-red-600 hover:bg-red-50"
-                    onClick={() => handleDelete(employee.id)}
-                    data-testid={`delete-employee-${employee.employee_id}`}
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Delete
-                  </Button>
-                </div>
-              )}
-            </div>
-          </Card>
-        ))}
-      </div>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredEmployees.map((employee) => (
+                <tr
+                  key={employee.id}
+                  className="border-b border-gray-100 hover:bg-gray-50/50"
+                  data-testid={`employee-card-${employee.employee_id}`}
+                >
+                  <td className="py-3 px-4 font-mono text-gray-900">{employee.employee_id}</td>
+                  <td className="py-3 px-4 font-medium text-gray-900">{employee.name}</td>
+                  <td className="py-3 px-4 text-gray-600">
+                    <span className="flex items-center gap-1.5">
+                      <Mail className="h-3.5 w-3 text-gray-400 shrink-0" />
+                      <span className="truncate max-w-[180px]" title={employee.email}>{employee.email}</span>
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-gray-600">
+                    {employee.phone ? (
+                      <span className="flex items-center gap-1.5">
+                        <Phone className="h-3.5 w-3 text-gray-400 shrink-0" />
+                        {employee.phone}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                  <td className="py-3 px-4 text-gray-600">{employee.department}</td>
+                  <td className="py-3 px-4 text-gray-600">{employee.job_role}</td>
+                  <td className="py-3 px-4 text-gray-600">{employee.joining_date}</td>
+                  <td className="py-3 px-4 text-right font-mono text-gray-900">₹{Number(employee.salary).toLocaleString('en-IN')}</td>
+                  <td className="py-3 px-4">
+                    <span className={`inline-flex px-2.5 py-1 rounded-md text-xs font-medium ${
+                      employee.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {employee.status}
+                    </span>
+                  </td>
+                  {canManageEmployees && (
+                    <td className="py-3 px-4">
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 border-gray-200 text-gray-700 hover:bg-gray-50"
+                          onClick={() => handleEdit(employee)}
+                          data-testid={`edit-employee-${employee.employee_id}`}
+                        >
+                          <Edit className="h-3.5 w-3 mr-1" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 border-gray-200 text-red-600 hover:bg-red-50"
+                          onClick={() => handleDelete(employee.id)}
+                          data-testid={`delete-employee-${employee.employee_id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3 mr-1" />
+                          Delete
+                        </Button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       {filteredEmployees.length === 0 && (
-        <Card className="p-12 text-center border border-gray-200 bg-white">
+        <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
           <p className="text-gray-600">No employees found</p>
         </Card>
       )}

@@ -90,11 +90,11 @@ export const Settings = () => {
       </div>
 
       {/* User Profile */}
-      <Card className="p-6 border border-gray-200 bg-white">
-        <h3 className="text-lg font-semibold mb-4 text-gray-900">User Profile</h3>
+      <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">User Profile</h3>
         <div className="space-y-3">
           <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <User className="h-10 w-10 text-indigo-600" />
+            <User className="h-10 w-10 text-blue-600" />
             <div className="flex-1">
               <p className="text-xs text-gray-600 font-medium uppercase tracking-wider">Full Name</p>
               <p className="font-medium text-gray-900">{user?.name}</p>
@@ -102,7 +102,7 @@ export const Settings = () => {
           </div>
 
           <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <Mail className="h-10 w-10 text-indigo-600" />
+            <Mail className="h-10 w-10 text-blue-600" />
             <div className="flex-1">
               <p className="text-xs text-gray-600 font-medium uppercase tracking-wider">Email Address</p>
               <p className="font-medium text-gray-900">{user?.email}</p>
@@ -110,7 +110,7 @@ export const Settings = () => {
           </div>
 
           <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <Shield className="h-10 w-10 text-indigo-600" />
+            <Shield className="h-10 w-10 text-blue-600" />
             <div className="flex-1">
               <p className="text-xs text-gray-600 font-medium uppercase tracking-wider">Role</p>
               <p className="font-medium text-gray-900">{user?.role}</p>
@@ -119,7 +119,7 @@ export const Settings = () => {
 
           {user?.employee_id && (
             <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <Calendar className="h-10 w-10 text-indigo-600" />
+              <Calendar className="h-10 w-10 text-blue-600" />
               <div className="flex-1">
                 <p className="text-xs text-gray-600 font-medium uppercase tracking-wider">Employee ID</p>
                 <p className="font-mono font-medium text-gray-900">{user.employee_id}</p>
@@ -130,8 +130,8 @@ export const Settings = () => {
       </Card>
 
       {/* Editable Profile Information */}
-      <Card className="p-6 border border-gray-200 bg-white">
-        <h3 className="text-lg font-semibold mb-6 text-gray-900">Update Profile Information</h3>
+      <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+        <h3 className="text-lg font-semibold text-gray-900 mb-6">Update Profile Information</h3>
         
         <div className="space-y-6">
           {/* Mobile Number Section */}
@@ -146,12 +146,12 @@ export const Settings = () => {
                 placeholder="Enter your mobile number"
                 value={mobileNumber}
                 onChange={(e) => setMobileNumber(e.target.value)}
-                className="flex-1 border border-gray-200"
+                className="flex-1 border border-gray-300 rounded-lg text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
               />
               <Button
                 onClick={handleUpdateMobileNumber}
                 disabled={loading}
-                className="bg-indigo-600 text-white hover:bg-indigo-700 h-10"
+                className="bg-blue-600 text-white hover:bg-blue-700 h-10"
               >
                 {loading ? 'Saving...' : 'Save'}
               </Button>
@@ -170,7 +170,7 @@ export const Settings = () => {
             <div className="flex gap-4">
               {/* Photo Preview */}
               <div className="flex-shrink-0">
-                <div className="w-24 h-24 bg-indigo-100 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300 overflow-hidden">
+                <div className="w-24 h-24 bg-blue-50 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300 overflow-hidden">
                   {photoPreview ? (
                     <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
                   ) : user?.profile_photo ? (
@@ -189,7 +189,7 @@ export const Settings = () => {
                     type="file"
                     accept="image/*"
                     onChange={handlePhotoChange}
-                    className="border border-gray-200"
+                    className="border border-gray-300 rounded-lg text-gray-900"
                   />
                 </div>
                 
@@ -197,7 +197,7 @@ export const Settings = () => {
                   <Button
                     onClick={handleUploadPhoto}
                     disabled={loading}
-                    className="bg-indigo-600 text-white hover:bg-indigo-700 w-full gap-2"
+                    className="bg-blue-600 text-white hover:bg-blue-700 w-full gap-2"
                   >
                     <Upload className="h-4 w-4" />
                     {loading ? 'Uploading...' : 'Upload Photo'}
@@ -214,8 +214,8 @@ export const Settings = () => {
       </Card>
 
       {/* System Info */}
-      <Card className="p-6 border border-gray-200 bg-white">
-        <h3 className="text-lg font-semibold mb-4 text-gray-900">System Information</h3>
+      <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">System Information</h3>
         <div className="space-y-3 text-sm bg-gray-50 p-4 rounded-lg border border-gray-200">
           <div className="flex justify-between">
             <span className="text-gray-600 font-medium">Application Version</span>

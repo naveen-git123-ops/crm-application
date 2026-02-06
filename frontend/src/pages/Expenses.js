@@ -7,20 +7,28 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Check, X, Receipt, Image as ImageIcon } from 'lucide-react';
+import { Plus, Check, X, Receipt, Image as ImageIcon, Calculator } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
 
+const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+
 const EXPENSE_CATEGORIES = ['Travel', 'Meals', 'Office Supplies', 'Software', 'Internet', 'Phone', 'Other'];
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 export const Expenses = () => {
   const { user } = useAuth();
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [pageTab, setPageTab] = useState('Requests');
   const [activeTab, setActiveTab] = useState('All');
   const [receiptFile, setReceiptFile] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [summaryMonth, setSummaryMonth] = useState(new Date().getMonth() + 1);
+  const [summaryYear, setSummaryYear] = useState(new Date().getFullYear());
   const [formData, setFormData] = useState({
     employee_id: '',
     employee_name: '',
@@ -29,9 +37,25 @@ export const Expenses = () => {
     description: ''
   });
 
+  const fetchSummary = async () => {
+    try {
+      const res = await axios.get(
+        `${API}/expenses/summary-by-employee?month=${summaryMonth}&year=${summaryYear}`,
+        authHeaders()
+      );
+      setSummary(res.data);
+    } catch {
+      setSummary({ month: summaryMonth, year: summaryYear, employees: [] });
+    }
+  };
+
   useEffect(() => {
     fetchExpenses();
   }, []);
+
+  useEffect(() => {
+    if (user?.role === 'Admin' && summaryMonth && summaryYear) fetchSummary();
+  }, [user?.role, summaryMonth, summaryYear]);
 
   useEffect(() => {
     if (dialogOpen && user?.employee_id && !formData.employee_id) {
@@ -82,6 +106,7 @@ export const Expenses = () => {
       setFormData({ employee_id: '', employee_name: '', amount: '', category: 'Travel', description: '' });
       setReceiptFile(null);
       fetchExpenses();
+      if (user?.role === 'Admin') fetchSummary();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to submit expense');
     }
@@ -98,12 +123,14 @@ export const Expenses = () => {
       });
       toast.success(`Expense ${status.toLowerCase()} successfully`);
       fetchExpenses();
+      if (user?.role === 'Admin') fetchSummary();
     } catch (error) {
       toast.error('Failed to update expense status');
     }
   };
 
-  const canApprove = ['Admin', 'HR', 'Manager'].includes(user?.role);
+  // Only Admin, HR, Manager can approve/reject; Employee can only submit
+  const canApprove = !!user?.role && ['Admin', 'HR', 'Manager'].includes(user.role);
 
   const filteredExpenses = expenses.filter(exp => {
     if (activeTab !== 'All' && exp.status !== activeTab) return false;
@@ -114,7 +141,7 @@ export const Expenses = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
       </div>
     );
   }
@@ -133,8 +160,8 @@ export const Expenses = () => {
               Submit Expense
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg bg-white border-0 shadow-2xl p-0">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
+          <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+            <div className="bg-blue-600 text-white p-6 rounded-t-lg">
               <DialogHeader>
                 <DialogTitle className="text-xl font-bold text-white">Submit Expense</DialogTitle>
                 <p className="text-blue-100 text-sm">Add amount, category, description and optional receipt</p>
@@ -210,25 +237,118 @@ export const Expenses = () => {
         </Dialog>
       </div>
 
-      <Card className="p-3 border border-gray-200 bg-white">
-        <div className="flex gap-2">
-          {['All', 'Pending', 'Approved', 'Rejected'].map((tab) => (
+      {/* Top-level tabs: Requests | Summary (Summary only for Admin) */}
+      {user?.role === 'Admin' && (
+        <Card className="p-2 rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="flex gap-1">
             <Button
-              key={tab}
-              variant={activeTab === tab ? 'default' : 'ghost'}
+              variant={pageTab === 'Requests' ? 'default' : 'ghost'}
               size="sm"
-              className={activeTab === tab ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}
-              onClick={() => setActiveTab(tab)}
+              className={pageTab === 'Requests' ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-gray-600 hover:bg-gray-100'}
+              onClick={() => setPageTab('Requests')}
             >
-              {tab}
+              <Receipt className="h-4 w-4 mr-2" />
+              Requests
             </Button>
-          ))}
-        </div>
-      </Card>
+            <Button
+              variant={pageTab === 'Summary' ? 'default' : 'ghost'}
+              size="sm"
+              className={pageTab === 'Summary' ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-gray-600 hover:bg-gray-100'}
+              onClick={() => setPageTab('Summary')}
+            >
+              <Calculator className="h-4 w-4 mr-2" />
+              Summary
+            </Button>
+          </div>
+        </Card>
+      )}
 
-      <div className="space-y-4">
-        {filteredExpenses.map((exp) => (
-          <Card key={exp.id} className="p-6 border border-gray-200 bg-white">
+      {pageTab === 'Summary' && user?.role === 'Admin' ? (
+        <Card className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div className="flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-blue-600" />
+              <h2 className="text-lg font-semibold text-gray-900">Expense summary by employee</h2>
+            </div>
+            <p className="text-sm text-gray-500">Use this for end-of-month salary compensation</p>
+            <div className="flex items-center gap-2">
+              <select
+                value={summaryMonth}
+                onChange={(e) => setSummaryMonth(Number(e.target.value))}
+                className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm"
+              >
+                {MONTHS.map((m, i) => (
+                  <option key={m} value={i + 1}>{m}</option>
+                ))}
+              </select>
+              <select
+                value={summaryYear}
+                onChange={(e) => setSummaryYear(Number(e.target.value))}
+                className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm"
+              >
+                {[summaryYear - 2, summaryYear - 1, summaryYear, summaryYear + 1].map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {summary?.employees?.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
+                    <th className="text-right py-3 px-4 font-semibold text-green-700">Approved (₹)</th>
+                    <th className="text-right py-3 px-4 font-semibold text-red-700">Rejected (₹)</th>
+                    <th className="text-right py-3 px-4 font-semibold text-amber-700">Pending (₹)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.employees.map((row) => (
+                    <tr key={row.employee_id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-3 px-4">
+                        <span className="font-medium text-gray-900">{row.employee_name}</span>
+                        <span className="text-gray-500 ml-1">({row.employee_id})</span>
+                      </td>
+                      <td className="text-right py-3 px-4 font-medium text-green-700">
+                        ₹{Number(row.total_approved).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="text-right py-3 px-4 text-red-600">
+                        ₹{Number(row.total_rejected).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="text-right py-3 px-4 text-amber-600">
+                        ₹{Number(row.total_pending).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-gray-500 text-sm py-4">No expenses in {summary ? MONTHS[summary.month - 1] + ' ' + summary.year : 'selected month'}.</p>
+          )}
+        </Card>
+      ) : (
+        <>
+          <Card className="p-3 rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="flex gap-2">
+              {['All', 'Pending', 'Approved', 'Rejected'].map((tab) => (
+                <Button
+                  key={tab}
+                  variant={activeTab === tab ? 'default' : 'ghost'}
+                  size="sm"
+                  className={activeTab === tab ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}
+                  onClick={() => setActiveTab(tab)}
+                >
+                  {tab}
+                </Button>
+              ))}
+            </div>
+          </Card>
+
+          <div className="space-y-4">
+            {filteredExpenses.map((exp) => (
+              <Card key={exp.id} className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex-1 space-y-3">
                 <div className="flex items-start justify-between">
@@ -236,9 +356,9 @@ export const Expenses = () => {
                     <h3 className="text-lg font-semibold text-gray-900">{exp.employee_name}</h3>
                     <p className="text-sm text-gray-600">{exp.category} • ₹{Number(exp.amount).toLocaleString('en-IN')}</p>
                   </div>
-                  <span className={`px-3 py-1 rounded text-xs font-medium ${
+                  <span className={`px-3 py-1 rounded-md text-xs font-medium ${
                     exp.status === 'Pending' ? 'bg-amber-50 text-amber-700' :
-                    exp.status === 'Approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                    exp.status === 'Approved' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
                   }`}>
                     {exp.status}
                   </span>
@@ -264,36 +384,42 @@ export const Expenses = () => {
                   <p className="text-xs text-gray-600">{exp.status} by {exp.approver_name}</p>
                 )}
               </div>
-              {canApprove && exp.status === 'Pending' && (
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    className="bg-green-600 hover:bg-green-700 text-white h-9"
-                    onClick={() => handleExpenseAction(exp.id, 'Approved')}
-                  >
-                    <Check className="h-4 w-4 mr-1" />
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="bg-red-600 hover:bg-red-700 text-white h-9"
-                    onClick={() => handleExpenseAction(exp.id, 'Rejected')}
-                  >
-                    <X className="h-4 w-4 mr-1" />
-                    Reject
-                  </Button>
+              {canApprove && (
+                <div className="flex gap-2 flex-wrap">
+                  {(exp.status === 'Pending' || exp.status === 'Rejected') && (
+                    <Button
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700 text-white h-9"
+                      onClick={() => handleExpenseAction(exp.id, 'Approved')}
+                    >
+                      <Check className="h-4 w-4 mr-1" />
+                      Approve
+                    </Button>
+                  )}
+                  {(exp.status === 'Pending' || exp.status === 'Approved') && (
+                    <Button
+                      size="sm"
+                      className="bg-red-600 hover:bg-red-700 text-white h-9"
+                      onClick={() => handleExpenseAction(exp.id, 'Rejected')}
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      Reject
+                    </Button>
+                  )}
                 </div>
               )}
-            </div>
-          </Card>
-        ))}
-      </div>
+              </div>
+              </Card>
+            ))}
+          </div>
 
-      {filteredExpenses.length === 0 && (
-        <Card className="p-12 text-center border border-gray-200 bg-white">
-          <Receipt className="h-12 w-12 mx-auto mb-2 opacity-20" />
-          <p className="text-gray-600">No expenses found</p>
-        </Card>
+          {filteredExpenses.length === 0 && (
+            <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
+              <Receipt className="h-12 w-12 mx-auto mb-2 opacity-20" />
+              <p className="text-gray-600">No expenses found</p>
+            </Card>
+          )}
+        </>
       )}
     </div>
   );

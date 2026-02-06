@@ -71,7 +71,7 @@ export const Payroll = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
       </div>
     );
   }
@@ -87,8 +87,8 @@ export const Payroll = () => {
       </div>
 
       {/* Payslip Generator */}
-      <Card className="p-6 border border-slate-200 bg-white">
-        <h3 className="text-lg font-semibold mb-4 text-gray-900">Generate Payslip</h3>
+      <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Generate Payslip</h3>
         <div className="space-y-4">
           {canManagePayroll && (
             <div>
@@ -97,7 +97,7 @@ export const Payroll = () => {
                 data-testid="payroll-employee-select"
                 value={selectedEmployee}
                 onChange={(e) => setSelectedEmployee(e.target.value)}
-                className="flex h-10 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                className="flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
               >
                 <option value="">Select an employee</option>
                 {employees.map((emp) => (
@@ -116,13 +116,13 @@ export const Payroll = () => {
               data-testid="payroll-month-input"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="border border-gray-200 h-10"
+              className="border border-gray-300 h-10 rounded-lg text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
             />
           </div>
 
           {selectedEmp && (
-            <Card className="p-4 bg-gray-50 border border-gray-200">
-              <h4 className="font-semibold mb-3 text-gray-900">Salary Breakdown</h4>
+            <Card className="p-4 rounded-lg bg-gray-50 border border-gray-200">
+              <h4 className="font-semibold text-gray-900 mb-3">Salary Breakdown</h4>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Employee Name:</span>
@@ -140,7 +140,7 @@ export const Payroll = () => {
                   <span className="text-gray-600">Job Role:</span>
                   <span className="font-medium text-gray-900">{selectedEmp.job_role}</span>
                 </div>
-                <div className="h-px bg-slate-300 my-3" />
+                <div className="h-px bg-gray-200 my-3" />
                 <div className="flex justify-between">
                   <span className="text-gray-600">Basic Salary (50%):</span>
                   <span className="font-mono font-medium text-gray-900">₹{(selectedEmp.salary * 0.5).toLocaleString()}</span>
@@ -153,17 +153,17 @@ export const Payroll = () => {
                   <span className="text-gray-600">Allowances (30%):</span>
                   <span className="font-mono font-medium text-gray-900">₹{(selectedEmp.salary * 0.3).toLocaleString()}</span>
                 </div>
-                <div className="h-px bg-slate-300 my-3" />
+                <div className="h-px bg-gray-200 my-3" />
                 <div className="flex justify-between text-base">
                   <span className="font-semibold text-gray-900">Gross Salary:</span>
-                  <span className="font-mono font-bold text-indigo-600">₹{selectedEmp.salary.toLocaleString()}</span>
+                  <span className="font-mono font-bold text-blue-600">₹{selectedEmp.salary.toLocaleString()}</span>
                 </div>
               </div>
             </Card>
           )}
 
           <Button
-            className="w-full bg-indigo-600 text-white font-medium hover:bg-indigo-700 h-10"
+            className="w-full bg-blue-600 text-white font-medium hover:bg-blue-700 h-10"
             onClick={handleDownloadPayslip}
             disabled={!selectedEmployee || !selectedMonth}
             data-testid="download-payslip-button"
@@ -175,9 +175,9 @@ export const Payroll = () => {
       </Card>
 
       {/* Info Card */}
-      <Card className="p-6 border border-slate-200 bg-white">
+      <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex items-start gap-4">
-          <CreditCard className="h-6 w-6 text-indigo-600 mt-1" />
+          <CreditCard className="h-6 w-6 text-blue-600 mt-1" />
           <div>
             <h3 className="font-semibold mb-2 text-gray-900">About Payroll</h3>
             <p className="text-sm text-gray-600 leading-relaxed">
@@ -195,7 +195,7 @@ export const Payroll = () => {
 const Input = ({ className, ...props }) => {
   return (
     <input
-      className={`flex h-10 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${className}`}
+      className={`flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 ${className || ''}`}
       {...props}
     />
   );

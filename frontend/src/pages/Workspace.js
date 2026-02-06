@@ -90,7 +90,7 @@ export const Workspace = () => {
   if (loading && logs.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
       </div>
     );
   }
@@ -104,7 +104,7 @@ export const Workspace = () => {
 
       {/* Submit today's work log - only for users with employee_id */}
       {user?.employee_id && (
-        <Card className="p-6 border border-gray-200 bg-white">
+        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <LogOut className="h-5 w-5 text-amber-600" />
             End of Day Summary
@@ -138,7 +138,7 @@ export const Workspace = () => {
       )}
 
       {/* Past logs */}
-      <Card className="p-6 border border-gray-200 bg-white">
+      <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <FileText className="h-5 w-5" />

@@ -7,6 +7,7 @@ import {
   Users, 
   Calendar, 
   FileText, 
+  FileStack,
   Settings, 
   LogOut,
   Menu,
@@ -30,19 +31,26 @@ export const Layout = ({ children }) => {
   };
 
   const navItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: Target, label: 'Leads', path: '/leads', roles: ['Admin', 'Manager'] },
-    { icon: Users, label: 'Employees', path: '/employees', roles: ['Admin', 'HR', 'Manager'] },
-    { icon: Calendar, label: 'Attendance', path: '/attendance', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: FileText, label: 'Leaves', path: '/leaves', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: Receipt, label: 'Expenses', path: '/expenses', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: Shield, label: 'Roles', path: '/roles', roles: ['Admin'] },
-    { icon: Briefcase, label: 'Workspace', path: '/workspace', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: IDCard, label: 'ID Cards', path: '/idcards', roles: ['Admin', 'HR', 'Manager'] },
-    { icon: Settings, label: 'Settings', path: '/settings', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', permission: 'dashboard', roles: ['Admin'] },
+    { icon: Target, label: 'Leads', path: '/leads', permission: 'leads', roles: ['Admin', 'Manager', 'Sales'] },
+    { icon: Users, label: 'Employees', path: '/employees', permission: 'employees', roles: ['Admin', 'HR', 'Manager'] },
+    { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
+    { icon: FileText, label: 'Leaves', path: '/leaves', permission: 'leaves', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
+    { icon: Receipt, label: 'Expenses', path: '/expenses', permission: 'expenses', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
+    { icon: Shield, label: 'Roles', path: '/roles', permission: 'roles', roles: ['Admin'] },
+    { icon: Briefcase, label: 'Workspace', path: '/workspace', permission: 'workspace', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
+    { icon: FileStack, label: 'Documents', path: '/documents', permission: 'documents', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
+    { icon: IDCard, label: 'ID Cards', path: '/idcards', permission: 'idcards', roles: ['Admin', 'HR', 'Manager'] },
+    { icon: Settings, label: 'Settings', path: '/settings', permission: 'settings', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
   ];
 
-  const filteredNavItems = navItems.filter(item => item.roles.includes(user?.role));
+  const filteredNavItems = navItems.filter(item => {
+    const hasPermission = Array.isArray(user?.permissions) && user.permissions.includes(item.permission);
+    const hasRole = item.roles.includes(user?.role);
+    if (hasPermission) return true;
+    if (hasRole) return true;
+    return false;
+  });
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">

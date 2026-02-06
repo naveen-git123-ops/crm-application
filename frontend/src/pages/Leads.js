@@ -75,6 +75,14 @@ export const Leads = () => {
 
   const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
 
+  /** Sales can only edit/delete/comment on leads they created; Admin and Manager can do all. */
+  const canEditLead = (lead) => {
+    if (!lead || !user) return false;
+    if (['Admin', 'Manager'].includes(user.role)) return true;
+    if (user.role === 'Sales') return String(lead.created_by_employee_id || '') === String(user.employee_id || '');
+    return false;
+  };
+
   useEffect(() => {
     fetchLeads();
     fetchStats();
@@ -236,7 +244,7 @@ export const Leads = () => {
   if (loading && leads.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
       </div>
     );
   }
@@ -257,8 +265,8 @@ export const Leads = () => {
               Add Lead
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg bg-white border-0 shadow-2xl p-0 max-h-[90vh] overflow-y-auto">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
+          <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl p-0 max-h-[90vh] overflow-y-auto">
+            <div className="bg-blue-600 text-white p-6 rounded-t-lg">
               <DialogHeader>
                 <DialogTitle className="text-xl font-bold text-white">New Lead</DialogTitle>
                 <p className="text-blue-100 text-sm">Capture contact and company details</p>
@@ -393,7 +401,7 @@ export const Leads = () => {
       </div>
 
       {/* Filters & view toggle */}
-      <Card className="p-3 border border-gray-200 bg-white">
+      <Card className="p-3 rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex gap-2">
             <Button
@@ -476,22 +484,26 @@ export const Leads = () => {
                       <p className="font-medium text-gray-900 truncate">{lead.contact_name}</p>
                       <p className="text-xs text-gray-600 truncate">{lead.company}</p>
                       {lead.value != null && lead.value > 0 && (
-                        <p className="text-xs text-violet-600 mt-1">₹{Number(lead.value).toLocaleString('en-IN')}</p>
+                        <p className="text-xs text-blue-600 mt-1">₹{Number(lead.value).toLocaleString('en-IN')}</p>
                       )}
                       <div className="flex justify-between items-center mt-2">
-                        <select
-                          value={lead.status}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            handleStatusChange(lead.id, e.target.value);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-xs rounded border border-gray-200 px-2 py-1 bg-white text-gray-900"
-                        >
-                          {STATUSES.map((s) => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
+                        {canEditLead(lead) ? (
+                          <select
+                            value={lead.status}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleStatusChange(lead.id, e.target.value);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs rounded border border-gray-200 px-2 py-1 bg-white text-gray-900"
+                          >
+                            {STATUSES.map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-xs text-gray-600">{lead.status}</span>
+                        )}
                         <ChevronRight className="h-4 w-4 text-gray-400" />
                       </div>
                     </Card>
@@ -505,7 +517,7 @@ export const Leads = () => {
 
       {/* List view */}
       {viewMode === 'list' && (
-        <Card className="border border-gray-200 bg-white overflow-hidden">
+        <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -533,7 +545,7 @@ export const Leads = () => {
                     <td className="py-3 px-4 text-gray-700">{lead.company}</td>
                     <td className="py-3 px-4 text-gray-700">{lead.source}</td>
                     <td className="py-3 px-4">
-                      <span className="px-2 py-1 rounded text-xs font-medium bg-violet-50 text-violet-700">
+                      <span className="px-2 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700">
                         {lead.status}
                       </span>
                     </td>
@@ -544,41 +556,45 @@ export const Leads = () => {
                     </td>
                     <td className="py-3 px-4 text-gray-600">{lead.assigned_to_name || '—'}</td>
                     <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedLead(lead);
-                          setFormData({
-                            contact_name: lead.contact_name,
-                            company: lead.company,
-                            email: lead.email,
-                            phone: lead.phone || '',
-                            source: lead.source,
-                            status: lead.status,
-                            value: lead.value ?? '',
-                            notes: lead.notes || '',
-                            assigned_to_employee_id: lead.assigned_to_employee_id || '',
-                            assigned_to_name: lead.assigned_to_name || '',
-                          });
-                          setEditDialogOpen(true);
-                        }}
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-red-600 hover:text-red-700"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteLead(lead.id);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {canEditLead(lead) && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedLead(lead);
+                              setFormData({
+                                contact_name: lead.contact_name,
+                                company: lead.company,
+                                email: lead.email,
+                                phone: lead.phone || '',
+                                source: lead.source,
+                                status: lead.status,
+                                value: lead.value ?? '',
+                                notes: lead.notes || '',
+                                assigned_to_employee_id: lead.assigned_to_employee_id || '',
+                                assigned_to_name: lead.assigned_to_name || '',
+                              });
+                              setEditDialogOpen(true);
+                            }}
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-red-600 hover:text-red-700"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteLead(lead.id);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -608,14 +624,14 @@ export const Leads = () => {
               <div className="mt-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-600">{selectedLead.company}</p>
-                  <span className="px-2 py-1 rounded text-xs font-medium bg-violet-50 text-violet-700">
+                  <span className="px-2 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700">
                     {selectedLead.status}
                   </span>
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2">
                     <Mail className="h-4 w-4 text-gray-500" />
-                    <a href={`mailto:${selectedLead.email}`} className="text-violet-600 hover:underline">
+                    <a href={`mailto:${selectedLead.email}`} className="text-blue-600 hover:underline">
                       {selectedLead.email}
                     </a>
                   </div>
@@ -640,6 +656,9 @@ export const Leads = () => {
                   {selectedLead.assigned_to_name && (
                     <p className="text-gray-600">Assigned to: {selectedLead.assigned_to_name}</p>
                   )}
+                  {selectedLead.created_by_name && (
+                    <p className="text-gray-600">Created by: {selectedLead.created_by_name}</p>
+                  )}
                 </div>
                 {selectedLead.notes && (
                   <div>
@@ -647,40 +666,42 @@ export const Leads = () => {
                     <p className="text-sm text-gray-700 whitespace-pre-wrap">{selectedLead.notes}</p>
                   </div>
                 )}
-                <div className="flex gap-2 pt-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setFormData({
-                        contact_name: selectedLead.contact_name,
-                        company: selectedLead.company,
-                        email: selectedLead.email,
-                        phone: selectedLead.phone || '',
-                        source: selectedLead.source,
-                        status: selectedLead.status,
-                        value: selectedLead.value ?? '',
-                        notes: selectedLead.notes || '',
-                        assigned_to_employee_id: selectedLead.assigned_to_employee_id || '',
-                        assigned_to_name: selectedLead.assigned_to_name || '',
-                      });
-                      setDetailSheetOpen(false);
-                      setEditDialogOpen(true);
-                    }}
-                  >
-                    <Edit2 className="h-4 w-4 mr-1" />
-                    Edit
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-red-600 hover:text-red-700"
-                    onClick={() => handleDeleteLead(selectedLead.id)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Delete
-                  </Button>
-                </div>
+                {canEditLead(selectedLead) && (
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setFormData({
+                          contact_name: selectedLead.contact_name,
+                          company: selectedLead.company,
+                          email: selectedLead.email,
+                          phone: selectedLead.phone || '',
+                          source: selectedLead.source,
+                          status: selectedLead.status,
+                          value: selectedLead.value ?? '',
+                          notes: selectedLead.notes || '',
+                          assigned_to_employee_id: selectedLead.assigned_to_employee_id || '',
+                          assigned_to_name: selectedLead.assigned_to_name || '',
+                        });
+                        setDetailSheetOpen(false);
+                        setEditDialogOpen(true);
+                      }}
+                    >
+                      <Edit2 className="h-4 w-4 mr-1" />
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-600 hover:text-red-700"
+                      onClick={() => handleDeleteLead(selectedLead.id)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete
+                    </Button>
+                  </div>
+                )}
 
                 <hr className="border-gray-200" />
 
@@ -689,6 +710,7 @@ export const Leads = () => {
                     <Activity className="h-4 w-4" />
                     Activity
                   </p>
+                  {canEditLead(selectedLead) && (
                   <form onSubmit={handleAddActivity} className="flex gap-2 mb-4">
                     <select
                       value={activityForm.activity_type}
@@ -709,13 +731,14 @@ export const Leads = () => {
                       Add
                     </Button>
                   </form>
+                  )}
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {activities.map((act) => (
                       <div
                         key={act.id}
                         className="rounded-lg border border-gray-100 bg-gray-50 p-2 text-sm"
                       >
-                        <span className="font-medium text-violet-600">{act.activity_type}</span>
+                        <span className="font-medium text-blue-600">{act.activity_type}</span>
                         <p className="text-gray-700 mt-0.5">{act.summary}</p>
                         <p className="text-xs text-gray-500 mt-1">
                           {act.created_by_name} • {new Date(act.created_at).toLocaleString()}
@@ -735,8 +758,8 @@ export const Leads = () => {
 
       {/* Edit lead dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-lg bg-white border-0 shadow-2xl p-0 max-h-[90vh] overflow-y-auto">
-          <div className="bg-gradient-to-r from-violet-600 to-purple-600 text-white p-6">
+        <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl p-0 max-h-[90vh] overflow-y-auto">
+          <div className="bg-blue-600 text-white p-6 rounded-t-lg">
             <DialogHeader>
               <DialogTitle className="text-xl font-bold text-white">Edit Lead</DialogTitle>
             </DialogHeader>
@@ -854,7 +877,7 @@ export const Leads = () => {
               <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="bg-violet-600 hover:bg-violet-700 text-white">
+              <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
                 Save
               </Button>
             </div>
