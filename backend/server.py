@@ -96,6 +96,20 @@ class AttendanceModel(Base):
     work_hours = Column(Float, default=0.0)
     status = Column(String, default='Present')
     created_at = Column(DateTime, default=datetime.now)
+    # Location & tour (office vs official travel)
+    punch_in_lat = Column(Float, nullable=True)
+    punch_in_lng = Column(Float, nullable=True)
+    punch_out_lat = Column(Float, nullable=True)
+    punch_out_lng = Column(Float, nullable=True)
+    is_tour = Column(Integer, default=0)
+    tour_approval_status = Column(String, nullable=True)  # 'pending', 'approved', 'rejected'
+
+
+class SettingsModel(Base):
+    __tablename__ = "settings"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    key = Column(String, unique=True, index=True)
+    value = Column(String, nullable=True)
 
 class LeaveModel(Base):
     __tablename__ = "leaves"
@@ -118,6 +132,15 @@ class LeavePolicyModel(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     paid_leaves_per_year = Column(Integer, default=12)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class GovernmentHolidayModel(Base):
+    __tablename__ = "government_holidays"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    date = Column(String, index=True)  # YYYY-MM-DD
+    name = Column(String)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
 
 
 class DocumentModel(Base):
@@ -202,10 +225,31 @@ def migrate_leads_add_created_by():
 
 migrate_leads_add_created_by()
 
+def migrate_attendance_location_and_tour():
+    """Add location and tour columns to attendance if missing."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            r = conn.execute(text("PRAGMA table_info(attendance)"))
+            cols = [row[1] for row in r.fetchall()]
+            adds = [
+                ('punch_in_lat', 'FLOAT'), ('punch_in_lng', 'FLOAT'),
+                ('punch_out_lat', 'FLOAT'), ('punch_out_lng', 'FLOAT'),
+                ('is_tour', 'INTEGER'), ('tour_approval_status', 'TEXT'),
+            ]
+            for col, typ in adds:
+                if col not in cols:
+                    conn.execute(text(f"ALTER TABLE attendance ADD COLUMN {col} {typ}"))
+            conn.commit()
+        except Exception:
+            pass
+
+migrate_attendance_location_and_tour()
+
 # Seed default roles (Admin cannot be edited/deleted; others can)
 DEFAULT_PERMISSION_KEYS = [
     "dashboard", "leads", "employees", "attendance", "leaves", "expenses",
-    "roles", "workspace", "idcards", "documents", "settings"
+    "roles", "workspace", "idcards", "documents", "settings", "holidays"
 ]
 
 def seed_roles_if_needed():
@@ -215,9 +259,9 @@ def seed_roles_if_needed():
             return
         defaults = [
             RoleModel(name="Admin", permissions=json.dumps(DEFAULT_PERMISSION_KEYS), is_system=1),
-            RoleModel(name="HR", permissions=json.dumps(["employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings"]), is_system=0),
-            RoleModel(name="Manager", permissions=json.dumps(["leads", "employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings"]), is_system=0),
-            RoleModel(name="Employee", permissions=json.dumps(["attendance", "leaves", "expenses", "workspace", "documents", "settings"]), is_system=0),
+            RoleModel(name="HR", permissions=json.dumps(["employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays"]), is_system=0),
+            RoleModel(name="Manager", permissions=json.dumps(["leads", "employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays"]), is_system=0),
+            RoleModel(name="Employee", permissions=json.dumps(["attendance", "leaves", "expenses", "workspace", "documents", "settings", "holidays"]), is_system=0),
         ]
         for model in defaults:
             db.add(model)
@@ -317,10 +361,14 @@ class Attendance(BaseModel):
     work_hours: float = 0.0
     status: Literal['Present', 'Absent', 'Late', 'Half Day'] = 'Present'
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    is_tour: Optional[int] = None
+    tour_approval_status: Optional[str] = None
 
 class AttendancePunch(BaseModel):
     employee_id: str
     action: Literal['punch_in', 'punch_out']
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class AttendanceSummary(BaseModel):
     employee_id: str
@@ -362,6 +410,22 @@ class LeaveAction(BaseModel):
     status: Literal['Approved', 'Rejected']
     approver_id: str
     approver_name: str
+
+
+class GovernmentHoliday(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    date: str
+    name: str
+    description: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class GovernmentHolidayCreate(BaseModel):
+    date: str
+    name: str
+    description: Optional[str] = None
+
 
 class Document(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -813,6 +877,45 @@ def update_employee_profile(
     
     return employee
 
+# ============= OFFICE LOCATION & DISTANCE =============
+OFFICE_RADIUS_METRES = 50
+
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Distance in metres between two (lat, lon) points."""
+    import math
+    R = 6371000  # Earth radius in metres
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+def get_office_location(db: Session):
+    """Return (lat, lng) from settings or env. None if not configured."""
+    row_lat = db.query(SettingsModel).filter(SettingsModel.key == 'office_lat').first()
+    row_lng = db.query(SettingsModel).filter(SettingsModel.key == 'office_lng').first()
+    if row_lat and row_lng:
+        try:
+            return float(row_lat.value), float(row_lng.value)
+        except (TypeError, ValueError):
+            pass
+    lat_env = os.environ.get('OFFICE_LAT')
+    lng_env = os.environ.get('OFFICE_LNG')
+    if lat_env is not None and lng_env is not None:
+        try:
+            return float(lat_env), float(lng_env)
+        except ValueError:
+            pass
+    return None
+
+def is_within_office(db: Session, lat: float, lng: float) -> bool:
+    office = get_office_location(db)
+    if office is None:
+        return True  # No office set: allow without location check (e.g. admin override)
+    dist = _haversine_m(office[0], office[1], lat, lng)
+    return dist <= OFFICE_RADIUS_METRES
+
 # ============= ATTENDANCE ROUTES =============
 
 @api_router.post('/attendance/punch')
@@ -829,11 +932,23 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
     ).first()
     
     current_time = datetime.now(timezone.utc).strftime('%H:%M:%S')
+    office = get_office_location(db)
+    is_admin_hr = current_user.role in ['Admin', 'HR']
+    # Employees must send location when office is configured
+    if office is not None and not is_admin_hr:
+        if punch_data.latitude is None or punch_data.longitude is None:
+            raise HTTPException(
+                status_code=400,
+                detail='Location is required. Please enable location access to punch in/out.'
+            )
+    # Determine if this punch is at office or tour (only when location is provided and office is set)
+    at_office = True
+    if office is not None and punch_data.latitude is not None and punch_data.longitude is not None:
+        at_office = is_within_office(db, punch_data.latitude, punch_data.longitude)
     
     if punch_data.action == 'punch_in':
         if existing:
             raise HTTPException(status_code=400, detail='Already punched in today')
-        # Login window: 10:00–10:30 = on time (Present). After 10:30 = Late. Before 10:00 = Present (early).
         hour, minute = int(current_time.split(':')[0]), int(current_time.split(':')[1])
         if hour > 10 or (hour == 10 and minute > 30):
             status = 'Late'
@@ -844,29 +959,135 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             employee_name=employee.name,
             date=today,
             punch_in=current_time,
-            status=status
+            status=status,
+            punch_in_lat=punch_data.latitude,
+            punch_in_lng=punch_data.longitude,
+            is_tour=1 if not at_office else 0,
+            tour_approval_status='pending' if not at_office else None,
         )
         db.add(new_attendance)
         db.commit()
-        
-        return {'message': 'Punched in successfully', 'attendance': new_attendance}
+        db.refresh(new_attendance)
+        return {
+            'message': 'Punched in successfully' if at_office else 'Recorded as Tour (official travel). Pending approval from Admin/Manager.',
+            'attendance': new_attendance,
+            'is_tour': not at_office,
+        }
     
     else:  # punch_out
         if not existing:
             raise HTTPException(status_code=400, detail='No punch in record found')
-        
         if existing.punch_out:
             raise HTTPException(status_code=400, detail='Already punched out today')
-        
         punch_in_time = datetime.strptime(existing.punch_in, '%H:%M:%S')
         punch_out_time = datetime.strptime(current_time, '%H:%M:%S')
         work_hours = (punch_out_time - punch_in_time).total_seconds() / 3600
-        
         existing.punch_out = current_time
         existing.work_hours = round(work_hours, 2)
+        existing.punch_out_lat = punch_data.latitude
+        existing.punch_out_lng = punch_data.longitude
+        # If punch out is outside office, ensure record is marked as tour if not already
+        if not at_office and existing.is_tour != 1:
+            existing.is_tour = 1
+            existing.tour_approval_status = 'pending'
         db.commit()
-        
-        return {'message': 'Punched out successfully', 'attendance': existing}
+        db.refresh(existing)
+        return {
+            'message': 'Punched out successfully' if at_office else 'Punch out recorded as Tour. Pending approval from Admin/Manager.',
+            'attendance': existing,
+            'is_tour': not at_office,
+        }
+
+
+@api_router.get('/settings/office-location')
+def get_office_location_api(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Return office lat/lng if set. Admin, HR, Manager only (so employees cannot see exact coordinates)."""
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not allowed')
+    loc = get_office_location(db)
+    if loc is None:
+        return {'latitude': None, 'longitude': None, 'configured': False}
+    return {'latitude': loc[0], 'longitude': loc[1], 'configured': True}
+
+
+class OfficeLocationUpdate(BaseModel):
+    latitude: float
+    longitude: float
+
+
+@api_router.put('/settings/office-location')
+def set_office_location_api(
+    body: OfficeLocationUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Set office location (e.g. from Admin's current location). Admin only."""
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can set office location')
+    for key, val in [('office_lat', str(body.latitude)), ('office_lng', str(body.longitude))]:
+        row = db.query(SettingsModel).filter(SettingsModel.key == key).first()
+        if row:
+            row.value = val
+        else:
+            db.add(SettingsModel(key=key, value=val))
+    db.commit()
+    return {'message': 'Office location updated', 'latitude': body.latitude, 'longitude': body.longitude}
+
+
+@api_router.get('/attendance/tour-pending')
+def get_tour_pending(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List attendance records marked as tour that are pending approval. Admin and Manager only."""
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Only Admin and Manager can view tour requests')
+    records = db.query(AttendanceModel).filter(
+        AttendanceModel.is_tour == 1,
+        AttendanceModel.tour_approval_status == 'pending',
+    ).order_by(AttendanceModel.date.desc(), AttendanceModel.punch_in.desc()).all()
+    return [
+        {
+            'id': r.id,
+            'employee_id': r.employee_id,
+            'employee_name': r.employee_name,
+            'date': r.date,
+            'punch_in': r.punch_in,
+            'punch_out': r.punch_out,
+            'work_hours': r.work_hours,
+            'status': r.status,
+            'punch_in_lat': getattr(r, 'punch_in_lat', None),
+            'punch_in_lng': getattr(r, 'punch_in_lng', None),
+        }
+        for r in records
+    ]
+
+
+class TourApproveAction(BaseModel):
+    attendance_id: str
+    status: Literal['approved', 'rejected']
+
+
+@api_router.post('/attendance/tour-approve')
+def approve_tour(
+    body: TourApproveAction,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Approve or reject a tour punch. Admin and Manager only."""
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Only Admin and Manager can approve tour requests')
+    rec = db.query(AttendanceModel).filter(
+        AttendanceModel.id == body.attendance_id,
+        AttendanceModel.is_tour == 1,
+        AttendanceModel.tour_approval_status == 'pending',
+    ).first()
+    if not rec:
+        raise HTTPException(status_code=404, detail='Tour request not found or already processed')
+    rec.tour_approval_status = body.status
+    db.commit()
+    return {'message': f'Tour {body.status}', 'attendance_id': rec.id}
+
 
 @api_router.get('/attendance', response_model=List[Attendance])
 def get_attendance(
@@ -920,10 +1141,22 @@ def get_attendance_summary(month: str, current_user: UserModel = Depends(get_cur
         for emp in employees
     }
 
+    # Government holidays in this month: exclude from absent count
+    month_start = f'{year}-{month_num:02d}-01'
+    month_end = f'{year}-{month_num:02d}-{total_days:02d}'
+    holiday_count = db.query(GovernmentHolidayModel).filter(
+        GovernmentHolidayModel.date >= month_start,
+        GovernmentHolidayModel.date <= month_end
+    ).count()
+    working_days = max(0, total_days - holiday_count)
+
     for record in records:
         data = summary_map.get(record.employee_id)
         if not data:
             continue
+        # Tour punches count as present only when approved
+        if getattr(record, 'is_tour', 0) == 1 and getattr(record, 'tour_approval_status', None) != 'approved':
+            continue  # pending or rejected tour: do not count as present
         data['present_days'] += 1
         if record.status == 'Late':
             data['late_days'] += 1
@@ -931,7 +1164,7 @@ def get_attendance_summary(month: str, current_user: UserModel = Depends(get_cur
             data['half_day_days'] += 1
 
     for data in summary_map.values():
-        data['absent_days'] = max(data['total_days'] - data['present_days'], 0)
+        data['absent_days'] = max(working_days - data['present_days'], 0)
 
     return list(summary_map.values())
 
@@ -994,7 +1227,7 @@ def get_attendance_report(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Full attendance report: each day in range × each employee. No punch = Absent. Admin/HR see all; Employee sees self."""
+    """Full attendance report: each day in range × each employee. No punch = Absent, except on government holidays = Holiday. Admin/HR see all; Employee sees self."""
     from datetime import date as date_type
     start = date_type(*[int(x) for x in start_date.split('-')])
     end = date_type(*[int(x) for x in end_date.split('-')])
@@ -1015,10 +1248,18 @@ def get_attendance_report(
     ).all():
         key = (rec.date, rec.employee_id)
         records_by_key[key] = rec
+    # Government holidays in range: no punch on these dates = Holiday, not Absent
+    holiday_dates = set(
+        row.date for row in db.query(GovernmentHolidayModel).filter(
+            GovernmentHolidayModel.date >= start_date,
+            GovernmentHolidayModel.date <= end_date
+        ).all()
+    )
     report = []
     d = start
     while d <= end:
         date_str = d.strftime('%Y-%m-%d')
+        is_holiday = date_str in holiday_dates
         for emp in employees:
             key = (date_str, emp.employee_id)
             rec = records_by_key.get(key)
@@ -1031,6 +1272,8 @@ def get_attendance_report(
                     'punch_out': rec.punch_out,
                     'work_hours': rec.work_hours,
                     'status': rec.status,
+                    'is_tour': getattr(rec, 'is_tour', 0) == 1,
+                    'tour_approval_status': getattr(rec, 'tour_approval_status', None),
                 })
             else:
                 report.append({
@@ -1040,7 +1283,7 @@ def get_attendance_report(
                     'punch_in': None,
                     'punch_out': None,
                     'work_hours': 0,
-                    'status': 'Absent',
+                    'status': 'Holiday' if is_holiday else 'Absent',
                 })
         d += timedelta(days=1)
     report.sort(key=lambda x: (x['date'], x['employee_id']), reverse=True)
@@ -1159,6 +1402,61 @@ def get_leave_balance(
     pending = sum(l.days or 0 for l in leaves if l.status == 'Pending' and in_year(l.start_date))
     balance = max(0, allowed - taken)
     return {"allowed": allowed, "taken": taken, "pending": pending, "balance": balance, "year": y}
+
+
+# ============= GOVERNMENT HOLIDAYS =============
+# All authenticated users can list; only Admin/HR can add or delete.
+
+@api_router.get('/government-holidays', response_model=List[GovernmentHoliday])
+def list_government_holidays(
+    year: Optional[int] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all government holidays. Optional year filter (YYYY)."""
+    query = db.query(GovernmentHolidayModel).order_by(GovernmentHolidayModel.date.asc())
+    if year is not None:
+        query = query.filter(GovernmentHolidayModel.date >= f'{year}-01-01', GovernmentHolidayModel.date <= f'{year}-12-31')
+    return query.all()
+
+
+@api_router.post('/government-holidays', response_model=GovernmentHoliday)
+def create_government_holiday(
+    body: GovernmentHolidayCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Add a government holiday. Admin and HR only."""
+    if current_user.role not in ('Admin', 'HR'):
+        raise HTTPException(status_code=403, detail='Only Admin and HR can add government holidays')
+    # Validate date format YYYY-MM-DD
+    if len(body.date) != 10 or body.date[4] != '-' or body.date[7] != '-':
+        raise HTTPException(status_code=400, detail='Date must be YYYY-MM-DD')
+    existing = db.query(GovernmentHolidayModel).filter(GovernmentHolidayModel.date == body.date).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f'A holiday already exists on {body.date}')
+    row = GovernmentHolidayModel(date=body.date, name=body.name.strip(), description=(body.description or '').strip() or None)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@api_router.delete('/government-holidays/{holiday_id}')
+def delete_government_holiday(
+    holiday_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a government holiday. Admin and HR only."""
+    if current_user.role not in ('Admin', 'HR'):
+        raise HTTPException(status_code=403, detail='Only Admin and HR can delete government holidays')
+    row = db.query(GovernmentHolidayModel).filter(GovernmentHolidayModel.id == holiday_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Holiday not found')
+    db.delete(row)
+    db.commit()
+    return {'message': 'Holiday deleted'}
 
 
 # ============= DOCUMENT ROUTES =============

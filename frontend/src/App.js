@@ -19,6 +19,7 @@ import { Expenses } from '@/pages/Expenses';
 import { Roles } from '@/pages/Roles';
 import { Workspace } from '@/pages/Workspace';
 import { Leads } from '@/pages/Leads';
+import { GovernmentHolidays } from '@/pages/GovernmentHolidays';
 
 function App() {
   return (
@@ -123,6 +124,17 @@ function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Documents />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/government-holidays"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <GovernmentHolidays />
                   </Layout>
                 </ProtectedRoute>
               }

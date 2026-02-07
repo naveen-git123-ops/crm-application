@@ -59,8 +59,8 @@ export const Login = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-slate-50 via-white to-blue-50">
-      <div className="grid min-h-screen lg:grid-cols-2">
+    <div className="min-h-screen min-h-[100dvh] w-full bg-gradient-to-br from-slate-50 via-white to-blue-50 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+      <div className="grid min-h-screen min-h-[100dvh] lg:grid-cols-2">
         {/* Branding Panel */}
         <div className="hidden lg:flex flex-col justify-between p-12 bg-gradient-to-br from-blue-600 via-indigo-600 to-slate-900 text-white relative overflow-hidden">
           <div className="absolute inset-0 opacity-15">
@@ -88,7 +88,7 @@ export const Login = () => {
         </div>
 
         {/* Form Panel */}
-        <div className="flex items-center justify-center px-6 py-12 sm:px-12">
+        <div className="flex items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
           <div className="w-full max-w-md">
             <div className="mb-8 text-center lg:hidden">
               <img
@@ -98,10 +98,10 @@ export const Login = () => {
               />
             </div>
 
-            <div className="bg-white border border-gray-100 shadow-xl rounded-2xl p-8">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">
+            <div className="bg-white border border-gray-100 shadow-xl rounded-2xl p-5 sm:p-8">
+              <div className="flex items-center justify-between mb-5 sm:mb-6 gap-2">
+                <div className="min-w-0">
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
                     {isLogin ? 'Welcome back' : 'Create your account'}
                   </h2>
                   <p className="text-sm text-gray-500 mt-1">
@@ -113,11 +113,11 @@ export const Login = () => {
                 </span>
               </div>
 
-              <div className="flex gap-3 mb-8">
+              <div className="flex gap-3 mb-6 sm:mb-8">
                 <button
                   type="button"
                   onClick={() => setIsLogin(true)}
-                  className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                  className={`flex-1 py-3 min-h-[44px] rounded-lg text-sm font-semibold transition-all ${
                     isLogin
                       ? 'bg-blue-600 text-white shadow'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -128,7 +128,7 @@ export const Login = () => {
                 <button
                   type="button"
                   onClick={() => setIsLogin(false)}
-                  className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                  className={`flex-1 py-3 min-h-[44px] rounded-lg text-sm font-semibold transition-all ${
                     !isLogin
                       ? 'bg-blue-600 text-white shadow'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'

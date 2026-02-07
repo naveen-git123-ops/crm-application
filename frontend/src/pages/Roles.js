@@ -26,6 +26,7 @@ const PERMISSION_LABELS = {
   idcards: 'ID Cards',
   documents: 'Documents',
   settings: 'Settings',
+  holidays: 'Government Holidays',
 };
 
 const PERMISSION_KEYS = Object.keys(PERMISSION_LABELS);

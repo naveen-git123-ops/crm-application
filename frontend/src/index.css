@@ -36,6 +36,14 @@
   html {
     font-size: 93.75%;
     background-color: rgb(248, 250, 252);
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  @media (max-width: 640px) {
+    html {
+      font-size: 100%;
+    }
   }
   
   body {
@@ -43,6 +51,11 @@
     color: rgb(15, 23, 42);
     font-family: 'Inter', sans-serif;
     min-height: 100vh;
+    min-height: 100dvh;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    overflow-x: hidden;
   }
   
   .dark body {
@@ -129,4 +142,31 @@
   button:hover[class*="amber"]:not([class*="text-amber"]):not([class*="bg-amber"]) {
     background-color: inherit !important;
   }
+
+  /* Mobile: minimum touch targets (44px) */
+  @media (max-width: 768px) {
+    button:not([class*="size-"]):not(.min-h-),
+    a[role="button"],
+    .touch-target {
+      min-height: 44px;
+      min-width: 44px;
+    }
+    input, select, textarea {
+      font-size: 16px !important; /* prevents zoom on focus on iOS */
+    }
+  }
+}
+
+/* Utility: horizontal scroll wrapper for tables on mobile */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.table-scroll > * {
+  min-width: min-content;
+}
+
+/* Safe area for fixed bottom nav (notched / home indicator devices) */
+.safe-area-bottom {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0));
 }

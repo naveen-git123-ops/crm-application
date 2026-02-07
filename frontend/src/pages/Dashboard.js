@@ -71,9 +71,9 @@ export const Dashboard = () => {
   }));
 
   return (
-    <div className="space-y-6" data-testid="dashboard-page">
+    <div className="space-y-4 sm:space-y-6" data-testid="dashboard-page">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900">Welcome back, {user?.name}!</h1>
+        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Welcome back, {user?.name}!</h1>
         <p className="text-gray-600 text-sm mt-1">
           {canSeeLeads ? 'Sales & lead generation overview' : 'Dashboard'}
         </p>
@@ -82,54 +82,54 @@ export const Dashboard = () => {
       {canSeeLeads && leadReport ? (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            <Card className="p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+            <Card className="p-3 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
               <div className="flex items-center justify-between">
                 <div className="p-2.5 rounded-lg bg-blue-50">
                   <Target className="h-5 w-5 text-blue-600" />
                 </div>
               </div>
               <p className="text-xs font-medium text-gray-600 uppercase tracking-wider mt-2">Total Leads</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{leadReport.total}</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">{leadReport.total}</p>
             </Card>
-            <Card className="p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
+            <Card className="p-3 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
               <div className="p-2.5 rounded-lg bg-green-50">
                 <CheckCircle className="h-5 w-5 text-green-600" />
               </div>
               <p className="text-xs font-medium text-gray-600 uppercase tracking-wider mt-2">Won</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{wonCount}</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">{wonCount}</p>
             </Card>
-            <Card className="p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
+            <Card className="p-3 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm col-span-2 lg:col-span-1">
               <div className="p-2.5 rounded-lg bg-red-50">
                 <XCircle className="h-5 w-5 text-red-600" />
               </div>
               <p className="text-xs font-medium text-gray-600 uppercase tracking-wider mt-2">Lost</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{lostCount}</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">{lostCount}</p>
             </Card>
-            <Card className="p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
+            <Card className="p-3 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
               <div className="p-2.5 rounded-lg bg-amber-50">
                 <Clock className="h-5 w-5 text-amber-600" />
               </div>
               <p className="text-xs font-medium text-gray-600 uppercase tracking-wider mt-2">In Pipeline</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{pipelineCount}</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">{pipelineCount}</p>
             </Card>
-            <Card className="p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
+            <Card className="p-3 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
               <div className="p-2.5 rounded-lg bg-green-50">
                 <DollarSign className="h-5 w-5 text-green-600" />
               </div>
               <p className="text-xs font-medium text-gray-600 uppercase tracking-wider mt-2">Value Won (₹)</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
+              <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">
                 {(leadReport.total_value_won ?? 0).toLocaleString('en-IN')}
               </p>
             </Card>
           </div>
 
           {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Leads by Outcome</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            <Card className="p-4 sm:p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Leads by Outcome</h3>
               {pieData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={280}>
+                <ResponsiveContainer width="100%" height={240}>
                   <PieChart>
                     <Pie
                       data={pieData}
@@ -151,14 +151,14 @@ export const Dashboard = () => {
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-[280px] flex items-center justify-center text-gray-500">No lead data yet</div>
+                <div className="h-[240px] flex items-center justify-center text-gray-500 text-sm">No lead data yet</div>
               )}
             </Card>
 
-            <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Lead Generation</h3>
+            <Card className="p-4 sm:p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Monthly Lead Generation</h3>
               {barData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={280}>
+                <ResponsiveContainer width="100%" height={240}>
                   <BarChart data={barData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis dataKey="name" tick={{ fontSize: 12 }} />

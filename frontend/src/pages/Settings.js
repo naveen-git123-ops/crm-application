@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, Mail, Shield, Calendar, Upload } from 'lucide-react';
+import { User, Mail, Shield, Calendar, Upload, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -17,6 +17,16 @@ export const Settings = () => {
   const [mobileNumber, setMobileNumber] = useState(user?.phone || '');
   const [photoPreview, setPhotoPreview] = useState(user?.profile_photo || null);
   const [loading, setLoading] = useState(false);
+  const [officeLocation, setOfficeLocation] = useState({ configured: false, latitude: null, longitude: null });
+  const [officeLoading, setOfficeLoading] = useState(false);
+
+  useEffect(() => {
+    if (user?.role === 'Admin') {
+      axios.get(`${API}/settings/office-location`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+        .then((res) => setOfficeLocation({ configured: res.data.configured, latitude: res.data.latitude, longitude: res.data.longitude }))
+        .catch(() => {});
+    }
+  }, [user?.role]);
 
   const handlePhotoChange = (e) => {
     const file = e.target.files[0];
@@ -81,11 +91,41 @@ export const Settings = () => {
     }
   };
 
+  const setOfficeFromCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Location is not supported by your browser');
+      return;
+    }
+    setOfficeLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        axios.put(
+          `${API}/settings/office-location`,
+          { latitude: lat, longitude: lng },
+          { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+        )
+          .then(() => {
+            setOfficeLocation({ configured: true, latitude: lat, longitude: lng });
+            toast.success('Office location set. Punch in/out within 50 m of this spot will count as office attendance.');
+          })
+          .catch((err) => toast.error(err.response?.data?.detail || 'Failed to set office location'))
+          .finally(() => setOfficeLoading(false));
+      },
+      () => {
+        toast.error('Could not get your location. Please enable location access.');
+        setOfficeLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
   return (
-    <div className="space-y-6" data-testid="settings-page">
+    <div className="space-y-4 sm:space-y-6" data-testid="settings-page">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900">Settings</h1>
+        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Settings</h1>
         <p className="text-gray-600 text-sm mt-1">Manage your account settings and preferences</p>
       </div>
 
@@ -212,6 +252,35 @@ export const Settings = () => {
           </div>
         </div>
       </Card>
+
+      {/* Office location - Admin only */}
+      {user?.role === 'Admin' && (
+        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <MapPin className="h-5 w-5 text-blue-600" />
+            Office Location
+          </h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Set the office location for attendance. Employees can punch in/out only within 50 m of this point. Outside 50 m is recorded as Tour (requires your or Manager approval).
+          </p>
+          {officeLocation.configured ? (
+            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 text-sm text-gray-700 mb-4">
+              <span className="font-medium">Current office:</span>{' '}
+              {officeLocation.latitude?.toFixed(6)}, {officeLocation.longitude?.toFixed(6)}
+            </div>
+          ) : (
+            <p className="text-sm text-amber-700 mb-4">Office location not set. Set it so that attendance uses location-based rules.</p>
+          )}
+          <Button
+            onClick={setOfficeFromCurrentLocation}
+            disabled={officeLoading}
+            className="bg-blue-600 text-white hover:bg-blue-700"
+          >
+            <MapPin className="h-4 w-4 mr-2" />
+            {officeLoading ? 'Getting location...' : 'Use my current location as office'}
+          </Button>
+        </Card>
+      )}
 
       {/* System Info */}
       <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">

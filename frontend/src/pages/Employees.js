@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2, Search, Mail, Phone } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Mail, Phone, Eye, EyeOff } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -20,6 +20,7 @@ export const Employees = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
+  const [visibleSalaries, setVisibleSalaries] = useState(() => new Set());
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -133,7 +134,7 @@ export const Employees = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Employees</h1>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Employees</h1>
           <p className="text-gray-600 text-sm mt-1">{employees.length} total employees</p>
         </div>
         {canManageEmployees && (
@@ -290,8 +291,8 @@ export const Employees = () => {
 
       {/* Employees table grid */}
       <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto table-scroll">
+          <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee ID</th>
@@ -336,7 +337,32 @@ export const Employees = () => {
                   <td className="py-3 px-4 text-gray-600">{employee.department}</td>
                   <td className="py-3 px-4 text-gray-600">{employee.job_role}</td>
                   <td className="py-3 px-4 text-gray-600">{employee.joining_date}</td>
-                  <td className="py-3 px-4 text-right font-mono text-gray-900">₹{Number(employee.salary).toLocaleString('en-IN')}</td>
+                  <td className="py-3 px-4 text-right">
+                    <span className="inline-flex items-center gap-1.5 justify-end">
+                      {user?.role === 'Admin' && visibleSalaries.has(employee.id) ? (
+                        <span className="font-mono text-gray-900">₹{Number(employee.salary).toLocaleString('en-IN')}</span>
+                      ) : (
+                        <span className="font-mono text-gray-500 tracking-widest">****</span>
+                      )}
+                      {user?.role === 'Admin' && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 min-h-0 min-w-0 bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600 border border-gray-200"
+                          onClick={() => setVisibleSalaries((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(employee.id)) next.delete(employee.id);
+                            else next.add(employee.id);
+                            return next;
+                          })}
+                          aria-label={visibleSalaries.has(employee.id) ? 'Hide salary' : 'Show salary'}
+                        >
+                          {visibleSalaries.has(employee.id) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      )}
+                    </span>
+                  </td>
                   <td className="py-3 px-4">
                     <span className={`inline-flex px-2.5 py-1 rounded-md text-xs font-medium ${
                       employee.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'

@@ -6,6 +6,7 @@ import {
   LayoutDashboard, 
   Users, 
   Calendar, 
+  CalendarDays,
   FileText, 
   FileStack,
   Settings, 
@@ -36,6 +37,7 @@ export const Layout = ({ children }) => {
     { icon: Users, label: 'Employees', path: '/employees', permission: 'employees', roles: ['Admin', 'HR', 'Manager'] },
     { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
     { icon: FileText, label: 'Leaves', path: '/leaves', permission: 'leaves', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
+    { icon: CalendarDays, label: 'Government Holidays', path: '/government-holidays', permission: 'holidays', roles: ['Admin', 'HR', 'Manager', 'Employee', 'Sales'] },
     { icon: Receipt, label: 'Expenses', path: '/expenses', permission: 'expenses', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
     { icon: Shield, label: 'Roles', path: '/roles', permission: 'roles', roles: ['Admin'] },
     { icon: Briefcase, label: 'Workspace', path: '/workspace', permission: 'workspace', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
@@ -52,10 +54,13 @@ export const Layout = ({ children }) => {
     return false;
   });
 
+  const currentPath = window.location.pathname;
+  const bottomNavItems = filteredNavItems.slice(0, 5);
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Sidebar - Desktop */}
-      <aside className="hidden lg:flex flex-col w-64 border-r border-gray-200 bg-white">
+      <aside className="hidden lg:flex flex-col w-64 border-r border-gray-200 bg-white flex-shrink-0">
         <div className="p-6 border-b border-gray-200 bg-white">
           <img 
             src={`${process.env.PUBLIC_URL}/logo1.png`}
@@ -101,53 +106,57 @@ export const Layout = ({ children }) => {
         </div>
       </aside>
 
-      {/* Mobile Sidebar */}
+      {/* Mobile Sidebar overlay */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
-          <aside className="fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between bg-white">
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+          <div 
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" 
+            onClick={() => setSidebarOpen(false)} 
+            aria-hidden="true"
+          />
+          <aside className="fixed left-0 top-0 bottom-0 w-[min(280px,85vw)] max-w-full bg-white border-r border-gray-200 shadow-xl flex flex-col pt-[env(safe-area-inset-top)]">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-white">
               <img 
                 src={`${process.env.PUBLIC_URL}/logo1.png`}
                 alt="Company Logo" 
                 className="h-10 object-contain"
               />
-              <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
+              <Button variant="ghost" size="icon" className="h-11 w-11 min-h-[44px] min-w-[44px]" onClick={() => setSidebarOpen(false)}>
                 <X className="h-5 w-5 text-gray-600" />
               </Button>
             </div>
             
-            <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+            <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
               {filteredNavItems.map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.path}
                   onClick={() => setSidebarOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors text-sm ${
+                    `flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-sm min-h-[48px] ${
                       isActive
                         ? 'bg-blue-100 text-blue-700 font-medium'
-                        : 'text-gray-700 hover:bg-gray-100'
+                        : 'text-gray-700 hover:bg-gray-100 active:bg-gray-200'
                     }`
                   }
                 >
-                  <item.icon className="h-5 w-5" />
-                  <span>{item.label}</span>
+                  <item.icon className="h-5 w-5 flex-shrink-0" />
+                  <span className="truncate">{item.label}</span>
                 </NavLink>
               ))}
             </nav>
 
-            <div className="p-4 border-t border-gray-200 space-y-2">
-              <div className="px-4 py-2">
-                <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+            <div className="p-3 border-t border-gray-200 space-y-2 pb-[env(safe-area-inset-bottom)]">
+              <div className="px-3 py-2">
+                <p className="text-sm font-medium text-gray-900 truncate">{user?.name}</p>
                 <p className="text-xs text-gray-600">{user?.role}</p>
               </div>
               <Button
                 variant="ghost"
-                className="w-full justify-start text-red-600 hover:bg-red-50 font-medium text-sm h-10"
+                className="w-full justify-start text-red-600 hover:bg-red-50 active:bg-red-100 font-medium text-sm min-h-[48px] px-4"
                 onClick={handleLogout}
               >
-                <LogOut className="h-4 w-4 mr-2" />
+                <LogOut className="h-4 w-4 mr-2 flex-shrink-0" />
                 Logout
               </Button>
             </div>
@@ -156,27 +165,59 @@ export const Layout = ({ children }) => {
       )}
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="h-16 border-b border-gray-200 bg-white flex items-center px-6 shadow-sm">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {/* Header - touch-friendly on mobile */}
+        <header className="h-14 sm:h-16 border-b border-gray-200 bg-white flex items-center px-4 sm:px-6 shadow-sm flex-shrink-0 pt-[env(safe-area-inset-top)]">
           <Button
             variant="ghost"
             size="icon"
-            className="lg:hidden mr-2 text-gray-600"
+            className="lg:hidden mr-2 text-gray-600 h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0"
             onClick={() => setSidebarOpen(true)}
             data-testid="mobile-menu-button"
+            aria-label="Open menu"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-6 w-6" />
           </Button>
-          <h2 className="text-lg font-semibold tracking-tight text-gray-900">
-            {filteredNavItems.find(item => window.location.pathname === item.path)?.label || 'Dashboard'}
+          <h2 className="text-base sm:text-lg font-semibold tracking-tight text-gray-900 truncate">
+            {filteredNavItems.find(item => currentPath === item.path)?.label || 'Dashboard'}
           </h2>
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-6 bg-gray-50">
+        {/* Page Content - responsive padding, space for bottom nav on mobile */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 pb-24 sm:pb-6 bg-gray-50">
           {children}
         </main>
+
+        {/* Bottom navigation - mobile only */}
+        <nav 
+          className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex items-center justify-around safe-area-bottom z-40"
+          aria-label="Main navigation"
+        >
+          {bottomNavItems.map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              onClick={() => setSidebarOpen(false)}
+              className={({ isActive }) =>
+                `flex flex-col items-center justify-center gap-0.5 py-2 px-2 min-h-[56px] min-w-[56px] rounded-lg transition-colors text-xs ${
+                  isActive ? 'text-blue-600 font-medium' : 'text-gray-500'
+                }`
+              }
+            >
+              <item.icon className="h-6 w-6" />
+              <span className="truncate max-w-[72px]">{item.label}</span>
+            </NavLink>
+          ))}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="flex flex-col items-center justify-center gap-0.5 py-2 px-2 min-h-[56px] min-w-[56px] rounded-lg transition-colors text-xs text-gray-500 hover:text-gray-700"
+            aria-label="More menu"
+          >
+            <Menu className="h-6 w-6" />
+            <span className="truncate max-w-[72px]">More</span>
+          </button>
+        </nav>
       </div>
     </div>
   );

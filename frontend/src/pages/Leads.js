@@ -250,10 +250,10 @@ export const Leads = () => {
   }
 
   return (
-    <div className="space-y-6" data-testid="leads-page">
+    <div className="space-y-4 sm:space-y-6" data-testid="leads-page">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Leads</h1>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Leads</h1>
           <p className="text-gray-600 text-sm mt-1">
             Manage leads and sales pipeline • {stats.total} total
           </p>
@@ -272,8 +272,8 @@ export const Leads = () => {
                 <p className="text-blue-100 text-sm">Capture contact and company details</p>
               </DialogHeader>
             </div>
-            <form onSubmit={handleAddLead} className="space-y-4 p-6">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={handleAddLead} className="space-y-4 p-4 sm:p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-gray-700">Contact Name *</Label>
                   <Input
@@ -295,7 +295,7 @@ export const Leads = () => {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-gray-700">Email *</Label>
                   <Input
@@ -317,7 +317,7 @@ export const Leads = () => {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-gray-700">Source</Label>
                   <select
@@ -343,7 +343,7 @@ export const Leads = () => {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-gray-700">Value (₹)</Label>
                   <Input
@@ -402,8 +402,8 @@ export const Leads = () => {
 
       {/* Filters & view toggle */}
       <Card className="p-3 rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3">
+          <div className="flex gap-2 [&_button]:min-h-[44px]">
             <Button
               variant={viewMode === 'pipeline' ? 'default' : 'ghost'}
               size="sm"
@@ -424,11 +424,11 @@ export const Leads = () => {
             </Button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Filter className="h-4 w-4 text-gray-500" />
+            <Filter className="h-4 w-4 text-gray-500 flex-shrink-0" />
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-900 bg-white"
+              className="rounded-lg border border-gray-300 px-3 py-2.5 min-h-[44px] text-sm text-gray-900 bg-white flex-1 min-w-0 sm:flex-initial"
             >
               <option value="">All statuses</option>
               {STATUSES.map((s) => (
@@ -461,12 +461,12 @@ export const Leads = () => {
 
       {/* Pipeline view */}
       {viewMode === 'pipeline' && (
-        <div className="overflow-x-auto pb-4">
-          <div className="flex gap-4 min-w-max">
+        <div className="overflow-x-auto pb-4 -webkit-overflow-scrolling-touch" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex gap-3 sm:gap-4 min-w-max">
             {pipelineGroups.map(({ status, leads: groupLeads }) => (
               <div
                 key={status}
-                className="w-64 flex-shrink-0 rounded-lg border border-gray-200 bg-gray-50/50 p-3"
+                className="w-56 sm:w-64 flex-shrink-0 rounded-lg border border-gray-200 bg-gray-50/50 p-3"
               >
                 <div className="flex items-center justify-between mb-3">
                   <span className="font-semibold text-gray-800">{status}</span>
@@ -518,8 +518,8 @@ export const Leads = () => {
       {/* List view */}
       {viewMode === 'list' && (
         <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto table-scroll">
+            <table className="w-full text-sm min-w-[640px]">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Contact</th>
