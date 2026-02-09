@@ -26,9 +26,12 @@ import json
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# SQLite Database Setup
-DATABASE_URL = "sqlite:///./glasshq.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# Database Setup (SQLite or PostgreSQL)
+DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///./glasshq.db')
+if DATABASE_URL.startswith('sqlite'):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
