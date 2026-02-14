@@ -15,21 +15,52 @@ import sys
 import json
 from pathlib import Path
 from dotenv import load_dotenv
+import warnings
+from sqlalchemy import text
+
+# Suppress SQLAlchemy deprecation warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 # Load environment variables
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from server import (
-    Base, engine, SessionLocal,
-    UserModel, EmployeeModel, RoleModel, LeavePolicyModel,
-    hash_password
-)
+# Defer server imports to avoid circular dependency issues
+def get_db_components():
+    from server import (
+        Base, engine, SessionLocal,
+        UserModel, EmployeeModel, RoleModel, LeavePolicyModel,
+        hash_password
+    )
+    return Base, engine, SessionLocal, UserModel, EmployeeModel, RoleModel, LeavePolicyModel, hash_password
 
-def create_tables():
+def check_existing_data():
+    """Check if database already has tables"""
+    print("[*] Checking existing database...")
+    try:
+        Base, engine, SessionLocal, UserModel, EmployeeModel, RoleModel, LeavePolicyModel, hash_password = get_db_components()
+        db = SessionLocal()
+        
+        user_count = db.query(UserModel).count()
+        role_count = db.query(RoleModel).count()
+        emp_count = db.query(EmployeeModel).count()
+        
+        db.close()
+        
+        if user_count > 0 or role_count > 0 or emp_count > 0:
+            print(f"⚠️  Database already has data:")
+            print(f"    • Users: {user_count}")
+            print(f"    • Roles: {role_count}")
+            print(f"    • Employees: {emp_count}")
+            return True
+        return False
+    except Exception:
+        # Tables don't exist yet
+        return False
     """Create all database tables"""
     print("[*] Creating database tables...")
     try:
+        Base, engine, SessionLocal, UserModel, EmployeeModel, RoleModel, LeavePolicyModel, hash_password = get_db_components()
         Base.metadata.create_all(bind=engine)
         print("✅ Database tables created successfully!")
         return True
@@ -40,6 +71,7 @@ def create_tables():
 def seed_roles():
     """Seed default roles"""
     print("[*] Seeding default roles...")
+    Base, engine, SessionLocal, UserModel, EmployeeModel, RoleModel, LeavePolicyModel, hash_password = get_db_components()
     db = SessionLocal()
     try:
         # Check if roles already exist
@@ -101,6 +133,7 @@ def seed_roles():
 def seed_admin_user():
     """Create default admin user"""
     print("[*] Creating admin user...")
+    Base, engine, SessionLocal, UserModel, EmployeeModel, RoleModel, LeavePolicyModel, hash_password = get_db_components()
     db = SessionLocal()
     try:
         # Check if admin already exists
@@ -154,6 +187,7 @@ def seed_admin_user():
 def seed_sample_employees():
     """Create sample employee records"""
     print("[*] Creating sample employees...")
+    Base, engine, SessionLocal, UserModel, EmployeeModel, RoleModel, LeavePolicyModel, hash_password = get_db_components()
     db = SessionLocal()
     try:
         existing_count = db.query(EmployeeModel).count()
@@ -208,6 +242,7 @@ def seed_sample_employees():
 def seed_leave_policy():
     """Create default leave policy"""
     print("[*] Creating leave policy...")
+    Base, engine, SessionLocal, UserModel, EmployeeModel, RoleModel, LeavePolicyModel, hash_password = get_db_components()
     db = SessionLocal()
     try:
         existing = db.query(LeavePolicyModel).first()
@@ -230,23 +265,44 @@ def seed_leave_policy():
 def main():
     """Main setup flow"""
     print("=" * 60)
-    print("CRM DATABASE SETUP")
+    print("CRM DATABASE SETUP - RDS PostgreSQL")
     print("=" * 60)
+    print()
+    
+    # Check environment variables
+    print("[*] Checking environment variables...")
+    db_url = os.environ.get('DATABASE_URL')
+    if not db_url:
+        print("❌ DATABASE_URL not found in .env")
+        return False
+    print(f"✅ Database: {db_url.split('@')[1].split('/')[0] if '@' in db_url else 'unknown'}")
     print()
     
     # Verify database connection
     print("[*] Verifying database connection...")
+    Base, engine, SessionLocal, UserModel, EmployeeModel, RoleModel, LeavePolicyModel, hash_password = get_db_components()
     try:
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(text("SELECT 1"))
+            conn.commit()
         print("✅ Database connection successful!")
     except Exception as e:
         print(f"❌ Cannot connect to database: {e}")
-        print("\nMake sure:")
-        print("  1. RDS instance is running")
-        print("  2. Security group allows inbound traffic on port 5432")
-        print("  3. DATABASE_URL in .env is correct")
+        print("\n🔧 Troubleshooting RDS Connection:")
+        print("  1. ✓ RDS instance is running (check AWS Console)")
+        print("  2. ✓ Security Group allows port 5432 from EC2")
+        print("  3. ✓ DATABASE_URL format: postgresql://user:password@host:port/dbname")
+        print("  4. ✓ No network ACL rules blocking traffic")
+        print("  5. ✓ RDS password doesn't contain special chars without URL encoding")
+        print(f"\nActual error: {type(e).__name__}: {str(e)}")
         return False
+    
+    print()
+    
+    # Check for existing data
+    if check_existing_data():
+        print("ℹ️  Skipping data population (already initialized)")
+        return True
     
     print()
     
@@ -279,11 +335,21 @@ def main():
     print("✅ DATABASE SETUP COMPLETED SUCCESSFULLY!")
     print("=" * 60)
     print()
-    print("You can now login with:")
+    print("RDS Database initialized with:")
+    print("  • All tables created")
+    print("  • 4 Roles configured (Admin, HR, Manager, Employee)")
+    print("  • Admin user created")
+    print("  • 3 Sample employees added")
+    print("  • Leave policy configured")
+    print()
+    print("Default Login Credentials:")
     print("  Email: admin@resoline.in")
     print("  Password: admin123")
     print()
-    print("API Endpoint: https://api.resoline.in/api/auth/login")
+    print("Next Steps:")
+    print("  1. Change admin password in production")
+    print("  2. Start the FastAPI server: uvicorn server:app --host 0.0.0.0 --port 8000")
+    print("  3. Access API at: https://api.resoline.com/api/auth/login")
     print()
     
     return True
