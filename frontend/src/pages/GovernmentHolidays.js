@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Calendar, Trash2 } from 'lucide-react';
+import { Plus, Calendar, Trash2, Download, Upload, FileText } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
@@ -23,8 +23,11 @@ export const GovernmentHolidays = () => {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear());
   const [formData, setFormData] = useState({ date: '', name: '', description: '' });
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
 
   const canManageHolidays = ['Admin', 'HR'].includes(user?.role);
+  const isAdmin = user?.role === 'Admin';
 
   useEffect(() => {
     fetchHolidays();
@@ -82,6 +85,121 @@ export const GovernmentHolidays = () => {
     }
   };
 
+  const handleExportToExcel = async () => {
+    try {
+      const { data: allHolidays } = await axios.get(`${API}/government-holidays`, {
+        params: { year: yearFilter },
+        ...authHeader(),
+      });
+      const headers = ['date', 'name', 'description'];
+      const csvContent = [
+        headers.join(','),
+        ...allHolidays.map(h => 
+          headers.map(header => {
+            const val = h[header];
+            if (val === null || val === undefined) return '';
+            if (typeof val === 'string' && val.includes(',')) return `"${val}"`;
+            return val;
+          }).join(',')
+        )
+      ].join('\n');
+      
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `government_holidays_${yearFilter}.csv`;
+      link.click();
+      toast.success('Holidays exported successfully');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to export holidays');
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const headers = ['date', 'name', 'description'];
+    const sampleRows = [
+      ['2025-01-26', 'Republic Day', 'National holiday'],
+      ['2025-03-08', 'Maha Shivaratri', 'Hindu festival'],
+      ['2025-04-14', 'Ambedkar Jayanti', 'National holiday']
+    ];
+    const csvContent = [
+      headers.join(','),
+      ...sampleRows.map(row => row.join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'government_holidays_template.csv';
+    link.click();
+    toast.success('Template downloaded');
+  };
+
+  const handleFileImport = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) {
+        toast.error('CSV file must have headers and at least one data row');
+        setImporting(false);
+        return;
+      }
+
+      const headers = lines[0].split(',').map(h => h.trim());
+      const requiredFields = ['date', 'name'];
+      const missingFields = requiredFields.filter(f => !headers.includes(f));
+      if (missingFields.length > 0) {
+        toast.error(`Missing required fields: ${missingFields.join(', ')}`);
+        setImporting(false);
+        return;
+      }
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim());
+        const row = {};
+        headers.forEach((header, idx) => {
+          row[header] = values[idx] || '';
+        });
+
+        // Validate required fields
+        if (!row.date || !row.name) {
+          failureCount++;
+          continue;
+        }
+
+        try {
+          await axios.post(`${API}/government-holidays`, {
+            date: row.date,
+            name: row.name,
+            description: row.description || null,
+          }, authHeader());
+          successCount++;
+        } catch {
+          failureCount++;
+        }
+      }
+
+      toast.success(`Import complete: ${successCount} succeeded, ${failureCount} failed`);
+      fetchHolidays();
+    } catch (err) {
+      toast.error('Failed to import file');
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   const formatDate = (dateStr) => {
     try {
       return format(parseISO(dateStr), 'EEEE, d MMM yyyy');
@@ -109,13 +227,48 @@ export const GovernmentHolidays = () => {
           <p className="text-gray-600 text-sm mt-1">View the list of government holidays for the year</p>
         </div>
         {canManageHolidays && (
-          <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white min-h-[44px]">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Holiday
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-2 flex-wrap">
+            {isAdmin && (
+              <>
+                <Button
+                  onClick={handleDownloadTemplate}
+                  variant="outline"
+                  className="border-blue-300 text-blue-600 hover:bg-blue-50 gap-2 h-10"
+                >
+                  <FileText className="h-4 w-4" />
+                  Download Template
+                </Button>
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={importing}
+                  className="bg-purple-600 hover:bg-purple-700 text-white gap-2 h-10"
+                >
+                  <Upload className="h-4 w-4" />
+                  {importing ? 'Importing...' : 'Import Holidays'}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv"
+                  onChange={handleFileImport}
+                  className="hidden"
+                />
+                <Button
+                  onClick={handleExportToExcel}
+                  className="bg-green-600 hover:bg-green-700 text-white gap-2 h-10"
+                >
+                  <Download className="h-4 w-4" />
+                  Export to Excel
+                </Button>
+              </>
+            )}
+            <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white min-h-[44px]">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Holiday
+                </Button>
+              </DialogTrigger>
             <DialogContent className="sm:max-w-md bg-white border-gray-200 text-gray-900 shadow-xl [&>button]:bg-transparent [&>button:hover]:bg-gray-100 [&>button]:text-gray-600">
               <DialogHeader className="border-b border-gray-200 pb-4">
                 <DialogTitle className="text-lg font-semibold text-gray-900">Add Government Holiday</DialogTitle>
@@ -164,7 +317,8 @@ export const GovernmentHolidays = () => {
                 </div>
               </form>
             </DialogContent>
-          </Dialog>
+            </Dialog>
+          </div>
         )}
       </div>
 

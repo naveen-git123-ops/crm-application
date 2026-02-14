@@ -30,11 +30,12 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # Database Setup (SQLite or PostgreSQL)
-DATABASE_URL = 'sqlite:///./crm_db.sqlite3'
+DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///./crm_db.sqlite3')
 if DATABASE_URL.startswith('sqlite'):
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 else:
-    engine = create_engine(DATABASE_URL)
+    # PostgreSQL or other databases
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

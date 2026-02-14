@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +39,8 @@ import {
   Bell,
   FileText,
   History,
+  Download,
+  Upload,
 } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
@@ -109,6 +111,8 @@ export const Leads = () => {
   const [currentNotification, setCurrentNotification] = useState(null);
   const [notificationQueue, setNotificationQueue] = useState([]);
   const [detailTab, setDetailTab] = useState('overview'); // 'overview', 'activity', 'reminders'
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
 
   const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
 
@@ -456,6 +460,119 @@ export const Leads = () => {
     }
   };
 
+  const handleExportToExcel = async () => {
+    try {
+      const { data: leadsData } = await axios.get(`${API}/leads`, { headers: authHeader() });
+      const headers = ['id', 'contact_name', 'company', 'email', 'phone', 'source', 'status', 'value', 'category', 'sub_category', 'notes', 'assigned_to_name', 'days_open', 'created_at', 'created_by_name'];
+      const csvContent = [
+        headers.join(','),
+        ...leadsData.map(lead => 
+          headers.map(h => {
+            const val = lead[h];
+            if (val === null || val === undefined) return '';
+            if (typeof val === 'string' && val.includes(',')) return `"${val}"`;
+            return val;
+          }).join(',')
+        )
+      ].join('\n');
+      
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'leads_export.csv';
+      link.click();
+      toast.success('Leads exported successfully');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to export leads');
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const headers = ['contact_name', 'company', 'email', 'phone', 'source', 'status', 'value', 'category', 'sub_category', 'notes'];
+    const sampleRow = ['John Doe', 'Acme Inc', 'john@acme.com', '+91 9876543210', 'Website', 'New', '50000', 'Category A', 'Sub A', 'Sample notes'];
+    const csvContent = [headers.join(','), sampleRow.join(',')].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'leads_template.csv';
+    link.click();
+    toast.success('Template downloaded');
+  };
+
+  const handleFileImport = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) {
+        toast.error('CSV file must have headers and at least one data row');
+        setImporting(false);
+        return;
+      }
+
+      const headers = lines[0].split(',').map(h => h.trim());
+      const requiredFields = ['contact_name', 'company', 'email'];
+      const missingFields = requiredFields.filter(f => !headers.includes(f));
+      if (missingFields.length > 0) {
+        toast.error(`Missing required fields: ${missingFields.join(', ')}`);
+        setImporting(false);
+        return;
+      }
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim());
+        const row = {};
+        headers.forEach((header, idx) => {
+          row[header] = values[idx] || '';
+        });
+
+        // Validate required fields
+        if (!row.contact_name || !row.company || !row.email) {
+          failureCount++;
+          continue;
+        }
+
+        try {
+          await axios.post(`${API}/leads`, {
+            contact_name: row.contact_name,
+            company: row.company,
+            email: row.email,
+            phone: row.phone || '',
+            source: row.source || 'Other',
+            status: row.status || 'New',
+            value: row.value ? parseFloat(row.value) : null,
+            category: row.category || '',
+            sub_category: row.sub_category || '',
+            notes: row.notes || '',
+          }, { headers: authHeader() });
+          successCount++;
+        } catch {
+          failureCount++;
+        }
+      }
+
+      toast.success(`Import complete: ${successCount} succeeded, ${failureCount} failed`);
+      fetchLeads();
+      fetchStats();
+    } catch (err) {
+      toast.error('Failed to import file');
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   const assigneeOptions = employees.map((emp) => ({
     value: emp.employee_id,
     label: `${emp.name} (${emp.employee_id})`,
@@ -524,21 +641,52 @@ export const Leads = () => {
             Manage leads and sales pipeline • {stats.total} total
           </p>
         </div>
-        <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-blue-600 text-white hover:bg-blue-700 h-10">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Lead
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl p-0 max-h-[90vh] overflow-y-auto">
-            <div className="bg-blue-600 text-white p-6 rounded-t-lg">
-              <DialogHeader>
-                <DialogTitle className="text-xl font-bold text-white">New Lead</DialogTitle>
-                <p className="text-blue-100 text-sm">Capture contact and company details</p>
-              </DialogHeader>
-            </div>
-            <form onSubmit={handleAddLead} className="space-y-4 p-4 sm:p-6">
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            onClick={handleDownloadTemplate}
+            variant="outline"
+            className="border-blue-300 text-blue-600 hover:bg-blue-50 gap-2 h-10"
+          >
+            <FileText className="h-4 w-4" />
+            Download Template
+          </Button>
+          <Button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="bg-purple-600 hover:bg-purple-700 text-white gap-2 h-10"
+          >
+            <Upload className="h-4 w-4" />
+            {importing ? 'Importing...' : 'Import Leads'}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleFileImport}
+            className="hidden"
+          />
+          <Button
+            onClick={handleExportToExcel}
+            className="bg-green-600 hover:bg-green-700 text-white gap-2 h-10"
+          >
+            <Download className="h-4 w-4" />
+            Export to Excel
+          </Button>
+          <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-blue-600 text-white hover:bg-blue-700 h-10">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Lead
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl p-0 max-h-[90vh] overflow-y-auto">
+              <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+                <DialogHeader>
+                  <DialogTitle className="text-xl font-bold text-white">New Lead</DialogTitle>
+                  <p className="text-blue-100 text-sm">Capture contact and company details</p>
+                </DialogHeader>
+              </div>
+              <form onSubmit={handleAddLead} className="space-y-4 p-4 sm:p-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-gray-700">Contact Name *</Label>
@@ -743,6 +891,7 @@ export const Leads = () => {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Filters & view toggle */}
