@@ -93,13 +93,13 @@ def hash_password(password: str) -> str:
 
 
 def get_engine_and_session():
-    """Create SQLAlchemy engine and session for RDS PostgreSQL"""
+    """Create SQLAlchemy engine and session for MySQL or PostgreSQL"""
     DATABASE_URL = os.environ.get('DATABASE_URL')
     
     if not DATABASE_URL:
         raise ValueError("DATABASE_URL not found in .env file")
     
-    # PostgreSQL with connection pooling
+    # Support both MySQL and PostgreSQL with connection pooling
     engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
     
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

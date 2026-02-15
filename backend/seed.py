@@ -11,10 +11,15 @@ load_dotenv(ROOT_DIR / '.env')
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable is required for RDS connection")
+    raise ValueError("DATABASE_URL environment variable is required")
 
-# PostgreSQL with connection pooling
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
+# Configure based on database type
+if DATABASE_URL.startswith('mysql'):
+    # MySQL configuration
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
+else:
+    # PostgreSQL configuration
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def seed_data():
