@@ -93,18 +93,14 @@ def hash_password(password: str) -> str:
 
 
 def get_engine_and_session():
-    """Create SQLAlchemy engine and session"""
+    """Create SQLAlchemy engine and session for RDS PostgreSQL"""
     DATABASE_URL = os.environ.get('DATABASE_URL')
     
     if not DATABASE_URL:
         raise ValueError("DATABASE_URL not found in .env file")
     
-    # Create engine based on database type
-    if DATABASE_URL.startswith('sqlite'):
-        engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-    else:
-        # PostgreSQL
-        engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
+    # PostgreSQL with connection pooling
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
     
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return engine, SessionLocal
