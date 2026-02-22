@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Card } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
-import { Target, TrendingUp, TrendingDown, CheckCircle, XCircle, Clock, User, DollarSign, AlertCircle, Package } from 'lucide-react';
+import { Target, TrendingUp, TrendingDown, CheckCircle, XCircle, Clock, User, DollarSign, AlertCircle, Package, Briefcase } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
@@ -21,9 +24,12 @@ const STATUS_COLORS = {
 
 export const Dashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [leadReport, setLeadReport] = useState(null);
   const [expiringSubscriptions, setExpiringSubscriptions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pendingTasks, setPendingTasks] = useState([]);
+  const [showTaskNotification, setShowTaskNotification] = useState(false);
 
   const canSeeLeads = ['Admin', 'HR', 'Manager'].includes(user?.role);
 
@@ -34,7 +40,29 @@ export const Dashboard = () => {
     } else {
       setLoading(false);
     }
+
+    // Fetch pending tasks for employees
+    if (user?.role === 'Employee') {
+      fetchPendingTasks();
+    }
   }, [user?.role]);
+
+  const fetchPendingTasks = async () => {
+    try {
+      const response = await axios.get(`${API}/tasks`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      const tasks = response.data || [];
+      // Filter pending and in-progress tasks
+      const pending = tasks.filter(t => ['Pending', 'In Progress'].includes(t.status));
+      if (pending.length > 0) {
+        setPendingTasks(pending);
+        setShowTaskNotification(true);
+      }
+    } catch (err) {
+      console.error('Failed to load pending tasks', err);
+    }
+  };
 
   const fetchLeadReport = async () => {
     try {
@@ -68,6 +96,72 @@ export const Dashboard = () => {
     );
   }
 
+  // Task Notification Dialog (for employees)
+  const taskNotificationDialog = (
+    <Dialog open={showTaskNotification} onOpenChange={setShowTaskNotification}>
+      <DialogContent className="max-w-md bg-white rounded-lg border border-gray-200 shadow-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-lg font-bold text-gray-900">
+            <Briefcase className="h-5 w-5 text-blue-600" />
+            You have assigned tasks!
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 max-h-96 overflow-y-auto">
+          {pendingTasks.map((task) => (
+            <div
+              key={task.id}
+              className="p-3 rounded-lg border border-blue-200 bg-blue-50"
+            >
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <h4 className="font-semibold text-gray-900 text-sm">{task.title}</h4>
+                <span className={`text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap ${
+                  task.status === 'In Progress' 
+                    ? 'bg-blue-100 text-blue-700' 
+                    : 'bg-yellow-100 text-yellow-700'
+                }`}>
+                  {task.status}
+                </span>
+              </div>
+              {task.description && (
+                <p className="text-xs text-gray-600 mb-2">{task.description}</p>
+              )}
+              <div className="flex items-center justify-between text-xs text-gray-600">
+                <span>Due: {task.due_date}</span>
+                {task.priority && (
+                  <span className={`font-medium ${
+                    task.priority === 'High' ? 'text-red-600' :
+                    task.priority === 'Medium' ? 'text-yellow-600' :
+                    'text-green-600'
+                  }`}>
+                    {task.priority} Priority
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2 pt-4 border-t border-gray-200">
+          <Button
+            variant="outline"
+            onClick={() => setShowTaskNotification(false)}
+            className="flex-1"
+          >
+            Later
+          </Button>
+          <Button
+            onClick={() => {
+              setShowTaskNotification(false);
+              navigate('/tasks');
+            }}
+            className="flex-1 bg-blue-600 text-white hover:bg-blue-700"
+          >
+            View Tasks
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+
   // Build pie data: Won, Lost, Pipeline (rest)
   const wonCount = leadReport?.by_status?.Won ?? 0;
   const lostCount = leadReport?.by_status?.Lost ?? 0;
@@ -85,6 +179,7 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6" data-testid="dashboard-page">
+      {taskNotificationDialog}
       <div>
         <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Welcome back, {user?.name}!</h1>
         <p className="text-gray-600 text-sm mt-1">

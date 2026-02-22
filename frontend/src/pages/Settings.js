@@ -214,7 +214,15 @@ export const Settings = () => {
                   {photoPreview ? (
                     <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
                   ) : user?.profile_photo ? (
-                    <img src={BACKEND_URL + user.profile_photo} alt="Profile" className="w-full h-full object-cover" />
+                    <img 
+                      src={user.profile_photo.startsWith('http') ? user.profile_photo : BACKEND_URL + user.profile_photo} 
+                      alt="Profile" 
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        e.target.nextSibling?.style?.removeProperty('display');
+                      }}
+                    />
                   ) : (
                     <User className="h-12 w-12 text-gray-400" />
                   )}

@@ -87,6 +87,7 @@ export const Leads = () => {
   const location = useLocation();
   const [leads, setLeads] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [stats, setStats] = useState({ total: 0, by_status: {} });
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('pipeline');
@@ -104,6 +105,7 @@ export const Leads = () => {
   const [statusChangeDialogOpen, setStatusChangeDialogOpen] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState(null);
   const [statusChangeComment, setStatusChangeComment] = useState('');
+  const [statusChangeAttachment, setStatusChangeAttachment] = useState(null);
   const [draggedLead, setDraggedLead] = useState(null);
   const [lostReason, setLostReason] = useState('');
   const [competitorName, setCompetitorName] = useState('');
@@ -115,7 +117,9 @@ export const Leads = () => {
   const [notificationQueue, setNotificationQueue] = useState([]);
   const [detailTab, setDetailTab] = useState('overview'); // 'overview', 'activity', 'reminders'
   const [importing, setImporting] = useState(false);
+  const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
+  const statusChangeFileRef = useRef(null);
   const [showOrderDialog, setShowOrderDialog] = useState(false);
   const [wonLead, setWonLead] = useState(null);
   const [orderForm, setOrderForm] = useState({
@@ -144,6 +148,7 @@ export const Leads = () => {
     fetchLeads();
     fetchStats();
     fetchEmployees();
+    fetchCustomers();
     checkUpcomingReminders();
   }, []);
 
@@ -183,14 +188,16 @@ export const Leads = () => {
 
   const fetchLeadDetails = async (leadId) => {
     try {
-      const [activitiesRes, historyRes, remindersRes] = await Promise.all([
+      const [activitiesRes, historyRes, remindersRes, attachmentsRes] = await Promise.all([
         axios.get(`${API}/leads/${leadId}/activities`, { headers: authHeader() }),
         axios.get(`${API}/leads/${leadId}/status-history`, { headers: authHeader() }),
         axios.get(`${API}/leads/${leadId}/reminders`, { headers: authHeader() }),
+        axios.get(`${API}/leads/${leadId}/attachments`, { headers: authHeader() }),
       ]);
       setActivities(activitiesRes.data);
       setStatusHistory(historyRes.data);
       setReminders(remindersRes.data);
+      setAttachments(attachmentsRes.data);
     } catch (err) {
       console.error('Failed to fetch lead details:', err);
     }
@@ -226,6 +233,15 @@ export const Leads = () => {
       setEmployees(data);
     } catch {
       toast.error('Failed to load employees');
+    }
+  };
+
+  const fetchCustomers = async () => {
+    try {
+      const { data } = await axios.get(`${API}/customers`, { headers: authHeader() });
+      setCustomers(data);
+    } catch {
+      toast.error('Failed to load customers');
     }
   };
 
@@ -283,15 +299,18 @@ export const Leads = () => {
       const [activitiesRes, historyRes, remindersRes] = await Promise.all([
         axios.get(`${API}/leads/${lead.id}/activities`, { headers: authHeader() }),
         axios.get(`${API}/leads/${lead.id}/status-history`, { headers: authHeader() }),
-        axios.get(`${API}/leads/${lead.id}/reminders`, { headers: authHeader() })
+        axios.get(`${API}/leads/${lead.id}/reminders`, { headers: authHeader() }),
+        axios.get(`${API}/leads/${lead.id}/attachments`, { headers: authHeader() })
       ]);
       setActivities(activitiesRes.data);
       setStatusHistory(historyRes.data);
       setReminders(remindersRes.data);
+      setAttachments(attachmentsRes.data);
     } catch {
       setActivities([]);
       setStatusHistory([]);
       setReminders([]);
+      setAttachments([]);
     }
     // Check reminders immediately after opening detail
     checkUpcomingReminders();
@@ -346,6 +365,7 @@ export const Leads = () => {
     if (!lead) return;
     setPendingStatusChange({ leadId, oldStatus: lead.status, newStatus });
     setStatusChangeComment('');
+    setStatusChangeAttachment(null);
     setLostReason('');
     setCompetitorName('');
     setLostAmount('');
@@ -403,10 +423,33 @@ export const Leads = () => {
         { headers: authHeader() }
       );
       
+      // Upload attachment if provided
+      if (statusChangeAttachment) {
+        try {
+          const formDataUpload = new FormData();
+          formDataUpload.append('file', statusChangeAttachment);
+          await axios.post(
+            `${API}/leads/${pendingStatusChange.leadId}/attachments`,
+            formDataUpload,
+            {
+              headers: {
+                Authorization: `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'multipart/form-data'
+              }
+            }
+          );
+          toast.success('Attachment uploaded successfully');
+        } catch (err) {
+          toast.error('Failed to upload attachment');
+          console.error('Attachment upload error:', err);
+        }
+      }
+      
       toast.success('Status updated successfully');
       setStatusChangeDialogOpen(false);
       setPendingStatusChange(null);
       setStatusChangeComment('');
+      setStatusChangeAttachment(null);
       setLostReason('');
       setCompetitorName('');
       setLostAmount('');
@@ -574,6 +617,50 @@ export const Leads = () => {
       setReminders(data);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to delete reminder');
+    }
+  };
+
+  const handleEmailDropUpload = async (files, leadId) => {
+    if (!files || files.length === 0) return;
+
+    for (const file of files) {
+      // Validate file type
+      const validTypes = ['.msg', '.eml', '.ics'];
+      const fileName = file.name.toLowerCase();
+      const isValidType = validTypes.some(type => fileName.endsWith(type)) || 
+                         file.type === 'message/rfc822' ||
+                         file.type === 'application/vnd.ms-outlook' ||
+                         file.type.includes('outlook');
+
+      if (!isValidType) {
+        toast.error(`${file.name} is not a valid email file (.msg, .eml, .ics)`);
+        continue;
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await axios.post(
+          `${API}/leads/${leadId}/attachments`,
+          formData,
+          {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem('token')}`,
+              'Content-Type': 'multipart/form-data'
+            }
+          }
+        );
+
+        toast.success(`✉️ Email attached: ${file.name}`);
+        
+        // Refresh attachments
+        const { data } = await axios.get(`${API}/leads/${leadId}/attachments`, { headers: authHeader() });
+        setAttachments(data);
+      } catch (err) {
+        toast.error(`Failed to attach ${file.name}: ${err.response?.data?.detail || err.message}`);
+        console.error('Email upload error:', err);
+      }
     }
   };
 
@@ -804,9 +891,38 @@ export const Leads = () => {
                 </DialogHeader>
               </div>
               <form onSubmit={handleAddLead} className="space-y-4 p-4 sm:p-6">
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-gray-700">Customer *</Label>
+                  <select
+                    value={formData.company}
+                    onChange={(e) => {
+                      const selectedCustomer = customers.find(c => c.id === e.target.value);
+                      if (selectedCustomer) {
+                        setFormData({
+                          ...formData,
+                          company: selectedCustomer.company_name,
+                          contact_name: selectedCustomer.contact_person_name,
+                          phone: selectedCustomer.phone || '',
+                          email: selectedCustomer.email || ''
+                        });
+                      }
+                    }}
+                    required
+                    className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900"
+                  >
+                    <option value="">Select a customer</option>
+                    {customers.map((cust) => (
+                      <option key={cust.id} value={cust.id}>
+                        {cust.company_name} - {cust.contact_person_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-sm font-semibold text-gray-700">Contact Name *</Label>
+                  <Label className="text-sm font-semibold text-gray-700">Contact Person Name *</Label>
                   <Input
                     value={formData.contact_name}
                     onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
@@ -822,7 +938,8 @@ export const Leads = () => {
                     onChange={(e) => setFormData({ ...formData, company: e.target.value })}
                     required
                     placeholder="Acme Inc"
-                    className="h-11 border border-gray-300"
+                    readOnly
+                    className="h-11 border border-gray-300 bg-gray-50"
                   />
                 </div>
               </div>
@@ -1330,6 +1447,26 @@ export const Leads = () => {
               </div>
             )}
 
+            {/* Optional Attachment Upload */}
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-gray-700">Attachment (Optional)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="file"
+                  ref={statusChangeFileRef}
+                  onChange={(e) => setStatusChangeAttachment(e.target.files?.[0] || null)}
+                  className="h-10 border border-gray-300"
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.msg,.eml,.ics"
+                />
+                {statusChangeAttachment && (
+                  <span className="text-xs text-gray-600 truncate max-w-[150px]" title={statusChangeAttachment.name}>
+                    ✓ {statusChangeAttachment.name}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500">Supported: Images, PDF, Documents, Outlook Emails (.msg, .eml)</p>
+            </div>
+
             <div className="flex gap-3 justify-end pt-2">
               <Button
                 type="button"
@@ -1338,6 +1475,7 @@ export const Leads = () => {
                   setStatusChangeDialogOpen(false);
                   setPendingStatusChange(null);
                   setStatusChangeComment('');
+                  setStatusChangeAttachment(null);
                   setLostReason('');
                   setCompetitorName('');
                   setLostAmount('');
@@ -1376,10 +1514,11 @@ export const Leads = () => {
               
               {/* Tab Navigation */}
               <Tabs defaultValue="details" className="w-full mt-6">
-                <TabsList className="grid w-full grid-cols-4 gap-0 mb-4 bg-blue-50 border border-blue-200 rounded-lg p-0.5">
+                <TabsList className="grid w-full grid-cols-5 gap-0 mb-4 bg-blue-50 border border-blue-200 rounded-lg p-0.5">
                   <TabsTrigger value="details" className="text-xs font-medium px-2 py-2 text-gray-600 hover:text-gray-800 data-[state=active]:bg-blue-100 data-[state=active]:text-gray-700 data-[state=active]:font-semibold rounded">Details</TabsTrigger>
                   <TabsTrigger value="contacts" className="text-xs font-medium px-2 py-2 text-gray-600 hover:text-gray-800 data-[state=active]:bg-blue-100 data-[state=active]:text-gray-700 data-[state=active]:font-semibold rounded">Contacts</TabsTrigger>
                   <TabsTrigger value="activities" className="text-xs font-medium px-2 py-2 text-gray-600 hover:text-gray-800 data-[state=active]:bg-blue-100 data-[state=active]:text-gray-700 data-[state=active]:font-semibold rounded">Activities</TabsTrigger>
+                  <TabsTrigger value="attachments" className="text-xs font-medium px-2 py-2 text-gray-600 hover:text-gray-800 data-[state=active]:bg-blue-100 data-[state=active]:text-gray-700 data-[state=active]:font-semibold rounded">Attachments</TabsTrigger>
                   <TabsTrigger value="reminders" className="text-xs font-medium px-2 py-2 text-gray-600 hover:text-gray-800 data-[state=active]:bg-blue-100 data-[state=active]:text-gray-700 data-[state=active]:font-semibold rounded">Reminders</TabsTrigger>
                 </TabsList>
 
@@ -1585,6 +1724,115 @@ export const Leads = () => {
                   </div>
                 </TabsContent>
 
+                {/* Attachments Tab */}
+                <TabsContent value="attachments" className="space-y-4 mt-4">
+                  <div className="space-y-4">
+                    <p className="text-sm font-semibold text-gray-800 flex items-center gap-1">
+                      <Upload className="h-4 w-4" />
+                      Attachments
+                    </p>
+                    
+                    {/* Drag-Drop Zone for Emails */}
+                    {canEditLead(selectedLead) && (
+                      <div
+                        className="border-2 border-dashed border-blue-300 bg-blue-50 rounded-lg p-6 text-center transition-colors hover:border-blue-500 hover:bg-blue-100 cursor-pointer"
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onDrop={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const files = Array.from(e.dataTransfer.files);
+                          await handleEmailDropUpload(files, selectedLead.id);
+                        }}
+                        onClick={() => document.getElementById('email-file-input').click()}
+                      >
+                        <div className="space-y-2">
+                          <Mail className="h-8 w-8 text-blue-600 mx-auto" />
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">Drag Outlook emails here</p>
+                            <p className="text-xs text-gray-600">or click to select files (.msg, .eml)</p>
+                          </div>
+                        </div>
+                        <input
+                          id="email-file-input"
+                          type="file"
+                          multiple
+                          accept=".msg,.eml,.ics,message/rfc822"
+                          className="hidden"
+                          onChange={(e) => handleEmailDropUpload(Array.from(e.target.files), selectedLead.id)}
+                        />
+                      </div>
+                    )}
+                    
+                    {attachments && attachments.length > 0 ? (
+                      <div className="grid grid-cols-1 gap-2">
+                        {attachments.map((attachment) => (
+                          <div key={attachment.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <FileText className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-gray-800 truncate">{attachment.file_name}</p>
+                                <div className="flex items-center gap-2 text-xs text-gray-500">
+                                  <span>{attachment.uploaded_by_name}</span>
+                                  <span>•</span>
+                                  <span>{new Date(attachment.uploaded_at).toLocaleDateString()}</span>
+                                  {attachment.file_size && (
+                                    <>
+                                      <span>•</span>
+                                      <span>{(attachment.file_size / 1024).toFixed(1)} KB</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-blue-600 border-blue-200 hover:bg-blue-50 h-7 text-xs"
+                                onClick={() => {
+                                  // Open preview
+                                  window.open(`${BACKEND_URL}/api/files/stream?file_url=${encodeURIComponent(attachment.file_url)}`, '_blank');
+                                }}
+                              >
+                                <Download className="h-3 w-3 mr-1" />
+                                View
+                              </Button>
+                              {canEditLead(selectedLead) && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-red-600 border-red-200 hover:bg-red-50 h-7 text-xs"
+                                  onClick={async () => {
+                                    if (window.confirm('Delete this attachment?')) {
+                                      try {
+                                        await axios.delete(
+                                          `${API}/leads/${selectedLead.id}/attachments/${attachment.id}`,
+                                          { headers: authHeader() }
+                                        );
+                                        toast.success('Attachment deleted');
+                                        setAttachments(attachments.filter(a => a.id !== attachment.id));
+                                      } catch (err) {
+                                        toast.error('Failed to delete attachment');
+                                      }
+                                    }
+                                  }}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      !canEditLead(selectedLead) && <p className="text-sm text-gray-500 text-center py-4">No attachments yet.</p>
+                    )}
+                  </div>
+                </TabsContent>
+
                 {/* Reminders Tab */}
                 <TabsContent value="reminders" className="space-y-4 mt-4">
                   <div className="flex items-center justify-between mb-4">
@@ -1724,6 +1972,33 @@ export const Leads = () => {
             </DialogHeader>
           </div>
           <form onSubmit={handleUpdateLead} className="space-y-4 p-6">
+            <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-gray-700">Customer</Label>
+                <select
+                  onChange={(e) => {
+                    const selectedCustomer = customers.find(c => c.id === e.target.value);
+                    if (selectedCustomer) {
+                      setFormData({
+                        ...formData,
+                        company: selectedCustomer.company_name,
+                        contact_name: selectedCustomer.contact_person_name,
+                        phone: selectedCustomer.phone || '',
+                        email: selectedCustomer.email || ''
+                      });
+                    }
+                  }}
+                  className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900"
+                >
+                  <option value="">Select a customer</option>
+                  {customers.map((cust) => (
+                    <option key={cust.id} value={cust.id}>
+                      {cust.company_name} - {cust.contact_person_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="text-sm font-semibold text-gray-700">Contact Name *</Label>
@@ -1740,7 +2015,8 @@ export const Leads = () => {
                   value={formData.company}
                   onChange={(e) => setFormData({ ...formData, company: e.target.value })}
                   required
-                  className="h-11 border border-gray-300"
+                  readOnly
+                  className="h-11 border border-gray-300 bg-gray-50"
                 />
               </div>
             </div>

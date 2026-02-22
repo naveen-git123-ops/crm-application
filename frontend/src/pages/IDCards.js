@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Download, Printer, Plus, Search, CreditCard, MapPin, Phone, AlertCircle } from 'lucide-react';
+import { Download, Printer, Search, CreditCard, AlertCircle } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -22,8 +22,9 @@ export const IDCards = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [employeePhotoUrl, setEmployeePhotoUrl] = useState(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [cardLayout, setCardLayout] = useState('vertical');
   const [cardSide, setCardSide] = useState('front');
   const cardRef = useRef(null);
 
@@ -34,9 +35,15 @@ export const IDCards = () => {
   const fetchEmployees = async () => {
     try {
       const response = await axios.get(`${API}/employees`);
+      console.log('Employees fetched:', response.data);
+      // Log first employee's profile photo field for debugging
+      if (response.data.length > 0) {
+        console.log('First employee profile_photo:', response.data[0].profile_photo);
+      }
       setEmployees(response.data);
       setLoading(false);
     } catch (error) {
+      console.error('Error fetching employees:', error);
       toast.error('Failed to load employees');
       setLoading(false);
     }
@@ -48,121 +55,337 @@ export const IDCards = () => {
     (emp.email && emp.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const handlePreview = (employee) => {
+  const imageUrlToDataUrl = async (url) => {
+    try {
+      console.log('Starting image conversion for URL:', url);
+      if (!url) {
+        console.warn('No URL provided');
+        return null;
+      }
+      
+      const response = await fetch(url, { 
+        credentials: 'include'
+      });
+      
+      console.log('Fetch response status:', response.status, response.statusText);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Fetch failed - Status:', response.status, 'Response:', errorText);
+        return null;
+      }
+      
+      const blob = await response.blob();
+      console.log('Blob received - size:', blob.size, 'type:', blob.type);
+      
+      if (blob.size === 0) {
+        console.error('Received empty blob');
+        return null;
+      }
+      
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          console.log('Image successfully converted to data URL, length:', reader.result.length);
+          resolve(reader.result);
+        };
+        reader.onerror = (error) => {
+          console.error('FileReader error:', error);
+          resolve(null);
+        };
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error('Error converting image to data URL:', error);
+      return null;
+    }
+  };
+
+  const handlePreview = async (employee) => {
+    console.log('Preview started for employee:', employee.id, employee.name);
     setSelectedEmployee(employee);
     setPreviewOpen(true);
+    setCardSide('front');
+    setPhotoLoading(true);
+    
+    // Get photo through backend proxy endpoint
+    if (employee.profile_photo) {
+      console.log('Employee has profile photo:', employee.profile_photo);
+      // Use backend endpoint to proxy the image and avoid CORS issues
+      const backendPhotoUrl = `${API}/employees/${employee.id}/photo`;
+      console.log('Backend photo URL:', backendPhotoUrl);
+      const dataUrl = await imageUrlToDataUrl(backendPhotoUrl);
+      console.log('Photo conversion result:', dataUrl ? 'success (length: ' + dataUrl.length + ')' : 'failed - dataUrl is null');
+      setEmployeePhotoUrl(dataUrl);
+    } else {
+      console.log('Employee has NO profile photo');
+      setEmployeePhotoUrl(null);
+    }
+    
+    setPhotoLoading(false);
   };
 
   const handleDownload = async () => {
     if (!cardRef.current) return;
+    if (photoLoading) {
+      toast.error('Photo is still loading, please wait...');
+      return;
+    }
 
     try {
+      // Wait for all images in the card to load
+      const images = cardRef.current.querySelectorAll('img');
+      const imagePromises = Array.from(images).map(img => {
+        return new Promise((resolve) => {
+          console.log('Waiting for image to load:', img.src?.substring(0, 50));
+          if (img.complete) {
+            console.log('Image already loaded');
+            resolve();
+          } else {
+            img.onload = () => {
+              console.log('Image loaded successfully');
+              resolve();
+            };
+            img.onerror = () => {
+              console.warn('Image failed to load:', img.src);
+              resolve(); // Resolve even on error to continue
+            };
+            // Set timeout to prevent hanging
+            setTimeout(resolve, 10000);
+          }
+        });
+      });
+      
+      await Promise.all(imagePromises);
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      console.log('Starting html2canvas capture');
       const canvas = await html2canvas(cardRef.current, {
         backgroundColor: '#ffffff',
-        scale: 2
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        timeout: 15000,
+        imageTimeout: 10000
       });
+      
       const link = document.createElement('a');
       link.href = canvas.toDataURL('image/png');
       link.download = `ID-Card-${selectedEmployee.employee_id}.png`;
       link.click();
+      console.log('Download completed');
       toast.success('ID card downloaded successfully');
     } catch (error) {
-      toast.error('Failed to download ID card');
+      console.error('Download error:', error);
+      toast.error('Failed to download ID card. Please try again.');
     }
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!cardRef.current) return;
 
-    const printWindow = window.open('', '', 'width=800,height=600');
-    printWindow.document.write(cardRef.current.outerHTML);
-    printWindow.document.close();
-    printWindow.print();
+    try {
+      // Wait for images to load
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Convert to canvas first for better print quality
+      const canvas = await html2canvas(cardRef.current, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        timeout: 10000
+      });
+
+      const printWindow = window.open('', '', 'width=800,height=600');
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>ID Card - ${selectedEmployee.employee_id}</title>
+            <style>
+              body { margin: 20px; font-family: Arial, sans-serif; }
+              .print-container { display: flex; justify-content: center; align-items: center;}
+              img { max-width: 210px; max-height: 330px; }
+              @media print {
+                body { margin: 0; }
+                .print-container { display: flex; justify-content: center; page-break-after: always; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="print-container">
+              <img src="${canvas.toDataURL('image/png')}" alt="ID Card" />
+            </div>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      
+      // Give it time to render before printing
+      setTimeout(() => {
+        printWindow.print();
+      }, 250);
+    } catch (error) {
+      console.error('Print error:', error);
+      toast.error('Failed to print ID card');
+    }
   };
 
-  const IDCardPreview = ({ employee, layout, side }) => {
-    // Horizontal corporate ID card (CR80-style)
-    if (side === 'front') {
-      return (
-        <div
-          ref={cardRef}
-          className="bg-white shadow-2xl overflow-hidden rounded-lg border border-gray-200/80"
-          style={{ width: '380px', height: '240px', minWidth: '380px', minHeight: '240px' }}
-        >
-          <div className="h-full flex flex-col">
-            {/* Top bar: logo + company */}
-            <div className="flex items-center justify-between px-5 py-2.5 bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 border-b border-slate-600/50">
-              <img
-                src={`${process.env.PUBLIC_URL}/logo1.png`}
-                alt="Logo"
-                className="h-9 w-auto object-contain"
-                onError={(e) => { e.target.style.display = 'none'; }}
+  const IDCardFront = ({ employee, photoUrl }) => (
+    <div
+      ref={cardRef}
+      className="bg-white shadow-2xl overflow-hidden rounded-2xl"
+      style={{ width: '210px', height: '330px', minWidth: '210px', minHeight: '330px' }}
+    >
+      <div className="h-full flex flex-col bg-white">
+        {/* Header with Company Logo and Branding */}
+        <div className="bg-gradient-to-r from-blue-800 via-blue-700 to-indigo-700 px-3 py-2.5 flex items-center">
+          <img
+            src={`${process.env.PUBLIC_URL}/logo1.png`}
+            alt="Logo"
+            className="h-6 w-auto object-contain"
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+          <div className="text-white font-black text-[9px] tracking-widest ml-2">
+            {COMPANY_NAME}
+          </div>
+        </div>
+
+        {/* Photo Section */}
+        <div className="flex justify-center py-4 px-4">
+          <div className="w-24 h-24 rounded-lg border-3 border-slate-200 shadow-md overflow-hidden flex items-center justify-center flex-shrink-0 bg-slate-50">
+            {photoUrl ? (
+              <img 
+                src={photoUrl}
+                alt={employee.name} 
+                className="w-full h-full object-cover"
+                crossOrigin="anonymous"
+                onError={(e) => {
+                  console.error('Photo display error:', e);
+                  e.target.style.display = 'none';
+                  if (e.target.nextElementSibling) {
+                    e.target.nextElementSibling.style.display = 'flex';
+                  }
+                }}
               />
-              <span className="text-white text-sm font-semibold tracking-widest uppercase">{COMPANY_NAME}</span>
+            ) : (
+              <div className="flex items-center justify-center w-full h-full bg-slate-100">
+                <span className="text-5xl font-black text-slate-300">{employee.name.charAt(0).toUpperCase()}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Employee Info */}
+        <div className="flex-1 px-3 py-2 flex flex-col justify-between text-center">
+          <div>
+            <h3 className="text-sm font-black text-slate-900 leading-tight track-tight">
+              {employee.name}
+            </h3>
+            <div className="text-[8px] font-bold text-indigo-600 uppercase tracking-wider mt-1">
+              {employee.job_role || '—'}
             </div>
-            {/* Main: photo + details in one row */}
-            <div className="flex-1 flex items-stretch">
-              <div className="w-28 flex-shrink-0 p-3 flex items-center justify-center bg-slate-50/80 border-r border-slate-200">
-                <div className="w-20 h-24 rounded-md border border-slate-200 bg-white shadow-inner overflow-hidden flex items-center justify-center">
-                  {employee.profile_photo ? (
-                    <img src={BACKEND_URL + employee.profile_photo} alt={employee.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-2xl font-bold text-slate-400">{employee.name.charAt(0).toUpperCase()}</span>
-                  )}
-                </div>
-              </div>
-              <div className="flex-1 flex flex-col justify-center px-5 py-3 min-w-0">
-                <h2 className="text-xl font-bold text-slate-900 tracking-tight truncate">{employee.name}</h2>
-                <p className="text-sm font-medium text-slate-600 mt-0.5">{employee.job_role || employee.job_title || '—'}</p>
-                <p className="text-xs text-slate-500 mt-1 uppercase tracking-wide">{employee.department || '—'}</p>
-              </div>
+            <div className="text-[7px] text-slate-500 uppercase tracking-wider font-semibold">
+              {employee.department || '—'}
             </div>
           </div>
         </div>
-      );
-    }
-    // Back side: horizontal layout
-    return (
-      <div
-        ref={cardRef}
-        className="bg-white shadow-2xl overflow-hidden rounded-lg border border-gray-200/80"
-        style={{ width: '380px', height: '240px', minWidth: '380px', minHeight: '240px' }}
-      >
-        <div className="h-full flex flex-col">
-          <div className="px-5 py-2.5 bg-gradient-to-r from-slate-800 to-slate-700 text-white text-center border-b border-slate-600/50">
-            <div className="text-sm font-semibold tracking-wide">{COMPANY_NAME}</div>
-            <div className="text-[10px] text-slate-300 uppercase tracking-widest mt-0.5">Contact & Emergency</div>
+
+        {/* ID Badge Section */}
+        <div className="px-3 py-2 border-t-2 border-slate-200">
+          <div className="text-[7px] text-slate-500 uppercase font-bold tracking-wider text-center mb-1.5">
+            Employee ID
           </div>
-          <div className="flex-1 grid grid-cols-1 gap-0 p-4">
-            <div className="flex gap-2 items-start">
-              <MapPin className="h-3.5 w-3.5 text-slate-500 flex-shrink-0 mt-0.5" />
-              <div className="min-w-0">
-                <div className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Address</div>
-                <div className="text-xs text-slate-800 leading-snug">{employee.address || '—'}</div>
-              </div>
-            </div>
-            <div className="flex gap-2 items-center">
-              <Phone className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
-              <div>
-                <div className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Company</div>
-                <div className="text-xs font-medium text-slate-800">{COMPANY_NUMBER}</div>
-              </div>
-            </div>
-            <div className="flex gap-2 items-center">
-              <AlertCircle className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
-              <div>
-                <div className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Emergency</div>
-                <div className="text-xs font-medium text-slate-800">{employee.emergency_contact || '—'}</div>
-              </div>
-            </div>
+          <div className="font-mono text-sm font-black text-white bg-gradient-to-r from-blue-700 to-indigo-700 py-1.5 px-2 rounded-md text-center">
+            {employee.employee_id}
           </div>
-          <div className="px-4 py-1.5 bg-slate-100/90 border-t border-slate-200 text-center text-[9px] text-slate-500">
-            This card is property of {COMPANY_NAME}. In case of emergency, contact the number above.
+        </div>
+
+        {/* Footer */}
+        <div className="bg-slate-900 px-3 py-2 flex justify-center">
+          <div className="flex gap-0.5">
+            {[...Array(12)].map((_, i) => (
+              <div key={i} className={`${i % 2 === 0 ? 'w-1' : 'w-0.5'} h-3 bg-slate-700`}></div>
+            ))}
           </div>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+
+  const IDCardBack = ({ employee }) => (
+    <div
+      ref={cardRef}
+      className="bg-white shadow-2xl overflow-hidden rounded-2xl"
+      style={{ width: '210px', height: '330px', minWidth: '210px', minHeight: '330px' }}
+    >
+      <div className="h-full flex flex-col bg-white">
+        {/* Header with Company Logo and Branding */}
+        <div className="bg-gradient-to-r from-blue-800 via-blue-700 to-indigo-700 px-3 py-2.5 flex items-center">
+          <img
+            src={`${process.env.PUBLIC_URL}/logo1.png`}
+            alt="Logo"
+            className="h-6 w-auto object-contain"
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+          <div className="text-white font-black text-[9px] tracking-widest ml-2">
+            {COMPANY_NAME}
+          </div>
+        </div>
+
+        <div className="px-3 py-3 flex-1 flex flex-col justify-between">
+          <div>
+            <h2 className="text-[9px] font-black text-slate-900 uppercase tracking-widest">Terms & Conditions</h2>
+            <div className="text-[6.5px] text-slate-600 mt-1 leading-snug">
+              This card is the property of {COMPANY_NAME}. Please keep it safe and secure at all times.
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <div className="text-[7px] font-bold text-indigo-600 uppercase tracking-widest mb-1">Contact Info</div>
+              <div className="space-y-1">
+                <div className="text-[8px] text-slate-700">
+                  <span className="font-semibold">Email:</span> {employee.email || '—'}
+                </div>
+                <div className="text-[8px] text-slate-700">
+                  <span className="font-semibold">Phone:</span> {employee.phone || '—'}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t-2 border-slate-200">
+              <div className="text-[7px] font-bold text-indigo-600 uppercase tracking-widest mb-1">Company</div>
+              <div className="text-[8px] text-slate-700">
+                {COMPANY_NUMBER}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t-2 border-slate-200">
+              <div className="text-[7px] font-bold text-indigo-600 uppercase tracking-widest mb-1 flex items-center gap-1">
+                <AlertCircle className="h-2.5 w-2.5" />
+                Emergency
+              </div>
+              <div className="text-[8px] font-semibold text-slate-800 bg-indigo-50 px-2 py-1 rounded">
+                {employee.emergency_contact || '—'}
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-slate-200 text-center">
+            <div className="text-[6px] text-slate-600 font-mono">
+              If found, please return to HR Department
+            </div>
+            <div className="text-[5.5px] text-slate-500 mt-0.5">
+              Issued: 2026 • {COMPANY_NAME.split(' ')[0]}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   if (loading) {
     return (
@@ -231,83 +454,79 @@ export const IDCards = () => {
                         </Button>
                       </DialogTrigger>
                       {selectedEmployee?.id === employee.id && (
-                  <DialogContent className="max-w-6xl bg-gray-50 border-0 shadow-2xl p-0">
-                    <div className="bg-blue-600 text-white p-6">
-                      <DialogHeader>
-                        <DialogTitle className="text-2xl font-bold text-white">
-                          ID Card Generator
-                        </DialogTitle>
-                        <p className="text-blue-100 mt-2">
-                          {selectedEmployee.name} • {selectedEmployee.employee_id}
-                        </p>
-                      </DialogHeader>
-                    </div>
+                        <DialogContent className="max-w-2xl bg-gray-50 border-0 shadow-2xl">
+                          <div className="bg-blue-600 text-white p-6 -m-6 mb-0 rounded-t-lg">
+                            <DialogHeader>
+                              <DialogTitle className="text-2xl font-bold text-white">
+                                ID Card Generator
+                              </DialogTitle>
+                              <p className="text-blue-100 mt-2">
+                                {selectedEmployee.name} • {selectedEmployee.employee_id}
+                              </p>
+                            </DialogHeader>
+                          </div>
 
-                    <div className="space-y-6 p-6">
-                      {/* Card Side Toggle with better styling */}
-                      <div className="flex justify-center">
-                        <div className="inline-flex bg-gray-200 rounded-lg p-1">
-                          <Button
-                            size="sm"
-                            variant={cardSide === 'front' ? 'default' : 'ghost'}
-                            onClick={() => setCardSide('front')}
-                            className={`px-6 py-2 rounded-md transition-all ${
-                              cardSide === 'front'
-                                ? 'bg-white text-blue-600 shadow-md font-semibold'
-                                : 'text-gray-600 hover:text-gray-900'
-                            }`}
-                          >
-                            Front Side
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={cardSide === 'back' ? 'default' : 'ghost'}
-                            onClick={() => setCardSide('back')}
-                            className={`px-6 py-2 rounded-md transition-all ${
-                              cardSide === 'back'
-                                ? 'bg-white text-blue-600 shadow-md font-semibold'
-                                : 'text-gray-600 hover:text-gray-900'
-                            }`}
-                          >
-                            Back Side
-                          </Button>
-                        </div>
-                      </div>
+                          <div className="space-y-6 p-6">
+                            <div className="flex justify-center gap-4">
+                              <Button
+                                size="sm"
+                                onClick={() => setCardSide('front')}
+                                className={`px-6 py-2 ${
+                                  cardSide === 'front'
+                                    ? 'bg-white text-blue-600 shadow-md font-semibold'
+                                    : 'bg-gray-200 text-gray-600 hover:text-gray-900'
+                                }`}
+                              >
+                                Front Side
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => setCardSide('back')}
+                                className={`px-6 py-2 ${
+                                  cardSide === 'back'
+                                    ? 'bg-white text-blue-600 shadow-md font-semibold'
+                                    : 'bg-gray-200 text-gray-600 hover:text-gray-900'
+                                }`}
+                              >
+                                Back Side
+                              </Button>
+                            </div>
 
-                      {/* Card Preview with better container */}
-                      <div className="flex justify-center p-8 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl">
-                        <div className="transform hover:scale-105 transition-transform duration-300">
-                          <IDCardPreview employee={selectedEmployee} layout={cardLayout} side={cardSide} />
-                        </div>
-                      </div>
+                            {photoLoading && (
+                              <div className="flex justify-center items-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent mr-2" />
+                                <span className="text-sm text-blue-700 font-medium">Processing photo...</span>
+                              </div>
+                            )}
 
-                      {/* Action Buttons with better styling */}
-                      <div className="flex gap-4 justify-center p-6 bg-white rounded-lg border border-gray-200">
-                        <Button
-                          onClick={handleDownload}
-                          className="px-8 py-3 bg-green-600 text-white hover:bg-green-700 font-semibold"
-                        >
-                          <Download className="h-5 w-5 mr-2" />
-                          Download HD
-                        </Button>
-                        <Button
-                          onClick={handlePrint}
-                          variant="outline"
-                          className="px-8 py-3 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-semibold"
-                        >
-                          <Printer className="h-5 w-5 mr-2" />
-                          Print Card
-                        </Button>
-                      </div>
+                            <div className="flex justify-center p-8 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl">
+                              {cardSide === 'front' ? (
+                                <IDCardFront employee={selectedEmployee} photoUrl={employeePhotoUrl} />
+                              ) : (
+                                <IDCardBack employee={selectedEmployee} />
+                              )}
+                            </div>
 
-                      {/* Instructions */}
-                      <div className="text-center text-sm text-gray-600 bg-blue-50 p-4 rounded-lg border border-blue-200">
-                        <p className="font-medium text-blue-900 mb-1">Professional ID Card Ready!</p>
-                        <p>Download in high quality for printing or print directly. Standard CR80 card size.</p>
-                      </div>
-                    </div>
-                  </DialogContent>
-                )}
+                            <div className="flex gap-4 justify-center p-6 bg-white rounded-lg border border-gray-200">
+                              <Button
+                                onClick={handleDownload}
+                                disabled={photoLoading}
+                                className="px-8 py-3 bg-green-600 text-white hover:bg-green-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Download className="h-5 w-5 mr-2" />
+                                Download
+                              </Button>
+                              <Button
+                                onClick={handlePrint}
+                                className="px-8 py-3 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-semibold"
+                              >
+                                <Printer className="h-5 w-5 mr-2" />
+                                Print
+                              </Button>
+                            </div>
+                          </div>
+                        </DialogContent>
+                      )}
                       </Dialog>
                   </td>
                 </tr>
@@ -319,7 +538,6 @@ export const IDCards = () => {
 
       {filteredEmployees.length === 0 && (
         <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
-          <Plus className="h-12 w-12 mx-auto mb-2 opacity-20" />
           <p className="text-gray-600">No employees found</p>
         </Card>
       )}

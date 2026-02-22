@@ -31,7 +31,10 @@ dist/
 dist
 
 # Environment files (comprehensive coverage)
-# .env is required for RDS configuration - DO NOT ignore
+# .env should ALWAYS be ignored - never commit secrets!
+.env
+.env.local
+.env.*.local
 # *token.json*
 # *credentials.json*
 

@@ -5,18 +5,9 @@
  * Provides consistent API endpoint across all components
  */
 
-// Get backend URL from environment variables
-const BACKEND_URL = (() => {
-  // Try multiple sources in order of preference
-  const url = 
-    process.env.REACT_APP_BACKEND_URL ||
-    window.ENV?.REACT_APP_BACKEND_URL ||
-    localStorage.getItem('backend_url') ||
-    'http://localhost:8000';
-  
-  // Ensure URL doesn't have trailing slash
-  return url.replace(/\/$/, '');
-})();
+// Hardcoded backend URL for local development
+// TODO: Change this before deployment
+const BACKEND_URL = 'http://localhost:8000';
 
 // API endpoint for auth and general API calls
 export const API_ENDPOINT = `${BACKEND_URL}/api`;

@@ -11,3 +11,5 @@ python-multipart==0.0.6
 reportlab==4.0.9
 boto3==1.42.29
 gunicorn==22.0.0
+mysql-connector-python==8.2.0
+PyMySQL==1.1.0

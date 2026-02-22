@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Plus, Check, X, Receipt, Image as ImageIcon, Calculator } from 'lucide-react';
+import { FilePreviewSimple } from '@/components/FilePreviewSimple';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
@@ -29,6 +30,9 @@ export const Expenses = () => {
   const [summary, setSummary] = useState(null);
   const [summaryMonth, setSummaryMonth] = useState(new Date().getMonth() + 1);
   const [summaryYear, setSummaryYear] = useState(new Date().getFullYear());
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewFileUrl, setPreviewFileUrl] = useState(null);
+  const [previewFileName, setPreviewFileName] = useState('Receipt');
   const [formData, setFormData] = useState({
     employee_id: '',
     employee_name: '',
@@ -369,15 +373,19 @@ export const Expenses = () => {
                     Submitted {new Date(exp.created_at).toLocaleDateString()}
                   </span>
                   {exp.receipt_path && (
-                    <a
-                      href={`${BACKEND_URL}${exp.receipt_path}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-sm text-emerald-600 hover:underline"
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="text-emerald-600 hover:text-emerald-700 p-0 h-auto"
+                      onClick={() => {
+                        setPreviewFileUrl(exp.receipt_path);
+                        setPreviewFileName(`Receipt-${exp.id}`);
+                        setPreviewOpen(true);
+                      }}
                     >
-                      <ImageIcon className="h-4 w-4" />
+                      <ImageIcon className="h-4 w-4 mr-1" />
                       View receipt
-                    </a>
+                    </Button>
                   )}
                 </div>
                 {exp.approver_name && (
@@ -421,6 +429,18 @@ export const Expenses = () => {
           )}
         </>
       )}
+
+      {/* Receipt Preview Dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl bg-white rounded-lg border border-gray-200 shadow-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-gray-900">Receipt Preview</DialogTitle>
+          </DialogHeader>
+          {previewFileUrl && (
+            <FilePreviewSimple fileUrl={previewFileUrl} fileName={previewFileName} />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

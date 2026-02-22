@@ -17,9 +17,11 @@ const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.ge
 const PERMISSION_LABELS = {
   dashboard: 'Dashboard',
   leads: 'Leads',
+  customers: 'Customers',
   employees: 'Employees',
   attendance: 'Attendance',
   leaves: 'Leaves',
+  tasks: 'Tasks',
   expenses: 'Expenses',
   roles: 'Roles',
   workspace: 'Workspace',

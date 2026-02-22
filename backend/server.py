@@ -1,6 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -25,21 +25,28 @@ import json
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import boto3
+from botocore.exceptions import ClientError
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# Database Setup - MySQL or PostgreSQL
+# Database Setup - MySQL or PostgreSQL (deployed URL)
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is required")
 
 # Configure based on database type
-if DATABASE_URL.startswith('mysql'):
-    # MySQL configuration
+if DATABASE_URL.startswith('mysql://'):
+    # MySQL configuration - ensure using PyMySQL driver
+    if '+pymysql' not in DATABASE_URL:
+        DATABASE_URL = DATABASE_URL.replace('mysql://', 'mysql+pymysql://')
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
+elif DATABASE_URL.startswith('mysql+'):
+    # Already has driver specified
     engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
 else:
-    # PostgreSQL configuration
+    # PostgreSQL or other configuration
     engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -52,6 +59,141 @@ JWT_EXPIRATION_HOURS = 168  # 7 days
 # Create upload directory
 UPLOAD_DIR = ROOT_DIR / 'uploads'
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+# ============= AWS S3 CONFIGURATION =============
+AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
+AWS_S3_BUCKET_NAME = os.environ.get('AWS_S3_BUCKET_NAME')
+AWS_S3_REGION = os.environ.get('AWS_S3_REGION', 'ap-south-1')
+AWS_S3_URL_EXPIRATION = int(os.environ.get('AWS_S3_URL_EXPIRATION', '3600'))
+
+# Initialize S3 client (will be created only if AWS credentials are available)
+s3_client = None
+if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_S3_BUCKET_NAME:
+    try:
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=AWS_S3_REGION
+        )
+    except Exception as e:
+        logging.warning(f"Failed to initialize S3 client: {str(e)}")
+
+# ============= S3 HELPER FUNCTIONS =============
+
+def upload_to_s3(file_content: bytes, file_name: str, folder: str = 'general') -> Optional[str]:
+    """
+    Upload a file to S3 and return the S3 URL.
+    
+    Args:
+        file_content: File content in bytes
+        file_name: Original file name
+        folder: S3 folder path (e.g., 'profile-photos', 'documents', 'receipts')
+    
+    Returns:
+        S3 URL if successful, None otherwise
+    """
+    if not s3_client:
+        logging.warning("S3 client not configured. Skipping S3 upload.")
+        return None
+    
+    try:
+        # Generate unique file name with UUID to avoid conflicts
+        unique_file_name = f"{uuid.uuid4()}_{file_name}"
+        s3_key = f"{folder}/{unique_file_name}"
+        
+        # Upload to S3
+        s3_client.put_object(
+            Bucket=AWS_S3_BUCKET_NAME,
+            Key=s3_key,
+            Body=file_content,
+            ContentType='application/octet-stream'
+        )
+        
+        # Generate public URL (for CloudFront or public bucket)
+        # If using presigned URLs for private access, use generate_presigned_url instead
+        s3_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_S3_REGION}.amazonaws.com/{s3_key}"
+        
+        logging.info(f"File uploaded to S3: {s3_url}")
+        return s3_url
+    except ClientError as e:
+        logging.error(f"Error uploading to S3: {str(e)}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error uploading to S3: {str(e)}")
+        return None
+
+def delete_from_s3(s3_url: str) -> bool:
+    """
+    Delete a file from S3.
+    
+    Args:
+        s3_url: S3 URL of the file to delete
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    if not s3_client or not s3_url:
+        return False
+    
+    try:
+        # Extract bucket and key from URL
+        # URL format: https://bucket-name.s3.region.amazonaws.com/key
+        if AWS_S3_BUCKET_NAME not in s3_url:
+            return False
+        
+        s3_key = s3_url.split(f"{AWS_S3_BUCKET_NAME}.s3.{AWS_S3_REGION}.amazonaws.com/")[-1]
+        
+        s3_client.delete_object(
+            Bucket=AWS_S3_BUCKET_NAME,
+            Key=s3_key
+        )
+        logging.info(f"File deleted from S3: {s3_url}")
+        return True
+    except ClientError as e:
+        logging.error(f"Error deleting from S3: {str(e)}")
+        return False
+    except Exception as e:
+        logging.error(f"Unexpected error deleting from S3: {str(e)}")
+        return False
+
+def generate_presigned_url(s3_url: str, expiration: int = 3600) -> Optional[str]:
+    """
+    Generate a presigned URL for temporary access to a private S3 file.
+    
+    Args:
+        s3_url: S3 URL of the file
+        expiration: URL expiration time in seconds (default: 1 hour)
+    
+    Returns:
+        Presigned URL if successful, None otherwise
+    """
+    if not s3_client or not s3_url:
+        return None
+    
+    try:
+        # Extract bucket and key from URL
+        if AWS_S3_BUCKET_NAME not in s3_url:
+            return None
+        
+        s3_key = s3_url.split(f"{AWS_S3_BUCKET_NAME}.s3.{AWS_S3_REGION}.amazonaws.com/")[-1]
+        
+        # Generate presigned URL
+        presigned_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': AWS_S3_BUCKET_NAME, 'Key': s3_key},
+            ExpiresIn=expiration
+        )
+        
+        logging.info(f"Presigned URL generated for: {s3_key}")
+        return presigned_url
+    except ClientError as e:
+        logging.error(f"Error generating presigned URL: {str(e)}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error generating presigned URL: {str(e)}")
+        return None
 
 
 app = FastAPI()
@@ -84,56 +226,108 @@ security = HTTPBearer()
 # Register API router with FastAPI app
 app.include_router(api_router)
 
+# ============= PUBLIC DEBUG ENDPOINTS (NO AUTH) =============
+
+@app.get('/health')
+def health_check():
+    """Health check endpoint"""
+    return {'status': 'ok', 'service': 'CRM API'}
+
+@app.get('/test-s3')
+def test_s3_public():
+    """Test S3 connection - PUBLIC endpoint for debugging (no auth required)"""
+    logging.info("=== S3 TEST CONNECTION ===")
+    logging.info(f"S3 Client initialized: {s3_client is not None}")
+    logging.info(f"Bucket: {AWS_S3_BUCKET_NAME}")
+    logging.info(f"Region: {AWS_S3_REGION}")
+    
+    if not s3_client:
+        logging.error("S3 client not initialized")
+        return {'status': 'error', 'message': 'S3 client not initialized'}
+    
+    try:
+        # Try to list files in bucket
+        logging.info(f"Attempting to list objects in bucket: {AWS_S3_BUCKET_NAME}")
+        response = s3_client.list_objects_v2(
+            Bucket=AWS_S3_BUCKET_NAME,
+            MaxKeys=10
+        )
+        
+        files = []
+        if 'Contents' in response:
+            files = [obj['Key'] for obj in response['Contents']]
+            logging.info(f"Found {len(files)} files in S3")
+        
+        logging.info(f"S3 test successful - found {len(files)} files")
+        
+        return {
+            'status': 'success',
+            'bucket': AWS_S3_BUCKET_NAME,
+            'region': AWS_S3_REGION,
+            'files_found': len(files),
+            'sample_files': files[:5],
+            'credentials_loaded': bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY)
+        }
+    except Exception as e:
+        logging.error(f"S3 test error: {str(e)}", exc_info=True)
+        return {
+            'status': 'error',
+            'message': str(e),
+            'error_type': type(e).__name__,
+            'bucket': AWS_S3_BUCKET_NAME,
+            'region': AWS_S3_REGION
+        }
+
 # ============= DATABASE MODELS =============
 
 class UserModel(Base):
     __tablename__ = "users"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    email = Column(String, unique=True, index=True)
-    password = Column(String)
-    name = Column(String)
-    role = Column(String)
-    employee_id = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String(255), unique=True, index=True)
+    password = Column(String(255))
+    name = Column(String(255))
+    role = Column(String(50))
+    employee_id = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
 # Role definitions: name + which screens (permissions) the role can access. Admin is system and cannot be edited/deleted.
 class RoleModel(Base):
     __tablename__ = "roles"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = Column(String, unique=True, index=True)
-    permissions = Column(String)  # JSON array of permission keys, e.g. ["dashboard","leads","employees",...]
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(100), unique=True, index=True)
+    permissions = Column(String(1000))  # JSON array of permission keys, e.g. ["dashboard","leads","employees",...]
     is_system = Column(Integer, default=0)  # 1 = Admin only, cannot edit/delete
     created_at = Column(DateTime, default=datetime.now)
 
 
 class EmployeeModel(Base):
     __tablename__ = "employees"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id = Column(String, unique=True, index=True)
-    name = Column(String)
-    email = Column(String, unique=True, index=True)
-    phone = Column(String, nullable=True)
-    department = Column(String)
-    job_role = Column(String)
-    joining_date = Column(String)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), unique=True, index=True)
+    name = Column(String(255))
+    email = Column(String(255), unique=True, index=True)
+    phone = Column(String(20), nullable=True)
+    department = Column(String(100))
+    job_role = Column(String(100))
+    joining_date = Column(String(50))
     salary = Column(Float)
-    status = Column(String, default='Active')
-    profile_photo = Column(String, nullable=True)
-    address = Column(String, nullable=True)
-    emergency_contact = Column(String, nullable=True)
+    status = Column(String(50), default='Active')
+    profile_photo = Column(String(500), nullable=True)
+    address = Column(String(500), nullable=True)
+    emergency_contact = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class AttendanceModel(Base):
     __tablename__ = "attendance"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id = Column(String, index=True)
-    employee_name = Column(String)
-    date = Column(String, index=True)
-    punch_in = Column(String, nullable=True)
-    punch_out = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
+    date = Column(String(50), index=True)
+    punch_in = Column(String(100), nullable=True)
+    punch_out = Column(String(100), nullable=True)
     work_hours = Column(Float, default=0.0)
-    status = Column(String, default='Present')
+    status = Column(String(50), default='Present')
     created_at = Column(DateTime, default=datetime.now)
     # Location & tour (office vs official travel)
     punch_in_lat = Column(Float, nullable=True)
@@ -141,28 +335,85 @@ class AttendanceModel(Base):
     punch_out_lat = Column(Float, nullable=True)
     punch_out_lng = Column(Float, nullable=True)
     is_tour = Column(Integer, default=0)
-    tour_approval_status = Column(String, nullable=True)  # 'pending', 'approved', 'rejected'
+    tour_approval_status = Column(String(50), nullable=True)  # 'pending', 'approved', 'rejected'
 
 
 class SettingsModel(Base):
     __tablename__ = "settings"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    key = Column(String, unique=True, index=True)
-    value = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    config_key = Column(String(255), unique=True, index=True)
+    value = Column(String(1000), nullable=True)
+
+class CustomerModel(Base):
+    __tablename__ = "customers"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    customer_id = Column(String(50), unique=True, index=True)
+    company_name = Column(String(255), index=True)
+    gst_number = Column(String(50), nullable=True)
+    contact_person_name = Column(String(255))
+    phone = Column(String(20), nullable=True)
+    email = Column(String(255), nullable=True)
+    address_line = Column(String(500), nullable=True)
+    city = Column(String(100), nullable=True)
+    state = Column(String(100), nullable=True)
+    pincode = Column(String(20), nullable=True)
+    country = Column(String(100), nullable=True, default='India')
+    status = Column(String(50), default='Active')
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class TaskModel(Base):
+    __tablename__ = "tasks"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id = Column(String(50), unique=True, index=True)
+    title = Column(String(255), index=True)
+    description = Column(String(1000), nullable=True)
+    priority = Column(String(50), default='Medium')  # Low, Medium, High
+    assigned_to_employee_id = Column(String(50), index=True)
+    assigned_to_name = Column(String(255))
+    created_by_employee_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    due_date = Column(String(50), index=True)  # YYYY-MM-DD
+    status = Column(String(50), default='Pending', index=True)  # Pending, In Progress, Completed, Overdue, Approval Pending
+    estimated_time_minutes = Column(Integer, nullable=True)  # Estimated time in minutes
+    actual_time_minutes = Column(Integer, nullable=True)  # Actual time spent in minutes
+    attachment_path = Column(String(500), nullable=True)
+    completion_notes = Column(String(1000), nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class TaskApprovalModel(Base):
+    __tablename__ = "task_approvals"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id = Column(String(50), index=True)
+    request_type = Column(String(100))  # carry_forward, others in future
+    requested_by_employee_id = Column(String(50))
+    requested_by_name = Column(String(255))
+    requested_at = Column(DateTime, default=datetime.now)
+    reason = Column(String(500), nullable=True)
+    status = Column(String(50), default='Pending')  # Pending, Approved, Rejected
+    approver_id = Column(String(50), nullable=True)
+    approver_name = Column(String(255), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    approval_comment = Column(String(500), nullable=True)
+    new_due_date = Column(String(50), nullable=True)  # When approved, shifts to this date
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 class LeaveModel(Base):
     __tablename__ = "leaves"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id = Column(String, index=True)
-    employee_name = Column(String)
-    leave_type = Column(String)
-    start_date = Column(String)
-    end_date = Column(String)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
+    leave_type = Column(String(50))
+    start_date = Column(String(50))
+    end_date = Column(String(50))
     days = Column(Integer)
-    reason = Column(String)
-    status = Column(String, default='Pending')
-    approver_id = Column(String, nullable=True)
-    approver_name = Column(String, nullable=True)
+    reason = Column(String(500))
+    status = Column(String(50), default='Pending')
+    approver_id = Column(String(50), nullable=True)
+    approver_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -175,177 +426,189 @@ class LeavePolicyModel(Base):
 
 class GovernmentHolidayModel(Base):
     __tablename__ = "government_holidays"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    date = Column(String, index=True)  # YYYY-MM-DD
-    name = Column(String)
-    description = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    date = Column(String(50), index=True)  # YYYY-MM-DD
+    name = Column(String(255))
+    description = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
 class DocumentModel(Base):
     __tablename__ = "documents"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id = Column(String, index=True)
-    employee_name = Column(String)
-    document_type = Column(String)
-    file_name = Column(String)
-    file_path = Column(String)
-    expiry_date = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
+    document_type = Column(String(100))
+    file_name = Column(String(255))
+    file_path = Column(String(500))
+    expiry_date = Column(String(50), nullable=True)
     uploaded_at = Column(DateTime, default=datetime.now)
 
 class ExpenseModel(Base):
     __tablename__ = "expenses"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id = Column(String, index=True)
-    employee_name = Column(String)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
     amount = Column(Float)
-    category = Column(String)
-    description = Column(String)
-    receipt_path = Column(String, nullable=True)
-    status = Column(String, default='Pending')
-    approver_id = Column(String, nullable=True)
-    approver_name = Column(String, nullable=True)
+    category = Column(String(100))
+    description = Column(String(500))
+    receipt_path = Column(String(500), nullable=True)
+    status = Column(String(50), default='Pending')
+    approver_id = Column(String(50), nullable=True)
+    approver_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class DailyWorkLogModel(Base):
     __tablename__ = "daily_work_logs"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id = Column(String, index=True)
-    employee_name = Column(String)
-    log_date = Column(String, index=True)
-    summary = Column(String)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
+    log_date = Column(String(50), index=True)
+    summary = Column(String(1000))
     created_at = Column(DateTime, default=datetime.now)
 
 class LeadModel(Base):
     __tablename__ = "leads"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    contact_name = Column(String, index=True)
-    company = Column(String, index=True)
-    email = Column(String, index=True)
-    phone = Column(String, nullable=True)
-    source = Column(String, default='Other')
-    status = Column(String, default='New', index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    contact_name = Column(String(255), index=True)
+    company = Column(String(255), index=True)
+    email = Column(String(255), index=True)
+    phone = Column(String(20), nullable=True)
+    source = Column(String(100), default='Other')
+    status = Column(String(50), default='New', index=True)
     value = Column(Float, nullable=True)
-    notes = Column(String, nullable=True)
-    assigned_to_employee_id = Column(String, nullable=True, index=True)
-    assigned_to_name = Column(String, nullable=True)
-    created_by_employee_id = Column(String, nullable=True, index=True)
-    created_by_name = Column(String, nullable=True)
-    category = Column(String, nullable=True)
-    sub_category = Column(String, nullable=True)
-    contacts = Column(String, nullable=True)  # JSON string: list of {name, designation, email, number}
+    notes = Column(String(1000), nullable=True)
+    assigned_to_employee_id = Column(String(50), nullable=True, index=True)
+    assigned_to_name = Column(String(255), nullable=True)
+    created_by_employee_id = Column(String(50), nullable=True, index=True)
+    created_by_name = Column(String(255), nullable=True)
+    category = Column(String(100), nullable=True)
+    sub_category = Column(String(100), nullable=True)
+    contacts = Column(String(2000), nullable=True)  # JSON string: list of {name, designation, email, number}
     negotiation_price = Column(Float, nullable=True)  # Price during negotiation phase
-    negotiation_terms = Column(String, nullable=True)  # Terms and conditions during negotiation
+    negotiation_terms = Column(String(1000), nullable=True)  # Terms and conditions during negotiation
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 class LeadActivityModel(Base):
     __tablename__ = "lead_activities"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    lead_id = Column(String, index=True)
-    activity_type = Column(String)
-    summary = Column(String)
-    created_by_id = Column(String, nullable=True)
-    created_by_name = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id = Column(String(36), index=True)
+    activity_type = Column(String(100))
+    summary = Column(String(1000))
+    created_by_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class LeadStatusHistoryModel(Base):
     __tablename__ = "lead_status_history"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    lead_id = Column(String, index=True)
-    old_status = Column(String)
-    new_status = Column(String)
-    changed_by_employee_id = Column(String, nullable=True, index=True)
-    changed_by_name = Column(String, nullable=True)
-    change_comment = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id = Column(String(36), index=True)
+    old_status = Column(String(50))
+    new_status = Column(String(50))
+    changed_by_employee_id = Column(String(50), nullable=True, index=True)
+    changed_by_name = Column(String(255), nullable=True)
+    change_comment = Column(String(1000), nullable=True)
     changed_at = Column(DateTime, default=datetime.now, index=True)
 
 class LeadReminderModel(Base):
     __tablename__ = "lead_reminders"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    lead_id = Column(String, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id = Column(String(36), index=True)
     reminder_datetime = Column(DateTime, nullable=False, index=True)
-    description = Column(String, nullable=False)
-    is_completed = Column(String, default='False')
-    created_by_id = Column(String, nullable=True)
-    created_by_name = Column(String, nullable=True)
+    description = Column(String(1000), nullable=False)
+    is_completed = Column(String(50), default='False')
+    created_by_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
+
+class LeadAttachmentModel(Base):
+    __tablename__ = "lead_attachments"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id = Column(String(36), index=True)
+    file_url = Column(String(500), nullable=False)  # S3 URL
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(50), nullable=True)  # e.g., 'image/png', 'application/pdf'
+    file_size = Column(Integer, nullable=True)  # in bytes
+    uploaded_by_id = Column(String(50), nullable=True)
+    uploaded_by_name = Column(String(255), nullable=True)
+    uploaded_at = Column(DateTime, default=datetime.now)
 
 class OrderModel(Base):
     __tablename__ = "orders"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    order_id = Column(String, unique=True, index=True)  # Unique order number
-    lead_id = Column(String, index=True)  # Link to the won lead
-    customer_name = Column(String, index=True)
-    contact_person = Column(String, nullable=True)
-    contact_number = Column(String, nullable=True)
-    mail_id = Column(String, nullable=True)
-    offer_no = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_id = Column(String(100), unique=True, index=True)  # Unique order number
+    lead_id = Column(String(36), index=True)  # Link to the won lead
+    customer_name = Column(String(255), index=True)
+    contact_person = Column(String(255), nullable=True)
+    contact_number = Column(String(20), nullable=True)
+    mail_id = Column(String(255), nullable=True)
+    offer_no = Column(String(100), nullable=True)
     offer_date = Column(DateTime, nullable=True)
-    product = Column(String, nullable=True)
+    product = Column(String(255), nullable=True)
     cust_supply_po_value = Column(Float, nullable=True)
-    cust_po_no = Column(String, nullable=True)
+    cust_po_no = Column(String(100), nullable=True)
     po_date = Column(DateTime, nullable=True)
     order_copy_received_date = Column(DateTime, nullable=True)
-    payment_terms = Column(String, nullable=True)
+    payment_terms = Column(String(500), nullable=True)
     advance_payment = Column(Float, nullable=True)
     delivery_committed = Column(DateTime, nullable=True)
-    vendor_po_no = Column(String, nullable=True)
-    vendor_name = Column(String, nullable=True)
+    vendor_po_no = Column(String(100), nullable=True)
+    vendor_name = Column(String(255), nullable=True)
     vendor_po_date = Column(DateTime, nullable=True)
     vendor_po_value = Column(Float, nullable=True)
-    resoline_tax_invoice_no = Column(String, nullable=True)
+    resoline_tax_invoice_no = Column(String(100), nullable=True)
     resoline_invoice_date = Column(DateTime, nullable=True)
     invoice_amount = Column(Float, nullable=True)
-    vendor_invoice_no = Column(String, nullable=True)
-    vendor_dispatch_lr_no = Column(String, nullable=True)
-    vendor_dispatch_transport = Column(String, nullable=True)
-    material_check = Column(String, nullable=True)  # Status
-    customer_dispatch_details = Column(String, nullable=True)
+    vendor_invoice_no = Column(String(100), nullable=True)
+    vendor_dispatch_lr_no = Column(String(100), nullable=True)
+    vendor_dispatch_transport = Column(String(255), nullable=True)
+    material_check = Column(String(100), nullable=True)  # Status
+    customer_dispatch_details = Column(String(1000), nullable=True)
     material_received_by_cust = Column(DateTime, nullable=True)
-    installation_successful = Column(String, default='Pending')  # Pending/Completed
-    installation_service_report_no = Column(String, nullable=True)
+    installation_successful = Column(String(50), default='Pending')  # Pending/Completed
+    installation_service_report_no = Column(String(100), nullable=True)
     service_report_date = Column(DateTime, nullable=True)
     service_charges = Column(Float, nullable=True)
     final_payment_due = Column(Float, nullable=True)
     final_payment_date = Column(DateTime, nullable=True)
     subscription_start_date = Column(DateTime, nullable=True)
     subscription_end_date = Column(DateTime, nullable=True)
-    subscription_status = Column(String, default='Active')  # Active/Expiring Soon/Expired
-    renewal_reminder_sent = Column(String, default='False')
-    remarks = Column(String, nullable=True)  # REMARK/STATUS
-    order_status = Column(String, default='Open')  # Open/In Progress/Completed/Cancelled
-    offer_copy_path = Column(String, nullable=True)  # Path to uploaded offer copy
-    order_copy_path = Column(String, nullable=True)  # Path to uploaded order copy
+    subscription_status = Column(String(50), default='Active')  # Active/Expiring Soon/Expired
+    renewal_reminder_sent = Column(String(50), default='False')
+    remarks = Column(String(1000), nullable=True)  # REMARK/STATUS
+    order_status = Column(String(50), default='Open')  # Open/In Progress/Completed/Cancelled
+    offer_copy_path = Column(String(500), nullable=True)  # Path to uploaded offer copy
+    order_copy_path = Column(String(500), nullable=True)  # Path to uploaded order copy
     estimation = Column(Float, nullable=True)  # Estimation value (similar to story points)
-    subscription_reminder_sent_30 = Column(String, default='False')  # 30 days before
-    subscription_reminder_sent_7 = Column(String, default='False')  # 7 days before
-    subscription_reminder_sent_1 = Column(String, default='False')  # 1 day before
-    assigned_to_employee_id = Column(String, nullable=True, index=True)
-    assigned_to_name = Column(String, nullable=True)
-    created_by_employee_id = Column(String, nullable=True)
-    created_by_name = Column(String, nullable=True)
+    subscription_reminder_sent_30 = Column(String(50), default='False')  # 30 days before
+    subscription_reminder_sent_7 = Column(String(50), default='False')  # 7 days before
+    subscription_reminder_sent_1 = Column(String(50), default='False')  # 1 day before
+    assigned_to_employee_id = Column(String(50), nullable=True, index=True)
+    assigned_to_name = Column(String(255), nullable=True)
+    created_by_employee_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 class OrderActivityModel(Base):
     __tablename__ = "order_activities"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    order_id = Column(String, index=True)  # Link to Order
-    activity_type = Column(String)  # Update/Status Change/Renewal Reminder/Note
-    summary = Column(String)
-    details = Column(String, nullable=True)  # JSON for additional details
-    created_by_id = Column(String, nullable=True)
-    created_by_name = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_id = Column(String(100), index=True)  # Link to Order
+    activity_type = Column(String(100))  # Update/Status Change/Renewal Reminder/Note
+    summary = Column(String(1000))
+    details = Column(String(2000), nullable=True)  # JSON for additional details
+    created_by_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class SubscriptionReminderModel(Base):
     __tablename__ = "subscription_reminders"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    order_id = Column(String, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_id = Column(String(100), index=True)
     reminder_date = Column(DateTime, nullable=False)
-    reminder_type = Column(String)  # 30days_before/7days_before/on_expiry
-    is_sent = Column(String, default='False')
+    reminder_type = Column(String(100))  # 30days_before/7days_before/on_expiry
+    is_sent = Column(String(50), default='False')
     sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
@@ -466,8 +729,8 @@ migrate_lead_status_history()
 
 # Seed default roles (Admin cannot be edited/deleted; others can)
 DEFAULT_PERMISSION_KEYS = [
-    "dashboard", "leads", "employees", "attendance", "leaves", "expenses",
-    "roles", "workspace", "idcards", "documents", "settings", "holidays"
+    "dashboard", "leads", "customers", "employees", "attendance", "leaves", "expenses",
+    "roles", "workspace", "idcards", "documents", "settings", "holidays", "tasks"
 ]
 
 def seed_roles_if_needed():
@@ -478,8 +741,8 @@ def seed_roles_if_needed():
         defaults = [
             RoleModel(name="Admin", permissions=json.dumps(DEFAULT_PERMISSION_KEYS), is_system=1),
             RoleModel(name="HR", permissions=json.dumps(["employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays"]), is_system=0),
-            RoleModel(name="Manager", permissions=json.dumps(["leads", "employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays"]), is_system=0),
-            RoleModel(name="Employee", permissions=json.dumps(["attendance", "leaves", "expenses", "workspace", "documents", "settings", "holidays"]), is_system=0),
+            RoleModel(name="Manager", permissions=json.dumps(["leads", "customers", "employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays", "tasks"]), is_system=0),
+            RoleModel(name="Employee", permissions=json.dumps(["attendance", "leaves", "expenses", "workspace", "documents", "settings", "holidays", "tasks"]), is_system=0),
         ]
         for model in defaults:
             db.add(model)
@@ -567,6 +830,101 @@ class EmployeeCreate(BaseModel):
 class EmployeeUpdateProfile(BaseModel):
     phone: Optional[str] = None
     profile_photo: Optional[str] = None
+
+class Customer(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    customer_id: str
+    company_name: str
+    gst_number: Optional[str] = None
+    contact_person_name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address_line: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    country: str = 'India'
+    status: Literal['Active', 'Inactive'] = 'Active'
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class CustomerCreate(BaseModel):
+    company_name: str
+    gst_number: Optional[str] = None
+    contact_person_name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address_line: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    country: str = 'India'
+    status: Literal['Active', 'Inactive'] = 'Active'
+
+class Task(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    task_id: str
+    title: str
+    description: Optional[str] = None
+    priority: Literal['Low', 'Medium', 'High'] = 'Medium'
+    assigned_to_employee_id: str
+    assigned_to_name: str
+    created_by_employee_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    due_date: str
+    status: Literal['Pending', 'In Progress', 'Completed', 'Overdue', 'Approval Pending'] = 'Pending'
+    estimated_time_minutes: Optional[int] = None
+    actual_time_minutes: Optional[int] = None
+    attachment_path: Optional[str] = None
+    completion_notes: Optional[str] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+
+class TaskCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    priority: Literal['Low', 'Medium', 'High'] = 'Medium'
+    assigned_to_employee_id: str
+    due_date: str  # YYYY-MM-DD
+    estimated_time_minutes: Optional[int] = None
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    priority: Optional[Literal['Low', 'Medium', 'High']] = None
+    assigned_to_employee_id: Optional[str] = None
+    due_date: Optional[str] = None
+    status: Optional[Literal['Pending', 'In Progress', 'Completed', 'Overdue', 'Approval Pending']] = None
+    estimated_time_minutes: Optional[int] = None
+    actual_time_minutes: Optional[int] = None
+    completion_notes: Optional[str] = None
+
+class TaskApproval(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    task_id: str
+    request_type: str
+    requested_by_employee_id: str
+    requested_by_name: str
+    requested_at: datetime
+    reason: Optional[str] = None
+    status: Literal['Pending', 'Approved', 'Rejected'] = 'Pending'
+    approver_id: Optional[str] = None
+    approver_name: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    approval_comment: Optional[str] = None
+    new_due_date: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class TaskApprovalRequest(BaseModel):
+    reason: Optional[str] = None
+
+class TaskApprovalAction(BaseModel):
+    status: Literal['Approved', 'Rejected']
+    approval_comment: Optional[str] = None
 
 class Attendance(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -810,6 +1168,24 @@ class LeadReminderCreate(BaseModel):
     reminder_datetime: datetime
     description: str
 
+class LeadAttachment(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    lead_id: str
+    file_url: str
+    file_name: str
+    file_type: Optional[str] = None
+    file_size: Optional[int] = None
+    uploaded_by_id: Optional[str] = None
+    uploaded_by_name: Optional[str] = None
+    uploaded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class LeadAttachmentCreate(BaseModel):
+    file_url: str
+    file_name: str
+    file_type: Optional[str] = None
+    file_size: Optional[int] = None
+
 class LeadStats(BaseModel):
     total: int
     by_status: dict
@@ -1017,6 +1393,27 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail='Invalid token')
 
+# ============= PERMISSION HELPERS =============
+
+def get_role_permissions(role_name: str, db: Session) -> list:
+    """Get permissions for a role from database"""
+    role = db.query(RoleModel).filter(RoleModel.name == role_name).first()
+    if role and role.permissions:
+        try:
+            return json.loads(role.permissions)
+        except:
+            return []
+    return []
+
+def require_permission(permission: str):
+    """Create a dependency that checks if user has a specific permission"""
+    async def check_permission(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+        permissions = get_role_permissions(current_user.role, db)
+        if permission not in permissions:
+            raise HTTPException(status_code=403, detail=f'You do not have permission to access {permission}')
+        return current_user
+    return check_permission
+
 # ============= HEALTH CHECK ROUTES =============
 
 @api_router.get('/db-check')
@@ -1223,6 +1620,56 @@ def get_employee(employee_id: str, current_user: UserModel = Depends(get_current
         raise HTTPException(status_code=404, detail='Employee not found')
     return employee
 
+@api_router.get('/employees/{employee_id}/photo')
+def get_employee_photo(employee_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get employee's profile photo as a file stream. Avoids CORS issues by proxying through backend."""
+    try:
+        employee = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
+        if not employee:
+            logging.warning(f"Employee not found: {employee_id}")
+            raise HTTPException(status_code=404, detail='Employee not found')
+        
+        if not employee.profile_photo:
+            logging.warning(f"Employee {employee_id} has no profile photo")
+            raise HTTPException(status_code=404, detail='Employee photo not found')
+        
+        photo_url = employee.profile_photo
+        logging.info(f"Fetching photo for employee {employee_id} from: {photo_url}")
+        
+        # Check if it's an S3 URL
+        if not photo_url.startswith('http'):
+            logging.error(f"Invalid photo URL (not http): {photo_url}")
+            raise HTTPException(status_code=400, detail='Invalid photo path')
+        
+        try:
+            # Use urllib to fetch the image
+            from urllib.request import urlopen
+            from urllib.error import URLError
+            
+            response = urlopen(photo_url, timeout=10)
+            image_data = response.read()
+            content_type = response.headers.get('Content-Type', 'image/jpeg')
+            
+            logging.info(f"Successfully fetched photo, size: {len(image_data)} bytes, type: {content_type}")
+            
+            return StreamingResponse(
+                iter([image_data]),
+                media_type=content_type,
+                headers={
+                    'Content-Disposition': f'inline; filename="profile_{employee.employee_id}.jpg"',
+                    'Cache-Control': 'public, max-age=3600'
+                }
+            )
+        except Exception as fetch_error:
+            logging.error(f"Error fetching from S3: {str(fetch_error)}")
+            raise HTTPException(status_code=500, detail=f'Failed to fetch photo: {str(fetch_error)}')
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Unexpected error in get_employee_photo: {str(e)}")
+        raise HTTPException(status_code=500, detail='Failed to retrieve photo')
+
 @api_router.put('/employees/{employee_id}', response_model=Employee)
 def update_employee(employee_id: str, emp_data: EmployeeCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role not in ['Admin', 'HR']:
@@ -1259,31 +1706,35 @@ def upload_profile_photo(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Upload profile photo for current employee"""
+    """Upload profile photo for current employee to S3"""
     try:
         # Find employee by email
         employee = db.query(EmployeeModel).filter(EmployeeModel.email == current_user.email).first()
         if not employee:
             raise HTTPException(status_code=404, detail='Employee record not found')
         
-        # Create employee folder
-        emp_folder = UPLOAD_DIR / employee.id
-        emp_folder.mkdir(exist_ok=True)
+        # Read file content
+        file_content = file.file.read()
         
-        # Save file
-        filename = f"profile_{uuid.uuid4()}{Path(file.filename).suffix}"
-        filepath = emp_folder / filename
+        # Upload to S3
+        photo_url = upload_to_s3(file_content, file.filename or 'profile_photo', folder='profile-photos')
         
-        with open(filepath, 'wb') as f:
-            f.write(file.file.read())
+        # If S3 upload fails, raise exception
+        if not photo_url:
+            raise HTTPException(status_code=500, detail='Failed to upload photo to S3')
         
-        # Update employee profile_photo path
-        photo_path = f"/uploads/{employee.id}/{filename}"
-        employee.profile_photo = photo_path
+        # Delete old profile photo from S3 if it exists
+        if employee.profile_photo:
+            delete_from_s3(employee.profile_photo)
+        
+        # Update employee profile_photo URL
+        employee.profile_photo = photo_url
         db.commit()
         db.refresh(employee)
         
-        return {'photo_path': photo_path, 'message': 'Profile photo uploaded successfully'}
+        return {'photo_path': photo_url, 'message': 'Profile photo uploaded successfully'}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1308,6 +1759,434 @@ def update_employee_profile(
     
     return employee
 
+# ============= CUSTOMERS =============
+
+@api_router.post('/customers', response_model=Customer)
+def create_customer(cust_data: CustomerCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to create customers')
+    
+    max_cust_num = db.query(
+        func.max(cast(func.substr(CustomerModel.customer_id, 5), Integer))
+    ).scalar()
+    next_cust_num = (max_cust_num or 0) + 1
+    cust_id = f'CUST{str(next_cust_num).zfill(5)}'
+    
+    new_customer = CustomerModel(
+        customer_id=cust_id,
+        company_name=cust_data.company_name,
+        gst_number=cust_data.gst_number,
+        contact_person_name=cust_data.contact_person_name,
+        phone=cust_data.phone,
+        email=cust_data.email,
+        address_line=cust_data.address_line,
+        city=cust_data.city,
+        state=cust_data.state,
+        pincode=cust_data.pincode,
+        country=cust_data.country,
+        status=cust_data.status
+    )
+    db.add(new_customer)
+    try:
+        db.commit()
+        db.refresh(new_customer)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Customer already exists')
+    
+    return new_customer
+
+@api_router.get('/customers', response_model=List[Customer])
+def get_customers(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    customers = db.query(CustomerModel).filter(CustomerModel.status == 'Active').all()
+    return customers
+
+@api_router.get('/customers/{customer_id}', response_model=Customer)
+def get_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    return customer
+
+@api_router.put('/customers/{customer_id}', response_model=Customer)
+def update_customer(customer_id: str, cust_data: CustomerCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to update customers')
+    
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    
+    for key, value in cust_data.model_dump().items():
+        setattr(customer, key, value)
+    customer.updated_at = datetime.now()
+    db.commit()
+    db.refresh(customer)
+    
+    return customer
+
+@api_router.delete('/customers/{customer_id}')
+def delete_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to delete customers')
+    
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    
+    db.delete(customer)
+    db.commit()
+    
+    return {'message': 'Customer deleted successfully'}
+
+# ============= TASKS =============
+
+@api_router.post('/tasks', response_model=Task)
+def create_task(task_data: TaskCreate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to create tasks')
+    
+    # Validate due date is not in the past
+    from datetime import datetime as dt
+    due_date_obj = dt.strptime(task_data.due_date, '%Y-%m-%d')
+    today = dt.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    if due_date_obj < today:
+        raise HTTPException(status_code=400, detail='Due date cannot be in the past')
+    
+    # Generate task_id
+    max_task_num = db.query(
+        func.max(cast(func.substr(TaskModel.task_id, 5), Integer))
+    ).scalar()
+    next_task_num = (max_task_num or 0) + 1
+    task_id = f'TASK{str(next_task_num).zfill(5)}'
+    
+    # Verify assigned employee exists
+    employee = db.query(EmployeeModel).filter(EmployeeModel.id == task_data.assigned_to_employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Assigned employee not found')
+    
+    new_task = TaskModel(
+        task_id=task_id,
+        title=task_data.title,
+        description=task_data.description,
+        priority=task_data.priority,
+        assigned_to_employee_id=task_data.assigned_to_employee_id,
+        assigned_to_name=employee.name,
+        created_by_employee_id=current_user.employee_id,
+        created_by_name=current_user.name,
+        due_date=task_data.due_date,
+        estimated_time_minutes=task_data.estimated_time_minutes,
+        status='Pending'
+    )
+    
+    db.add(new_task)
+    db.commit()
+    db.refresh(new_task)
+    
+    return new_task
+
+@api_router.post('/tasks/{task_id}/upload-attachment')
+def upload_task_attachment(
+    task_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Upload attachment to S3 for a task"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    # Check authorization - only manager/admin or task assignee can upload
+    is_assignee = task.assigned_to_employee_id == current_user.employee_id
+    is_creator = task.created_by_employee_id == current_user.employee_id
+    is_admin = current_user.role in ['Admin', 'Manager']
+    
+    if not (is_assignee or is_creator or is_admin):
+        raise HTTPException(status_code=403, detail='Not authorized to upload attachment for this task')
+    
+    try:
+        # Read file content
+        file_content = file.file.read()
+        filename = file.filename or 'attachment'
+        
+        # Upload to S3
+        attachment_url = upload_to_s3(file_content, filename, folder='tasks')
+        
+        # If S3 upload fails, raise exception
+        if not attachment_url:
+            raise HTTPException(status_code=500, detail='Failed to upload attachment to S3')
+        
+        # Delete old attachment from S3 if it exists
+        if task.attachment_path:
+            delete_from_s3(task.attachment_path)
+        
+        task.attachment_path = attachment_url
+        db.commit()
+        db.refresh(task)
+        
+        return {'attachment_url': attachment_url, 'message': 'Attachment uploaded successfully'}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.get('/tasks', response_model=List[Task])
+def get_tasks(
+    filter_type: Optional[str] = None,  # today, tomorrow, overdue, completed, my_tasks
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Get tasks. Employees see their own tasks; Managers/Admins see all or filtered tasks."""
+    from datetime import datetime as dt, timedelta
+    
+    print(f"\n🔍 GET /tasks called")
+    print(f"  User: {current_user.name} ({current_user.employee_id}) - Role: {current_user.role}")
+    print(f"  Filter type: {filter_type}")
+    
+    query = db.query(TaskModel)
+    
+    # If employee, filter to own tasks
+    if current_user.role == 'Employee':
+        query = query.filter(TaskModel.assigned_to_employee_id == current_user.employee_id)
+        print(f"  Applied employee filter: assigned_to_employee_id = {current_user.employee_id}")
+    
+    # Apply filter
+    today = dt.now().strftime('%Y-%m-%d')
+    tomorrow = (dt.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    
+    if filter_type == 'today':
+        query = query.filter(TaskModel.due_date == today)
+    elif filter_type == 'tomorrow':
+        query = query.filter(TaskModel.due_date == tomorrow)
+    elif filter_type == 'overdue':
+        query = query.filter(
+            (TaskModel.due_date < today) &
+            (TaskModel.status.in_(['Pending', 'In Progress']))
+        )
+    elif filter_type == 'completed':
+        query = query.filter(TaskModel.status == 'Completed')
+    
+    tasks = query.order_by(TaskModel.due_date, TaskModel.priority.desc()).all()
+    print(f"  📊 Returning {len(tasks)} tasks")
+    for task in tasks:
+        print(f"    - {task.task_id}: {task.title} (assigned to: {task.assigned_to_employee_id})")
+    
+    return tasks
+
+@api_router.get('/tasks/{task_id}', response_model=Task)
+def get_task(task_id: str, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    # Check permission to view
+    if current_user.role == 'Employee' and task.assigned_to_employee_id != current_user.employee_id:
+        raise HTTPException(status_code=403, detail='Not authorized to view this task')
+    
+    return task
+
+@api_router.put('/tasks/{task_id}', response_model=Task)
+def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    # Only manager/admin can update
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to update tasks')
+    
+    # Update fields
+    if task_data.title is not None:
+        task.title = task_data.title
+    if task_data.description is not None:
+        task.description = task_data.description
+    if task_data.priority is not None:
+        task.priority = task_data.priority
+    if task_data.assigned_to_employee_id is not None:
+        employee = db.query(EmployeeModel).filter(EmployeeModel.id == task_data.assigned_to_employee_id).first()
+        if not employee:
+            raise HTTPException(status_code=404, detail='Assigned employee not found')
+        task.assigned_to_employee_id = task_data.assigned_to_employee_id
+        task.assigned_to_name = employee.name
+    if task_data.due_date is not None:
+        task.due_date = task_data.due_date
+    if task_data.status is not None:
+        task.status = task_data.status
+        if task_data.status == 'Completed':
+            task.completed_at = datetime.now()
+    if task_data.estimated_time_minutes is not None:
+        task.estimated_time_minutes = task_data.estimated_time_minutes
+    if task_data.actual_time_minutes is not None:
+        task.actual_time_minutes = task_data.actual_time_minutes
+    if task_data.completion_notes is not None:
+        task.completion_notes = task_data.completion_notes
+    
+    task.updated_at = datetime.now()
+    db.commit()
+    db.refresh(task)
+    
+    return task
+
+@api_router.delete('/tasks/{task_id}')
+def delete_task(task_id: str, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to delete tasks')
+    
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    db.delete(task)
+    db.commit()
+    
+    return {'message': 'Task deleted successfully'}
+
+@api_router.post('/tasks/{task_id}/mark-in-progress')
+def mark_task_in_progress(task_id: str, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    """Employee marks task as In Progress"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    if task.assigned_to_employee_id != current_user.employee_id:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    task.status = 'In Progress'
+    task.updated_at = datetime.now()
+    db.commit()
+    db.refresh(task)
+    
+    return task
+
+@api_router.post('/tasks/{task_id}/complete')
+def complete_task(task_id: str, completion_data: TaskUpdate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    """Employee marks task as Completed"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    if task.assigned_to_employee_id != current_user.employee_id:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    task.status = 'Completed'
+    if completion_data.completion_notes:
+        task.completion_notes = completion_data.completion_notes
+    if completion_data.actual_time_minutes:
+        task.actual_time_minutes = completion_data.actual_time_minutes
+    task.completed_at = datetime.now()
+    task.updated_at = datetime.now()
+    db.commit()
+    db.refresh(task)
+    
+    return task
+
+@api_router.post('/tasks/{task_id}/update-completion')
+def update_task_completion(task_id: str, completion_data: TaskUpdate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    """Employee updates task completion notes and hours - can be called at any time"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    if task.assigned_to_employee_id != current_user.employee_id:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    # Allow updating notes and hours for assigned tasks
+    if completion_data.completion_notes is not None:
+        task.completion_notes = completion_data.completion_notes
+    if completion_data.actual_time_minutes is not None:
+        task.actual_time_minutes = completion_data.actual_time_minutes
+    
+    task.updated_at = datetime.now()
+    db.commit()
+    db.refresh(task)
+    
+    return task
+
+@api_router.post('/tasks/{task_id}/request-carryforward')
+def request_task_carryforward(task_id: str, approval_data: TaskApprovalRequest, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    """Employee requests to carry forward task to next day"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    if task.assigned_to_employee_id != current_user.employee_id:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    # Check if already has pending approval
+    existing_approval = db.query(TaskApprovalModel).filter(
+        TaskApprovalModel.task_id == task_id,
+        TaskApprovalModel.status == 'Pending'
+    ).first()
+    if existing_approval:
+        raise HTTPException(status_code=400, detail='Task already has a pending approval request')
+    
+    task.status = 'Approval Pending'
+    
+    approval = TaskApprovalModel(
+        task_id=task_id,
+        request_type='carry_forward',
+        requested_by_employee_id=current_user.employee_id,
+        requested_by_name=current_user.name,
+        reason=approval_data.reason
+    )
+    
+    task.updated_at = datetime.now()
+    db.add(approval)
+    db.commit()
+    db.refresh(task)
+    
+    return task
+
+@api_router.get('/tasks/approvals/pending', response_model=List[TaskApproval])
+def get_pending_approvals(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get pending task approvals for manager"""
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    approvals = db.query(TaskApprovalModel).filter(
+        TaskApprovalModel.status == 'Pending'
+    ).order_by(TaskApprovalModel.requested_at.desc()).all()
+    
+    return approvals
+
+@api_router.post('/task-approvals/{approval_id}/decide')
+def decide_task_approval(approval_id: str, decision: TaskApprovalAction, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Approve or reject task carryforward request"""
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    approval = db.query(TaskApprovalModel).filter(TaskApprovalModel.id == approval_id).first()
+    if not approval:
+        raise HTTPException(status_code=404, detail='Approval request not found')
+    
+    task = db.query(TaskModel).filter(TaskModel.id == approval.task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    approval.status = decision.status
+    approval.approver_id = current_user.id
+    approval.approver_name = current_user.name
+    approval.approved_at = datetime.now()
+    approval.approval_comment = decision.approval_comment
+    
+    if decision.status == 'Approved':
+        # Shift due date to next day
+        from datetime import datetime as dt, timedelta
+        current_due_date = dt.strptime(task.due_date, '%Y-%m-%d')
+        new_due_date = (current_due_date + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        task.due_date = new_due_date
+        task.status = 'Pending'
+        approval.new_due_date = new_due_date
+    else:  # Rejected
+        task.status = 'Overdue'
+    
+    task.updated_at = datetime.now()
+    db.commit()
+    
+    return {'message': f'Task approval {decision.status.lower()}', 'approval': approval}
+
 # ============= OFFICE LOCATION & DISTANCE =============
 OFFICE_RADIUS_METRES = 50
 
@@ -1324,8 +2203,8 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 def get_office_location(db: Session):
     """Return (lat, lng) from settings or env. None if not configured."""
-    row_lat = db.query(SettingsModel).filter(SettingsModel.key == 'office_lat').first()
-    row_lng = db.query(SettingsModel).filter(SettingsModel.key == 'office_lng').first()
+    row_lat = db.query(SettingsModel).filter(SettingsModel.config_key == 'office_lat').first()
+    row_lng = db.query(SettingsModel).filter(SettingsModel.config_key == 'office_lng').first()
     if row_lat and row_lng:
         try:
             return float(row_lat.value), float(row_lng.value)
@@ -1453,16 +2332,33 @@ def set_office_location_api(
     db: Session = Depends(get_db),
 ):
     """Set office location (e.g. from Admin's current location). Admin only."""
-    if current_user.role != 'Admin':
-        raise HTTPException(status_code=403, detail='Only Admin can set office location')
-    for key, val in [('office_lat', str(body.latitude)), ('office_lng', str(body.longitude))]:
-        row = db.query(SettingsModel).filter(SettingsModel.key == key).first()
-        if row:
-            row.value = val
+    try:
+        if current_user.role != 'Admin':
+            raise HTTPException(status_code=403, detail='Only Admin can set office location')
+        
+        # Update or create latitude setting
+        lat_row = db.query(SettingsModel).filter(SettingsModel.config_key == 'office_lat').first()
+        if lat_row:
+            lat_row.value = str(body.latitude)
         else:
-            db.add(SettingsModel(key=key, value=val))
-    db.commit()
-    return {'message': 'Office location updated', 'latitude': body.latitude, 'longitude': body.longitude}
+            lat_row = SettingsModel(config_key='office_lat', value=str(body.latitude))
+            db.add(lat_row)
+        
+        # Update or create longitude setting
+        lng_row = db.query(SettingsModel).filter(SettingsModel.config_key == 'office_lng').first()
+        if lng_row:
+            lng_row.value = str(body.longitude)
+        else:
+            lng_row = SettingsModel(config_key='office_lng', value=str(body.longitude))
+            db.add(lng_row)
+        
+        db.commit()
+        return {'message': 'Office location updated', 'latitude': body.latitude, 'longitude': body.longitude}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f'Failed to update office location: {str(e)}')
 
 
 @api_router.get('/attendance/tour-pending')
@@ -1915,24 +2811,35 @@ def upload_document(
     can_upload_any = current_user.role in ['Admin', 'HR', 'Manager']
     if not can_upload_any and str(employee_id).strip() != str(current_user.employee_id or '').strip():
         raise HTTPException(status_code=403, detail='You can only upload documents for yourself')
-    emp_folder = UPLOAD_DIR / str(employee_id).replace('/', '_')
-    emp_folder.mkdir(parents=True, exist_ok=True)
-    safe_name = file.filename or 'document'
-    file_path = emp_folder / safe_name
-    with open(file_path, 'wb') as f:
-        f.write(file.file.read())
-    new_document = DocumentModel(
-        employee_id=str(employee_id).strip(),
-        employee_name=employee_name or '',
-        document_type=document_type,
-        file_name=safe_name,
-        file_path=str(file_path),
-        expiry_date=expiry_date
-    )
-    db.add(new_document)
-    db.commit()
-    db.refresh(new_document)
-    return new_document
+    
+    try:
+        # Read file content
+        file_content = file.file.read()
+        safe_name = file.filename or 'document'
+        
+        # Upload to S3
+        file_url = upload_to_s3(file_content, safe_name, folder='documents')
+        
+        # If S3 upload fails, raise exception
+        if not file_url:
+            raise HTTPException(status_code=500, detail='Failed to upload document to S3')
+        
+        new_document = DocumentModel(
+            employee_id=str(employee_id).strip(),
+            employee_name=employee_name or '',
+            document_type=document_type,
+            file_name=safe_name,
+            file_path=file_url,  # Now storing S3 URL instead of local path
+            expiry_date=expiry_date
+        )
+        db.add(new_document)
+        db.commit()
+        db.refresh(new_document)
+        return new_document
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @api_router.get('/documents', response_model=List[Document])
 def get_documents(employee_id: Optional[str] = None, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -1955,10 +2862,201 @@ def download_document(document_id: str, current_user: UserModel = Depends(get_cu
     can_view_all = current_user.role in ['Admin', 'HR', 'Manager']
     if not can_view_all and str(document.employee_id) != str(current_user.employee_id or ''):
         raise HTTPException(status_code=403, detail='Not authorized to download this document')
-    file_path = Path(document.file_path)
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail='File not found')
-    return FileResponse(file_path, filename=document.file_name)
+    
+    # Generate presigned URL for temporary access (valid for 1 hour)
+    presigned_url = generate_presigned_url(document.file_path, expiration=AWS_S3_URL_EXPIRATION)
+    
+    if not presigned_url:
+        raise HTTPException(status_code=500, detail='Failed to generate download URL')
+    
+    return {'download_url': presigned_url, 'file_name': document.file_name}
+
+@api_router.get('/files/presigned-url')
+def get_presigned_url(
+    file_url: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get a presigned URL for viewing/downloading a file from S3.
+    Use this to display images, PDFs, or download files in the frontend.
+    
+    Parameters:
+    - file_url: The S3 URL from the database (e.g., receipt_path, file_path, etc.)
+    
+    Returns:
+    - presigned_url: Temporary URL valid for 1 hour
+    """
+    if not file_url:
+        raise HTTPException(status_code=400, detail='file_url parameter is required')
+    
+    # Generate presigned URL
+    presigned_url = generate_presigned_url(file_url, expiration=AWS_S3_URL_EXPIRATION)
+    
+    if not presigned_url:
+        raise HTTPException(status_code=500, detail='Failed to generate presigned URL')
+    
+    return {'presigned_url': presigned_url}
+
+@api_router.get('/files/view')
+def view_file(
+    file_url: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Redirect to a presigned URL for viewing a file.
+    Use this as <img src="/api/files/view?file_url=..."> or similar
+    
+    Parameters:
+    - file_url: The S3 URL from the database
+    """
+    if not file_url:
+        raise HTTPException(status_code=400, detail='file_url parameter is required')
+    
+    # Generate presigned URL
+    presigned_url = generate_presigned_url(file_url, expiration=AWS_S3_URL_EXPIRATION)
+    
+    if not presigned_url:
+        raise HTTPException(status_code=500, detail='Failed to generate presigned URL')
+    
+    # Redirect to the presigned URL
+    return RedirectResponse(url=presigned_url)
+
+@app.get('/test-stream-image', response_class=HTMLResponse)
+def test_stream_image():
+    """Test page to verify streaming endpoint works in browser"""
+    return """
+    <html>
+    <head>
+        <title>Stream Endpoint Test</title>
+        <style>
+            body { font-family: Arial; margin: 20px; }
+            .test { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
+            img { max-width: 500px; max-height: 500px; margin-top: 10px; }
+            .status { padding: 10px; margin: 10px 0; }
+            .success { background: #90EE90; }
+            .error { background: #FFB6C6; }
+        </style>
+    </head>
+    <body>
+        <h1>Stream Endpoint Test</h1>
+        
+        <div class="test">
+            <h2>Test Image (S3 Receipt)</h2>
+            <p>This should display an image from S3 through our stream endpoint:</p>
+            <div id="status1" class="status">Loading...</div>
+            <img 
+                id="testImg"
+                src="/api/files/stream?file_url=https%3A%2F%2Fcrm-resoline-bucket.s3.ap-south-1.amazonaws.com%2Freceipts%2F15de18a3-a9ee-4c81-94c5-74782c035ca2_ID-Card-EMP0001.png"
+                alt="Test Receipt"
+                onload="document.getElementById('status1').innerHTML='✅ Image loaded successfully!'; document.getElementById('status1').className='status success';"
+                onerror="document.getElementById('status1').innerHTML='❌ Failed to load image'; document.getElementById('status1').className='status error';"
+            />
+        </div>
+        
+        <div class="test">
+            <h2>Direct S3 URL (Control Test)</h2>
+            <p>This should also display (for comparison):</p>
+            <img 
+                src="https://crm-resoline-bucket.s3.ap-south-1.amazonaws.com/receipts/15de18a3-a9ee-4c81-94c5-74782c035ca2_ID-Card-EMP0001.png"
+                alt="Direct S3"
+            />
+        </div>
+        
+        <script>
+            console.log('Stream test page loaded');
+            console.log('Stream URL:', '/api/files/stream?file_url=https%3A%2F%2Fcrm-resoline-bucket.s3.ap-south-1.amazonaws.com%2Freceipts%2F15de18a3-a9ee-4c81-94c5-74782c035ca2_ID-Card-EMP0001.png');
+        </script>
+    </body>
+    </html>
+    """
+
+@api_router.get('/files/stream')
+def stream_file(file_url: str):
+    """
+    Stream a file from S3 through the backend - NO AUTH REQUIRED.
+    This avoids CORS issues and works for viewing images, PDFs, videos, etc.
+    
+    The file_url is already from the database (secured through API auth),
+    so HTML tags like <img>, <video>, <iframe> can use this directly.
+    
+    Parameters:
+    - file_url: The S3 URL from the database
+    
+    Usage in frontend:
+    <img src="/api/files/stream?file_url=..." />
+    <video src="/api/files/stream?file_url=..." />
+    <iframe src="/api/files/stream?file_url=..." />
+    """
+    logging.info(f"=== FILE STREAM REQUEST (PUBLIC ENDPOINT) ===")
+    logging.info(f"File URL: {file_url[:80] if file_url else 'None'}")
+    
+    if not file_url or not s3_client:
+        logging.error("S3 not configured or no file URL provided")
+        raise HTTPException(status_code=400, detail='Invalid file URL or S3 not configured')
+    
+    try:
+        # Extract bucket and key from URL
+        if AWS_S3_BUCKET_NAME not in file_url:
+            logging.error(f"Invalid bucket in URL: {file_url[:80]}")
+            raise HTTPException(status_code=400, detail='Invalid S3 URL')
+        
+        s3_key = file_url.split(f"{AWS_S3_BUCKET_NAME}.s3.{AWS_S3_REGION}.amazonaws.com/")[-1]
+        logging.info(f"S3 Key: {s3_key}")
+        
+        # Get file from S3
+        logging.info(f"Fetching from S3: bucket={AWS_S3_BUCKET_NAME}, key={s3_key}")
+        response = s3_client.get_object(Bucket=AWS_S3_BUCKET_NAME, Key=s3_key)
+        file_content = response['Body'].read()
+        
+        logging.info(f"Retrieved file: {len(file_content)} bytes")
+        
+        # Get filename from S3 key
+        filename = s3_key.split('/')[-1]
+        
+        # Determine content type based on file extension
+        extension = filename.split('.')[-1].lower() if '.' in filename else ''
+        
+        content_type_map = {
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'webp': 'image/webp',
+            'bmp': 'image/bmp',
+            'pdf': 'application/pdf',
+            'txt': 'text/plain',
+            'json': 'application/json',
+            'mp4': 'video/mp4',
+            'webm': 'video/webm',
+            'mp3': 'audio/mpeg',
+            'wav': 'audio/wav',
+        }
+        
+        content_type = content_type_map.get(extension, response.get('ContentType', 'application/octet-stream'))
+        logging.info(f"Content-Type: {content_type}")
+        
+        # Return as BytesIO stream
+        import io
+        file_like = io.BytesIO(file_content)
+        
+        logging.info(f"✅ Returning file with Content-Type: {content_type}")
+        
+        return StreamingResponse(
+            file_like,
+            media_type=content_type,
+            headers={
+                'Content-Disposition': f'inline; filename="{filename}"',
+                'Cache-Control': 'public, max-age=3600',
+            }
+        )
+    except ClientError as e:
+        logging.error(f"S3 ClientError: {str(e)}")
+        raise HTTPException(status_code=404, detail=f'File not found in S3')
+    except Exception as e:
+        logging.error(f"Error streaming file: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f'Failed to stream file')
 
 # ============= EXPENSE ROUTES =============
 
@@ -1988,19 +3086,31 @@ def upload_expense_receipt(
         raise HTTPException(status_code=404, detail='Expense not found')
     if expense.employee_id != current_user.employee_id and current_user.role not in ['Admin', 'HR']:
         raise HTTPException(status_code=403, detail='Not authorized to upload receipt for this expense')
-    expenses_folder = UPLOAD_DIR / 'expenses'
-    expenses_folder.mkdir(exist_ok=True)
-    emp_folder = expenses_folder / (expense.employee_id or 'unknown')
-    emp_folder.mkdir(exist_ok=True)
-    filename = f"receipt_{uuid.uuid4()}{Path(file.filename).suffix or '.jpg'}"
-    filepath = emp_folder / filename
-    with open(filepath, 'wb') as f:
-        f.write(file.file.read())
-    receipt_path = f"/uploads/expenses/{expense.employee_id or 'unknown'}/{filename}"
-    expense.receipt_path = receipt_path
-    db.commit()
-    db.refresh(expense)
-    return {'receipt_path': receipt_path, 'message': 'Receipt uploaded successfully'}
+    
+    try:
+        # Read file content
+        file_content = file.file.read()
+        filename = file.filename or 'receipt.jpg'
+        
+        # Upload to S3
+        receipt_url = upload_to_s3(file_content, filename, folder='receipts')
+        
+        # If S3 upload fails, raise exception
+        if not receipt_url:
+            raise HTTPException(status_code=500, detail='Failed to upload receipt to S3')
+        
+        # Delete old receipt from S3 if it exists
+        if expense.receipt_path:
+            delete_from_s3(expense.receipt_path)
+        
+        expense.receipt_path = receipt_url
+        db.commit()
+        db.refresh(expense)
+        return {'receipt_path': receipt_url, 'message': 'Receipt uploaded successfully'}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @api_router.get('/expenses', response_model=List[Expense])
 def get_expenses(
@@ -2688,6 +3798,106 @@ def delete_lead_reminder(
     db.commit()
     return {'message': 'Reminder deleted'}
 
+# ============= LEAD ATTACHMENTS =============
+
+@api_router.get('/leads/{lead_id}/attachments', response_model=List[LeadAttachment])
+def get_lead_attachments(
+    lead_id: str,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    """Get all attachments for a lead."""
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    
+    attachments = db.query(LeadAttachmentModel).filter(
+        LeadAttachmentModel.lead_id == lead_id
+    ).order_by(LeadAttachmentModel.uploaded_at.desc()).all()
+    
+    return attachments
+
+@api_router.post('/leads/{lead_id}/attachments', response_model=LeadAttachment)
+def upload_lead_attachment(
+    lead_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    """Upload an attachment to a lead."""
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user):
+        raise HTTPException(status_code=403, detail='You can only upload attachments to leads created by you')
+    
+    try:
+        # Read file content
+        file_content = file.file.read()
+        filename = file.filename or 'attachment'
+        file_size = len(file_content)
+        
+        # Upload to S3
+        file_url = upload_to_s3(file_content, filename, folder='leads/attachments')
+        
+        if not file_url:
+            raise HTTPException(status_code=500, detail='Failed to upload attachment to S3')
+        
+        # Create attachment record
+        attachment = LeadAttachmentModel(
+            lead_id=lead_id,
+            file_url=file_url,
+            file_name=filename,
+            file_type=file.content_type,
+            file_size=file_size,
+            uploaded_by_id=current_user.employee_id,
+            uploaded_by_name=current_user.name
+        )
+        db.add(attachment)
+        db.commit()
+        db.refresh(attachment)
+        
+        logging.info(f"✅ Lead attachment uploaded: {filename} -> {file_url}")
+        
+        return attachment
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error uploading lead attachment: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.delete('/leads/{lead_id}/attachments/{attachment_id}')
+def delete_lead_attachment(
+    lead_id: str,
+    attachment_id: str,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    """Delete an attachment from a lead."""
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user):
+        raise HTTPException(status_code=403, detail='You can only delete attachments from leads created by you')
+    
+    attachment = db.query(LeadAttachmentModel).filter(
+        LeadAttachmentModel.id == attachment_id,
+        LeadAttachmentModel.lead_id == lead_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail='Attachment not found')
+    
+    # Delete from S3
+    delete_from_s3(attachment.file_url)
+    
+    # Delete from database
+    db.delete(attachment)
+    db.commit()
+    
+    logging.info(f"✅ Lead attachment deleted: {attachment.file_name}")
+    
+    return {'message': 'Attachment deleted'}
+
 # ============= EMAIL HELPER FUNCTIONS =============
 
 def send_email(to_email: str, subject: str, body: str, is_html: bool = False) -> bool:
@@ -2917,6 +4127,92 @@ def get_expiring_subscriptions(
     # Enrich each order with current lead contact information
     enriched_orders = [_enrich_order_with_lead_info(order, db) for order in orders]
     return enriched_orders
+
+# ============= ORDER FILE UPLOAD ROUTES =============
+
+@api_router.post('/orders/{order_id}/upload-offer')
+def upload_order_offer(
+    order_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload offer copy to S3 for an order"""
+    order = db.query(OrderModel).filter(OrderModel.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    
+    # Check authorization
+    if current_user.role not in ['Admin', 'Manager', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized to upload offer documents')
+    
+    try:
+        # Read file content
+        file_content = file.file.read()
+        filename = file.filename or 'offer.pdf'
+        
+        # Upload to S3
+        offer_url = upload_to_s3(file_content, filename, folder='orders/offers')
+        
+        # If S3 upload fails, raise exception
+        if not offer_url:
+            raise HTTPException(status_code=500, detail='Failed to upload offer to S3')
+        
+        # Delete old offer from S3 if it exists
+        if order.offer_copy_path:
+            delete_from_s3(order.offer_copy_path)
+        
+        order.offer_copy_path = offer_url
+        db.commit()
+        db.refresh(order)
+        
+        return {'offer_url': offer_url, 'message': 'Offer uploaded successfully'}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.post('/orders/{order_id}/upload-order-copy')
+def upload_order_copy(
+    order_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload order copy to S3 for an order"""
+    order = db.query(OrderModel).filter(OrderModel.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    
+    # Check authorization
+    if current_user.role not in ['Admin', 'Manager', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized to upload order documents')
+    
+    try:
+        # Read file content
+        file_content = file.file.read()
+        filename = file.filename or 'order.pdf'
+        
+        # Upload to S3
+        order_copy_url = upload_to_s3(file_content, filename, folder='orders/copies')
+        
+        # If S3 upload fails, raise exception
+        if not order_copy_url:
+            raise HTTPException(status_code=500, detail='Failed to upload order copy to S3')
+        
+        # Delete old order copy from S3 if it exists
+        if order.order_copy_path:
+            delete_from_s3(order.order_copy_path)
+        
+        order.order_copy_path = order_copy_url
+        db.commit()
+        db.refresh(order)
+        
+        return {'order_copy_url': order_copy_url, 'message': 'Order copy uploaded successfully'}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @api_router.post('/orders', response_model=Order)
 def create_order(

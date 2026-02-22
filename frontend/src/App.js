@@ -9,6 +9,8 @@ import { Layout } from '@/components/Layout';
 import { Login } from '@/pages/Login';
 import { Dashboard } from '@/pages/Dashboard';
 import { Employees } from '@/pages/Employees';
+import { Customers } from '@/pages/Customers';
+import { Tasks } from '@/pages/Tasks';
 import { Attendance } from '@/pages/Attendance';
 import { Leaves } from '@/pages/Leaves';
 import { Documents } from '@/pages/Documents';
@@ -70,6 +72,28 @@ function App() {
                 <ProtectedRoute allowedRoles={['Admin', 'HR', 'Manager']}>
                   <Layout>
                     <Employees />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/customers"
+              element={
+                <ProtectedRoute allowedRoles={['Admin', 'HR', 'Manager']}>
+                  <Layout>
+                    <Customers />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/tasks"
+              element={
+                <ProtectedRoute allowedRoles={['Admin', 'Manager', 'Employee']}>
+                  <Layout>
+                    <Tasks />
                   </Layout>
                 </ProtectedRoute>
               }
