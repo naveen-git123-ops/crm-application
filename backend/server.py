@@ -202,6 +202,63 @@ class DailyWorkLogModel(Base):
     summary = Column(String)
     created_at = Column(DateTime, default=datetime.now)
 
+class CustomerModel(Base):
+    __tablename__ = "customers"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    customer_id = Column(String(50), unique=True, index=True)
+    company_name = Column(String(255), index=True)
+    gst_number = Column(String(50), nullable=True)
+    contact_person_name = Column(String(255))
+    phone = Column(String(20), nullable=True)
+    email = Column(String(255), nullable=True)
+    address_line = Column(String(500), nullable=True)
+    city = Column(String(100), nullable=True)
+    state = Column(String(100), nullable=True)
+    pincode = Column(String(20), nullable=True)
+    country = Column(String(100), nullable=True, default='India')
+    status = Column(String(50), default='Active')
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class TaskModel(Base):
+    __tablename__ = "tasks"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id = Column(String(50), unique=True, index=True)
+    title = Column(String(255), index=True)
+    description = Column(String(1000), nullable=True)
+    priority = Column(String(50), default='Medium')  # Low, Medium, High
+    assigned_to_employee_id = Column(String(50), index=True)
+    assigned_to_name = Column(String(255))
+    created_by_employee_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    due_date = Column(String(50), index=True)  # YYYY-MM-DD
+    status = Column(String(50), default='Pending', index=True)  # Pending, In Progress, Completed, Overdue, Approval Pending
+    estimated_time_minutes = Column(Integer, nullable=True)  # Estimated time in minutes
+    actual_time_minutes = Column(Integer, nullable=True)  # Actual time spent in minutes
+    attachment_path = Column(String(500), nullable=True)
+    completion_notes = Column(String(1000), nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class TaskApprovalModel(Base):
+    __tablename__ = "task_approvals"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id = Column(String(50), index=True)
+    request_type = Column(String(100))  # carry_forward, others in future
+    requested_by_employee_id = Column(String(50))
+    requested_by_name = Column(String(255))
+    requested_at = Column(DateTime, default=datetime.now)
+    reason = Column(String(500), nullable=True)
+    status = Column(String(50), default='Pending')  # Pending, Approved, Rejected
+    approver_id = Column(String(50), nullable=True)
+    approver_name = Column(String(255), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    approval_comment = Column(String(500), nullable=True)
+    new_due_date = Column(String(50), nullable=True)  # When approved, shifts to this date
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
 class LeadModel(Base):
     __tablename__ = "leads"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -256,6 +313,18 @@ class LeadReminderModel(Base):
     created_by_id = Column(String, nullable=True)
     created_by_name = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
+
+class LeadAttachmentModel(Base):
+    __tablename__ = "lead_attachments"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id = Column(String(36), index=True)
+    file_url = Column(String(500), nullable=False)  # S3 URL
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(50), nullable=True)  # e.g., 'image/png', 'application/pdf'
+    file_size = Column(Integer, nullable=True)  # in bytes
+    uploaded_by_id = Column(String(50), nullable=True)
+    uploaded_by_name = Column(String(255), nullable=True)
+    uploaded_at = Column(DateTime, default=datetime.now)
 
 class OrderModel(Base):
     __tablename__ = "orders"
@@ -450,6 +519,20 @@ def migrate_lead_status_history():
 
 migrate_lead_status_history()
 
+def migrate_customers():
+    """Create customers table if missing."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            r = conn.execute(text("PRAGMA table_info(customers)"))
+            # Table exists, no need to create
+            r.fetchall()
+        except Exception:
+            # Table doesn't exist, it will be created by Base.metadata.create_all()
+            pass
+
+migrate_customers()
+
 # Seed default roles (Admin cannot be edited/deleted; others can)
 DEFAULT_PERMISSION_KEYS = [
     "dashboard", "leads", "employees", "attendance", "leaves", "expenses",
@@ -553,6 +636,101 @@ class EmployeeCreate(BaseModel):
 class EmployeeUpdateProfile(BaseModel):
     phone: Optional[str] = None
     profile_photo: Optional[str] = None
+
+class Customer(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    customer_id: str
+    company_name: str
+    gst_number: Optional[str] = None
+    contact_person_name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address_line: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    country: str = 'India'
+    status: Literal['Active', 'Inactive'] = 'Active'
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class CustomerCreate(BaseModel):
+    company_name: str
+    gst_number: Optional[str] = None
+    contact_person_name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address_line: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    country: str = 'India'
+    status: Literal['Active', 'Inactive'] = 'Active'
+
+class Task(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    task_id: str
+    title: str
+    description: Optional[str] = None
+    priority: Literal['Low', 'Medium', 'High'] = 'Medium'
+    assigned_to_employee_id: str
+    assigned_to_name: str
+    created_by_employee_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    due_date: str
+    status: Literal['Pending', 'In Progress', 'Completed', 'Overdue', 'Approval Pending'] = 'Pending'
+    estimated_time_minutes: Optional[int] = None
+    actual_time_minutes: Optional[int] = None
+    attachment_path: Optional[str] = None
+    completion_notes: Optional[str] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+
+class TaskCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    priority: Literal['Low', 'Medium', 'High'] = 'Medium'
+    assigned_to_employee_id: str
+    due_date: str  # YYYY-MM-DD
+    estimated_time_minutes: Optional[int] = None
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    priority: Optional[Literal['Low', 'Medium', 'High']] = None
+    assigned_to_employee_id: Optional[str] = None
+    due_date: Optional[str] = None
+    status: Optional[Literal['Pending', 'In Progress', 'Completed', 'Overdue', 'Approval Pending']] = None
+    estimated_time_minutes: Optional[int] = None
+    actual_time_minutes: Optional[int] = None
+    completion_notes: Optional[str] = None
+
+class TaskApproval(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    task_id: str
+    request_type: str
+    requested_by_employee_id: str
+    requested_by_name: str
+    requested_at: datetime
+    reason: Optional[str] = None
+    status: Literal['Pending', 'Approved', 'Rejected'] = 'Pending'
+    approver_id: Optional[str] = None
+    approver_name: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    approval_comment: Optional[str] = None
+    new_due_date: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class TaskApprovalRequest(BaseModel):
+    reason: Optional[str] = None
+
+class TaskApprovalAction(BaseModel):
+    status: Literal['Approved', 'Rejected']
+    approval_comment: Optional[str] = None
 
 class Attendance(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -682,6 +860,37 @@ class DailyWorkLogCreate(BaseModel):
     employee_name: str
     log_date: str
     summary: str
+
+class Customer(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    customer_id: str
+    company_name: str
+    gst_number: Optional[str] = None
+    contact_person_name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address_line: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    country: str = 'India'
+    status: str = 'Active'
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+
+class CustomerCreate(BaseModel):
+    company_name: str
+    gst_number: Optional[str] = None
+    contact_person_name: str
+    phone: Optional[str] = None
+    email: Optional[EmailStr] = None
+    address_line: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    country: str = 'India'
+    status: str = 'Active'
 
 class UserRoleUpdate(BaseModel):
     role: str  # must exist in roles table
@@ -1002,6 +1211,33 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail='Token expired')
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail='Invalid token')
+
+def require_permission(permission: str):
+    """Dependency for checking user has specific permission"""
+    async def verify_permission(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+        if current_user.role == 'Admin':
+            return current_user  # Admins have all permissions
+        
+        # Get role permissions from database
+        role = db.query(RoleModel).filter(RoleModel.name == current_user.role).first()
+        if not role:
+            raise HTTPException(status_code=403, detail='Role not found')
+        
+        permissions = json.loads(role.permissions) if isinstance(role.permissions, str) else role.permissions
+        if permission not in permissions:
+            raise HTTPException(status_code=403, detail=f'Permission "{permission}" denied')
+        
+        return current_user
+    return verify_permission
+
+def get_permissions_for_role(db: Session, role_name: str) -> List[str]:
+    """Get list of permissions for a given role"""
+    role = db.query(RoleModel).filter(RoleModel.name == role_name).first()
+    if not role:
+        return []
+    
+    permissions = json.loads(role.permissions) if isinstance(role.permissions, str) else role.permissions
+    return permissions if isinstance(permissions, list) else []
 
 # ============= HEALTH CHECK ROUTES =============
 
@@ -1333,6 +1569,422 @@ def is_within_office(db: Session, lat: float, lng: float) -> bool:
         return True  # No office set: allow without location check (e.g. admin override)
     dist = _haversine_m(office[0], office[1], lat, lng)
     return dist <= OFFICE_RADIUS_METRES
+
+# ============= CUSTOMERS =============
+
+@api_router.post('/customers', response_model=Customer)
+def create_customer(cust_data: CustomerCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to create customers')
+    
+    max_cust_num = db.query(
+        func.max(cast(func.substr(CustomerModel.customer_id, 5), Integer))
+    ).scalar()
+    next_cust_num = (max_cust_num or 0) + 1
+    cust_id = f'CUST{str(next_cust_num).zfill(5)}'
+    
+    new_customer = CustomerModel(
+        customer_id=cust_id,
+        company_name=cust_data.company_name,
+        gst_number=cust_data.gst_number,
+        contact_person_name=cust_data.contact_person_name,
+        phone=cust_data.phone,
+        email=cust_data.email,
+        address_line=cust_data.address_line,
+        city=cust_data.city,
+        state=cust_data.state,
+        pincode=cust_data.pincode,
+        country=cust_data.country,
+        status=cust_data.status
+    )
+    db.add(new_customer)
+    try:
+        db.commit()
+        db.refresh(new_customer)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Customer already exists')
+    
+    return new_customer
+
+@api_router.get('/customers', response_model=List[Customer])
+def get_customers(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    customers = db.query(CustomerModel).filter(CustomerModel.status == 'Active').all()
+    return customers
+
+@api_router.get('/customers/{customer_id}', response_model=Customer)
+def get_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    return customer
+
+@api_router.put('/customers/{customer_id}', response_model=Customer)
+def update_customer(customer_id: str, cust_data: CustomerCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to update customers')
+    
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    
+    for key, value in cust_data.model_dump().items():
+        setattr(customer, key, value)
+    customer.updated_at = datetime.now()
+    db.commit()
+    db.refresh(customer)
+    
+    return customer
+
+@api_router.delete('/customers/{customer_id}')
+def delete_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to delete customers')
+    
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    
+    db.delete(customer)
+    db.commit()
+    
+    return {'message': 'Customer deleted successfully'}
+
+# ============= TASKS =============
+
+@api_router.post('/tasks', response_model=Task)
+def create_task(task_data: TaskCreate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to create tasks')
+    
+    # Validate due date is not in the past
+    due_date_obj = datetime.strptime(task_data.due_date, '%Y-%m-%d')
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    if due_date_obj < today:
+        raise HTTPException(status_code=400, detail='Due date cannot be in the past')
+    
+    # Generate task_id
+    max_task_num = db.query(
+        func.max(cast(func.substr(TaskModel.task_id, 5), Integer))
+    ).scalar()
+    next_task_num = (max_task_num or 0) + 1
+    task_id = f'TASK{str(next_task_num).zfill(5)}'
+    
+    # Verify assigned employee exists
+    employee = db.query(EmployeeModel).filter(EmployeeModel.id == task_data.assigned_to_employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Assigned employee not found')
+    
+    new_task = TaskModel(
+        task_id=task_id,
+        title=task_data.title,
+        description=task_data.description,
+        priority=task_data.priority,
+        assigned_to_employee_id=task_data.assigned_to_employee_id,
+        assigned_to_name=employee.name,
+        created_by_employee_id=current_user.employee_id,
+        created_by_name=current_user.name,
+        due_date=task_data.due_date,
+        estimated_time_minutes=task_data.estimated_time_minutes,
+        status='Pending'
+    )
+    
+    db.add(new_task)
+    db.commit()
+    db.refresh(new_task)
+    
+    return new_task
+
+@api_router.post('/tasks/{task_id}/upload-attachment')
+def upload_task_attachment(
+    task_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Upload attachment to S3 for a task"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    # Check authorization - only manager/admin or task assignee can upload
+    is_assignee = task.assigned_to_employee_id == current_user.employee_id
+    is_creator = task.created_by_employee_id == current_user.employee_id
+    is_admin = current_user.role in ['Admin', 'Manager']
+    
+    if not (is_assignee or is_creator or is_admin):
+        raise HTTPException(status_code=403, detail='Not authorized to upload attachment for this task')
+    
+    try:
+        # Read file content
+        file_content = file.file.read()
+        filename = file.filename or 'attachment'
+        
+        # Upload to S3
+        attachment_url = upload_to_s3(file_content, filename, folder='tasks')
+        
+        # If S3 upload fails, raise exception
+        if not attachment_url:
+            raise HTTPException(status_code=500, detail='Failed to upload attachment to S3')
+        
+        # Delete old attachment from S3 if it exists
+        if task.attachment_path:
+            delete_from_s3(task.attachment_path)
+        
+        task.attachment_path = attachment_url
+        db.commit()
+        db.refresh(task)
+        
+        return {'attachment_url': attachment_url, 'message': 'Attachment uploaded successfully'}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.get('/tasks', response_model=List[Task])
+def get_tasks(
+    filter_type: Optional[str] = None,  # today, tomorrow, overdue, completed, my_tasks
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Get tasks. Employees see their own tasks; Managers/Admins see all or filtered tasks."""
+    query = db.query(TaskModel)
+    
+    # If employee, filter to own tasks
+    if current_user.role == 'Employee':
+        query = query.filter(TaskModel.assigned_to_employee_id == current_user.employee_id)
+    
+    # Apply filter
+    today = datetime.now().strftime('%Y-%m-%d')
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    
+    if filter_type == 'today':
+        query = query.filter(TaskModel.due_date == today)
+    elif filter_type == 'tomorrow':
+        query = query.filter(TaskModel.due_date == tomorrow)
+    elif filter_type == 'overdue':
+        query = query.filter(
+            (TaskModel.due_date < today) &
+            (TaskModel.status.in_(['Pending', 'In Progress']))
+        )
+    elif filter_type == 'completed':
+        query = query.filter(TaskModel.status == 'Completed')
+    
+    tasks = query.order_by(TaskModel.due_date, TaskModel.priority.desc()).all()
+    
+    return tasks
+
+@api_router.get('/tasks/{task_id}', response_model=Task)
+def get_task(task_id: str, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    # Check permission to view
+    if current_user.role == 'Employee' and task.assigned_to_employee_id != current_user.employee_id:
+        raise HTTPException(status_code=403, detail='Not authorized to view this task')
+    
+    return task
+
+@api_router.put('/tasks/{task_id}', response_model=Task)
+def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    # Only manager/admin can update
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to update tasks')
+    
+    # Update fields
+    if task_data.title is not None:
+        task.title = task_data.title
+    if task_data.description is not None:
+        task.description = task_data.description
+    if task_data.priority is not None:
+        task.priority = task_data.priority
+    if task_data.assigned_to_employee_id is not None:
+        employee = db.query(EmployeeModel).filter(EmployeeModel.id == task_data.assigned_to_employee_id).first()
+        if not employee:
+            raise HTTPException(status_code=404, detail='Assigned employee not found')
+        task.assigned_to_employee_id = task_data.assigned_to_employee_id
+        task.assigned_to_name = employee.name
+    if task_data.due_date is not None:
+        task.due_date = task_data.due_date
+    if task_data.status is not None:
+        task.status = task_data.status
+        if task_data.status == 'Completed':
+            task.completed_at = datetime.now()
+    if task_data.estimated_time_minutes is not None:
+        task.estimated_time_minutes = task_data.estimated_time_minutes
+    if task_data.actual_time_minutes is not None:
+        task.actual_time_minutes = task_data.actual_time_minutes
+    if task_data.completion_notes is not None:
+        task.completion_notes = task_data.completion_notes
+    
+    task.updated_at = datetime.now()
+    db.commit()
+    db.refresh(task)
+    
+    return task
+
+@api_router.delete('/tasks/{task_id}')
+def delete_task(task_id: str, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to delete tasks')
+    
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    db.delete(task)
+    db.commit()
+    
+    return {'message': 'Task deleted successfully'}
+
+@api_router.post('/tasks/{task_id}/mark-in-progress')
+def mark_task_in_progress(task_id: str, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    """Employee marks task as In Progress"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    if task.assigned_to_employee_id != current_user.employee_id:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    task.status = 'In Progress'
+    task.updated_at = datetime.now()
+    db.commit()
+    db.refresh(task)
+    
+    return task
+
+@api_router.post('/tasks/{task_id}/complete')
+def complete_task(task_id: str, completion_data: TaskUpdate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    """Employee marks task as Completed"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    if task.assigned_to_employee_id != current_user.employee_id:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    task.status = 'Completed'
+    if completion_data.completion_notes:
+        task.completion_notes = completion_data.completion_notes
+    if completion_data.actual_time_minutes:
+        task.actual_time_minutes = completion_data.actual_time_minutes
+    task.completed_at = datetime.now()
+    task.updated_at = datetime.now()
+    db.commit()
+    db.refresh(task)
+    
+    return task
+
+@api_router.post('/tasks/{task_id}/update-completion')
+def update_task_completion(task_id: str, completion_data: TaskUpdate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    """Employee updates task completion notes and hours - can be called at any time"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    if task.assigned_to_employee_id != current_user.employee_id:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    # Allow updating notes and hours for assigned tasks
+    if completion_data.completion_notes is not None:
+        task.completion_notes = completion_data.completion_notes
+    if completion_data.actual_time_minutes is not None:
+        task.actual_time_minutes = completion_data.actual_time_minutes
+    
+    task.updated_at = datetime.now()
+    db.commit()
+    db.refresh(task)
+    
+    return task
+
+@api_router.post('/tasks/{task_id}/request-carryforward')
+def request_task_carryforward(task_id: str, approval_data: TaskApprovalRequest, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+    """Employee requests to carry forward task to next day"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    if task.assigned_to_employee_id != current_user.employee_id:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    # Check if already has pending approval
+    existing_approval = db.query(TaskApprovalModel).filter(
+        TaskApprovalModel.task_id == task_id,
+        TaskApprovalModel.status == 'Pending'
+    ).first()
+    if existing_approval:
+        raise HTTPException(status_code=400, detail='Task already has a pending approval request')
+    
+    task.status = 'Approval Pending'
+    
+    approval = TaskApprovalModel(
+        task_id=task_id,
+        request_type='carry_forward',
+        requested_by_employee_id=current_user.employee_id,
+        requested_by_name=current_user.name,
+        reason=approval_data.reason
+    )
+    
+    task.updated_at = datetime.now()
+    db.add(approval)
+    db.commit()
+    db.refresh(task)
+    
+    return task
+
+@api_router.get('/tasks/approvals/pending', response_model=List[TaskApproval])
+def get_pending_approvals(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get pending task approvals for manager"""
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    approvals = db.query(TaskApprovalModel).filter(
+        TaskApprovalModel.status == 'Pending'
+    ).order_by(TaskApprovalModel.requested_at.desc()).all()
+    
+    return approvals
+
+@api_router.post('/task-approvals/{approval_id}/decide')
+def decide_task_approval(approval_id: str, decision: TaskApprovalAction, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Approve or reject task carryforward request"""
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    approval = db.query(TaskApprovalModel).filter(TaskApprovalModel.id == approval_id).first()
+    if not approval:
+        raise HTTPException(status_code=404, detail='Approval request not found')
+    
+    task = db.query(TaskModel).filter(TaskModel.id == approval.task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    approval.status = decision.status
+    approval.approver_id = current_user.id
+    approval.approver_name = current_user.name
+    approval.approved_at = datetime.now()
+    approval.approval_comment = decision.approval_comment
+    
+    if decision.status == 'Approved':
+        # Shift due date to next day
+        current_due_date = datetime.strptime(task.due_date, '%Y-%m-%d')
+        new_due_date = (current_due_date + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        task.due_date = new_due_date
+        task.status = 'Pending'
+        approval.new_due_date = new_due_date
+    else:  # Rejected
+        task.status = 'Overdue'
+    
+    task.updated_at = datetime.now()
+    db.commit()
+    
+    return {'message': f'Task approval {decision.status.lower()}', 'approval': approval}
 
 # ============= ATTENDANCE ROUTES =============
 
@@ -1716,6 +2368,108 @@ def get_attendance_report(
         d += timedelta(days=1)
     report.sort(key=lambda x: (x['date'], x['employee_id']), reverse=True)
     return report
+
+
+# ============= CUSTOMER ROUTES =============
+
+@api_router.get('/customers', response_model=List[Customer])
+def get_customers(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get all customers"""
+    customers = db.query(CustomerModel).order_by(CustomerModel.created_at.desc()).all()
+    return customers
+
+@api_router.post('/customers', response_model=Customer)
+def create_customer(customer_data: CustomerCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Create a new customer"""
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    # Generate customer ID
+    max_customer_num = db.query(
+        func.max(cast(func.substr(CustomerModel.customer_id, 4), Integer))
+    ).scalar()
+    next_customer_num = (max_customer_num or 0) + 1
+    customer_id = f'CUST{str(next_customer_num).zfill(4)}'
+    
+    new_customer = CustomerModel(
+        customer_id=customer_id,
+        company_name=customer_data.company_name,
+        gst_number=customer_data.gst_number,
+        contact_person_name=customer_data.contact_person_name,
+        phone=customer_data.phone,
+        email=customer_data.email,
+        address_line=customer_data.address_line,
+        city=customer_data.city,
+        state=customer_data.state,
+        pincode=customer_data.pincode,
+        country=customer_data.country,
+        status=customer_data.status
+    )
+    db.add(new_customer)
+    try:
+        db.commit()
+        db.refresh(new_customer)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Customer with this email already exists')
+    
+    return new_customer
+
+@api_router.get('/customers/{customer_id}', response_model=Customer)
+def get_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get a specific customer by ID"""
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    return customer
+
+@api_router.put('/customers/{customer_id}', response_model=Customer)
+def update_customer(customer_id: str, customer_data: CustomerCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Update a customer"""
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    
+    # Update fields
+    customer.company_name = customer_data.company_name
+    customer.gst_number = customer_data.gst_number
+    customer.contact_person_name = customer_data.contact_person_name
+    customer.phone = customer_data.phone
+    customer.email = customer_data.email
+    customer.address_line = customer_data.address_line
+    customer.city = customer_data.city
+    customer.state = customer_data.state
+    customer.pincode = customer_data.pincode
+    customer.country = customer_data.country
+    customer.status = customer_data.status
+    customer.updated_at = datetime.now()
+    
+    try:
+        db.commit()
+        db.refresh(customer)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Email already exists')
+    
+    return customer
+
+@api_router.delete('/customers/{customer_id}')
+def delete_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Delete a customer"""
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    
+    db.delete(customer)
+    db.commit()
+    
+    return {'message': 'Customer deleted successfully'}
 
 
 # ============= LEAVE ROUTES =============
