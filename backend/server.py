@@ -133,7 +133,7 @@ class AttendanceModel(Base):
 class SettingsModel(Base):
     __tablename__ = "settings"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    key = Column(String, unique=True, index=True)
+    config_key = Column(String, unique=True, index=True)
     value = Column(String, nullable=True)
 
 class LeaveModel(Base):
@@ -1547,8 +1547,8 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 def get_office_location(db: Session):
     """Return (lat, lng) from settings or env. None if not configured."""
-    row_lat = db.query(SettingsModel).filter(SettingsModel.key == 'office_lat').first()
-    row_lng = db.query(SettingsModel).filter(SettingsModel.key == 'office_lng').first()
+    row_lat = db.query(SettingsModel).filter(SettingsModel.config_key == 'office_lat').first()
+    row_lng = db.query(SettingsModel).filter(SettingsModel.config_key == 'office_lng').first()
     if row_lat and row_lng:
         try:
             return float(row_lat.value), float(row_lng.value)
@@ -2092,16 +2092,33 @@ def set_office_location_api(
     db: Session = Depends(get_db),
 ):
     """Set office location (e.g. from Admin's current location). Admin only."""
-    if current_user.role != 'Admin':
-        raise HTTPException(status_code=403, detail='Only Admin can set office location')
-    for key, val in [('office_lat', str(body.latitude)), ('office_lng', str(body.longitude))]:
-        row = db.query(SettingsModel).filter(SettingsModel.key == key).first()
-        if row:
-            row.value = val
+    try:
+        if current_user.role != 'Admin':
+            raise HTTPException(status_code=403, detail='Only Admin can set office location')
+        
+        # Update or create latitude setting
+        lat_row = db.query(SettingsModel).filter(SettingsModel.config_key == 'office_lat').first()
+        if lat_row:
+            lat_row.value = str(body.latitude)
         else:
-            db.add(SettingsModel(key=key, value=val))
-    db.commit()
-    return {'message': 'Office location updated', 'latitude': body.latitude, 'longitude': body.longitude}
+            lat_row = SettingsModel(config_key='office_lat', value=str(body.latitude))
+            db.add(lat_row)
+        
+        # Update or create longitude setting
+        lng_row = db.query(SettingsModel).filter(SettingsModel.config_key == 'office_lng').first()
+        if lng_row:
+            lng_row.value = str(body.longitude)
+        else:
+            lng_row = SettingsModel(config_key='office_lng', value=str(body.longitude))
+            db.add(lng_row)
+        
+        db.commit()
+        return {'message': 'Office location updated', 'latitude': body.latitude, 'longitude': body.longitude}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f'Error setting office location: {str(e)}')
 
 
 @api_router.get('/attendance/tour-pending')
