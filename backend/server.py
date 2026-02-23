@@ -237,6 +237,7 @@ class TaskModel(Base):
     actual_time_minutes = Column(Integer, nullable=True)  # Actual time spent in minutes
     attachment_path = Column(String(500), nullable=True)
     completion_notes = Column(String(1000), nullable=True)
+    completion_percentage = Column(Integer, default=0)  # 0-100, percentage of completion
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -258,6 +259,39 @@ class TaskApprovalModel(Base):
     new_due_date = Column(String(50), nullable=True)  # When approved, shifts to this date
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class TaskCommentModel(Base):
+    __tablename__ = "task_comments"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id = Column(String(50), index=True)
+    author_employee_id = Column(String(50))
+    author_name = Column(String(255))
+    content = Column(String(2000))
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class TaskTimeLogModel(Base):
+    __tablename__ = "task_time_logs"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id = Column(String(50), index=True)
+    logged_by_employee_id = Column(String(50))
+    logged_by_name = Column(String(255))
+    time_spent_minutes = Column(Integer)  # Time in minutes
+    description = Column(String(500), nullable=True)  # What work was done
+    log_date = Column(String(50), default=lambda: datetime.now().strftime('%Y-%m-%d'))
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+class TaskAttachmentModel(Base):
+    __tablename__ = "task_attachments"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id = Column(String(50), index=True)
+    uploaded_by_employee_id = Column(String(50))
+    uploaded_by_name = Column(String(255))
+    file_name = Column(String(255))
+    file_url = Column(String(500))  # S3 URL or local path
+    file_size = Column(Integer, nullable=True)  # File size in bytes
+    file_type = Column(String(50), nullable=True)  # e.g., 'pdf', 'image', 'document'
+    created_at = Column(DateTime, default=datetime.now, index=True)
 
 class LeadModel(Base):
     __tablename__ = "leads"
@@ -536,7 +570,7 @@ migrate_customers()
 # Seed default roles (Admin cannot be edited/deleted; others can)
 DEFAULT_PERMISSION_KEYS = [
     "dashboard", "leads", "employees", "attendance", "leaves", "expenses",
-    "roles", "workspace", "idcards", "documents", "settings", "holidays"
+    "roles", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers"
 ]
 
 def seed_roles_if_needed():
@@ -546,9 +580,9 @@ def seed_roles_if_needed():
             return
         defaults = [
             RoleModel(name="Admin", permissions=json.dumps(DEFAULT_PERMISSION_KEYS), is_system=1),
-            RoleModel(name="HR", permissions=json.dumps(["employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays"]), is_system=0),
-            RoleModel(name="Manager", permissions=json.dumps(["leads", "employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays"]), is_system=0),
-            RoleModel(name="Employee", permissions=json.dumps(["attendance", "leaves", "expenses", "workspace", "documents", "settings", "holidays"]), is_system=0),
+            RoleModel(name="HR", permissions=json.dumps(["employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers"]), is_system=0),
+            RoleModel(name="Manager", permissions=json.dumps(["leads", "employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers"]), is_system=0),
+            RoleModel(name="Employee", permissions=json.dumps(["attendance", "leaves", "expenses", "workspace", "documents", "settings", "holidays", "tasks"]), is_system=0),
         ]
         for model in defaults:
             db.add(model)
@@ -669,7 +703,7 @@ class CustomerCreate(BaseModel):
     status: Literal['Active', 'Inactive'] = 'Active'
 
 class Task(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     task_id: str
     title: str
@@ -685,6 +719,7 @@ class Task(BaseModel):
     actual_time_minutes: Optional[int] = None
     attachment_path: Optional[str] = None
     completion_notes: Optional[str] = None
+    completion_percentage: int = 0
     completed_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
@@ -707,6 +742,7 @@ class TaskUpdate(BaseModel):
     estimated_time_minutes: Optional[int] = None
     actual_time_minutes: Optional[int] = None
     completion_notes: Optional[str] = None
+    completion_percentage: Optional[int] = None
 
 class TaskApproval(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -725,12 +761,92 @@ class TaskApproval(BaseModel):
     new_due_date: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+class TaskComment(BaseModel):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+    id: str
+    task_id: str
+    author_employee_id: str
+    author_name: str
+    content: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+class TaskCommentCreate(BaseModel):
+    content: str
+
+class TaskTimeLog(BaseModel):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+    id: str
+    task_id: str
+    logged_by_employee_id: str
+    logged_by_name: str
+    time_spent_minutes: int
+    description: Optional[str] = None
+    log_date: str
+    created_at: datetime
+
+class TaskTimeLogCreate(BaseModel):
+    time_spent_minutes: int
+    description: Optional[str] = None
+    log_date: str
+
+class TaskAttachment(BaseModel):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+    id: str
+    task_id: str
+    uploaded_by_employee_id: str
+    uploaded_by_name: str
+    file_name: str
+    file_url: str
+    file_size: Optional[int] = None
+    file_type: Optional[str] = None
+    created_at: datetime
+
 class TaskApprovalRequest(BaseModel):
     reason: Optional[str] = None
+
+class TaskBoardColumn(BaseModel):
+    """Model for a column in the Kanban board"""
+    status: str
+    tasks: List[Task]
+    count: int
+
+class TaskBoardView(BaseModel):
+    """Model for the full Kanban board view"""
+    columns: List[TaskBoardColumn]
+    total_tasks: int
+    user_tasks: int
+
+class TaskStatusChange(BaseModel):
+    """Model for changing task status"""
+    status: Literal['Pending', 'In Progress', 'Completed', 'Overdue', 'Approval Pending']
+    completion_notes: Optional[str] = None
+    actual_time_minutes: Optional[int] = None
 
 class TaskApprovalAction(BaseModel):
     status: Literal['Approved', 'Rejected']
     approval_comment: Optional[str] = None
+
+class EmployeeDashboardStats(BaseModel):
+    """Stats for an employee in dashboard"""
+    name: str
+    employee_id: str
+    total_tasks: int
+    pending: int
+    in_progress: int
+    completed: int
+    overdue: int
+    avg_completion_percentage: float
+
+class TaskDashboard(BaseModel):
+    """Model for task dashboard view"""
+    total_tasks: int
+    pending_count: int
+    in_progress_count: int
+    completed_count: int
+    overdue_count: int
+    employees: List[EmployeeDashboardStats]
+    tasks: Optional[List[Task]] = None
 
 class Attendance(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1654,8 +1770,7 @@ def delete_customer(customer_id: str, current_user: UserModel = Depends(get_curr
 
 @api_router.post('/tasks', response_model=Task)
 def create_task(task_data: TaskCreate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
-    if current_user.role not in ['Admin', 'Manager']:
-        raise HTTPException(status_code=403, detail='Not authorized to create tasks')
+    # Any authenticated user can create tasks (not just Admin/Manager)
     
     # Validate due date is not in the past
     due_date_obj = datetime.strptime(task_data.due_date, '%Y-%m-%d')
@@ -1670,8 +1785,12 @@ def create_task(task_data: TaskCreate, current_user: UserModel = Depends(require
     next_task_num = (max_task_num or 0) + 1
     task_id = f'TASK{str(next_task_num).zfill(5)}'
     
-    # Verify assigned employee exists
-    employee = db.query(EmployeeModel).filter(EmployeeModel.id == task_data.assigned_to_employee_id).first()
+    # Verify assigned employee exists and get their employee_id
+    # task_data.assigned_to_employee_id could be either the employee's id (UUID) or employee_id (human-readable)
+    employee = db.query(EmployeeModel).filter(
+        (EmployeeModel.id == task_data.assigned_to_employee_id) |
+        (EmployeeModel.employee_id == task_data.assigned_to_employee_id)
+    ).first()
     if not employee:
         raise HTTPException(status_code=404, detail='Assigned employee not found')
     
@@ -1680,7 +1799,7 @@ def create_task(task_data: TaskCreate, current_user: UserModel = Depends(require
         title=task_data.title,
         description=task_data.description,
         priority=task_data.priority,
-        assigned_to_employee_id=task_data.assigned_to_employee_id,
+        assigned_to_employee_id=employee.employee_id,  # Use human-readable employee_id
         assigned_to_name=employee.name,
         created_by_employee_id=current_user.employee_id,
         created_by_name=current_user.name,
@@ -1741,6 +1860,165 @@ def upload_task_attachment(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@api_router.get('/tasks/board', response_model=TaskBoardView)
+def get_tasks_board(
+    search: Optional[str] = None,
+    employee_id: Optional[str] = None,
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Get tasks grouped by status for Kanban board view."""
+    # Define the order of statuses
+    status_order = ['Pending', 'In Progress', 'Completed', 'Overdue']
+    
+    # Auto-update overdue tasks
+    today = datetime.now().strftime('%Y-%m-%d')
+    overdue_tasks = db.query(TaskModel).filter(
+        (TaskModel.due_date < today) &
+        (TaskModel.status != 'Completed') &
+        (TaskModel.status != 'Overdue')
+    ).all()
+    
+    for task in overdue_tasks:
+        task.status = 'Overdue'
+    
+    db.commit()
+    
+    # Build base query
+    query = db.query(TaskModel)
+    
+    # If employee, filter to own tasks
+    if current_user.role == 'Employee':
+        query = query.filter(TaskModel.assigned_to_employee_id == current_user.employee_id)
+    # If admin/manager with employee filter, apply it
+    elif employee_id:
+        query = query.filter(TaskModel.assigned_to_employee_id == employee_id)
+    
+    # Apply search filter
+    if search:
+        query = query.filter(
+            (TaskModel.title.ilike(f'%{search}%')) |
+            (TaskModel.description.ilike(f'%{search}%'))
+        )
+    
+    all_tasks = query.all()
+    
+    # Count user's assigned tasks
+    user_task_count = len([t for t in all_tasks if t.assigned_to_employee_id == current_user.employee_id])
+    
+    # Group tasks by status and convert to Pydantic models
+    columns = []
+    for status in status_order:
+        status_tasks_models = [t for t in all_tasks if t.status == status]
+        # Convert SQLAlchemy models to Pydantic models
+        status_tasks = [Task.model_validate(t) for t in status_tasks_models]
+        column = TaskBoardColumn(
+            status=status,
+            tasks=status_tasks,
+            count=len(status_tasks)
+        )
+        columns.append(column)
+    
+    return TaskBoardView(
+        columns=columns,
+        total_tasks=len(all_tasks),
+        user_tasks=user_task_count
+    )
+
+@api_router.get('/tasks/dashboard', response_model=TaskDashboard)
+def get_tasks_dashboard(
+    employee_id: Optional[str] = None,
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Get task dashboard with statistics for all employees or specific employee."""
+    # Check permission - only admin/manager can view dashboard
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to view dashboard')
+    
+    # Auto-update overdue tasks
+    today = datetime.now().strftime('%Y-%m-%d')
+    overdue_tasks = db.query(TaskModel).filter(
+        (TaskModel.due_date < today) &
+        (TaskModel.status != 'Completed') &
+        (TaskModel.status != 'Overdue')
+    ).all()
+    
+    for task in overdue_tasks:
+        task.status = 'Overdue'
+    
+    db.commit()
+    
+    # Get all tasks
+    all_tasks = db.query(TaskModel).all()
+    
+    # Count tasks by status
+    pending_count = len([t for t in all_tasks if t.status == 'Pending'])
+    in_progress_count = len([t for t in all_tasks if t.status == 'In Progress'])
+    completed_count = len([t for t in all_tasks if t.status == 'Completed'])
+    overdue_count = len([t for t in all_tasks if t.status == 'Overdue'])
+    
+    # Get unique employees and their stats
+    employees_data = {}
+    for task in all_tasks:
+        emp_id = task.assigned_to_employee_id
+        if emp_id not in employees_data:
+            employees_data[emp_id] = {
+                'employee_id': emp_id,
+                'name': task.assigned_to_name,
+                'total': 0,
+                'pending': 0,
+                'in_progress': 0,
+                'completed': 0,
+                'overdue': 0,
+                'completion_percentages': []
+            }
+        
+        employees_data[emp_id]['total'] += 1
+        if task.status == 'Pending':
+            employees_data[emp_id]['pending'] += 1
+        elif task.status == 'In Progress':
+            employees_data[emp_id]['in_progress'] += 1
+        elif task.status == 'Completed':
+            employees_data[emp_id]['completed'] += 1
+        elif task.status == 'Overdue':
+            employees_data[emp_id]['overdue'] += 1
+        
+        employees_data[emp_id]['completion_percentages'].append(task.completion_percentage or 0)
+    
+    # Build employee stats list
+    employee_stats = []
+    for emp_id, data in employees_data.items():
+        avg_completion = sum(data['completion_percentages']) / len(data['completion_percentages']) if data['completion_percentages'] else 0
+        employee_stats.append(EmployeeDashboardStats(
+            name=data['name'],
+            employee_id=emp_id,
+            total_tasks=data['total'],
+            pending=data['pending'],
+            in_progress=data['in_progress'],
+            completed=data['completed'],
+            overdue=data['overdue'],
+            avg_completion_percentage=avg_completion
+        ))
+    
+    # Sort by name
+    employee_stats.sort(key=lambda x: x.name)
+    
+    # If specific employee filter is applied, get their tasks
+    filtered_tasks = None
+    if employee_id:
+        filtered_tasks = [Task.model_validate(t) for t in all_tasks if t.assigned_to_employee_id == employee_id]
+    
+    return TaskDashboard(
+        total_tasks=len(all_tasks),
+        pending_count=pending_count,
+        in_progress_count=in_progress_count,
+        completed_count=completed_count,
+        overdue_count=overdue_count,
+        employees=employee_stats,
+        tasks=filtered_tasks
+    )
+
 @api_router.get('/tasks', response_model=List[Task])
 def get_tasks(
     filter_type: Optional[str] = None,  # today, tomorrow, overdue, completed, my_tasks
@@ -1748,6 +2026,19 @@ def get_tasks(
     db: Session = Depends(get_db)
 ):
     """Get tasks. Employees see their own tasks; Managers/Admins see all or filtered tasks."""
+    # Auto-update overdue tasks
+    today = datetime.now().strftime('%Y-%m-%d')
+    overdue_tasks = db.query(TaskModel).filter(
+        (TaskModel.due_date < today) &
+        (TaskModel.status != 'Completed') &
+        (TaskModel.status != 'Overdue')
+    ).all()
+    
+    for task in overdue_tasks:
+        task.status = 'Overdue'
+    
+    db.commit()
+    
     query = db.query(TaskModel)
     
     # If employee, filter to own tasks
@@ -1755,7 +2046,6 @@ def get_tasks(
         query = query.filter(TaskModel.assigned_to_employee_id == current_user.employee_id)
     
     # Apply filter
-    today = datetime.now().strftime('%Y-%m-%d')
     tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
     
     if filter_type == 'today':
@@ -1765,7 +2055,7 @@ def get_tasks(
     elif filter_type == 'overdue':
         query = query.filter(
             (TaskModel.due_date < today) &
-            (TaskModel.status.in_(['Pending', 'In Progress']))
+            (TaskModel.status.in_(['Pending', 'In Progress', 'Overdue']))
         )
     elif filter_type == 'completed':
         query = query.filter(TaskModel.status == 'Completed')
@@ -1792,9 +2082,13 @@ def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = D
     if not task:
         raise HTTPException(status_code=404, detail='Task not found')
     
-    # Only manager/admin can update
-    if current_user.role not in ['Admin', 'Manager']:
-        raise HTTPException(status_code=403, detail='Not authorized to update tasks')
+    # Allow updates by: Admin, Manager, creator, or assignee
+    is_creator = task.created_by_employee_id == current_user.employee_id
+    is_assignee = task.assigned_to_employee_id == current_user.employee_id
+    is_admin_or_manager = current_user.role in ['Admin', 'Manager']
+    
+    if not (is_admin_or_manager or is_creator or is_assignee):
+        raise HTTPException(status_code=403, detail='Not authorized to update this task')
     
     # Update fields
     if task_data.title is not None:
@@ -1804,10 +2098,13 @@ def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = D
     if task_data.priority is not None:
         task.priority = task_data.priority
     if task_data.assigned_to_employee_id is not None:
-        employee = db.query(EmployeeModel).filter(EmployeeModel.id == task_data.assigned_to_employee_id).first()
+        employee = db.query(EmployeeModel).filter(
+            (EmployeeModel.id == task_data.assigned_to_employee_id) |
+            (EmployeeModel.employee_id == task_data.assigned_to_employee_id)
+        ).first()
         if not employee:
             raise HTTPException(status_code=404, detail='Assigned employee not found')
-        task.assigned_to_employee_id = task_data.assigned_to_employee_id
+        task.assigned_to_employee_id = employee.employee_id  # Use human-readable employee_id
         task.assigned_to_name = employee.name
     if task_data.due_date is not None:
         task.due_date = task_data.due_date
@@ -1821,6 +2118,8 @@ def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = D
         task.actual_time_minutes = task_data.actual_time_minutes
     if task_data.completion_notes is not None:
         task.completion_notes = task_data.completion_notes
+    if task_data.completion_percentage is not None:
+        task.completion_percentage = task_data.completion_percentage
     
     task.updated_at = datetime.now()
     db.commit()
@@ -1830,17 +2129,55 @@ def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = D
 
 @api_router.delete('/tasks/{task_id}')
 def delete_task(task_id: str, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
-    if current_user.role not in ['Admin', 'Manager']:
-        raise HTTPException(status_code=403, detail='Not authorized to delete tasks')
-    
     task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail='Task not found')
+    
+    # Allow deletion by: Admin, Manager, or the creator of the task
+    is_creator = task.created_by_employee_id == current_user.employee_id
+    is_admin_or_manager = current_user.role in ['Admin', 'Manager']
+    
+    if not (is_admin_or_manager or is_creator):
+        raise HTTPException(status_code=403, detail='Not authorized to delete this task')
     
     db.delete(task)
     db.commit()
     
     return {'message': 'Task deleted successfully'}
+
+@api_router.put('/tasks/{task_id}/status')
+def change_task_status(
+    task_id: str,
+    status_data: TaskStatusChange,
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Quick status change endpoint for Kanban board drag-and-drop."""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    # Check permission - assignee can update their own task, manager/admin can update any
+    is_assignee = task.assigned_to_employee_id == current_user.employee_id
+    is_admin_or_manager = current_user.role in ['Admin', 'Manager']
+    
+    if not (is_assignee or is_admin_or_manager):
+        raise HTTPException(status_code=403, detail='Not authorized to update this task')
+    
+    # Update status
+    task.status = status_data.status
+    if status_data.status == 'Completed':
+        task.completed_at = datetime.now()
+    if status_data.completion_notes is not None:
+        task.completion_notes = status_data.completion_notes
+    if status_data.actual_time_minutes is not None:
+        task.actual_time_minutes = status_data.actual_time_minutes
+    
+    task.updated_at = datetime.now()
+    db.commit()
+    db.refresh(task)
+    
+    return task
 
 @api_router.post('/tasks/{task_id}/mark-in-progress')
 def mark_task_in_progress(task_id: str, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
@@ -1985,6 +2322,183 @@ def decide_task_approval(approval_id: str, decision: TaskApprovalAction, current
     db.commit()
     
     return {'message': f'Task approval {decision.status.lower()}', 'approval': approval}
+
+# ============= TASK COMMENTS =============
+
+@api_router.get('/tasks/{task_id}/comments', response_model=List[TaskComment])
+def get_task_comments(
+    task_id: str,
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Get all comments for a task"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    comments = db.query(TaskCommentModel).filter(
+        TaskCommentModel.task_id == task.task_id
+    ).order_by(TaskCommentModel.created_at.desc()).all()
+    
+    return [TaskComment.model_validate(c) for c in comments]
+
+@api_router.post('/tasks/{task_id}/comments', response_model=TaskComment)
+def add_task_comment(
+    task_id: str,
+    comment: TaskCommentCreate,
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Add a comment to a task"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    new_comment = TaskCommentModel(
+        task_id=task.task_id,
+        author_employee_id=current_user.employee_id,
+        author_name=current_user.name,
+        content=comment.content
+    )
+    
+    db.add(new_comment)
+    db.commit()
+    db.refresh(new_comment)
+    
+    return TaskComment.model_validate(new_comment)
+
+# ============= TASK TIME LOGS =============
+
+@api_router.get('/tasks/{task_id}/time-logs', response_model=List[TaskTimeLog])
+def get_task_time_logs(
+    task_id: str,
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Get all time logs for a task"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    logs = db.query(TaskTimeLogModel).filter(
+        TaskTimeLogModel.task_id == task.task_id
+    ).order_by(TaskTimeLogModel.created_at.desc()).all()
+    
+    return [TaskTimeLog.model_validate(log) for log in logs]
+
+@api_router.post('/tasks/{task_id}/time-logs', response_model=TaskTimeLog)
+def add_task_time_log(
+    task_id: str,
+    time_log: TaskTimeLogCreate,
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Log time spent on a task"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    new_log = TaskTimeLogModel(
+        task_id=task.task_id,
+        logged_by_employee_id=current_user.employee_id,
+        logged_by_name=current_user.name,
+        time_spent_minutes=time_log.time_spent_minutes,
+        description=time_log.description,
+        log_date=time_log.log_date
+    )
+    
+    db.add(new_log)
+    db.commit()
+    db.refresh(new_log)
+    
+    return TaskTimeLog.model_validate(new_log)
+
+# ============= TASK ATTACHMENTS =============
+
+@api_router.get('/tasks/{task_id}/attachments', response_model=List[TaskAttachment])
+def get_task_attachments(
+    task_id: str,
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Get all attachments for a task"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    attachments = db.query(TaskAttachmentModel).filter(
+        TaskAttachmentModel.task_id == task.task_id
+    ).order_by(TaskAttachmentModel.created_at.desc()).all()
+    
+    return [TaskAttachment.model_validate(att) for att in attachments]
+
+@api_router.post('/tasks/{task_id}/attachments')
+def add_task_attachment(
+    task_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Upload an attachment to a task"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    try:
+        # Read file content
+        file_content = file.file.read()
+        filename = file.filename or 'attachment'
+        
+        # Upload to S3 or local storage
+        attachment_url = upload_to_s3(file_content, filename, folder='task_attachments')
+        
+        if not attachment_url:
+            raise HTTPException(status_code=400, detail='Failed to upload file')
+        
+        # Determine file type
+        file_ext = filename.split('.')[-1].lower() if '.' in filename else 'unknown'
+        
+        new_attachment = TaskAttachmentModel(
+            task_id=task.task_id,
+            uploaded_by_employee_id=current_user.employee_id,
+            uploaded_by_name=current_user.name,
+            file_name=filename,
+            file_url=attachment_url,
+            file_size=len(file_content),
+            file_type=file_ext
+        )
+        
+        db.add(new_attachment)
+        db.commit()
+        db.refresh(new_attachment)
+        
+        return TaskAttachment.model_validate(new_attachment)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.delete('/tasks/{task_id}/attachments/{attachment_id}')
+def delete_task_attachment(
+    task_id: str,
+    attachment_id: str,
+    current_user: UserModel = Depends(require_permission('tasks')),
+    db: Session = Depends(get_db)
+):
+    """Delete an attachment from a task"""
+    task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    
+    attachment = db.query(TaskAttachmentModel).filter(
+        TaskAttachmentModel.id == attachment_id,
+        TaskAttachmentModel.task_id == task.task_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail='Attachment not found')
+    
+    db.delete(attachment)
+    db.commit()
+    
+    return {'message': 'Attachment deleted successfully'}
 
 # ============= ATTENDANCE ROUTES =============
 
