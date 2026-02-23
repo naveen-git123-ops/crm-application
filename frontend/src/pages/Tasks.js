@@ -5,6 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import {
   Sheet,
   SheetContent,
@@ -33,7 +35,7 @@ import {
   Trash2,
   Edit2,
   Clock,
-  Calendar,
+  Calendar as CalendarIcon,
   User,
   Flag,
   MessageSquare,
@@ -60,23 +62,30 @@ const STATUS_COLORS = {
 };
 
 // Task Card Component
-const TaskCard = ({ task, onClick }) => {
+const TaskCard = ({ task, onClick, onStatusChange }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const [isHovering, setIsHovering] = useState(false);
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.7 : 1,
+    zIndex: isDragging ? 1000 : 0,
   };
 
   const isOverdue = task.due_date < new Date().toISOString().split('T')[0] && task.status !== 'Completed';
+
+  const handleStatusChange = (e) => {
+    e.stopPropagation();
+    const newStatus = e.target.value;
+    onStatusChange(task.id, newStatus);
+  };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`${PRIORITY_STYLES[task.priority].bg} border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all ${isHovering && !isDragging ? 'scale-105' : ''}`}
+      className={`${PRIORITY_STYLES[task.priority].bg} border-2 rounded-lg overflow-hidden shadow-sm transition-all cursor-move ${isDragging ? 'shadow-lg border-blue-400 scale-105' : 'hover:shadow-md'} ${isHovering && !isDragging ? 'scale-102' : ''}`}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
@@ -84,9 +93,9 @@ const TaskCard = ({ task, onClick }) => {
       <div
         {...attributes}
         {...listeners}
-        className="h-1 cursor-grab active:cursor-grabbing hover:bg-opacity-100 transition-colors"
+        className="h-1.5 cursor-grab active:cursor-grabbing hover:bg-opacity-100 transition-colors"
         style={{
-          background: isDragging ? 'rgba(59, 130, 246, 0.5)' : isHovering ? 'rgba(59, 130, 246, 0.3)' : 'rgba(200, 200, 200, 0.2)',
+          background: isDragging ? 'rgba(59, 130, 246, 0.8)' : isHovering ? 'rgba(59, 130, 246, 0.5)' : 'rgba(200, 200, 200, 0.3)',
         }}
       />
 
@@ -136,20 +145,38 @@ const TaskCard = ({ task, onClick }) => {
             </div>
           )}
         </div>
+
+        {/* Status Dropdown */}
+        <div className="mt-3 pt-2 border-t border-gray-200">
+          <select
+            value={task.status}
+            onChange={handleStatusChange}
+            className="w-full px-2 py-1.5 text-xs bg-white border border-gray-300 rounded text-gray-900 font-medium hover:border-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <option value="Pending">Pending</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Completed">Completed</option>
+            <option value="Overdue">Overdue</option>
+          </select>
+        </div>
       </div>
     </div>
   );
 };
 
 // Kanban Column
-const KanbanColumn = ({ status, tasks, onCardClick }) => {
-  const { setNodeRef } = useSortable({ id: status });
+const KanbanColumn = ({ status, tasks, onCardClick, onStatusChange }) => {
+  const { setNodeRef } = useSortable({ 
+    id: status,
+    data: { type: 'Column', status }
+  });
   const color = STATUS_COLORS[status];
 
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col flex-1 min-h-[600px] ${color.bg} border ${color.border} rounded-lg p-4`}
+      className={`flex flex-col flex-1 min-h-[600px] ${color.bg} border-2 ${color.border} rounded-lg p-4 transition-all`}
     >
       <div className={`${color.header} rounded p-2 mb-4 sticky top-0 z-10`}>
         <h2 className={`${color.dark} font-bold text-sm flex items-center justify-between`}>
@@ -159,7 +186,7 @@ const KanbanColumn = ({ status, tasks, onCardClick }) => {
       </div>
 
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div className="space-y-3 flex-1 overflow-y-auto">
+        <div className="space-y-3 flex-1 overflow-y-auto min-h-[500px]">
           {tasks.length === 0 ? (
             <div className="text-center py-8 text-gray-400 text-sm">No tasks</div>
           ) : (
@@ -168,6 +195,7 @@ const KanbanColumn = ({ status, tasks, onCardClick }) => {
                 key={task.id}
                 task={task}
                 onClick={() => onCardClick(task)}
+                onStatusChange={onStatusChange}
               />
             ))
           )}
@@ -178,7 +206,7 @@ const KanbanColumn = ({ status, tasks, onCardClick }) => {
 };
 
 // Task Details Modal Component
-const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user }) => {
+const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [] }) => {
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({
     title: task?.title || '',
@@ -203,6 +231,17 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user }) => {
       fetchComments();
       fetchTimeLogs();
       fetchAttachments();
+      // Update form with current task data when task changes
+      setEditForm({
+        title: task.title || '',
+        description: task.description || '',
+        priority: task.priority || 'Medium',
+        status: task.status || 'Pending',
+        due_date: task.due_date || '',
+        assigned_to_employee_id: task.assigned_to_employee_id || '',
+        completion_percentage: task.completion_percentage || 0,
+      });
+      setEditMode(false);
     }
   }, [isOpen, task]);
 
@@ -443,6 +482,21 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user }) => {
                       />
                       <span className="text-sm font-semibold text-gray-900 min-w-[50px]">{editForm.completion_percentage}%</span>
                     </div>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-900">Assign To</Label>
+                    <select
+                      value={editForm.assigned_to_employee_id}
+                      onChange={(e) => setEditForm({ ...editForm, assigned_to_employee_id: e.target.value })}
+                      className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-sm text-gray-900 bg-white"
+                    >
+                      <option value="">Unassigned</option>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.employee_id}>
+                          {emp.name} ({emp.employee_id})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="flex gap-2 pt-4">
                     <Button size="sm" variant="outline" onClick={() => setEditMode(false)}>
@@ -696,6 +750,21 @@ export const Tasks = () => {
   const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState('');
   const [viewMode, setViewMode] = useState('board'); // 'board' or 'dashboard'
   const [dashboardStats, setDashboardStats] = useState(null);
+  
+  // Get current month dates
+  const getCurrentMonthDates = () => {
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+    return { startDate, endDate };
+  };
+  
+  const { startDate: defaultStart, endDate: defaultEnd } = getCurrentMonthDates();
+  const [dateRange, setDateRange] = useState({
+    startDate: defaultStart,
+    endDate: defaultEnd,
+  });
+  
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -707,8 +776,8 @@ export const Tasks = () => {
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      distance: 50,
-      delay: 100,
+      distance: 8,
+      delay: 0,
     }),
     useSensor(KeyboardSensor)
   );
@@ -726,6 +795,8 @@ export const Tasks = () => {
     try {
       const params = {};
       if (searchTerm) params.search = searchTerm;
+      if (dateRange.startDate) params.start_date = dateRange.startDate;
+      if (dateRange.endDate) params.end_date = dateRange.endDate;
       if (selectedEmployeeFilter && (user?.role === 'Admin' || user?.role === 'Manager')) {
         params.employee_id = selectedEmployeeFilter;
       }
@@ -757,6 +828,8 @@ export const Tasks = () => {
     try {
       setLoading(true);
       const params = {};
+      if (dateRange.startDate) params.start_date = dateRange.startDate;
+      if (dateRange.endDate) params.end_date = dateRange.endDate;
       if (selectedEmployeeFilter && (user?.role === 'Admin' || user?.role === 'Manager')) {
         params.employee_id = selectedEmployeeFilter;
       }
@@ -781,6 +854,7 @@ export const Tasks = () => {
     let task = null;
     let oldStatus = null;
 
+    // Find the task being dragged
     for (const column of boardData?.columns || []) {
       const foundTask = column.tasks.find((t) => t.id === active.id);
       if (foundTask) {
@@ -792,15 +866,25 @@ export const Tasks = () => {
 
     if (!task) return;
 
+    // Determine the new status based on where the task was dropped
     let newStatus = oldStatus;
+    
+    // First check if over.id is a column status directly
     for (const column of boardData?.columns || []) {
       if (column.status === over.id) {
         newStatus = column.status;
         break;
       }
-      if (column.tasks.some((t) => t.id === over.id)) {
-        newStatus = column.status;
-        break;
+    }
+    
+    // If not, check if over.id is a task in another column
+    if (newStatus === oldStatus) {
+      for (const column of boardData?.columns || []) {
+        const isTaskInColumn = column.tasks.some((t) => t.id === over.id);
+        if (isTaskInColumn) {
+          newStatus = column.status;
+          break;
+        }
       }
     }
 
@@ -822,6 +906,23 @@ export const Tasks = () => {
     }
   };
 
+  const handleStatusChange = async (taskId, newStatus) => {
+    try {
+      await axios.put(
+        `${API}/tasks/${taskId}/status`,
+        { status: newStatus },
+        {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        }
+      );
+      toast.success(`Task status updated to ${newStatus}`);
+      await fetchBoardData();
+    } catch (error) {
+      console.error('Error updating task status:', error);
+      toast.error('Failed to update task status');
+    }
+  };
+
   const handleCreateTask = async (e) => {
     e.preventDefault();
 
@@ -840,6 +941,14 @@ export const Tasks = () => {
       await fetchBoardData();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to create task');
+    }
+  };
+
+  const handleTaskUpdate = async () => {
+    if (viewMode === 'dashboard') {
+      await fetchDashboardData();
+    } else {
+      await fetchBoardData();
     }
   };
 
@@ -868,83 +977,63 @@ export const Tasks = () => {
   return (
     <div className="h-full flex flex-col bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 p-6 sticky top-0 z-20">
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Task Board</h1>
-              <p className="text-gray-600 text-sm mt-1">
+              <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
+              <p className="text-gray-600 text-xs mt-0.5">
                 {boardData?.total_tasks || dashboardStats?.total_tasks || 0} total • {boardData?.user_tasks || 0} assigned to you
               </p>
             </div>
-
-            <div className="flex gap-2 flex-wrap">
-              {(user?.role === 'Admin' || user?.role === 'Manager') && (
-                <select
-                  value={selectedEmployeeFilter}
-                  onChange={(e) => setSelectedEmployeeFilter(e.target.value)}
-                  className="h-10 border border-gray-300 rounded-lg px-3 text-sm"
-                >
-                  <option value="">All Employees</option>
-                  {employees.map((emp) => (
-                    <option key={emp.id} value={emp.employee_id}>
-                      {emp.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              <div className="relative flex-1 md:flex-0 md:w-64">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search tasks..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 h-10"
-                  onKeyUp={() => setTimeout(() => fetchBoardData(), 300)}
-                />
-              </div>
-
-              <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="bg-blue-600 text-white hover:bg-blue-700 h-10">
-                    <Plus className="h-4 w-4 mr-2" />
-                    New Task
-                  </Button>
-                </DialogTrigger>
-              <DialogContent className="max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>Create New Task</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleCreateTask} className="space-y-4">
+            <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-blue-600 text-white hover:bg-blue-700 h-9 px-3 text-sm">
+                  <Plus className="h-4 w-4 mr-1" />
+                  New Task
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-2xl bg-white rounded-lg border border-gray-200 shadow-xl p-0 max-h-[90vh] overflow-y-auto">
+                <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+                  <DialogHeader>
+                    <DialogTitle className="text-xl font-bold text-white">Create New Task</DialogTitle>
+                    <p className="text-blue-100 text-sm mt-1">Assign a new task to team members</p>
+                  </DialogHeader>
+                </div>
+                <form onSubmit={handleCreateTask} className="space-y-4 p-6">
                   <div>
-                    <Label className="text-sm font-medium">Task Title *</Label>
+                    <Label className="text-sm font-semibold text-gray-900 block mb-1">
+                      Task Title <span className="text-red-500">*</span>
+                    </Label>
                     <Input
                       value={formData.title}
                       onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                      placeholder="e.g., Implement user authentication"
+                      placeholder="What needs to be done?"
+                      className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
                       required
                     />
                   </div>
 
                   <div>
-                    <Label className="text-sm font-medium">Description</Label>
+                    <Label className="text-sm font-semibold text-gray-900 block mb-1">Description</Label>
                     <textarea
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      placeholder="Task details..."
-                      rows={3}
-                      className="w-full border border-gray-300 rounded-lg p-2 text-sm"
+                      placeholder="Add details..."
+                      rows={2}
+                      className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
                     />
                   </div>
 
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <Label className="text-sm font-medium">Priority *</Label>
+                      <Label className="text-sm font-semibold text-gray-900 block mb-1">
+                        Priority <span className="text-red-500">*</span>
+                      </Label>
                       <select
                         value={formData.priority}
                         onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                        className="w-full border border-gray-300 rounded-lg p-2 text-sm"
+                        className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
                       >
                         <option value="Low">Low</option>
                         <option value="Medium">Medium</option>
@@ -953,86 +1042,147 @@ export const Tasks = () => {
                     </div>
 
                     <div>
-                      <Label className="text-sm font-medium">Due Date *</Label>
+                      <Label className="text-sm font-semibold text-gray-900 block mb-1">
+                        Due Date <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         type="date"
                         value={formData.due_date}
                         onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                        className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
                         required
                       />
                     </div>
 
                     <div>
-                      <Label className="text-sm font-medium">Est. Time (min)</Label>
+                      <Label className="text-sm font-semibold text-gray-900 block mb-1">Est. Time (min)</Label>
                       <Input
                         type="number"
                         value={formData.estimated_time_minutes}
                         onChange={(e) => setFormData({ ...formData, estimated_time_minutes: e.target.value })}
-                        placeholder="e.g., 60"
+                        placeholder="0"
+                        className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <Label className="text-sm font-medium">Assign To *</Label>
+                    <Label className="text-sm font-semibold text-gray-900 block mb-1">
+                      Assign To <span className="text-red-500">*</span>
+                    </Label>
                     <select
                       value={formData.assigned_to_employee_id}
                       onChange={(e) => setFormData({ ...formData, assigned_to_employee_id: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg p-2 text-sm"
+                      className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
                       required
                     >
                       <option value="">Select employee</option>
                       {employees.map((emp) => (
                         <option key={emp.id} value={emp.employee_id}>
-                          {emp.name} ({emp.employee_id})
+                          {emp.name}
                         </option>
                       ))}
                     </select>
                   </div>
 
-                  <div className="flex gap-2 justify-end pt-4">
+                  <div className="flex gap-2 justify-end pt-2 border-t border-gray-200">
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => setCreateDialogOpen(false)}
+                      className="h-9 px-3 text-sm"
                     >
                       Cancel
                     </Button>
-                    <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700">
-                      Create Task
+                    <Button 
+                      type="submit" 
+                      className="bg-blue-600 text-white hover:bg-blue-700 h-9 px-3 text-sm"
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Create
                     </Button>
                   </div>
                 </form>
               </DialogContent>
             </Dialog>
-            </div>
           </div>
 
-          {/* View Mode Tabs */}
-          {(user?.role === 'Admin' || user?.role === 'Manager') && (
-            <div className="flex gap-2 border-b border-gray-200">
-              <button
-                onClick={() => setViewMode('board')}
-                className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors ${
-                  viewMode === 'board'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
+          {/* Filters Row */}
+          <div className="flex gap-2 items-center flex-wrap">
+            {(user?.role === 'Admin' || user?.role === 'Manager') && (
+              <select
+                value={selectedEmployeeFilter}
+                onChange={(e) => setSelectedEmployeeFilter(e.target.value)}
+                className="h-8 border border-gray-300 rounded px-2 text-xs bg-white"
               >
-                Board
-              </button>
-              <button
-                onClick={() => setViewMode('dashboard')}
-                className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors ${
-                  viewMode === 'dashboard'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Dashboard
-              </button>
+                <option value="">All Employees</option>
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.employee_id}>
+                    {emp.name.split(' ')[0]}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <Input
+              type="date"
+              value={dateRange.startDate}
+              onChange={(e) => {
+                setDateRange({ ...dateRange, startDate: e.target.value });
+                setTimeout(() => (viewMode === 'dashboard' ? fetchDashboardData() : fetchBoardData()), 100);
+              }}
+              className="h-8 border border-gray-300 rounded px-2 text-xs w-28"
+              title="Start date"
+            />
+            <span className="text-gray-400 text-xs">-</span>
+            <Input
+              type="date"
+              value={dateRange.endDate}
+              onChange={(e) => {
+                setDateRange({ ...dateRange, endDate: e.target.value });
+                setTimeout(() => (viewMode === 'dashboard' ? fetchDashboardData() : fetchBoardData()), 100);
+              }}
+              className="h-8 border border-gray-300 rounded px-2 text-xs w-28"
+              title="End date"
+            />
+
+            <div className="relative flex-1 md:flex-0 md:w-56">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                placeholder="Search tasks..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-7 h-8 text-xs"
+                onKeyUp={() => setTimeout(() => fetchBoardData(), 300)}
+              />
             </div>
-          )}
+
+            {(user?.role === 'Admin' || user?.role === 'Manager') && (
+              <div className="flex gap-1 items-center text-xs text-gray-600">
+                <span>View:</span>
+                <button
+                  onClick={() => setViewMode('board')}
+                  className={`px-2 py-1 rounded text-xs ${
+                    viewMode === 'board'
+                      ? 'bg-blue-100 text-blue-700 font-medium'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Board
+                </button>
+                <button
+                  onClick={() => setViewMode('dashboard')}
+                  className={`px-2 py-1 rounded text-xs ${
+                    viewMode === 'dashboard'
+                      ? 'bg-blue-100 text-blue-700 font-medium'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Dashboard
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1155,20 +1305,26 @@ export const Tasks = () => {
             collisionDetection={closestCorners}
             onDragEnd={handleDragEnd}
           >
-            <div className="flex gap-6 min-w-max lg:min-w-full">
-              {boardData.columns.map((column) => (
-                <div key={column.status} className="flex-1 min-w-[350px]">
-                  <KanbanColumn
-                    status={column.status}
-                    tasks={column.tasks}
-                    onCardClick={(task) => {
-                      setSelectedTask(task);
-                      setDetailsOpen(true);
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
+            <SortableContext 
+              items={boardData.columns.flatMap((col) => col.tasks.map((t) => t.id))}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="flex gap-6 min-w-max lg:min-w-full">
+                {boardData.columns.map((column) => (
+                  <div key={column.status} className="flex-1 min-w-[350px]">
+                    <KanbanColumn
+                      status={column.status}
+                      tasks={column.tasks}
+                      onCardClick={(task) => {
+                        setSelectedTask(task);
+                        setDetailsOpen(true);
+                      }}
+                      onStatusChange={handleStatusChange}
+                    />
+                  </div>
+                ))}
+              </div>
+            </SortableContext>
           </DndContext>
         </div>
       )}
@@ -1181,8 +1337,9 @@ export const Tasks = () => {
           setDetailsOpen(false);
           setSelectedTask(null);
         }}
-        onUpdate={fetchBoardData}
+        onUpdate={handleTaskUpdate}
         user={user}
+        employees={employees}
       />
     </div>
   );

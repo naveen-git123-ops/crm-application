@@ -1,10 +1,7 @@
 // Simple File Preview Component for S3 Files
-// Uses backend streaming endpoint to avoid CORS issues
+// Uses direct S3 URLs with CORS for preview
 
 import React, { useState } from 'react';
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
-const API = `${BACKEND_URL}/api`;
 
 export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
   const [error, setError] = useState(null);
@@ -14,7 +11,6 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
   }
 
   console.log('FilePreviewSimple received URL:', fileUrl);
-  console.log('Backend URL:', BACKEND_URL);
 
   // Get file extension
   const getFileExtension = (url) => {
@@ -40,50 +36,75 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
 
   const ext = getFileExtension(fileUrl);
   
-  // Build the stream URL using full backend URL
-  let streamUrl;
-  if (fileUrl.includes('https://')) {
-    // S3 URL - pass through stream endpoint
-    streamUrl = `${API}/files/stream?file_url=${encodeURIComponent(fileUrl)}`;
-  } else {
-    // Local path - convert to full S3 URL first
-    // Assuming it's stored as a path like /uploads/... or similar
-    // Actually, just pass it as-is if it starts with /
-    if (fileUrl.startsWith('http')) {
-      streamUrl = `${API}/files/stream?file_url=${encodeURIComponent(fileUrl)}`;
-    } else {
-      // It's a local path, but we need the full S3 URL from database
-      // This shouldn't happen with new uploads, but handle it gracefully
-      streamUrl = `${API}/files/stream?file_url=${encodeURIComponent(fileUrl)}`;
-    }
-  }
+  // Use S3 URL directly for preview (S3 supports CORS)
+  // Add query parameter to bypass cache for testing
+  const previewUrl = fileUrl.includes('https://') 
+    ? `${fileUrl}?t=${Date.now()}` 
+    : fileUrl;
   
-  console.log('Stream URL:', streamUrl);
+  console.log('Preview URL:', previewUrl);
   
   // Image types - simple inline display
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) {
     return (
       <div style={{ textAlign: 'center', padding: '20px' }}>
-        <img 
-          src={streamUrl}
-          alt={fileName}
-          style={{
-            maxWidth: '100%',
-            maxHeight: '600px',
+        {!error ? (
+          <img 
+            src={previewUrl}
+            alt={fileName}
+            style={{
+              maxWidth: '100%',
+              maxHeight: '600px',
+              borderRadius: '4px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+            }}
+            crossOrigin="anonymous"
+            onError={(e) => {
+              console.error('❌ Image load error:', e);
+              console.error('Failed to load from URL:', previewUrl);
+              console.error('This is likely a CORS issue - S3 bucket needs CORS configuration');
+              setError('CORS_ERROR');
+            }}
+            onLoad={() => {
+              console.log('✅ Image loaded successfully');
+              setError(null);
+            }}
+          />
+        ) : null}
+        
+        {error === 'CORS_ERROR' && (
+          <div style={{ 
+            padding: '20px', 
+            backgroundColor: '#fff3cd', 
+            border: '1px solid #ffc107',
             borderRadius: '4px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}
-          onError={(e) => {
-            console.error('Image load error:', e);
-            console.error('Failed to load from URL:', streamUrl);
-            setError('Failed to load image from stream endpoint');
-          }}
-          onLoad={() => {
-            console.log('✅ Image loaded successfully');
-            setError(null);
-          }}
-        />
-        {error && <p style={{ color: 'red', marginTop: '10px' }}>❌ {error}</p>}
+            marginBottom: '20px'
+          }}>
+            <p style={{ color: '#856404', marginBottom: '10px', fontWeight: 'bold' }}>
+              ⚠️ Cannot preview image (CORS issue)
+            </p>
+            <p style={{ color: '#856404', fontSize: '14px', marginBottom: '15px' }}>
+              Your S3 bucket needs CORS configuration for preview to work.
+            </p>
+            <a 
+              href={fileUrl}
+              download={`${fileName}.${ext}`}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: 'inline-block',
+                padding: '10px 20px',
+                backgroundColor: '#ffc107',
+                color: '#333',
+                textDecoration: 'none',
+                borderRadius: '4px',
+                fontWeight: 'bold'
+              }}
+            >
+              ⬇️ Download Image ({ext.toUpperCase()})
+            </a>
+          </div>
+        )}
       </div>
     );
   }
@@ -92,8 +113,8 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
   if (ext === 'pdf') {
     return (
       <div style={{ textAlign: 'center', padding: '20px' }}>
-        <object
-          data={streamUrl}
+        <iframe
+          src={previewUrl}
           type="application/pdf"
           style={{
             width: '100%',
@@ -109,9 +130,10 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
         >
           <p>
             Your browser does not support PDFs. 
-            <a href={streamUrl} download={fileName}>Download instead</a>
+            <a href={previewUrl} download={fileName} target="_blank" rel="noreferrer">Download instead</a>
           </p>
-        </object>
+        </iframe>
+        {error && <p style={{ color: 'red', marginTop: '10px' }}>Preview might not work, but you can <a href={previewUrl} download={fileName}>download the file</a></p>}
       </div>
     );
   }
@@ -130,8 +152,10 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
           📄 {fileName}.{ext}
         </p>
         <a 
-          href={streamUrl}
+          href={previewUrl}
           download={`${fileName}.${ext}`}
+          target="_blank"
+          rel="noreferrer"
           style={{
             display: 'inline-block',
             padding: '10px 20px',
@@ -139,7 +163,8 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
             color: 'white',
             textDecoration: 'none',
             borderRadius: '4px',
-            fontWeight: 'bold'
+            fontWeight: 'bold',
+            marginRight: '10px'
           }}
         >
           Download {ext.toUpperCase()}
@@ -160,12 +185,13 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
             borderRadius: '4px',
             boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
           }}
+          crossOrigin="anonymous"
           onError={() => {
             console.error('Video load error');
             setError('Failed to load video');
           }}
         >
-          <source src={streamUrl} type={`video/${ext}`} />
+          <source src={previewUrl} type={`video/${ext}`} />
           Your browser does not support video playback.
         </video>
       </div>
@@ -179,12 +205,13 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
         <audio
           controls
           style={{ width: '100%' }}
+          crossOrigin="anonymous"
           onError={() => {
             console.error('Audio load error');
             setError('Failed to load audio');
           }}
         >
-          <source src={streamUrl} type={`audio/${ext}`} />
+          <source src={previewUrl} type={`audio/${ext}`} />
           Your browser does not support audio playback.
         </audio>
       </div>
@@ -205,8 +232,10 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
         Type: {ext || 'unknown'}
       </p>
       <a 
-        href={streamUrl}
+        href={previewUrl}
         download={fileName}
+        target="_blank"
+        rel="noreferrer"
         style={{
           display: 'inline-block',
           padding: '10px 20px',

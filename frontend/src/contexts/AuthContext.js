@@ -63,8 +63,18 @@ export const AuthProvider = ({ children }) => {
     delete axios.defaults.headers.common['Authorization'];
   };
 
+  const checkTodayWorkLog = async () => {
+    try {
+      const response = await axios.get(`${API_ENDPOINT}/daily-work-logs/check-today`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to check work log:', error);
+      return { has_logged_today: false };
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, login, register, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, login, register, logout, loading, checkTodayWorkLog }}>
       {children}
     </AuthContext.Provider>
   );

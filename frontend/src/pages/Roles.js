@@ -310,26 +310,28 @@ export const Roles = () => {
 
       {/* Create / Edit role dialog */}
       <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
-        <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl">
-          <DialogHeader>
-            <DialogTitle>{editingRole ? 'Edit role' : 'Create role'}</DialogTitle>
-            <p className="text-sm text-gray-500">Choose which screens this role can access.</p>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
+        <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+          <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold text-white">{editingRole ? 'Edit Role' : 'Create Role'}</DialogTitle>
+              <p className="text-blue-100 text-sm mt-1">Choose which screens this role can access.</p>
+            </DialogHeader>
+          </div>
+          <div className="space-y-4 p-6">
             <div>
-              <Label htmlFor="role-name" className="text-sm font-semibold text-gray-700">Role name</Label>
+              <Label htmlFor="role-name" className="text-sm font-semibold text-gray-900 block mb-2">Role Name *</Label>
               <Input
                 id="role-name"
                 value={roleForm.name}
                 onChange={(e) => setRoleForm(prev => ({ ...prev, name: e.target.value }))}
                 placeholder="e.g. Sales, Support"
-                className="mt-1 h-10"
+                className="h-10 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 disabled={editingRole?.name === 'Admin'}
               />
             </div>
             <div>
-              <Label className="text-sm font-semibold text-gray-700 mb-2 block">Screens this role can see</Label>
-              <div className="grid grid-cols-2 gap-2 border border-gray-200 rounded-lg p-3 bg-gray-50 max-h-48 overflow-y-auto">
+              <Label className="text-sm font-semibold text-gray-900 mb-2 block">Screens this role can access *</Label>
+              <div className="grid grid-cols-2 gap-2 border border-gray-300 rounded-lg p-3 bg-gray-50 max-h-48 overflow-y-auto">
                 {PERMISSION_KEYS.map((key) => (
                   <label key={key} className="flex items-center gap-2 cursor-pointer text-sm">
                     <input
@@ -343,9 +345,9 @@ export const Roles = () => {
                 ))}
               </div>
             </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => setRoleDialogOpen(false)}>Cancel</Button>
-              <Button onClick={saveRoleForm} disabled={savingRole} className="bg-blue-600 hover:bg-blue-700 text-white">
+            <div className="flex justify-end gap-3 pt-2 border-t border-gray-200">
+              <Button variant="outline" onClick={() => setRoleDialogOpen(false)} className="px-4 py-2">Cancel</Button>
+              <Button onClick={saveRoleForm} disabled={savingRole} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2">
                 {savingRole ? <Loader2 className="h-4 w-4 animate-spin" /> : (editingRole ? 'Update' : 'Create')}
               </Button>
             </div>

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Clock, Calendar, LogIn, LogOut, AlertCircle, User, TrendingDown, MapPin, Briefcase, Check, X } from 'lucide-react';
@@ -13,9 +15,12 @@ const LOGIN_START = '10:00';
 const LOGIN_END = '10:30';
 
 export const Attendance = () => {
-  const { user } = useAuth();
+  const { user, checkTodayWorkLog } = useAuth();
   const [attendance, setAttendance] = useState([]);
   const [todayAttendance, setTodayAttendance] = useState(null);
+  const [todaySessions, setTodaySessions] = useState([]);
+  const [totalWorkHours, setTotalWorkHours] = useState(0);
+  const [isPunchedIn, setIsPunchedIn] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [summaryMonth, setSummaryMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -25,13 +30,16 @@ export const Attendance = () => {
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-mm-dd'));
   const [activeTab, setActiveTab] = useState('punch'); // punch | report | late | summary | tour
   const [reportLoading, setReportLoading] = useState(false);
   const [lateLoading, setLateLoading] = useState(false);
   const [punchLoading, setPunchLoading] = useState(false);
   const [tourPending, setTourPending] = useState([]);
   const [tourLoading, setTourLoading] = useState(false);
+  const [showPunchOutWorkLogDialog, setShowPunchOutWorkLogDialog] = useState(false);
+  const [workLogSummary, setWorkLogSummary] = useState('');
+  const [isSubmittingWorkLog, setIsSubmittingWorkLog] = useState(false);
 
   const canManageAttendance = ['Admin', 'HR'].includes(user?.role);
   const canApproveTour = ['Admin', 'Manager'].includes(user?.role);
@@ -41,6 +49,9 @@ export const Attendance = () => {
   useEffect(() => {
     fetchEmployees();
     fetchAttendance();
+    if (!canManageAttendance) {
+      fetchTodayAttendanceWithSessions();
+    }
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -96,6 +107,19 @@ export const Attendance = () => {
       setAttendanceSummary(res.data);
     } catch {
       toast.error('Failed to load summary');
+    }
+  };
+
+  const fetchTodayAttendanceWithSessions = async () => {
+    try {
+      const res = await axios.get(`${API}/attendance/today`, { headers: authHeader() });
+      const data = res.data;
+      setTodayAttendance(data.attendance);
+      setTodaySessions(data.sessions || []);
+      setTotalWorkHours(data.total_work_hours || 0);
+      setIsPunchedIn(data.is_punched_in || false);
+    } catch (err) {
+      console.error('Failed to fetch today attendance:', err);
     }
   };
 
@@ -190,10 +214,54 @@ export const Attendance = () => {
         toast.success(msg);
       }
       fetchAttendance();
+      if (!canManageAttendance) {
+        fetchTodayAttendanceWithSessions();
+        // After punch_out, check if work log has been submitted
+        if (action === 'punch_out') {
+          try {
+            const workLogStatus = await checkTodayWorkLog();
+            if (!workLogStatus?.has_logged_today) {
+              setWorkLogSummary('');
+              setShowPunchOutWorkLogDialog(true);
+            }
+          } catch (err) {
+            console.error('Failed to check work log:', err);
+          }
+        }
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Punch failed');
     } finally {
       setPunchLoading(false);
+    }
+  };
+
+  const handleSubmitPunchOutWorkLog = async () => {
+    if (!workLogSummary.trim()) {
+      toast.error('Please enter your work summary');
+      return;
+    }
+
+    setIsSubmittingWorkLog(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await axios.post(
+        `${API}/daily-work-logs`,
+        {
+          employee_id: user.employee_id,
+          employee_name: user.name,
+          log_date: today,
+          summary: workLogSummary.trim()
+        },
+        { headers: authHeader() }
+      );
+      toast.success('Work log submitted successfully');
+      setWorkLogSummary('');
+      setShowPunchOutWorkLogDialog(false);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to submit work log');
+    } finally {
+      setIsSubmittingWorkLog(false);
     }
   };
 
@@ -330,7 +398,7 @@ export const Attendance = () => {
               size="lg"
               className="h-14 sm:h-20 text-base sm:text-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 min-h-[48px]"
               onClick={() => handlePunch('punch_in')}
-              disabled={todayAttendance !== null || punchLoading}
+              disabled={canManageAttendance ? (todayAttendance?.is_active_session === 1 || punchLoading) : (isPunchedIn || punchLoading)}
               data-testid="punch-in-button"
             >
               {punchLoading ? (
@@ -347,7 +415,7 @@ export const Attendance = () => {
               variant="outline"
               className="h-14 sm:h-20 text-base sm:text-lg border-gray-300 text-gray-900 hover:bg-gray-50 font-semibold min-h-[48px]"
               onClick={() => handlePunch('punch_out')}
-              disabled={!todayAttendance || todayAttendance.punch_out || punchLoading}
+              disabled={canManageAttendance ? (!todayAttendance || todayAttendance.is_active_session !== 1 || punchLoading) : (!isPunchedIn || punchLoading)}
               data-testid="punch-out-button"
             >
               {punchLoading ? (
@@ -362,42 +430,71 @@ export const Attendance = () => {
           </div>
 
           {todayAttendance && (
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <p className="text-gray-500 text-xs uppercase">Punch In</p>
-                <p className="font-mono font-medium text-gray-900">{todayAttendance.punch_in || '–'}</p>
-              </div>
-              <div>
-                <p className="text-gray-500 text-xs uppercase">Punch Out</p>
-                <p className="font-mono font-medium text-gray-900">{todayAttendance.punch_out || '–'}</p>
-              </div>
-              <div>
-                <p className="text-gray-500 text-xs uppercase">Work Hours</p>
-                <p className="font-mono font-medium text-gray-900">{todayAttendance.work_hours?.toFixed(2) ?? 0} hrs</p>
-              </div>
-              <div>
-                <p className="text-gray-500 text-xs uppercase">Status</p>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span
-                    className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${
-                      todayAttendance.status === 'Present' ? 'bg-green-50 text-green-700' :
-                      todayAttendance.status === 'Late' ? 'bg-amber-50 text-amber-700' :
-                      'bg-gray-200 text-gray-700'
-                    }`}
-                  >
-                    {todayAttendance.status}
-                  </span>
-                  {todayAttendance.is_tour === 1 && (
-                    <span className={`inline-block px-2.5 py-1 rounded text-xs font-medium ${
-                      todayAttendance.tour_approval_status === 'approved' ? 'bg-green-50 text-green-700' :
-                      todayAttendance.tour_approval_status === 'rejected' ? 'bg-red-50 text-red-700' :
-                      'bg-amber-50 text-amber-700'
-                    }`}>
-                      Tour ({todayAttendance.tour_approval_status || 'Pending'})
+            <div className="mt-6 space-y-4">
+              {/* Summary Cards */}
+              <div className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <p className="text-gray-600 text-xs uppercase font-semibold">First Punch In</p>
+                  <p className="font-mono font-bold text-blue-900 text-lg">{todayAttendance.punch_in || '–'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 text-xs uppercase font-semibold">Last Punch Out</p>
+                  <p className="font-mono font-bold text-blue-900 text-lg">{todayAttendance.punch_out || '–'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 text-xs uppercase font-semibold">Total Work Hours</p>
+                  <p className="font-mono font-bold text-blue-900 text-lg">{totalWorkHours?.toFixed(2) ?? 0} hrs</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 text-xs uppercase font-semibold">Status</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                        todayAttendance.status === 'Present' ? 'bg-green-100 text-green-700' :
+                        todayAttendance.status === 'Late' ? 'bg-amber-100 text-amber-700' :
+                        'bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      {todayAttendance.status}
                     </span>
-                  )}
+                    {isPunchedIn && <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700"><span className="h-2 w-2 bg-green-600 rounded-full animate-pulse"></span>Active</span>}
+                  </div>
                 </div>
               </div>
+
+              {/* Sessions History */}
+              {todaySessions.length > 0 && (
+                <div className="p-4 bg-white rounded-lg border border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Work Sessions ({todaySessions.length})</h4>
+                  <div className="space-y-2">
+                    {todaySessions.map((session, idx) => (
+                      <div key={session.id} className="flex items-start justify-between p-3 bg-gray-50 rounded border border-gray-200 text-sm">
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">Session {session.session_number}</p>
+                          <p className="text-gray-600 text-xs">
+                            <span className="font-mono">{session.punch_in}</span>
+                            {session.punch_out && <> → <span className="font-mono">{session.punch_out}</span></>}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium text-gray-900">{session.work_hours.toFixed(2)} hrs</p>
+                          {session.is_tour === 1 && <p className="text-xs text-amber-600">Tour</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {todayAttendance.is_tour === 1 && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-900">Tour (Official Travel)</p>
+                    <p className="text-xs text-amber-700">Status: <span className="font-semibold capitalize">{todayAttendance.tour_approval_status || 'Pending'}</span></p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </Card>
@@ -721,6 +818,61 @@ export const Attendance = () => {
           )}
         </Card>
       )}
+
+      {/* Punch Out Work Log Dialog */}
+      <Dialog open={showPunchOutWorkLogDialog} onOpenChange={setShowPunchOutWorkLogDialog}>
+        <DialogContent className="sm:max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+          <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
+                <AlertCircle className="h-5 w-5" />
+                Work Log Submission
+              </DialogTitle>
+              <DialogDescription className="text-blue-100 text-sm mt-1">
+                Please submit your work summary for today before closing.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="space-y-4 p-6">
+            <div>
+              <Label htmlFor="punch-work-summary" className="text-sm font-semibold text-gray-900 block mb-2">
+                Today's Work Summary
+              </Label>
+              <textarea
+                id="punch-work-summary"
+                value={workLogSummary}
+                onChange={(e) => setWorkLogSummary(e.target.value)}
+                placeholder="Describe what you worked on today..."
+                rows={4}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-3 justify-end p-6 border-t border-gray-200">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPunchOutWorkLogDialog(false);
+                setWorkLogSummary('');
+              }}
+              disabled={isSubmittingWorkLog}
+              className="px-4 py-2"
+            >
+              Skip
+            </Button>
+            <Button
+              className="bg-blue-600 text-white hover:bg-blue-700 px-4 py-2"
+              onClick={handleSubmitPunchOutWorkLog}
+              disabled={isSubmittingWorkLog || !workLogSummary.trim()}
+            >
+              {isSubmittingWorkLog ? 'Submitting...' : 'Submit Work Log'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
+

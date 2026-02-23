@@ -269,54 +269,57 @@ export const GovernmentHolidays = () => {
                   Add Holiday
                 </Button>
               </DialogTrigger>
-            <DialogContent className="sm:max-w-md bg-white border-gray-200 text-gray-900 shadow-xl [&>button]:bg-transparent [&>button:hover]:bg-gray-100 [&>button]:text-gray-600">
-              <DialogHeader className="border-b border-gray-200 pb-4">
-                <DialogTitle className="text-lg font-semibold text-gray-900">Add Government Holiday</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleAddHoliday} className="space-y-4 mt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="gh-date" className="text-gray-700">Date *</Label>
-                  <Input
-                    id="gh-date"
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    required
-                    className="h-11 bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:border-blue-500"
-                  />
+              <DialogContent className="sm:max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+                <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+                  <DialogHeader>
+                    <DialogTitle className="text-xl font-bold text-white">Add Government Holiday</DialogTitle>
+                    <p className="text-blue-100 text-sm mt-1">Add a holiday date and name</p>
+                  </DialogHeader>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="gh-name" className="text-gray-700">Holiday Name *</Label>
-                  <Input
-                    id="gh-name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g. Republic Day"
-                    required
-                    className="h-11 bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="gh-desc" className="text-gray-700">Description (optional)</Label>
-                  <Textarea
-                    id="gh-desc"
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Optional notes"
-                    rows={2}
-                    className="resize-none bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
-                    Add Holiday
-                  </Button>
-                  <Button type="button" variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-50" onClick={() => setAddDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
+                <form onSubmit={handleAddHoliday} className="space-y-4 p-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="gh-date" className="text-sm font-semibold text-gray-900 block">Date *</Label>
+                    <Input
+                      id="gh-date"
+                      type="date"
+                      value={formData.date}
+                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                      required
+                      className="h-11 bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="gh-name" className="text-sm font-semibold text-gray-900 block">Holiday Name *</Label>
+                    <Input
+                      id="gh-name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="e.g. Republic Day"
+                      required
+                      className="h-11 bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="gh-desc" className="text-sm font-semibold text-gray-900 block">Description (optional)</Label>
+                    <Textarea
+                      id="gh-desc"
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      placeholder="Optional notes"
+                      rows={2}
+                      className="resize-none bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="flex gap-3 pt-2 justify-end border-t border-gray-200">
+                    <Button type="button" variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2" onClick={() => setAddDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2">
+                      Add Holiday
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
             </Dialog>
           </div>
         )}

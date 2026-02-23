@@ -7,11 +7,10 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Upload, Download, FileText, AlertCircle } from 'lucide-react';
+import { Upload, Download, FileText, AlertCircle, RefreshCw, Eye } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
-
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
 
 const DOCUMENT_TYPES = [
@@ -28,8 +27,12 @@ export const Documents = () => {
   const [documents, setDocuments] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [reloading, setReloading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewDocument, setPreviewDocument] = useState(null);
+  const [selectedEmployeeForView, setSelectedEmployeeForView] = useState('');
   const [formData, setFormData] = useState({
     employee_id: '',
     employee_name: '',
@@ -37,7 +40,6 @@ export const Documents = () => {
     expiry_date: '',
     file: null
   });
-  const [selectedEmployeeForView, setSelectedEmployeeForView] = useState('');
 
   const canViewAllDocuments = ['Admin', 'HR', 'Manager'].includes(user?.role);
   const canUploadForOthers = ['Admin', 'HR', 'Manager'].includes(user?.role);
@@ -74,6 +76,19 @@ export const Documents = () => {
       toast.error('Failed to load documents');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReload = async () => {
+    setReloading(true);
+    try {
+      const response = await axios.get(`${API}/documents`, authHeaders());
+      setDocuments(response.data);
+      toast.success('Documents reloaded');
+    } catch (error) {
+      toast.error('Failed to reload documents');
+    } finally {
+      setReloading(false);
     }
   };
 
@@ -131,6 +146,11 @@ export const Documents = () => {
     }
   };
 
+  const handlePreview = (doc) => {
+    setPreviewDocument(doc);
+    setPreviewOpen(true);
+  };
+
   const resetForm = () => {
     setFormData({
       employee_id: '',
@@ -141,11 +161,11 @@ export const Documents = () => {
     });
   };
 
-  const handleEmployeeChange = (businessEmployeeId) => {
-    const employee = employees.find(emp => emp.employee_id === businessEmployeeId);
+  const handleEmployeeChange = (empId) => {
+    const employee = employees.find(emp => emp.employee_id === empId);
     setFormData({
       ...formData,
-      employee_id: businessEmployeeId,
+      employee_id: empId,
       employee_name: employee ? employee.name : ''
     });
   };
@@ -158,125 +178,135 @@ export const Documents = () => {
     );
   }
 
-  const baseDocuments = canViewAllDocuments ? documents : documents.filter(doc => String(doc.employee_id) === String(user?.employee_id));
+  const baseDocuments = canViewAllDocuments 
+    ? documents 
+    : documents.filter(doc => String(doc.employee_id) === String(user?.employee_id));
   const filteredDocuments = canViewAllDocuments && selectedEmployeeForView
     ? baseDocuments.filter(doc => String(doc.employee_id) === String(selectedEmployeeForView))
     : baseDocuments;
 
   return (
     <div className="space-y-6" data-testid="documents-page">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Documents</h1>
-          <p className="text-gray-600 text-sm mt-1">Upload essential documents (Aadhar, PAN, education certificates). Who can view is set in Role Management.</p>
+          <p className="text-gray-600 text-sm mt-1">Upload and manage documents. Who can view is set in Role Management.</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
-          <DialogTrigger asChild>
-            <Button className="bg-blue-600 text-white font-medium hover:bg-blue-700 h-10" data-testid="upload-document-button">
-              <Upload className="h-4 w-4 mr-2" />
-              Upload Document
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg bg-white border-0 shadow-2xl p-0">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6">
-              <DialogHeader>
-                <DialogTitle className="text-xl font-bold text-white">Upload Document</DialogTitle>
-                <p className="text-blue-100 text-sm">{canUploadForOthers ? 'Attach document for an employee' : 'Upload your essential documents after joining'}</p>
-              </DialogHeader>
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-6 p-6">
-              {canUploadForOthers ? (
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReload}
+            disabled={reloading}
+            className="border-gray-300 text-gray-700 hover:bg-gray-50 h-10"
+          >
+            <RefreshCw className={reloading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-blue-600 text-white font-medium hover:bg-blue-700 h-10">
+                <Upload className="h-4 w-4 mr-2" />
+                Upload Document
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 -m-6 mb-6">
+                <DialogHeader>
+                  <DialogTitle className="text-xl font-bold text-white">Upload Document</DialogTitle>
+                  <p className="text-blue-100 text-sm mt-1">
+                    {canUploadForOthers ? 'Attach document for an employee' : 'Upload your documents'}
+                  </p>
+                </DialogHeader>
+              </div>
+              <form onSubmit={handleSubmit} className="space-y-6 px-6 pb-6">
+                {canUploadForOthers ? (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Employee *</Label>
+                    <select
+                      value={formData.employee_id}
+                      onChange={(e) => handleEmployeeChange(e.target.value)}
+                      className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                      required
+                    >
+                      <option value="">Select employee</option>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.employee_id}>
+                          {emp.name} ({emp.employee_id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="space-y-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <Label className="text-sm font-medium">Upload for: {user?.name}</Label>
+                    <p className="text-sm text-gray-600">ID: {user?.employee_id}</p>
+                  </div>
+                )}
+
                 <div className="space-y-2">
-                  <Label htmlFor="employee" className="text-sm font-medium text-gray-700">Employee *</Label>
+                  <Label className="text-sm font-medium">Document Type *</Label>
                   <select
-                    id="employee"
-                    data-testid="document-employee-select"
-                    value={formData.employee_id}
-                    onChange={(e) => handleEmployeeChange(e.target.value)}
-                    className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    value={formData.document_type}
+                    onChange={(e) => setFormData({ ...formData, document_type: e.target.value })}
+                    className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                     required
                   >
-                    <option value="">Select employee</option>
-                    {employees.map((emp) => (
-                      <option key={emp.id} value={emp.employee_id}>
-                        {emp.name} ({emp.employee_id})
-                      </option>
+                    {DOCUMENT_TYPES.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
                 </div>
-              ) : (
-                <div className="space-y-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <Label className="text-sm font-medium text-gray-700">Uploading for</Label>
-                  <p className="font-medium text-gray-900">{user?.name}</p>
-                  <p className="text-sm text-gray-600">ID: {user?.employee_id}</p>
-                  <input type="hidden" name="employee_id" value={user?.employee_id || ''} />
-                  <input type="hidden" name="employee_name" value={user?.name || ''} />
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="document_type" className="text-sm font-medium text-gray-700">Document Type *</Label>
-                <select
-                  id="document_type"
-                  data-testid="document-type-select"
-                  value={formData.document_type}
-                  onChange={(e) => setFormData({ ...formData, document_type: e.target.value })}
-                  className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                  required
-                >
-                  {DOCUMENT_TYPES.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="expiry_date" className="text-sm font-medium text-gray-700">Expiry Date (Optional)</Label>
+                  <Label className="text-sm font-medium">Expiry Date (Optional)</Label>
                   <Input
-                    id="expiry_date"
                     type="date"
-                    data-testid="document-expiry-date"
                     value={formData.expiry_date}
                     onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })}
-                    className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    className="h-11"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="file" className="text-sm font-medium text-gray-700">File *</Label>
+                  <Label className="text-sm font-medium">File *</Label>
                   <Input
-                    id="file"
                     type="file"
-                    data-testid="document-file-input"
-                    onChange={(e) => setFormData({ ...formData, file: e.target.files[0] })}
+                    onChange={(e) => setFormData({ ...formData, file: e.target.files?.[0] || null })}
                     required
-                    className="border border-gray-300"
+                    className="h-11"
                   />
                   <p className="text-xs text-gray-600">Max file size: 10MB</p>
                 </div>
 
                 <div className="flex justify-end gap-3 pt-2">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-300 text-gray-700 hover:bg-gray-50">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => setDialogOpen(false)}
+                  >
                     Cancel
                   </Button>
-                  <Button type="submit" data-testid="upload-submit-button" className="bg-blue-600 text-white hover:bg-blue-700">
+                  <Button 
+                    type="submit" 
+                    disabled={uploading}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
                     Upload
                   </Button>
                 </div>
               </form>
             </DialogContent>
           </Dialog>
+        </div>
       </div>
 
-      {/* Admin/HR: Select employee to view their documents */}
       {canViewAllDocuments && (
-        <Card className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
-          <Label className="text-sm font-semibold text-gray-700">View documents for</Label>
+        <Card className="p-4 bg-white">
+          <Label className="text-sm font-semibold">View documents for</Label>
           <select
             value={selectedEmployeeForView}
             onChange={(e) => setSelectedEmployeeForView(e.target.value)}
-            className="mt-2 flex h-10 w-full max-w-sm rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            className="mt-2 flex h-10 w-full max-w-sm rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
           >
             <option value="">All employees</option>
             {employees.map((emp) => (
@@ -285,23 +315,16 @@ export const Documents = () => {
               </option>
             ))}
           </select>
-          {selectedEmployeeForView && (
-            <p className="mt-2 text-sm text-gray-600">
-              Showing {filteredDocuments.length} document(s) for {employees.find(e => e.employee_id === selectedEmployeeForView)?.name || selectedEmployeeForView}
-            </p>
-          )}
         </Card>
       )}
 
-      {/* Employee: Your documents section */}
       {!canViewAllDocuments && (
         <div className="flex items-center gap-2">
           <FileText className="h-5 w-5 text-blue-600" />
-          <h2 className="text-lg font-semibold text-gray-900">Your documents</h2>
+          <h2 className="text-lg font-semibold">Your documents</h2>
         </div>
       )}
 
-      {/* Documents list */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredDocuments.map((document) => {
           const isExpired = document.expiry_date && new Date(document.expiry_date) < new Date();
@@ -310,53 +333,48 @@ export const Documents = () => {
             !isExpired;
 
           return (
-            <Card key={document.id} className="p-6 border border-gray-200 bg-white hover:shadow-md transition-shadow" data-testid={`document-card-${document.id}`}>
+            <Card key={document.id} className="p-6 hover:shadow-md transition-shadow bg-white">
               <div className="space-y-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
                       <FileText className="h-5 w-5 text-indigo-600" />
-                      <h3 className="text-lg font-semibold truncate text-gray-900">{document.document_type}</h3>
+                      <h3 className="text-lg font-semibold truncate">{document.document_type}</h3>
                     </div>
                     <p className="text-sm text-gray-600">{document.employee_name}</p>
                   </div>
-                  {(isExpired || isExpiringSoon) && (
-                    <AlertCircle className={`h-5 w-5 ${isExpired ? 'text-rose-500' : 'text-amber-500'}`} />
+                  {(isExpired) && (
+                    <AlertCircle className="h-5 w-5 text-red-600" />
                   )}
                 </div>
 
-                <div className="space-y-2 text-sm">
-                  <div>
-                    <p className="text-gray-600">File Name</p>
-                    <p className="font-medium truncate text-gray-900">{document.file_name}</p>
-                  </div>
+                <div className="space-y-1 text-sm">
+                  <p className="text-gray-600 truncate">{document.file_name}</p>
                   {document.expiry_date && (
-                    <div>
-                      <p className="text-gray-600">Expiry Date</p>
-                      <p className={`font-mono font-medium ${
-                        isExpired ? 'text-rose-500' : isExpiringSoon ? 'text-amber-500' : 'text-gray-900'
-                      }`}>
-                        {document.expiry_date}
-                        {isExpired && ' (Expired)'}
-                        {isExpiringSoon && ' (Expiring Soon)'}
-                      </p>
-                    </div>
+                    <p className={isExpired ? 'text-red-600' : 'text-gray-600'}>
+                      Expires: {document.expiry_date} {isExpired && '(Expired)'}
+                    </p>
                   )}
-                  <div>
-                    <p className="text-gray-600">Uploaded</p>
-                    <p className="font-mono text-xs text-gray-600">{new Date(document.uploaded_at).toLocaleDateString()}</p>
-                  </div>
                 </div>
 
-                <Button
-                  variant="outline"
-                  className="w-full border-gray-200 text-blue-600 hover:bg-blue-50 h-10"
-                  onClick={() => handleDownload(document.id, document.file_name)}
-                  data-testid={`download-document-${document.id}`}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Download
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1 h-10"
+                    onClick={() => handlePreview(document)}
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    Preview
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="flex-1 h-10"
+                    onClick={() => handleDownload(document.id, document.file_name)}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download
+                  </Button>
+                </div>
               </div>
             </Card>
           );
@@ -364,11 +382,80 @@ export const Documents = () => {
       </div>
 
       {filteredDocuments.length === 0 && (
-        <Card className="p-12 text-center border border-gray-200 bg-white">
+        <Card className="p-12 text-center bg-white">
           <FileText className="h-12 w-12 mx-auto mb-2 opacity-20" />
-          <p className="text-gray-600">No documents uploaded yet</p>
+          <p className="text-gray-600">No documents</p>
         </Card>
       )}
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-white">
+          <DialogHeader className="sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 -m-6 mb-6">
+            <DialogTitle className="text-xl font-bold text-white">
+              Preview - {previewDocument?.document_type}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {previewDocument && (
+            <div className="px-6 pb-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-gray-600 font-medium">Employee</p>
+                  <p className="text-gray-900">{previewDocument.employee_name}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 font-medium">File</p>
+                  <p className="truncate text-gray-900">{previewDocument.file_name}</p>
+                </div>
+                {previewDocument.expiry_date && (
+                  <div>
+                    <p className="text-gray-600 font-medium">Expiry</p>
+                    <p className="text-gray-900">{previewDocument.expiry_date}</p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-gray-600 font-medium">Uploaded</p>
+                  <p className="text-gray-900">{new Date(previewDocument.uploaded_at).toLocaleDateString()}</p>
+                </div>
+              </div>
+
+              {previewDocument.file_path && (
+                <div className="border-t pt-4">
+                  <p className="text-gray-600 font-medium mb-3">Preview</p>
+                  {['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(previewDocument.file_name?.split('.').pop()?.toLowerCase()) && (
+                    <div className="bg-gray-50 rounded-lg p-4 flex justify-center">
+                      <img src={previewDocument.file_path} alt="preview" className="max-w-full max-h-96 rounded" crossOrigin="anonymous" />
+                    </div>
+                  )}
+                  {previewDocument.file_name?.toLowerCase().endsWith('.pdf') && (
+                    <iframe src={previewDocument.file_path} className="w-full h-96 rounded" title="preview" />
+                  )}
+                  {!['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(previewDocument.file_name?.split('.').pop()?.toLowerCase()) && !previewDocument.file_name?.toLowerCase().endsWith('.pdf') && (
+                    <div className="bg-gray-50 rounded-lg p-6 text-center">
+                      <p className="text-gray-600 text-sm mb-4">Preview not available</p>
+                      <Button onClick={() => handleDownload(previewDocument.id, previewDocument.file_name)}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button variant="outline" onClick={() => setPreviewOpen(false)}>Close</Button>
+                <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => {
+                  handleDownload(previewDocument.id, previewDocument.file_name);
+                  setPreviewOpen(false);
+                }}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

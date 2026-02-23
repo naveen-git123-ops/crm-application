@@ -1,11 +1,11 @@
 from sqlalchemy import text
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, func, cast
+from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, func, cast, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import IntegrityError
@@ -26,6 +26,8 @@ import json
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import boto3
+from botocore.exceptions import ClientError
 
 app = FastAPI()
 app.add_middleware(
@@ -64,6 +66,24 @@ JWT_EXPIRATION_HOURS = 168  # 7 days
 UPLOAD_DIR = ROOT_DIR / 'uploads'
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+# AWS S3 Configuration
+AWS_ACCESS_KEY = os.environ.get('AWS_ACCESS_KEY_ID')
+AWS_SECRET_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
+AWS_REGION = os.environ.get('AWS_S3_REGION', os.environ.get('AWS_REGION', 'us-east-1'))
+S3_BUCKET_NAME = os.environ.get('AWS_S3_BUCKET_NAME', os.environ.get('S3_BUCKET_NAME'))
+USE_S3 = AWS_ACCESS_KEY and AWS_SECRET_KEY and S3_BUCKET_NAME
+
+# Initialize S3 client if credentials provided
+if USE_S3:
+    s3_client = boto3.client(
+        's3',
+        aws_access_key_id=AWS_ACCESS_KEY,
+        aws_secret_access_key=AWS_SECRET_KEY,
+        region_name=AWS_REGION
+    )
+else:
+    s3_client = None
+
 api_router = APIRouter(prefix="/api")
 security = HTTPBearer()
 
@@ -74,52 +94,53 @@ app.include_router(api_router)
 
 class UserModel(Base):
     __tablename__ = "users"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    email = Column(String, unique=True, index=True)
-    password = Column(String)
-    name = Column(String)
-    role = Column(String)
-    employee_id = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String(255), unique=True, index=True)
+    password = Column(String(255))
+    name = Column(String(255))
+    role = Column(String(50))
+    employee_id = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
 # Role definitions: name + which screens (permissions) the role can access. Admin is system and cannot be edited/deleted.
 class RoleModel(Base):
     __tablename__ = "roles"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = Column(String, unique=True, index=True)
-    permissions = Column(String)  # JSON array of permission keys, e.g. ["dashboard","leads","employees",...]
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(255), unique=True, index=True)
+    permissions = Column(String(1000))  # JSON array of permission keys, e.g. ["dashboard","leads","employees",...]
     is_system = Column(Integer, default=0)  # 1 = Admin only, cannot edit/delete
     created_at = Column(DateTime, default=datetime.now)
 
 
 class EmployeeModel(Base):
     __tablename__ = "employees"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id = Column(String, unique=True, index=True)
-    name = Column(String)
-    email = Column(String, unique=True, index=True)
-    phone = Column(String, nullable=True)
-    department = Column(String)
-    job_role = Column(String)
-    joining_date = Column(String)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), unique=True, index=True)
+    name = Column(String(255))
+    email = Column(String(255), unique=True, index=True)
+    phone = Column(String(20), nullable=True)
+    department = Column(String(100))
+    job_role = Column(String(100))
+    joining_date = Column(String(10))
     salary = Column(Float)
-    status = Column(String, default='Active')
-    profile_photo = Column(String, nullable=True)
-    address = Column(String, nullable=True)
-    emergency_contact = Column(String, nullable=True)
+    status = Column(String(50), default='Active')
+    profile_photo = Column(String(500), nullable=True)
+    address = Column(String(500), nullable=True)
+    emergency_contact = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class AttendanceModel(Base):
     __tablename__ = "attendance"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id = Column(String, index=True)
-    employee_name = Column(String)
-    date = Column(String, index=True)
-    punch_in = Column(String, nullable=True)
-    punch_out = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
+    date = Column(String(10), index=True)
+    punch_in = Column(String(8), nullable=True)
+    punch_out = Column(String(8), nullable=True)
     work_hours = Column(Float, default=0.0)
-    status = Column(String, default='Present')
+    total_work_hours = Column(Float, default=0.0)  # Sum of all sessions
+    status = Column(String(50), default='Present')
     created_at = Column(DateTime, default=datetime.now)
     # Location & tour (office vs official travel)
     punch_in_lat = Column(Float, nullable=True)
@@ -127,79 +148,109 @@ class AttendanceModel(Base):
     punch_out_lat = Column(Float, nullable=True)
     punch_out_lng = Column(Float, nullable=True)
     is_tour = Column(Integer, default=0)
-    tour_approval_status = Column(String, nullable=True)  # 'pending', 'approved', 'rejected'
+    tour_approval_status = Column(String(50), nullable=True)  # 'pending', 'approved', 'rejected'
+    is_active_session = Column(Integer, default=0)  # 1 if currently punched in
+
+
+class AttendanceSessionModel(Base):
+    __tablename__ = "attendance_sessions"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    attendance_id = Column(String(36), ForeignKey('attendance.id'), index=True)
+    session_number = Column(Integer, default=1)
+    punch_in = Column(String(8), nullable=False)
+    punch_out = Column(String(8), nullable=True)
+    work_hours = Column(Float, default=0.0)
+    punch_in_lat = Column(Float, nullable=True)
+    punch_in_lng = Column(Float, nullable=True)
+    punch_out_lat = Column(Float, nullable=True)
+    punch_out_lng = Column(Float, nullable=True)
+    is_tour = Column(Integer, default=0)
+    tour_approval_status = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
 class SettingsModel(Base):
     __tablename__ = "settings"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    config_key = Column(String, unique=True, index=True)
-    value = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    config_key = Column(String(255), unique=True, index=True)
+    value = Column(String(1000), nullable=True)
 
 class LeaveModel(Base):
     __tablename__ = "leaves"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id = Column(String, index=True)
-    employee_name = Column(String)
-    leave_type = Column(String)
-    start_date = Column(String)
-    end_date = Column(String)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
+    leave_type = Column(String(50))
+    start_date = Column(String(10))
+    end_date = Column(String(10))
     days = Column(Integer)
-    reason = Column(String)
-    status = Column(String, default='Pending')
-    approver_id = Column(String, nullable=True)
-    approver_name = Column(String, nullable=True)
+    reason = Column(String(500))
+    status = Column(String(50), default='Pending')
+    approver_id = Column(String(50), nullable=True)
+    approver_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
 class LeavePolicyModel(Base):
     __tablename__ = "leave_policy"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     paid_leaves_per_year = Column(Integer, default=12)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
 class GovernmentHolidayModel(Base):
     __tablename__ = "government_holidays"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    date = Column(String, index=True)  # YYYY-MM-DD
-    name = Column(String)
-    description = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    date = Column(String(10), index=True)  # YYYY-MM-DD
+    name = Column(String(255))
+    description = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
 class DocumentModel(Base):
     __tablename__ = "documents"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id = Column(String, index=True)
-    employee_name = Column(String)
-    document_type = Column(String)
-    file_name = Column(String)
-    file_path = Column(String)
-    expiry_date = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
+    document_type = Column(String(100))
+    file_name = Column(String(255))
+    file_path = Column(String(500))
+    expiry_date = Column(String(10), nullable=True)
     uploaded_at = Column(DateTime, default=datetime.now)
 
 class ExpenseModel(Base):
     __tablename__ = "expenses"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id = Column(String, index=True)
-    employee_name = Column(String)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
     amount = Column(Float)
-    category = Column(String)
-    description = Column(String)
-    receipt_path = Column(String, nullable=True)
-    status = Column(String, default='Pending')
-    approver_id = Column(String, nullable=True)
-    approver_name = Column(String, nullable=True)
+    category = Column(String(100))
+    description = Column(String(500))
+    receipt_path = Column(String(500), nullable=True)
+    status = Column(String(50), default='Pending')
+    # First level approval (Accountant)
+    accountant_approver_id = Column(String(50), nullable=True)
+    accountant_approver_name = Column(String(255), nullable=True)
+    accountant_approved_at = Column(DateTime, nullable=True)
+    accountant_approved_amount = Column(Float, nullable=True)  # For partial approvals
+    accountant_approval_reason = Column(String(500), nullable=True)  # For partial approval/rejection reason
+    # Second level approval (Admin)
+    admin_approver_id = Column(String(50), nullable=True)
+    admin_approver_name = Column(String(255), nullable=True)
+    admin_approved_at = Column(DateTime, nullable=True)
+    # Keep old fields for backward compatibility
+    approver_id = Column(String(50), nullable=True)
+    approver_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class DailyWorkLogModel(Base):
     __tablename__ = "daily_work_logs"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    employee_id = Column(String, index=True)
-    employee_name = Column(String)
-    log_date = Column(String, index=True)
-    summary = Column(String)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
+    log_date = Column(String(10), index=True)
+    summary = Column(String(2000))
     created_at = Column(DateTime, default=datetime.now)
 
 class CustomerModel(Base):
@@ -295,57 +346,57 @@ class TaskAttachmentModel(Base):
 
 class LeadModel(Base):
     __tablename__ = "leads"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    contact_name = Column(String, index=True)
-    company = Column(String, index=True)
-    email = Column(String, index=True)
-    phone = Column(String, nullable=True)
-    source = Column(String, default='Other')
-    status = Column(String, default='New', index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    contact_name = Column(String(255), index=True)
+    company = Column(String(255), index=True)
+    email = Column(String(255), index=True)
+    phone = Column(String(20), nullable=True)
+    source = Column(String(100), default='Other')
+    status = Column(String(50), default='New', index=True)
     value = Column(Float, nullable=True)
-    notes = Column(String, nullable=True)
-    assigned_to_employee_id = Column(String, nullable=True, index=True)
-    assigned_to_name = Column(String, nullable=True)
-    created_by_employee_id = Column(String, nullable=True, index=True)
-    created_by_name = Column(String, nullable=True)
-    category = Column(String, nullable=True)
-    sub_category = Column(String, nullable=True)
-    contacts = Column(String, nullable=True)  # JSON string: list of {name, designation, email, number}
+    notes = Column(String(1000), nullable=True)
+    assigned_to_employee_id = Column(String(50), nullable=True, index=True)
+    assigned_to_name = Column(String(255), nullable=True)
+    created_by_employee_id = Column(String(50), nullable=True, index=True)
+    created_by_name = Column(String(255), nullable=True)
+    category = Column(String(100), nullable=True)
+    sub_category = Column(String(100), nullable=True)
+    contacts = Column(String(2000), nullable=True)  # JSON string: list of {name, designation, email, number}
     negotiation_price = Column(Float, nullable=True)  # Price during negotiation phase
-    negotiation_terms = Column(String, nullable=True)  # Terms and conditions during negotiation
+    negotiation_terms = Column(String(500), nullable=True)  # Terms and conditions during negotiation
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 class LeadActivityModel(Base):
     __tablename__ = "lead_activities"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    lead_id = Column(String, index=True)
-    activity_type = Column(String)
-    summary = Column(String)
-    created_by_id = Column(String, nullable=True)
-    created_by_name = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id = Column(String(36), index=True)
+    activity_type = Column(String(100))
+    summary = Column(String(500))
+    created_by_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class LeadStatusHistoryModel(Base):
     __tablename__ = "lead_status_history"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    lead_id = Column(String, index=True)
-    old_status = Column(String)
-    new_status = Column(String)
-    changed_by_employee_id = Column(String, nullable=True, index=True)
-    changed_by_name = Column(String, nullable=True)
-    change_comment = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id = Column(String(36), index=True)
+    old_status = Column(String(50))
+    new_status = Column(String(50))
+    changed_by_employee_id = Column(String(50), nullable=True, index=True)
+    changed_by_name = Column(String(255), nullable=True)
+    change_comment = Column(String(500), nullable=True)
     changed_at = Column(DateTime, default=datetime.now, index=True)
 
 class LeadReminderModel(Base):
     __tablename__ = "lead_reminders"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    lead_id = Column(String, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id = Column(String(36), index=True)
     reminder_datetime = Column(DateTime, nullable=False, index=True)
-    description = Column(String, nullable=False)
-    is_completed = Column(String, default='False')
-    created_by_id = Column(String, nullable=True)
-    created_by_name = Column(String, nullable=True)
+    description = Column(String(500), nullable=False)
+    is_completed = Column(String(50), default='False')
+    created_by_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class LeadAttachmentModel(Base):
@@ -362,79 +413,79 @@ class LeadAttachmentModel(Base):
 
 class OrderModel(Base):
     __tablename__ = "orders"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    order_id = Column(String, unique=True, index=True)  # Unique order number
-    lead_id = Column(String, index=True)  # Link to the won lead
-    customer_name = Column(String, index=True)
-    contact_person = Column(String, nullable=True)
-    contact_number = Column(String, nullable=True)
-    mail_id = Column(String, nullable=True)
-    offer_no = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_id = Column(String(50), unique=True, index=True)  # Unique order number
+    lead_id = Column(String(36), index=True)  # Link to the won lead
+    customer_name = Column(String(255), index=True)
+    contact_person = Column(String(255), nullable=True)
+    contact_number = Column(String(20), nullable=True)
+    mail_id = Column(String(255), nullable=True)
+    offer_no = Column(String(100), nullable=True)
     offer_date = Column(DateTime, nullable=True)
-    product = Column(String, nullable=True)
+    product = Column(String(255), nullable=True)
     cust_supply_po_value = Column(Float, nullable=True)
-    cust_po_no = Column(String, nullable=True)
+    cust_po_no = Column(String(100), nullable=True)
     po_date = Column(DateTime, nullable=True)
     order_copy_received_date = Column(DateTime, nullable=True)
-    payment_terms = Column(String, nullable=True)
+    payment_terms = Column(String(255), nullable=True)
     advance_payment = Column(Float, nullable=True)
     delivery_committed = Column(DateTime, nullable=True)
-    vendor_po_no = Column(String, nullable=True)
-    vendor_name = Column(String, nullable=True)
+    vendor_po_no = Column(String(100), nullable=True)
+    vendor_name = Column(String(255), nullable=True)
     vendor_po_date = Column(DateTime, nullable=True)
     vendor_po_value = Column(Float, nullable=True)
-    resoline_tax_invoice_no = Column(String, nullable=True)
+    resoline_tax_invoice_no = Column(String(100), nullable=True)
     resoline_invoice_date = Column(DateTime, nullable=True)
     invoice_amount = Column(Float, nullable=True)
-    vendor_invoice_no = Column(String, nullable=True)
-    vendor_dispatch_lr_no = Column(String, nullable=True)
-    vendor_dispatch_transport = Column(String, nullable=True)
-    material_check = Column(String, nullable=True)  # Status
-    customer_dispatch_details = Column(String, nullable=True)
+    vendor_invoice_no = Column(String(100), nullable=True)
+    vendor_dispatch_lr_no = Column(String(100), nullable=True)
+    vendor_dispatch_transport = Column(String(255), nullable=True)
+    material_check = Column(String(50), nullable=True)  # Status
+    customer_dispatch_details = Column(String(500), nullable=True)
     material_received_by_cust = Column(DateTime, nullable=True)
-    installation_successful = Column(String, default='Pending')  # Pending/Completed
-    installation_service_report_no = Column(String, nullable=True)
+    installation_successful = Column(String(50), default='Pending')  # Pending/Completed
+    installation_service_report_no = Column(String(100), nullable=True)
     service_report_date = Column(DateTime, nullable=True)
     service_charges = Column(Float, nullable=True)
     final_payment_due = Column(Float, nullable=True)
     final_payment_date = Column(DateTime, nullable=True)
     subscription_start_date = Column(DateTime, nullable=True)
     subscription_end_date = Column(DateTime, nullable=True)
-    subscription_status = Column(String, default='Active')  # Active/Expiring Soon/Expired
-    renewal_reminder_sent = Column(String, default='False')
-    remarks = Column(String, nullable=True)  # REMARK/STATUS
-    order_status = Column(String, default='Open')  # Open/In Progress/Completed/Cancelled
-    offer_copy_path = Column(String, nullable=True)  # Path to uploaded offer copy
-    order_copy_path = Column(String, nullable=True)  # Path to uploaded order copy
+    subscription_status = Column(String(50), default='Active')  # Active/Expiring Soon/Expired
+    renewal_reminder_sent = Column(String(50), default='False')
+    remarks = Column(String(500), nullable=True)  # REMARK/STATUS
+    order_status = Column(String(50), default='Open')  # Open/In Progress/Completed/Cancelled
+    offer_copy_path = Column(String(500), nullable=True)  # Path to uploaded offer copy
+    order_copy_path = Column(String(500), nullable=True)  # Path to uploaded order copy
     estimation = Column(Float, nullable=True)  # Estimation value (similar to story points)
-    subscription_reminder_sent_30 = Column(String, default='False')  # 30 days before
-    subscription_reminder_sent_7 = Column(String, default='False')  # 7 days before
-    subscription_reminder_sent_1 = Column(String, default='False')  # 1 day before
-    assigned_to_employee_id = Column(String, nullable=True, index=True)
-    assigned_to_name = Column(String, nullable=True)
-    created_by_employee_id = Column(String, nullable=True)
-    created_by_name = Column(String, nullable=True)
+    subscription_reminder_sent_30 = Column(String(50), default='False')  # 30 days before
+    subscription_reminder_sent_7 = Column(String(50), default='False')  # 7 days before
+    subscription_reminder_sent_1 = Column(String(50), default='False')  # 1 day before
+    assigned_to_employee_id = Column(String(50), nullable=True, index=True)
+    assigned_to_name = Column(String(255), nullable=True)
+    created_by_employee_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 class OrderActivityModel(Base):
     __tablename__ = "order_activities"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    order_id = Column(String, index=True)  # Link to Order
-    activity_type = Column(String)  # Update/Status Change/Renewal Reminder/Note
-    summary = Column(String)
-    details = Column(String, nullable=True)  # JSON for additional details
-    created_by_id = Column(String, nullable=True)
-    created_by_name = Column(String, nullable=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_id = Column(String(36), index=True)  # Link to Order
+    activity_type = Column(String(100))  # Update/Status Change/Renewal Reminder/Note
+    summary = Column(String(500))
+    details = Column(String(2000), nullable=True)  # JSON for additional details
+    created_by_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class SubscriptionReminderModel(Base):
     __tablename__ = "subscription_reminders"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    order_id = Column(String, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_id = Column(String(36), index=True)
     reminder_date = Column(DateTime, nullable=False)
-    reminder_type = Column(String)  # 30days_before/7days_before/on_expiry
-    is_sent = Column(String, default='False')
+    reminder_type = Column(String(100))  # 30days_before/7days_before/on_expiry
+    is_sent = Column(String(50), default='False')
     sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
@@ -478,6 +529,98 @@ def migrate_attendance_location_and_tour():
             pass
 
 migrate_attendance_location_and_tour()
+
+def migrate_attendance_sessions_table():
+    """Create attendance_sessions table if missing."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            # Check if table exists (works for both MySQL and SQLite)
+            try:
+                r = conn.execute(text("SHOW TABLES LIKE 'attendance_sessions'"))
+                if not r.fetchone():
+                    # Create the table for MySQL
+                    conn.execute(text("""
+                        CREATE TABLE attendance_sessions (
+                            id VARCHAR(36) PRIMARY KEY,
+                            attendance_id VARCHAR(36) NOT NULL,
+                            session_number INTEGER DEFAULT 1,
+                            punch_in VARCHAR(10),
+                            punch_out VARCHAR(10),
+                            work_hours FLOAT DEFAULT 0.0,
+                            punch_in_lat FLOAT,
+                            punch_in_lng FLOAT,
+                            punch_out_lat FLOAT,
+                            punch_out_lng FLOAT,
+                            is_tour INTEGER DEFAULT 0,
+                            tour_approval_status VARCHAR(50),
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY(attendance_id) REFERENCES attendance(id),
+                            INDEX idx_attendance_sessions_attendance_id (attendance_id)
+                        )
+                    """))
+            except:
+                # Try SQLite syntax as fallback
+                r = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='attendance_sessions'"))
+                if not r.fetchone():
+                    conn.execute(text("""
+                        CREATE TABLE attendance_sessions (
+                            id VARCHAR PRIMARY KEY,
+                            attendance_id VARCHAR NOT NULL,
+                            session_number INTEGER DEFAULT 1,
+                            punch_in VARCHAR NOT NULL,
+                            punch_out VARCHAR,
+                            work_hours FLOAT DEFAULT 0.0,
+                            punch_in_lat FLOAT,
+                            punch_in_lng FLOAT,
+                            punch_out_lat FLOAT,
+                            punch_out_lng FLOAT,
+                            is_tour INTEGER DEFAULT 0,
+                            tour_approval_status VARCHAR,
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY(attendance_id) REFERENCES attendance(id)
+                        )
+                    """))
+                    conn.execute(text("CREATE INDEX idx_attendance_sessions_attendance_id ON attendance_sessions(attendance_id)"))
+            conn.commit()
+        except Exception as e:
+            print(f"Migration error for attendance_sessions: {e}")
+
+migrate_attendance_sessions_table()
+
+def migrate_attendance_new_columns():
+    """Add new columns to attendance if missing."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            # Try MySQL approach first
+            try:
+                r = conn.execute(text("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='attendance' AND TABLE_SCHEMA=DATABASE()"))
+                cols = [row[0] for row in r.fetchall()]
+            except:
+                # Fall back to SQLite
+                r = conn.execute(text("PRAGMA table_info(attendance)"))
+                cols = [row[1] for row in r.fetchall()]
+            
+            new_cols = [
+                ('total_work_hours', 'FLOAT DEFAULT 0.0'),
+                ('is_active_session', 'INTEGER DEFAULT 0'),
+            ]
+            for col, typ in new_cols:
+                col_name = col.split()[0]
+                if col_name not in cols:
+                    try:
+                        conn.execute(text(f"ALTER TABLE attendance ADD COLUMN {col} {typ}"))
+                        print(f"Added column {col_name} to attendance table")
+                    except Exception as alter_err:
+                        print(f"Could not add column {col_name}: {alter_err}")
+            conn.commit()
+        except Exception as e:
+            print(f"Migration error for attendance new columns: {e}")
+
+migrate_attendance_new_columns()
 
 def migrate_leads_add_category_and_contacts():
     """Add category, sub_category, and contacts columns to leads if missing (for new Leads UI)."""
@@ -580,6 +723,7 @@ def seed_roles_if_needed():
             return
         defaults = [
             RoleModel(name="Admin", permissions=json.dumps(DEFAULT_PERMISSION_KEYS), is_system=1),
+            RoleModel(name="Accountant", permissions=json.dumps(["expenses", "workspace", "documents", "settings"]), is_system=0),
             RoleModel(name="HR", permissions=json.dumps(["employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers"]), is_system=0),
             RoleModel(name="Manager", permissions=json.dumps(["leads", "employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers"]), is_system=0),
             RoleModel(name="Employee", permissions=json.dumps(["attendance", "leaves", "expenses", "workspace", "documents", "settings", "holidays", "tasks"]), is_system=0),
@@ -595,14 +739,14 @@ seed_roles_if_needed()
 # ============= PYDANTIC MODELS =============
 
 class UserRole(BaseModel):
-    role: Literal['Admin', 'HR', 'Manager', 'Employee']
+    role: Literal['Admin', 'Accountant', 'HR', 'Manager', 'Employee']
 
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     email: EmailStr
     name: str
-    role: Literal['Admin', 'HR', 'Manager', 'Employee']
+    role: Literal['Admin', 'Accountant', 'HR', 'Manager', 'Employee']
     employee_id: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -848,8 +992,23 @@ class TaskDashboard(BaseModel):
     employees: List[EmployeeDashboardStats]
     tasks: Optional[List[Task]] = None
 
+class AttendanceSession(BaseModel):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+    id: str
+    session_number: int
+    punch_in: str
+    punch_out: Optional[str] = None
+    work_hours: float = 0.0
+    punch_in_lat: Optional[float] = None
+    punch_in_lng: Optional[float] = None
+    punch_out_lat: Optional[float] = None
+    punch_out_lng: Optional[float] = None
+    is_tour: Optional[int] = None
+    tour_approval_status: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 class Attendance(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     employee_id: str
     employee_name: str
@@ -857,10 +1016,13 @@ class Attendance(BaseModel):
     punch_in: Optional[str] = None
     punch_out: Optional[str] = None
     work_hours: float = 0.0
+    total_work_hours: float = 0.0
     status: Literal['Present', 'Absent', 'Late', 'Half Day'] = 'Present'
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_tour: Optional[int] = None
     tour_approval_status: Optional[str] = None
+    is_active_session: Optional[int] = None
+    sessions: Optional[List[AttendanceSession]] = None
 
 class AttendancePunch(BaseModel):
     employee_id: str
@@ -945,7 +1107,18 @@ class Expense(BaseModel):
     category: str
     description: str
     receipt_path: Optional[str] = None
-    status: Literal['Pending', 'Approved', 'Rejected'] = 'Pending'
+    status: Literal['Pending', 'Partially-Approved', 'Accountant-Approved', 'Approved', 'Rejected'] = 'Pending'
+    # First level approval (Accountant)
+    accountant_approver_id: Optional[str] = None
+    accountant_approver_name: Optional[str] = None
+    accountant_approved_at: Optional[datetime] = None
+    accountant_approved_amount: Optional[float] = None  # Partial approval amount
+    accountant_approval_reason: Optional[str] = None  # Reason for partial approval/rejection
+    # Second level approval (Admin)
+    admin_approver_id: Optional[str] = None
+    admin_approver_name: Optional[str] = None
+    admin_approved_at: Optional[datetime] = None
+    # Keep old fields for backward compatibility
     approver_id: Optional[str] = None
     approver_name: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -958,9 +1131,11 @@ class ExpenseCreate(BaseModel):
     description: str
 
 class ExpenseAction(BaseModel):
-    status: Literal['Approved', 'Rejected']
+    status: Literal['Partially-Approved', 'Accountant-Approved', 'Approved', 'Rejected']
     approver_id: str
     approver_name: str
+    approved_amount: Optional[float] = None  # For partial approval only
+    approval_reason: Optional[str] = None  # For partial approval/rejection reason
 
 class DailyWorkLog(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1297,6 +1472,66 @@ def get_db():
     finally:
         db.close()
 
+# ============= S3 HELPER FUNCTIONS =============
+
+def upload_to_s3(file_content: bytes, filename: str, folder: str = 'uploads') -> Optional[str]:
+    """
+    Upload file to S3 bucket and return the public URL.
+    If S3 is not configured, falls back to local storage.
+    """
+    if not USE_S3 or not s3_client:
+        # Fallback to local storage
+        return None
+    
+    try:
+        # Create S3 key with folder prefix
+        s3_key = f"{folder}/{uuid.uuid4()}/{filename}"
+        
+        # Upload to S3
+        s3_client.put_object(
+            Bucket=S3_BUCKET_NAME,
+            Key=s3_key,
+            Body=file_content,
+            ContentType='application/octet-stream'
+        )
+        
+        # Generate public URL
+        s3_url = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+        return s3_url
+    
+    except ClientError as e:
+        logging.error(f"S3 upload error: {str(e)}")
+        return None
+
+def delete_from_s3(file_url: str) -> bool:
+    """
+    Delete file from S3 bucket.
+    Extracts the S3 key from the public URL.
+    """
+    if not USE_S3 or not s3_client or not file_url:
+        return False
+    
+    try:
+        # Extract S3 key from URL
+        if S3_BUCKET_NAME in file_url:
+            s3_key = file_url.split(f"{S3_BUCKET_NAME}.s3")[1]
+            if s3_key.startswith('.').replace('.s3.', '/').startswith('/'):
+                # Clean up the key
+                s3_key = s3_key.split('/')[-1]
+                s3_key = '/'.join(file_url.split('/')[-3:])
+            else:
+                s3_key = '/'.join(file_url.split('/')[-3:])
+            
+            s3_client.delete_object(
+                Bucket=S3_BUCKET_NAME,
+                Key=s3_key
+            )
+            return True
+    except ClientError as e:
+        logging.error(f"S3 delete error: {str(e)}")
+    
+    return False
+
 # ============= HELPER FUNCTIONS =============
 
 def hash_password(password: str) -> str:
@@ -1605,19 +1840,20 @@ def upload_profile_photo(
         if not employee:
             raise HTTPException(status_code=404, detail='Employee record not found')
         
-        # Create employee folder
-        emp_folder = UPLOAD_DIR / employee.id
-        emp_folder.mkdir(exist_ok=True)
-        
-        # Save file
+        # Read file content
+        file_content = file.file.read()
         filename = f"profile_{uuid.uuid4()}{Path(file.filename).suffix}"
-        filepath = emp_folder / filename
         
-        with open(filepath, 'wb') as f:
-            f.write(file.file.read())
+        # Upload to S3 (required, no local fallback)
+        photo_path = upload_to_s3(file_content, filename, folder='profile_photos')
+        
+        if not photo_path:
+            raise HTTPException(
+                status_code=503,
+                detail='File upload service is temporarily unavailable. Please try again in a few moments.'
+            )
         
         # Update employee profile_photo path
-        photo_path = f"/uploads/{employee.id}/{filename}"
         employee.profile_photo = photo_path
         db.commit()
         db.refresh(employee)
@@ -1839,12 +2075,14 @@ def upload_task_attachment(
         file_content = file.file.read()
         filename = file.filename or 'attachment'
         
-        # Upload to S3
+        # Upload to S3 (required, no local fallback)
         attachment_url = upload_to_s3(file_content, filename, folder='tasks')
         
-        # If S3 upload fails, raise exception
         if not attachment_url:
-            raise HTTPException(status_code=500, detail='Failed to upload attachment to S3')
+            raise HTTPException(
+                status_code=503,
+                detail='File upload service is temporarily unavailable. Please try again in a few moments.'
+            )
         
         # Delete old attachment from S3 if it exists
         if task.attachment_path:
@@ -2449,11 +2687,14 @@ def add_task_attachment(
         file_content = file.file.read()
         filename = file.filename or 'attachment'
         
-        # Upload to S3 or local storage
+        # Upload to S3 (required, no local fallback)
         attachment_url = upload_to_s3(file_content, filename, folder='task_attachments')
         
         if not attachment_url:
-            raise HTTPException(status_code=400, detail='Failed to upload file')
+            raise HTTPException(
+                status_code=503,
+                detail='File upload service is temporarily unavailable. Please try again in a few moments.'
+            )
         
         # Determine file type
         file_ext = filename.split('.')[-1].lower() if '.' in filename else 'unknown'
@@ -2473,6 +2714,8 @@ def add_task_attachment(
         db.refresh(new_attachment)
         
         return TaskAttachment.model_validate(new_attachment)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -2532,7 +2775,22 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
     
     if punch_data.action == 'punch_in':
         if existing:
-            raise HTTPException(status_code=400, detail='Already punched in today')
+            # If they already have an active session, don't allow another punch in
+            if existing.is_active_session == 1:
+                raise HTTPException(status_code=400, detail='Already punched in today')
+            # If they've punched out before, they can punch in again for a new session
+            # Just mark the existing record as active again
+            existing.is_active_session = 1
+            db.commit()
+            db.refresh(existing)
+            return {
+                'message': 'Punched in again successfully (new session)' if at_office else 'Recorded as Tour (official travel). Pending approval from Admin/Manager.',
+                'attendance': existing,
+                'is_tour': not at_office,
+                'is_new_session': True,
+            }
+        
+        # First punch in of the day
         hour, minute = int(current_time.split(':')[0]), int(current_time.split(':')[1])
         if hour > 10 or (hour == 10 and minute > 30):
             status = 'Late'
@@ -2548,6 +2806,7 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             punch_in_lng=punch_data.longitude,
             is_tour=1 if not at_office else 0,
             tour_approval_status='pending' if not at_office else None,
+            is_active_session=1,
         )
         db.add(new_attendance)
         db.commit()
@@ -2556,32 +2815,135 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             'message': 'Punched in successfully' if at_office else 'Recorded as Tour (official travel). Pending approval from Admin/Manager.',
             'attendance': new_attendance,
             'is_tour': not at_office,
+            'is_new_session': False,
         }
     
     else:  # punch_out
         if not existing:
             raise HTTPException(status_code=400, detail='No punch in record found')
-        if existing.punch_out:
-            raise HTTPException(status_code=400, detail='Already punched out today')
+        if existing.is_active_session == 0:
+            raise HTTPException(status_code=400, detail='Not currently punched in')
+        
+        # Find the session number for this session
+        last_session = db.query(AttendanceSessionModel).filter(
+            AttendanceSessionModel.attendance_id == existing.id
+        ).order_by(AttendanceSessionModel.session_number.desc()).first()
+        
+        session_number = (last_session.session_number + 1) if last_session else 1
+        
+        # Calculate this session's work hours
         punch_in_time = datetime.strptime(existing.punch_in, '%H:%M:%S')
         punch_out_time = datetime.strptime(current_time, '%H:%M:%S')
         work_hours = (punch_out_time - punch_in_time).total_seconds() / 3600
+        
+        # Create session record
+        new_session = AttendanceSessionModel(
+            attendance_id=existing.id,
+            session_number=session_number,
+            punch_in=existing.punch_in,
+            punch_out=current_time,
+            work_hours=round(work_hours, 2),
+            punch_in_lat=existing.punch_in_lat,
+            punch_in_lng=existing.punch_in_lng,
+            punch_out_lat=punch_data.latitude,
+            punch_out_lng=punch_data.longitude,
+            is_tour=existing.is_tour,
+            tour_approval_status=existing.tour_approval_status,
+        )
+        db.add(new_session)
+        
+        # Update attendance record
         existing.punch_out = current_time
         existing.work_hours = round(work_hours, 2)
         existing.punch_out_lat = punch_data.latitude
         existing.punch_out_lng = punch_data.longitude
+        existing.is_active_session = 0  # Mark as not active
+        
+        # Calculate total work hours from all sessions
+        all_sessions = db.query(AttendanceSessionModel).filter(
+            AttendanceSessionModel.attendance_id == existing.id
+        ).all()
+        total_hours = sum(s.work_hours for s in all_sessions) + round(work_hours, 2)
+        existing.total_work_hours = round(total_hours, 2)
+        
         # If punch out is outside office, ensure record is marked as tour if not already
         if not at_office and existing.is_tour != 1:
             existing.is_tour = 1
             existing.tour_approval_status = 'pending'
+        
         db.commit()
         db.refresh(existing)
+        
         return {
             'message': 'Punched out successfully' if at_office else 'Punch out recorded as Tour. Pending approval from Admin/Manager.',
             'attendance': existing,
             'is_tour': not at_office,
+            'session_number': session_number,
+            'session_work_hours': round(work_hours, 2),
+            'total_work_hours': existing.total_work_hours,
+            'can_punch_in_again': True,  # Indicate they can punch in again
         }
 
+
+
+@api_router.get('/attendance/today')
+def get_today_attendance(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get today's attendance with all sessions for current user."""
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    existing = db.query(AttendanceModel).filter(
+        AttendanceModel.employee_id == current_user.employee_id,
+        AttendanceModel.date == today
+    ).first()
+    
+    if not existing:
+        return {
+            'attendance': None,
+            'sessions': [],
+            'total_work_hours': 0.0,
+            'is_punched_in': False,
+        }
+    
+    # Get all sessions
+    sessions = db.query(AttendanceSessionModel).filter(
+        AttendanceSessionModel.attendance_id == existing.id
+    ).order_by(AttendanceSessionModel.session_number).all()
+    
+    session_list = [
+        {
+            'id': s.id,
+            'session_number': s.session_number,
+            'punch_in': s.punch_in,
+            'punch_out': s.punch_out,
+            'work_hours': s.work_hours,
+            'punch_in_lat': s.punch_in_lat,
+            'punch_in_lng': s.punch_in_lng,
+            'punch_out_lat': s.punch_out_lat,
+            'punch_out_lng': s.punch_out_lng,
+            'is_tour': s.is_tour,
+        }
+        for s in sessions
+    ]
+    
+    return {
+        'attendance': {
+            'id': existing.id,
+            'employee_id': existing.employee_id,
+            'employee_name': existing.employee_name,
+            'date': existing.date,
+            'punch_in': existing.punch_in,
+            'punch_out': existing.punch_out,
+            'work_hours': existing.work_hours,
+            'total_work_hours': existing.total_work_hours,
+            'status': existing.status,
+            'is_active_session': existing.is_active_session,
+        },
+        'sessions': session_list,
+        'total_work_hours': existing.total_work_hours,
+        'is_punched_in': existing.is_active_session == 1,
+    }
 
 @api_router.get('/settings/office-location')
 def get_office_location_api(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -3176,23 +3538,32 @@ def delete_government_holiday(
 
 @api_router.post('/documents/upload')
 def upload_document(
-    employee_id: str,
-    employee_name: str,
-    document_type: str,
+    employee_id: str = Form(...),
+    employee_name: str = Form(...),
+    document_type: str = Form(...),
     file: UploadFile = File(...),
-    expiry_date: Optional[str] = None,
+    expiry_date: Optional[str] = Form(None),
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     can_upload_any = current_user.role in ['Admin', 'HR', 'Manager']
     if not can_upload_any and str(employee_id).strip() != str(current_user.employee_id or '').strip():
         raise HTTPException(status_code=403, detail='You can only upload documents for yourself')
-    emp_folder = UPLOAD_DIR / str(employee_id).replace('/', '_')
-    emp_folder.mkdir(parents=True, exist_ok=True)
+    
+    # Read file content
+    file_content = file.file.read()
     safe_name = file.filename or 'document'
-    file_path = emp_folder / safe_name
-    with open(file_path, 'wb') as f:
-        f.write(file.file.read())
+    filename = f"{document_type}_{uuid.uuid4()}{Path(safe_name).suffix or '.pdf'}"
+    
+    # Upload to S3 (required, no local fallback)
+    file_path = upload_to_s3(file_content, filename, folder='documents')
+    
+    if not file_path:
+        raise HTTPException(
+            status_code=503,
+            detail='File upload service is temporarily unavailable. Please try again in a few moments.'
+        )
+    
     new_document = DocumentModel(
         employee_id=str(employee_id).strip(),
         employee_name=employee_name or '',
@@ -3232,10 +3603,67 @@ def download_document(document_id: str, current_user: UserModel = Depends(get_cu
         raise HTTPException(status_code=404, detail='File not found')
     return FileResponse(file_path, filename=document.file_name)
 
+@api_router.get('/files/stream')
+def stream_file(file_url: str, current_user: UserModel = Depends(get_current_user)):
+    """Stream file from S3 for preview (images, PDFs, etc.)"""
+    from urllib.parse import urlparse
+    from fastapi.responses import Response
+    
+    if not file_url:
+        raise HTTPException(status_code=400, detail='file_url parameter is required')
+    
+    # Validate it's an S3 URL (security check)
+    if S3_BUCKET_NAME not in file_url:
+        raise HTTPException(status_code=400, detail='Invalid file URL - only S3 URLs are supported')
+    
+    try:
+        # Parse the S3 URL properly
+        # URL format: https://bucket-name.s3.region.amazonaws.com/key/path/file.ext
+        parsed_url = urlparse(file_url)
+        
+        # Extract the path and remove leading slash
+        s3_key = parsed_url.path.lstrip('/')
+        
+        if not s3_key:
+            raise HTTPException(status_code=400, detail='Could not extract file key from URL')
+        
+        logging.info(f"Streaming S3 file: s3://{S3_BUCKET_NAME}/{s3_key}")
+        
+        # Check if S3 is configured
+        if not s3_client or not USE_S3:
+            raise HTTPException(status_code=503, detail='File service is unavailable')
+        
+        # Get object from S3
+        response = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
+        file_content = response['Body'].read()
+        
+        # Determine content type from file extension or S3 metadata
+        content_type = response.get('ContentType', 'application/octet-stream')
+        filename = s3_key.split('/')[-1]
+        
+        # Return with proper headers for inline display
+        return Response(
+            content=file_content,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f"inline; filename=\"{filename}\"",
+                "Cache-Control": "public, max-age=3600",
+                "Access-Control-Allow-Origin": "*"
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error streaming file from S3: {str(e)}")
+        raise HTTPException(status_code=500, detail=f'Error retrieving file: {str(e)}')
+
 # ============= EXPENSE ROUTES =============
 
 @api_router.post('/expenses', response_model=Expense)
 def create_expense(expense_data: ExpenseCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Receipt is now compulsory, so we'll validate it through frontend
+    # and require it to be uploaded in the next step
     new_expense = ExpenseModel(
         employee_id=expense_data.employee_id,
         employee_name=expense_data.employee_name,
@@ -3258,17 +3686,22 @@ def upload_expense_receipt(
     expense = db.query(ExpenseModel).filter(ExpenseModel.id == expense_id).first()
     if not expense:
         raise HTTPException(status_code=404, detail='Expense not found')
-    if expense.employee_id != current_user.employee_id and current_user.role not in ['Admin', 'HR']:
+    if expense.employee_id != current_user.employee_id and current_user.role not in ['Admin', 'HR', 'Accountant']:
         raise HTTPException(status_code=403, detail='Not authorized to upload receipt for this expense')
-    expenses_folder = UPLOAD_DIR / 'expenses'
-    expenses_folder.mkdir(exist_ok=True)
-    emp_folder = expenses_folder / (expense.employee_id or 'unknown')
-    emp_folder.mkdir(exist_ok=True)
+    
+    # Read file content
+    file_content = file.file.read()
     filename = f"receipt_{uuid.uuid4()}{Path(file.filename).suffix or '.jpg'}"
-    filepath = emp_folder / filename
-    with open(filepath, 'wb') as f:
-        f.write(file.file.read())
-    receipt_path = f"/uploads/expenses/{expense.employee_id or 'unknown'}/{filename}"
+    
+    # Upload to S3 (required, no local fallback)
+    receipt_path = upload_to_s3(file_content, filename, folder='expenses')
+    
+    if not receipt_path:
+        raise HTTPException(
+            status_code=503,
+            detail='File upload service is temporarily unavailable. Please try again in a few moments.'
+        )
+    
     expense.receipt_path = receipt_path
     db.commit()
     db.refresh(expense)
@@ -3282,7 +3715,10 @@ def get_expenses(
     db: Session = Depends(get_db)
 ):
     query = db.query(ExpenseModel)
-    if current_user.role not in ['Admin', 'HR', 'Manager']:
+    # Accountant can see all expenses (for approval)
+    # Admin, HR, Manager can see all expenses
+    # Employee can only see their own expenses
+    if current_user.role not in ['Admin', 'HR', 'Manager', 'Accountant']:
         query = query.filter(ExpenseModel.employee_id == current_user.employee_id)
     elif employee_id:
         query = query.filter(ExpenseModel.employee_id == employee_id)
@@ -3297,15 +3733,74 @@ def update_expense_status(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Only Admin, HR, Manager can approve/reject; Employee can only submit expenses
-    if current_user.role not in ['Admin', 'HR', 'Manager']:
-        raise HTTPException(status_code=403, detail='Only Admin, HR, or Manager can approve or reject expenses')
     expense = db.query(ExpenseModel).filter(ExpenseModel.id == expense_id).first()
     if not expense:
         raise HTTPException(status_code=404, detail='Expense not found')
-    expense.status = action.status
-    expense.approver_id = action.approver_id
-    expense.approver_name = action.approver_name
+    
+    # Check if expense has receipt attached
+    if not expense.receipt_path:
+        raise HTTPException(status_code=400, detail='Expense cannot be approved without a receipt attachment')
+    
+    # Handle approval based on user role and current expense status
+    if action.status == 'Rejected':
+        # Any approver (Accountant or Admin) can reject at any time
+        if current_user.role not in ['Admin', 'Accountant']:
+            raise HTTPException(status_code=403, detail='Only Admin or Accountant can reject expenses')
+        expense.status = 'Rejected'
+        expense.approver_id = action.approver_id
+        expense.approver_name = action.approver_name
+        # Store rejection reason if provided
+        if action.approval_reason:
+            expense.accountant_approval_reason = action.approval_reason
+    
+    elif action.status == 'Partially-Approved':
+        # Only Accountant can partially approve from Pending
+        if current_user.role != 'Accountant':
+            raise HTTPException(status_code=403, detail='Only Accountant can partially approve expenses')
+        if expense.status != 'Pending':
+            raise HTTPException(status_code=400, detail='Expense must be in Pending status for partial approval')
+        
+        # Validate approved amount
+        if not action.approved_amount or action.approved_amount <= 0:
+            raise HTTPException(status_code=400, detail='Approved amount must be greater than 0')
+        if action.approved_amount > expense.amount:
+            raise HTTPException(status_code=400, detail='Approved amount cannot exceed total expense amount')
+        if not action.approval_reason or action.approval_reason.strip() == '':
+            raise HTTPException(status_code=400, detail='Reason is required for partial approval')
+        
+        expense.status = 'Partially-Approved'
+        expense.accountant_approver_id = action.approver_id
+        expense.accountant_approver_name = action.approver_name
+        expense.accountant_approved_at = datetime.now(timezone.utc)
+        expense.accountant_approved_amount = action.approved_amount
+        expense.accountant_approval_reason = action.approval_reason
+    
+    elif action.status == 'Accountant-Approved':
+        # Only Accountant can approve to Accountant-Approved from Pending
+        if current_user.role != 'Accountant':
+            raise HTTPException(status_code=403, detail='Only Accountant can approve expenses at first level')
+        if expense.status != 'Pending':
+            raise HTTPException(status_code=400, detail='Expense must be in Pending status for accountant approval')
+        expense.status = 'Accountant-Approved'
+        expense.accountant_approver_id = action.approver_id
+        expense.accountant_approver_name = action.approver_name
+        expense.accountant_approved_at = datetime.now(timezone.utc)
+        expense.accountant_approved_amount = None  # Fully approved, no partial amount
+    
+    elif action.status == 'Approved':
+        # Only Admin can approve to Approved from Accountant-Approved or Partially-Approved
+        if current_user.role != 'Admin':
+            raise HTTPException(status_code=403, detail='Only Admin can approve expenses at second level')
+        if expense.status not in ['Accountant-Approved', 'Partially-Approved']:
+            raise HTTPException(status_code=400, detail='Expense must be in Accountant-Approved or Partially-Approved status for admin approval')
+        expense.status = 'Approved'
+        expense.admin_approver_id = action.approver_id
+        expense.admin_approver_name = action.approver_name
+        expense.admin_approved_at = datetime.now(timezone.utc)
+    
+    else:
+        raise HTTPException(status_code=400, detail='Invalid approval status')
+    
     db.commit()
     db.refresh(expense)
     return expense
@@ -3341,11 +3836,20 @@ def get_expenses_summary_by_employee(
         if eid not in by_employee:
             by_employee[eid] = {'employee_id': eid, 'employee_name': name, 'total_approved': 0.0, 'total_rejected': 0.0, 'total_pending': 0.0}
         amt = float(exp.amount or 0)
+        
         if exp.status == 'Approved':
+            # Fully approved amount
             by_employee[eid]['total_approved'] += amt
+        elif exp.status == 'Partially-Approved':
+            # Approved amount goes to approved
+            partial_amt = float(exp.accountant_approved_amount or 0)
+            by_employee[eid]['total_approved'] += partial_amt
+            # Unapproved amount is counted as rejected
+            by_employee[eid]['total_rejected'] += (amt - partial_amt)
         elif exp.status == 'Rejected':
             by_employee[eid]['total_rejected'] += amt
         else:
+            # Pending and Accountant-Approved both count as pending
             by_employee[eid]['total_pending'] += amt
     result = list(by_employee.values())
     result.sort(key=lambda x: (x['employee_name'].lower(), x['employee_id']))
@@ -3610,6 +4114,19 @@ def get_daily_work_logs(
     if month:
         query = query.filter(DailyWorkLogModel.log_date.like(f'{month}%'))
     return query.order_by(DailyWorkLogModel.log_date.desc()).all()
+
+@api_router.get('/daily-work-logs/check-today')
+def check_today_work_log(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Check if user has submitted work log for today"""
+    today = datetime.now().strftime('%Y-%m-%d')
+    existing = db.query(DailyWorkLogModel).filter(
+        DailyWorkLogModel.employee_id == current_user.employee_id,
+        DailyWorkLogModel.log_date == today
+    ).first()
+    return {'has_logged_today': existing is not None, 'today': today}
 
 # ============= LEADS ROUTES (Admin, Manager, Sales) =============
 
