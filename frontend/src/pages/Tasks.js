@@ -127,7 +127,7 @@ const TaskCard = ({ task, onClick, onStatusChange }) => {
             </div>
           )}
           <div className={`flex items-center gap-1 ${isOverdue ? 'text-red-600 font-semibold' : ''}`}>
-            <Calendar className="h-3 w-3" />
+            <CalendarIcon className="h-3 w-3" />
             <span>{task.due_date}</span>
           </div>
           {task.completion_percentage > 0 && (
@@ -217,6 +217,7 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
     assigned_to_employee_id: task?.assigned_to_employee_id || '',
     completion_percentage: task?.completion_percentage || 0,
   });
+  const [completionUpdate, setCompletionUpdate] = useState(task?.completion_percentage || 0);
   const [comments, setComments] = useState([]);
   const [timeLogs, setTimeLogs] = useState([]);
   const [attachments, setAttachments] = useState([]);
@@ -241,6 +242,7 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
         assigned_to_employee_id: task.assigned_to_employee_id || '',
         completion_percentage: task.completion_percentage || 0,
       });
+      setCompletionUpdate(task.completion_percentage || 0);
       setEditMode(false);
     }
   }, [isOpen, task]);
@@ -372,11 +374,32 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
     }
   };
 
+  const handleQuickCompletionUpdate = async () => {
+    if (!task) return;
+
+    const newValue = Number.isFinite(completionUpdate) ? completionUpdate : 0;
+
+    try {
+      const response = await axios.put(
+        `${API}/tasks/${task.id}`,
+        { completion_percentage: newValue },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+      );
+      if (response.status === 200) {
+        toast.success('Completion updated');
+        onUpdate();
+      }
+    } catch (error) {
+      console.error('Completion update error:', error.response?.data);
+      toast.error(error.response?.data?.detail || 'Failed to update');
+    }
+  };
+
   if (!task || !isOpen) return null;
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent className="w-full sm:w-[600px] bg-white border-l border-gray-200 overflow-y-auto" side="right">
+      <SheetContent className="w-full sm:w-[720px] lg:w-[800px] bg-white border-l border-gray-200 overflow-y-auto" side="right">
         <SheetHeader className="sticky top-0 z-20 bg-white pb-4">
           <div className="flex items-start justify-between">
             <div className="flex-1">
@@ -523,32 +546,41 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 font-medium uppercase">Completion</p>
-                    <div className="mt-2 flex items-center gap-3">
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={task.completion_percentage || 0}
-                        onChange={async (e) => {
-                          const newValue = parseInt(e.target.value);
-                          try {
-                            const response = await axios.put(
-                              `${API}/tasks/${task.id}`,
-                              { completion_percentage: newValue },
-                              { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
-                            );
-                            if (response.status === 200) {
-                              toast.success('Completion updated');
-                              onUpdate();
+                    <div className="mt-2 space-y-2">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="5"
+                          value={completionUpdate}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            if (Number.isNaN(val)) {
+                              setCompletionUpdate(0);
+                            } else {
+                              setCompletionUpdate(Math.min(100, Math.max(0, val)));
                             }
-                          } catch (error) {
-                            console.error('Completion update error:', error.response?.data);
-                            toast.error(error.response?.data?.detail || 'Failed to update');
-                          }
-                        }}
-                        className="flex-1 h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                      />
-                      <span className="text-sm font-bold text-gray-900 min-w-[45px]">{task.completion_percentage || 0}%</span>
+                          }}
+                          className="w-20 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"
+                        />
+                        <span className="text-sm font-bold text-gray-900 min-w-[45px]">
+                          {completionUpdate}%
+                        </span>
+                        <Button
+                          size="sm"
+                          className="bg-blue-600 text-white"
+                          onClick={handleQuickCompletionUpdate}
+                        >
+                          Update
+                        </Button>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full"
+                          style={{ width: `${completionUpdate}%` }}
+                        ></div>
+                      </div>
                     </div>
                   </div>
                   <div>
@@ -781,6 +813,11 @@ export const Tasks = () => {
     }),
     useSensor(KeyboardSensor)
   );
+
+  const handleDateRangeChange = (key, value) => {
+    setDateRange((prev) => ({ ...prev, [key]: value }));
+    setTimeout(() => (viewMode === 'dashboard' ? fetchDashboardData() : fetchBoardData()), 100);
+  };
 
   useEffect(() => {
     fetchEmployees();
@@ -1123,28 +1160,63 @@ export const Tasks = () => {
                 ))}
               </select>
             )}
-
-            <Input
-              type="date"
-              value={dateRange.startDate}
-              onChange={(e) => {
-                setDateRange({ ...dateRange, startDate: e.target.value });
-                setTimeout(() => (viewMode === 'dashboard' ? fetchDashboardData() : fetchBoardData()), 100);
-              }}
-              className="h-8 border border-gray-300 rounded px-2 text-xs w-28"
-              title="Start date"
-            />
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="h-8 border border-gray-300 rounded px-2 text-xs bg-white flex items-center gap-1 min-w-[7rem]"
+                  title="Start date"
+                >
+                  <CalendarIcon className="h-3.5 w-3.5 text-gray-500" />
+                  <span className="truncate">
+                    {dateRange.startDate
+                      ? new Date(dateRange.startDate).toLocaleDateString('en-GB')
+                      : 'Start date'}
+                  </span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={dateRange.startDate ? new Date(dateRange.startDate) : undefined}
+                  onSelect={(date) => {
+                    if (!date) return;
+                    const value = date.toISOString().split('T')[0];
+                    handleDateRangeChange('startDate', value);
+                  }}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
             <span className="text-gray-400 text-xs">-</span>
-            <Input
-              type="date"
-              value={dateRange.endDate}
-              onChange={(e) => {
-                setDateRange({ ...dateRange, endDate: e.target.value });
-                setTimeout(() => (viewMode === 'dashboard' ? fetchDashboardData() : fetchBoardData()), 100);
-              }}
-              className="h-8 border border-gray-300 rounded px-2 text-xs w-28"
-              title="End date"
-            />
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="h-8 border border-gray-300 rounded px-2 text-xs bg-white flex items-center gap-1 min-w-[7rem]"
+                  title="End date"
+                >
+                  <CalendarIcon className="h-3.5 w-3.5 text-gray-500" />
+                  <span className="truncate">
+                    {dateRange.endDate
+                      ? new Date(dateRange.endDate).toLocaleDateString('en-GB')
+                      : 'End date'}
+                  </span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={dateRange.endDate ? new Date(dateRange.endDate) : undefined}
+                  onSelect={(date) => {
+                    if (!date) return;
+                    const value = date.toISOString().split('T')[0];
+                    handleDateRangeChange('endDate', value);
+                  }}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
 
             <div className="relative flex-1 md:flex-0 md:w-56">
               <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
