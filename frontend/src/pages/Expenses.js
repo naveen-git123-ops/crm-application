@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Check, X, Receipt, Image as ImageIcon, Calculator, Loader } from 'lucide-react';
+import { Plus, Check, X, Receipt, Image as ImageIcon, Calculator, Loader, Paperclip } from 'lucide-react';
 import { FilePreviewSimple } from '@/components/FilePreviewSimple';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
@@ -48,6 +48,10 @@ export const Expenses = () => {
   const [selectedExpenseAmount, setSelectedExpenseAmount] = useState(0);
   const [partialAmount, setPartialAmount] = useState('');
   const [partialReason, setPartialReason] = useState('');
+  const [receiptRetryDialogOpen, setReceiptRetryDialogOpen] = useState(false);
+  const [retryExpenseId, setRetryExpenseId] = useState(null);
+  const [retryReceiptFile, setRetryReceiptFile] = useState(null);
+  const [isRetryingReceipt, setIsRetryingReceipt] = useState(false);
   const [formData, setFormData] = useState({
     employee_id: '',
     employee_name: '',
@@ -105,6 +109,8 @@ export const Expenses = () => {
     if (isSubmitting) return;
     
     setIsSubmitting(true);
+    let expenseCreated = false;
+    
     try {
       // Validate that receipt file is attached
       if (!receiptFile) {
@@ -122,24 +128,41 @@ export const Expenses = () => {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       
-      // Upload receipt file to S3
-      const formDataUpload = new FormData();
-      formDataUpload.append('file', receiptFile);
-      await axios.post(`${API}/expenses/${data.id}/receipt`, formDataUpload, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'multipart/form-data'
-        }
-      });
+      expenseCreated = true;
+      let receiptUploadSuccess = false;
       
-      toast.success('Expense submitted successfully');
+      // Upload receipt file to S3
+      try {
+        const formDataUpload = new FormData();
+        formDataUpload.append('file', receiptFile);
+        await axios.post(`${API}/expenses/${data.id}/receipt`, formDataUpload, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'multipart/form-data'
+          }
+        });
+        receiptUploadSuccess = true;
+      } catch (uploadError) {
+        console.error('Receipt upload failed:', uploadError);
+        // Expense was created, but receipt upload failed
+        toast.warning('Expense created, but receipt upload failed. Please retry uploading the receipt.');
+      }
+      
+      if (receiptUploadSuccess) {
+        toast.success('Expense submitted successfully with receipt');
+      }
+      
       setDialogOpen(false);
       setFormData({ employee_id: '', employee_name: '', amount: '', category: 'Travel', description: '' });
       setReceiptFile(null);
       fetchExpenses();
       if (user?.role === 'Admin') fetchSummary();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to submit expense');
+      if (expenseCreated) {
+        toast.error('Expense created but receipt upload failed. Please retry.');
+      } else {
+        toast.error(error.response?.data?.detail || 'Failed to submit expense');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -198,6 +221,34 @@ export const Expenses = () => {
     setPartialApprovalDialogOpen(true);
   };
 
+  const handleReceiptRetry = async () => {
+    if (!retryReceiptFile) {
+      toast.error('Please select a receipt file');
+      return;
+    }
+    
+    setIsRetryingReceipt(true);
+    try {
+      const formDataUpload = new FormData();
+      formDataUpload.append('file', retryReceiptFile);
+      await axios.post(`${API}/expenses/${retryExpenseId}/receipt`, formDataUpload, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      toast.success('Receipt uploaded successfully');
+      setReceiptRetryDialogOpen(false);
+      setRetryReceiptFile(null);
+      setRetryExpenseId(null);
+      fetchExpenses();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to upload receipt');
+    } finally {
+      setIsRetryingReceipt(false);
+    }
+  };
+
   // Check if user can approve (Accountant or Admin)
   const canApprove = !!user?.role && ['Admin', 'Accountant'].includes(user.role);
   
@@ -230,6 +281,9 @@ export const Expenses = () => {
   const canAdminApprove = (expense) => isAdmin && (expense.status === 'Accountant-Approved' || expense.status === 'Partially-Approved') && expense.receipt_path;
   const canPartiallyApprove = (expense) => isAccountant && expense.status === 'Pending' && expense.receipt_path;
   const canReject = (expense) => canApprove && (expense.status === 'Pending' || expense.status === 'Accountant-Approved' || expense.status === 'Partially-Approved') && expense.receipt_path;
+  
+  // Check if Accountant can see but receipt is missing
+  const needsReceiptForApproval = (expense) => isAccountant && expense.status === 'Pending' && !expense.receipt_path;
 
   const filteredExpenses = expenses.filter(exp => {
     if (activeTab !== 'All' && exp.status !== activeTab) return false;
@@ -564,7 +618,7 @@ export const Expenses = () => {
                 </div>
               </div>
               {canApprove && (
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap flex-col md:flex-row">
                   {canAccountantApprove(exp) && (
                     <>
                       <Button
@@ -583,6 +637,27 @@ export const Expenses = () => {
                         >
                           <Check className="h-4 w-4 mr-1" />
                           Partially Approve
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  {needsReceiptForApproval(exp) && (
+                    <>
+                      <div className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded">
+                        ⚠️ Receipt needed for approval
+                      </div>
+                      {exp.employee_id === user?.employee_id && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-amber-400 text-amber-700 hover:bg-amber-50 h-9"
+                          onClick={() => {
+                            setRetryExpenseId(exp.id);
+                            setReceiptRetryDialogOpen(true);
+                          }}
+                        >
+                          <Paperclip className="h-4 w-4 mr-1" />
+                          Upload Receipt
                         </Button>
                       )}
                     </>
@@ -678,6 +753,67 @@ export const Expenses = () => {
             <div className="flex justify-end gap-3 pt-4">
               <Button type="button" variant="outline" onClick={() => setPartialApprovalDialogOpen(false)}>Cancel</Button>
               <Button type="button" className="bg-purple-600 hover:bg-purple-700 text-white" onClick={handlePartialApprovalSubmit}>Submit Partial Approval</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Receipt Retry Upload Dialog */}
+      <Dialog open={receiptRetryDialogOpen} onOpenChange={setReceiptRetryDialogOpen}>
+        <DialogContent className="max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+          <div className="bg-amber-600 text-white p-6 rounded-t-lg">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold text-white">Upload Receipt</DialogTitle>
+              <p className="text-amber-100 text-sm mt-1">Upload the missing receipt for this expense</p>
+            </DialogHeader>
+          </div>
+          <div className="space-y-6 p-6">
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold text-gray-700">Receipt / Screenshot *</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => setRetryReceiptFile(e.target.files?.[0] || null)}
+                  className="h-11 border border-gray-300"
+                  disabled={isRetryingReceipt}
+                  required
+                />
+                {retryReceiptFile && (
+                  <span className="text-xs text-gray-500 truncate max-w-[120px]">{retryReceiptFile.name}</span>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-4">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => {
+                  setReceiptRetryDialogOpen(false);
+                  setRetryReceiptFile(null);
+                }}
+                disabled={isRetryingReceipt}
+              >
+                Cancel
+              </Button>
+              <Button 
+                type="button" 
+                disabled={isRetryingReceipt} 
+                className={`text-white ${isRetryingReceipt ? 'bg-gray-400 cursor-not-allowed' : 'bg-amber-600 hover:bg-amber-700'}`}
+                onClick={handleReceiptRetry}
+              >
+                {isRetryingReceipt ? (
+                  <>
+                    <Loader className="h-4 w-4 mr-2 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Paperclip className="h-4 w-4 mr-2" />
+                    Upload Receipt
+                  </>
+                )}
+              </Button>
             </div>
           </div>
         </DialogContent>

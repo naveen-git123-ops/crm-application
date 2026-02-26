@@ -1550,7 +1550,7 @@ def create_access_token(user_id: str, email: str, role: str) -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
     try:
         token = credentials.credentials
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -1565,7 +1565,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 def require_permission(permission: str):
     """Dependency for checking user has specific permission"""
-    async def verify_permission(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    def verify_permission(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
         if current_user.role == 'Admin':
             return current_user  # Admins have all permissions
         
@@ -1717,7 +1717,7 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
     return {'token': token, 'user': user_data}
 
 @api_router.get('/auth/me', response_model=UserDetails)
-async def get_me(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_me(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     # Base user details
     user_data = {
         'id': current_user.id,
@@ -2823,6 +2823,19 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             raise HTTPException(status_code=400, detail='No punch in record found')
         if existing.is_active_session == 0:
             raise HTTPException(status_code=400, detail='Not currently punched in')
+        
+        # Check if work log has been submitted for today (for employees only, not admin)
+        if current_user.role == 'Employee':
+            today = datetime.now().strftime('%Y-%m-%d')
+            work_log_exists = db.query(DailyWorkLogModel).filter(
+                DailyWorkLogModel.employee_id == current_user.employee_id,
+                DailyWorkLogModel.log_date == today
+            ).first()
+            if not work_log_exists:
+                raise HTTPException(
+                    status_code=400, 
+                    detail='Work log submission is mandatory before punch out. Please submit your work summary first.'
+                )
         
         # Find the session number for this session
         last_session = db.query(AttendanceSessionModel).filter(

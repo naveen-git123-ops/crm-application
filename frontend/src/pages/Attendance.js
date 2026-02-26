@@ -8,11 +8,71 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Clock, Calendar, LogIn, LogOut, AlertCircle, User, TrendingDown, MapPin, Briefcase, Check, X } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { formatISTDate, formatISTDateTime } from '@/utils/date';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
 const LOGIN_START = '10:00';
 const LOGIN_END = '10:30';
+
+// Helper function to format punch times in IST (HH:MM:SS format)
+const formatPunchTime = (punchTimeStr) => {
+  if (!punchTimeStr) return '–';
+  
+  // If it's a full ISO timestamp, parse it and convert to IST
+  if (punchTimeStr.includes('T') || punchTimeStr.includes('Z')) {
+    try {
+      const date = new Date(punchTimeStr);
+      const istTime = new Intl.DateTimeFormat('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Kolkata'
+      }).format(date);
+      return istTime;
+    } catch {
+      return punchTimeStr; // Fallback if parsing fails
+    }
+  }
+  
+  // If it's just HH:MM:SS in UTC, convert to IST by adding 5.5 hours
+  try {
+    const [hours, minutes, seconds] = punchTimeStr.split(':').map(Number);
+    let totalMinutes = hours * 60 + minutes + 330; // 330 minutes = 5.5 hours
+    const istHours = Math.floor(totalMinutes / 60) % 24;
+    const istMinutes = totalMinutes % 60;
+    const istSeconds = seconds || 0;
+    return `${String(istHours).padStart(2, '0')}:${String(istMinutes).padStart(2, '0')}:${String(istSeconds).padStart(2, '0')}`;
+  } catch {
+    return punchTimeStr; // Fallback if conversion fails
+  }
+};
+
+// Helper function to format current time in IST (HH:MM:SS format)
+const formatCurrentTimeIST = (date) => {
+  if (!date) return '';
+  const istTime = new Intl.DateTimeFormat('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Kolkata',
+  }).format(date);
+  return istTime;
+};
+
+// Helper function to format current date in IST
+const formatCurrentDateIST = (date) => {
+  if (!date) return '';
+  return new Intl.DateTimeFormat('en-IN', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    timeZone: 'Asia/Kolkata',
+  }).format(date);
+};
 
 export const Attendance = () => {
   const { user, checkTodayWorkLog } = useAuth();
@@ -40,6 +100,7 @@ export const Attendance = () => {
   const [showPunchOutWorkLogDialog, setShowPunchOutWorkLogDialog] = useState(false);
   const [workLogSummary, setWorkLogSummary] = useState('');
   const [isSubmittingWorkLog, setIsSubmittingWorkLog] = useState(false);
+  const [pendingPunchAction, setPendingPunchAction] = useState(null);
 
   const canManageAttendance = ['Admin', 'HR'].includes(user?.role);
   const canApproveTour = ['Admin', 'Manager'].includes(user?.role);
@@ -187,6 +248,30 @@ export const Attendance = () => {
       toast.error('Employee information not available');
       return;
     }
+
+    // For punch_out by employees (non-admins), require work log first
+    if (action === 'punch_out' && !canManageAttendance) {
+      try {
+        const workLogStatus = await checkTodayWorkLog();
+        if (!workLogStatus?.has_logged_today) {
+          // Work log not submitted, show dialog to force submission
+          setWorkLogSummary('');
+          setPendingPunchAction(action); // Store that we need to punch out after work log
+          setShowPunchOutWorkLogDialog(true);
+          return; // Stop here, don't punch out yet
+        }
+      } catch (err) {
+        console.error('Failed to check work log:', err);
+        toast.error('Unable to verify work log status');
+        return;
+      }
+    }
+
+    // Work log exists or is punch_in or user is admin, proceed with punch
+    await executePunch(action, employeeId);
+  };
+
+  const executePunch = async (action, employeeId) => {
     let latitude = null;
     let longitude = null;
     if (!canManageAttendance) {
@@ -216,18 +301,6 @@ export const Attendance = () => {
       fetchAttendance();
       if (!canManageAttendance) {
         fetchTodayAttendanceWithSessions();
-        // After punch_out, check if work log has been submitted
-        if (action === 'punch_out') {
-          try {
-            const workLogStatus = await checkTodayWorkLog();
-            if (!workLogStatus?.has_logged_today) {
-              setWorkLogSummary('');
-              setShowPunchOutWorkLogDialog(true);
-            }
-          } catch (err) {
-            console.error('Failed to check work log:', err);
-          }
-        }
       }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Punch failed');
@@ -258,6 +331,13 @@ export const Attendance = () => {
       toast.success('Work log submitted successfully');
       setWorkLogSummary('');
       setShowPunchOutWorkLogDialog(false);
+      
+      // Now execute the pending punch action (usually punch_out)
+      if (pendingPunchAction) {
+        const employeeId = user?.employee_id;
+        setPendingPunchAction(null);
+        await executePunch(pendingPunchAction, employeeId);
+      }
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to submit work log');
     } finally {
@@ -349,9 +429,9 @@ export const Attendance = () => {
       <Card className="p-4 sm:p-6 border border-gray-200 bg-white shadow-sm">
         <div className="flex justify-between items-center gap-4">
           <div className="min-w-0">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-widest mb-1">Current Time</p>
-            <p className="text-2xl sm:text-4xl font-bold font-mono text-gray-900">{format(currentTime, 'HH:mm:ss')}</p>
-            <p className="text-xs sm:text-sm text-gray-600 mt-1">{format(currentTime, 'EEEE, MMM d')}</p>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-widest mb-1">Current Time (IST)</p>
+            <p className="text-2xl sm:text-4xl font-bold font-mono text-gray-900">{formatCurrentTimeIST(currentTime)}</p>
+            <p className="text-xs sm:text-sm text-gray-600 mt-1">{formatCurrentDateIST(currentTime)}</p>
           </div>
           <Clock className="h-10 w-10 sm:h-14 sm:w-14 text-gray-300 flex-shrink-0" />
         </div>
@@ -435,11 +515,11 @@ export const Attendance = () => {
               <div className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <p className="text-gray-600 text-xs uppercase font-semibold">First Punch In</p>
-                  <p className="font-mono font-bold text-blue-900 text-lg">{todayAttendance.punch_in || '–'}</p>
+                  <p className="font-mono font-bold text-blue-900 text-lg">{formatPunchTime(todayAttendance.punch_in)}</p>
                 </div>
                 <div>
                   <p className="text-gray-600 text-xs uppercase font-semibold">Last Punch Out</p>
-                  <p className="font-mono font-bold text-blue-900 text-lg">{todayAttendance.punch_out || '–'}</p>
+                  <p className="font-mono font-bold text-blue-900 text-lg">{formatPunchTime(todayAttendance.punch_out)}</p>
                 </div>
                 <div>
                   <p className="text-gray-600 text-xs uppercase font-semibold">Total Work Hours</p>
@@ -472,8 +552,8 @@ export const Attendance = () => {
                         <div className="flex-1">
                           <p className="font-medium text-gray-900">Session {session.session_number}</p>
                           <p className="text-gray-600 text-xs">
-                            <span className="font-mono">{session.punch_in}</span>
-                            {session.punch_out && <> → <span className="font-mono">{session.punch_out}</span></>}
+                            <span className="font-mono">{formatPunchTime(session.punch_in)}</span>
+                            {session.punch_out && <> → <span className="font-mono">{formatPunchTime(session.punch_out)}</span></>}
                           </p>
                         </div>
                         <div className="text-right">
@@ -537,8 +617,8 @@ export const Attendance = () => {
                         <span className="font-medium text-gray-900">{row.employee_name}</span>
                         <span className="text-xs text-gray-500 block">{row.employee_id}</span>
                       </td>
-                      <td className="py-3 px-4 font-mono text-gray-700">{row.punch_in || '–'}</td>
-                      <td className="py-3 px-4 font-mono text-gray-700">{row.punch_out || '–'}</td>
+                      <td className="py-3 px-4 font-mono text-gray-700">{formatPunchTime(row.punch_in)}</td>
+                      <td className="py-3 px-4 font-mono text-gray-700">{formatPunchTime(row.punch_out)}</td>
                       <td className="py-3 px-4 font-mono text-gray-700">{row.work_hours?.toFixed(2) ?? '–'} hrs</td>
                       <td className="py-3 px-4">
                         <div className="flex gap-2">
@@ -629,8 +709,8 @@ export const Attendance = () => {
                   <tr key={`${row.date}-${row.employee_id}-${idx}`} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="p-3 font-mono text-gray-900">{row.date}</td>
                     <td className="p-3 text-gray-900">{row.employee_name}</td>
-                    <td className="p-3 font-mono text-gray-700">{row.punch_in || '–'}</td>
-                    <td className="p-3 font-mono text-gray-700">{row.punch_out || '–'}</td>
+                    <td className="p-3 font-mono text-gray-700">{formatPunchTime(row.punch_in)}</td>
+                    <td className="p-3 font-mono text-gray-700">{formatPunchTime(row.punch_out)}</td>
                     <td className="p-3 font-mono text-gray-700">{row.work_hours?.toFixed(2) ?? '0'}</td>
                     <td className="p-3">
                       <span
@@ -702,7 +782,7 @@ export const Attendance = () => {
                   <tr key={row.id} className="border-b border-gray-100 hover:bg-amber-50/50">
                     <td className="p-3 font-mono text-gray-900">{row.date}</td>
                     <td className="p-3 text-gray-900">{row.employee_name}</td>
-                    <td className="p-3 font-mono text-amber-700">{row.punch_in}</td>
+                    <td className="p-3 font-mono text-amber-700">{formatPunchTime(row.punch_in)}</td>
                     <td className="p-3 font-medium text-amber-700">{row.minutes_late} min</td>
                   </tr>
                 ))}
@@ -792,8 +872,8 @@ export const Attendance = () => {
                   .map((record) => (
                     <tr key={record.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="p-3 font-mono text-gray-900">{record.date}</td>
-                      <td className="p-3 font-mono text-gray-700">{record.punch_in || '–'}</td>
-                      <td className="p-3 font-mono text-gray-700">{record.punch_out || '–'}</td>
+                      <td className="p-3 font-mono text-gray-700">{formatPunchTime(record.punch_in)}</td>
+                      <td className="p-3 font-mono text-gray-700">{formatPunchTime(record.punch_out)}</td>
                       <td className="p-3 font-mono text-gray-700">{record.work_hours?.toFixed(2) ?? 0}</td>
                       <td className="p-3">
                         <span
@@ -819,55 +899,56 @@ export const Attendance = () => {
         </Card>
       )}
 
-      {/* Punch Out Work Log Dialog */}
-      <Dialog open={showPunchOutWorkLogDialog} onOpenChange={setShowPunchOutWorkLogDialog}>
-        <DialogContent className="sm:max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0">
-          <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+      {/* Punch Out Work Log Dialog - MANDATORY */}
+      <Dialog open={showPunchOutWorkLogDialog} onOpenChange={() => {}} >
+        <DialogContent className="sm:max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0 pointer-events-auto">
+          <div className="bg-amber-600 text-white p-6 rounded-t-lg">
             <DialogHeader>
               <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
                 <AlertCircle className="h-5 w-5" />
-                Work Log Submission
+                Work Log Required Before Punch Out
               </DialogTitle>
-              <DialogDescription className="text-blue-100 text-sm mt-1">
-                Please submit your work summary for today before closing.
+              <DialogDescription className="text-amber-100 text-sm mt-1">
+                You must submit your work summary before you can punch out. This is mandatory.
               </DialogDescription>
             </DialogHeader>
           </div>
 
           <div className="space-y-4 p-6">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+              <p className="font-semibold">📋 Please describe what you worked on today</p>
+              <p className="text-xs text-amber-700 mt-1">Include tasks completed, achievements, and any blockers or challenges faced.</p>
+            </div>
             <div>
               <Label htmlFor="punch-work-summary" className="text-sm font-semibold text-gray-900 block mb-2">
-                Today's Work Summary
+                Today's Work Summary *
               </Label>
               <textarea
                 id="punch-work-summary"
                 value={workLogSummary}
                 onChange={(e) => setWorkLogSummary(e.target.value)}
-                placeholder="Describe what you worked on today..."
+                placeholder="E.g., Completed bug fixes for feature X, attended team meeting, started documentation for API..."
                 rows={4}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
               />
+              <p className="text-xs text-gray-500 mt-1">{workLogSummary.trim().length} characters entered</p>
             </div>
           </div>
 
-          <div className="flex gap-3 justify-end p-6 border-t border-gray-200">
+          <div className="flex gap-3 justify-end p-6 border-t border-gray-200 bg-gray-50">
             <Button
-              variant="outline"
-              onClick={() => {
-                setShowPunchOutWorkLogDialog(false);
-                setWorkLogSummary('');
-              }}
-              disabled={isSubmittingWorkLog}
-              className="px-4 py-2"
-            >
-              Skip
-            </Button>
-            <Button
-              className="bg-blue-600 text-white hover:bg-blue-700 px-4 py-2"
+              className="bg-amber-600 text-white hover:bg-amber-700 px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handleSubmitPunchOutWorkLog}
               disabled={isSubmittingWorkLog || !workLogSummary.trim()}
             >
-              {isSubmittingWorkLog ? 'Submitting...' : 'Submit Work Log'}
+              {isSubmittingWorkLog ? (
+                <>
+                  <span className="inline-block animate-spin mr-2">⏳</span>
+                  Submitting...
+                </>
+              ) : (
+                'Submit & Punch Out'
+              )}
             </Button>
           </div>
         </DialogContent>

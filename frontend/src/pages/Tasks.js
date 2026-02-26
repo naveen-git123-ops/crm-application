@@ -29,6 +29,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { formatISTDate, formatISTDateTime } from '@/utils/date';
 import {
   Plus,
   Search,
@@ -62,7 +63,7 @@ const STATUS_COLORS = {
 };
 
 // Task Card Component
-const TaskCard = ({ task, onClick, onStatusChange }) => {
+const TaskCard = ({ task, onClick, onStatusChange, user }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
   const [isHovering, setIsHovering] = useState(false);
 
@@ -74,6 +75,7 @@ const TaskCard = ({ task, onClick, onStatusChange }) => {
   };
 
   const isOverdue = task.due_date < new Date().toISOString().split('T')[0] && task.status !== 'Completed';
+  const canEditTask = user?.role === 'Admin' || user?.role === 'Manager';
 
   const handleStatusChange = (e) => {
     e.stopPropagation();
@@ -93,7 +95,7 @@ const TaskCard = ({ task, onClick, onStatusChange }) => {
       <div
         {...attributes}
         {...listeners}
-        className="h-1.5 cursor-grab active:cursor-grabbing hover:bg-opacity-100 transition-colors"
+        className="h-1 md:h-1.5 cursor-grab active:cursor-grabbing hover:bg-opacity-100 transition-colors"
         style={{
           background: isDragging ? 'rgba(59, 130, 246, 0.8)' : isHovering ? 'rgba(59, 130, 246, 0.5)' : 'rgba(200, 200, 200, 0.3)',
         }}
@@ -105,40 +107,40 @@ const TaskCard = ({ task, onClick, onStatusChange }) => {
           e.stopPropagation();
           onClick();
         }}
-        className="p-3 cursor-pointer"
+        className="p-2 md:p-3 cursor-pointer"
       >
-        <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="flex items-start justify-between gap-2 mb-1.5 md:mb-2">
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-900">{task.task_id}</p>
-            <h4 className="text-sm font-semibold text-gray-800 line-clamp-2">{task.title}</h4>
+            <p className="text-xs md:text-xs font-medium text-gray-900">{task.task_id}</p>
+            <h4 className="text-xs md:text-sm font-semibold text-gray-800 line-clamp-2">{task.title}</h4>
           </div>
-          <span className={`${PRIORITY_STYLES[task.priority].badge} text-xs font-semibold px-2 py-1 rounded flex-shrink-0`}>
+          <span className={`${PRIORITY_STYLES[task.priority].badge} text-xs font-semibold px-2 py-0.5 md:py-1 rounded flex-shrink-0`}>
             {task.priority[0]}
           </span>
         </div>
 
-        {task.priority === 'High' && <Flag className="h-3 w-3 text-red-500 fill-red-500 mb-2" />}
+        {task.priority === 'High' && <Flag className="h-2.5 md:h-3 w-2.5 md:w-3 text-red-500 fill-red-500 mb-1.5 md:mb-2" />}
 
-        <div className="space-y-1 text-xs text-gray-600">
+        <div className="space-y-0.5 md:space-y-1 text-xs text-gray-600">
           {task.assigned_to_name && (
             <div className="flex items-center gap-1">
-              <User className="h-3 w-3" />
-              <span className="truncate">{task.assigned_to_name}</span>
+              <User className="h-2.5 md:h-3 w-2.5 md:w-3 flex-shrink-0" />
+              <span className="truncate text-xs">{task.assigned_to_name}</span>
             </div>
           )}
-          <div className={`flex items-center gap-1 ${isOverdue ? 'text-red-600 font-semibold' : ''}`}>
-            <CalendarIcon className="h-3 w-3" />
+          <div className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-600 font-semibold' : ''}`}>
+            <CalendarIcon className="h-2.5 md:h-3 w-2.5 md:w-3 flex-shrink-0" />
             <span>{task.due_date}</span>
           </div>
           {task.completion_percentage > 0 && (
-            <div className="mt-2">
-              <div className="flex items-center justify-between mb-1">
+            <div className="mt-1 md:mt-2">
+              <div className="flex items-center justify-between mb-0.5 md:mb-1 text-xs">
                 <span className="text-xs font-medium">Progress</span>
                 <span className="text-xs font-semibold">{task.completion_percentage}%</span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-1.5">
+              <div className="w-full bg-gray-200 rounded-full h-1 md:h-1.5">
                 <div 
-                  className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                  className="bg-blue-600 h-1 md:h-1.5 rounded-full transition-all duration-300"
                   style={{ width: `${task.completion_percentage}%` }}
                 ></div>
               </div>
@@ -147,11 +149,12 @@ const TaskCard = ({ task, onClick, onStatusChange }) => {
         </div>
 
         {/* Status Dropdown */}
-        <div className="mt-3 pt-2 border-t border-gray-200">
+        <div className="mt-2 md:mt-3 pt-1.5 md:pt-2 border-t border-gray-200">
           <select
             value={task.status}
             onChange={handleStatusChange}
-            className="w-full px-2 py-1.5 text-xs bg-white border border-gray-300 rounded text-gray-900 font-medium hover:border-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            disabled={!canEditTask}
+            className={`w-full px-1.5 md:px-2 py-1 text-xs bg-white border border-gray-300 rounded text-gray-900 font-medium hover:border-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 ${!canEditTask ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
             onClick={(e) => e.stopPropagation()}
           >
             <option value="Pending">Pending</option>
@@ -166,7 +169,7 @@ const TaskCard = ({ task, onClick, onStatusChange }) => {
 };
 
 // Kanban Column
-const KanbanColumn = ({ status, tasks, onCardClick, onStatusChange }) => {
+const KanbanColumn = ({ status, tasks, onCardClick, onStatusChange, user }) => {
   const { setNodeRef } = useSortable({ 
     id: status,
     data: { type: 'Column', status }
@@ -176,19 +179,19 @@ const KanbanColumn = ({ status, tasks, onCardClick, onStatusChange }) => {
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col flex-1 min-h-[600px] ${color.bg} border-2 ${color.border} rounded-lg p-4 transition-all`}
+      className={`flex flex-col min-h-[300px] md:min-h-[500px] lg:min-h-[600px] ${color.bg} border-2 ${color.border} rounded-lg p-3 md:p-4 transition-all`}
     >
-      <div className={`${color.header} rounded p-2 mb-4 sticky top-0 z-10`}>
-        <h2 className={`${color.dark} font-bold text-sm flex items-center justify-between`}>
+      <div className={`${color.header} rounded p-2 mb-3 md:mb-4 sticky top-0 z-10`}>
+        <h2 className={`${color.dark} font-bold text-xs md:text-sm flex items-center justify-between`}>
           <span>{status}</span>
           <span className="bg-white px-2 py-1 rounded text-xs font-semibold">{tasks.length}</span>
         </h2>
       </div>
 
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div className="space-y-3 flex-1 overflow-y-auto min-h-[500px]">
+        <div className="space-y-2 md:space-y-3 flex-1 overflow-y-auto">
           {tasks.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-sm">No tasks</div>
+            <div className="text-center py-8 text-gray-400 text-xs">No tasks</div>
           ) : (
             tasks.map((task) => (
               <TaskCard
@@ -196,6 +199,7 @@ const KanbanColumn = ({ status, tasks, onCardClick, onStatusChange }) => {
                 task={task}
                 onClick={() => onCardClick(task)}
                 onStatusChange={onStatusChange}
+                user={user}
               />
             ))
           )}
@@ -358,6 +362,12 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
   const handleSaveEdit = async () => {
     if (!task) return;
 
+    // Only Admin and Manager can edit task details
+    if (user?.role !== 'Admin' && user?.role !== 'Manager') {
+      toast.error('Only Admin and Manager can edit task details');
+      return;
+    }
+
     try {
       await axios.put(
         `${API}/tasks/${task.id}`,
@@ -376,6 +386,13 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
 
   const handleQuickCompletionUpdate = async () => {
     if (!task) return;
+
+    // Only allow updating completion percentage if user is Admin/Manager or task is assigned to them
+    const isAssignedToUser = task.assigned_to_employee_id === user?.employee_id;
+    if (user?.role !== 'Admin' && user?.role !== 'Manager' && !isAssignedToUser) {
+      toast.error('You can only update completion for tasks assigned to you');
+      return;
+    }
 
     const newValue = Number.isFinite(completionUpdate) ? completionUpdate : 0;
 
@@ -399,19 +416,19 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent className="w-full sm:w-[720px] lg:w-[800px] bg-white border-l border-gray-200 overflow-y-auto" side="right">
-        <SheetHeader className="sticky top-0 z-20 bg-white pb-4">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <SheetTitle className="text-2xl font-bold">{task.task_id}</SheetTitle>
-              <p className="text-sm text-gray-600 mt-1">{task.title}</p>
+      <SheetContent className="w-full sm:w-[600px] lg:w-[720px] bg-white border-l border-gray-200 overflow-y-auto" side="right">
+        <SheetHeader className="sticky top-0 z-20 bg-white pb-3 md:pb-4">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <SheetTitle className="text-lg md:text-2xl font-bold truncate">{task.task_id}</SheetTitle>
+              <p className="text-xs md:text-sm text-gray-600 mt-0.5 md:mt-1 line-clamp-2">{task.title}</p>
             </div>
             {editMode && (
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => setEditMode(false)}>
+              <div className="flex gap-1 md:gap-2 flex-shrink-0">
+                <Button size="sm" variant="outline" onClick={() => setEditMode(false)} className="text-xs md:text-sm h-8 md:h-9 px-2 md:px-3">
                   Cancel
                 </Button>
-                <Button size="sm" className="bg-blue-600 text-white" onClick={handleSaveEdit}>
+                <Button size="sm" className="bg-blue-600 text-white text-xs md:text-sm h-8 md:h-9 px-2 md:px-3" onClick={handleSaveEdit}>
                   Save
                 </Button>
               </div>
@@ -419,50 +436,51 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
           </div>
         </SheetHeader>
 
-        <div className="mt-6 space-y-8">
+        <div className="mt-4 md:mt-6 space-y-6 md:space-y-8">
           {/* Details Section */}
           <div>
-            <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-900">
+            <h3 className="text-base md:text-lg font-bold mb-3 md:mb-4 flex items-center gap-2 text-gray-900">
               <span>Task Details</span>
             </h3>
             
-            {!editMode && (
+            {!editMode && (user?.role === 'Admin' || user?.role === 'Manager') && (
               <Button
                 size="sm"
                 onClick={() => setEditMode(true)}
-                className="mb-4 bg-blue-600 text-white hover:bg-blue-700"
+                className="mb-3 md:mb-4 bg-blue-600 text-white hover:bg-blue-700 text-xs md:text-sm h-8 md:h-9 px-2 md:px-3"
               >
-                <Edit2 className="h-4 w-4 mr-2" />
-                Edit Task
+                <Edit2 className="h-3 md:h-4 w-3 md:w-4 md:mr-2" />
+                <span className="hidden md:inline">Edit Task</span>
+                <span className="md:hidden">Edit</span>
               </Button>
             )}
 
             {editMode ? (
-              <div className="space-y-4 border border-gray-300 rounded-lg p-4 bg-gray-50">
+              <div className="space-y-3 md:space-y-4 border border-gray-300 rounded-lg p-3 md:p-4 bg-gray-50">
                   <div>
-                    <Label className="text-sm font-medium text-gray-900">Title</Label>
+                    <Label className="text-xs md:text-sm font-medium text-gray-900">Title</Label>
                     <Input
                       value={editForm.title}
                       onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                      className="mt-1 text-gray-900"
+                      className="mt-1 text-gray-900 text-xs md:text-sm"
                     />
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-gray-900">Description</Label>
+                    <Label className="text-xs md:text-sm font-medium text-gray-900">Description</Label>
                     <textarea
                       value={editForm.description}
                       onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                      rows={4}
-                      className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-sm text-gray-900"
+                      rows={3}
+                      className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs md:text-sm text-gray-900"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
                     <div>
-                      <Label className="text-sm font-medium text-gray-900">Priority</Label>
+                      <Label className="text-xs md:text-sm font-medium text-gray-900">Priority</Label>
                       <select
                         value={editForm.priority}
                         onChange={(e) => setEditForm({ ...editForm, priority: e.target.value })}
-                        className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-sm text-gray-900 bg-white"
+                        className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs md:text-sm text-gray-900 bg-white"
                       >
                         <option value="Low">Low</option>
                         <option value="Medium">Medium</option>
@@ -470,11 +488,11 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
                       </select>
                     </div>
                     <div>
-                      <Label className="text-sm font-medium text-gray-900">Status</Label>
+                      <Label className="text-xs md:text-sm font-medium text-gray-900">Status</Label>
                       <select
                         value={editForm.status}
                         onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                        className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-sm text-gray-900 bg-white"
+                        className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs md:text-sm text-gray-900 bg-white"
                       >
                         <option value="Pending">Pending</option>
                         <option value="In Progress">In Progress</option>
@@ -484,17 +502,17 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
                     </div>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-gray-900">Due Date</Label>
+                    <Label className="text-xs md:text-sm font-medium text-gray-900">Due Date</Label>
                     <Input
                       type="date"
                       value={editForm.due_date}
                       onChange={(e) => setEditForm({ ...editForm, due_date: e.target.value })}
-                      className="mt-1 text-gray-900"
+                      className="mt-1 text-gray-900 text-xs md:text-sm"
                     />
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-gray-900">Completion Percentage</Label>
-                    <div className="flex items-center gap-3 mt-1">
+                    <Label className="text-xs md:text-sm font-medium text-gray-900">Completion %</Label>
+                    <div className="flex items-center gap-2 md:gap-3 mt-1">
                       <input
                         type="range"
                         min="0"
@@ -503,15 +521,15 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
                         onChange={(e) => setEditForm({ ...editForm, completion_percentage: parseInt(e.target.value) })}
                         className="flex-1 h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-blue-600"
                       />
-                      <span className="text-sm font-semibold text-gray-900 min-w-[50px]">{editForm.completion_percentage}%</span>
+                      <span className="text-xs md:text-sm font-semibold text-gray-900 min-w-[40px] md:min-w-[50px]">{editForm.completion_percentage}%</span>
                     </div>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-gray-900">Assign To</Label>
+                    <Label className="text-xs md:text-sm font-medium text-gray-900">Assign To</Label>
                     <select
                       value={editForm.assigned_to_employee_id}
                       onChange={(e) => setEditForm({ ...editForm, assigned_to_employee_id: e.target.value })}
-                      className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-sm text-gray-900 bg-white"
+                      className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs md:text-sm text-gray-900 bg-white"
                     >
                       <option value="">Unassigned</option>
                       {employees.map((emp) => (
@@ -521,33 +539,33 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
                       ))}
                     </select>
                   </div>
-                  <div className="flex gap-2 pt-4">
-                    <Button size="sm" variant="outline" onClick={() => setEditMode(false)}>
+                  <div className="flex gap-1 md:gap-2 pt-3 md:pt-4">
+                    <Button size="sm" variant="outline" onClick={() => setEditMode(false)} className="text-xs md:text-sm h-8 md:h-9 px-2 md:px-3">
                       Cancel
                     </Button>
-                    <Button size="sm" className="bg-blue-600 text-white" onClick={handleSaveEdit}>
+                    <Button size="sm" className="bg-blue-600 text-white text-xs md:text-sm h-8 md:h-9 px-2 md:px-3" onClick={handleSaveEdit}>
                       Save
                     </Button>
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-2 md:gap-4">
                   <div>
                     <p className="text-xs text-gray-500 font-medium uppercase">Status</p>
-                    <p className="text-sm font-semibold mt-1 text-gray-900">{task.status || 'Not set'}</p>
+                    <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">{task.status || 'Not set'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 font-medium uppercase">Priority</p>
-                    <p className="text-sm font-semibold mt-1 text-gray-900">{task.priority || 'Not set'}</p>
+                    <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">{task.priority || 'Not set'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 font-medium uppercase">Due Date</p>
-                    <p className="text-sm font-semibold mt-1 text-gray-900">{task.due_date || 'Not set'}</p>
+                    <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">{task.due_date || 'Not set'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 font-medium uppercase">Completion</p>
-                    <div className="mt-2 space-y-2">
-                      <div className="flex items-center gap-3">
+                    <div className="mt-1 md:mt-2 space-y-1 md:space-y-2">
+                      <div className="flex items-center gap-1 md:gap-3">
                         <input
                           type="number"
                           min="0"
@@ -562,22 +580,22 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
                               setCompletionUpdate(Math.min(100, Math.max(0, val)));
                             }
                           }}
-                          className="w-20 border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"
+                          className="w-16 md:w-20 border border-gray-300 rounded px-1 md:px-2 py-1 text-xs md:text-sm text-gray-900"
                         />
-                        <span className="text-sm font-bold text-gray-900 min-w-[45px]">
+                        <span className="text-xs md:text-sm font-bold text-gray-900 min-w-[35px] md:min-w-[45px]">
                           {completionUpdate}%
                         </span>
                         <Button
                           size="sm"
-                          className="bg-blue-600 text-white"
+                          className="bg-blue-600 text-white text-xs md:text-sm h-7 md:h-8 px-2 md:px-3"
                           onClick={handleQuickCompletionUpdate}
                         >
                           Update
                         </Button>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 md:h-2">
                         <div
-                          className="bg-blue-600 h-2 rounded-full"
+                          className="bg-blue-600 h-1.5 md:h-2 rounded-full"
                           style={{ width: `${completionUpdate}%` }}
                         ></div>
                       </div>
@@ -585,63 +603,65 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 font-medium uppercase">Assigned To</p>
-                    <p className="text-sm font-semibold mt-1 text-gray-900">{task.assigned_to_name || 'Unassigned'}</p>
+                    <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900 truncate">{task.assigned_to_name || 'Unassigned'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 font-medium uppercase">Created By</p>
-                    <p className="text-sm font-semibold mt-1 text-gray-900">{task.created_by_name || 'Unknown'}</p>
+                    <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900 truncate">{task.created_by_name || 'Unknown'}</p>
                   </div>
                   <div className="col-span-2">
                     <p className="text-xs text-gray-500 font-medium uppercase">Created At</p>
-                    <p className="text-sm font-semibold mt-1 text-gray-900">{task.created_at ? new Date(task.created_at).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not available'}</p>
+                    <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">
+                      {task.created_at ? formatISTDateTime(task.created_at) : 'Not available'}
+                    </p>
                   </div>
                 </div>
               )}
 
               {task.description && !editMode && (
-                <div className="bg-gray-50 p-4 rounded-lg mt-4">
-                  <p className="text-xs text-gray-600 font-medium uppercase mb-2">Description</p>
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{task.description}</p>
+                <div className="bg-gray-50 p-2 md:p-4 rounded-lg mt-3 md:mt-4">
+                  <p className="text-xs text-gray-600 font-medium uppercase mb-1 md:mb-2">Description</p>
+                  <p className="text-xs md:text-sm text-gray-700 whitespace-pre-wrap">{task.description}</p>
                 </div>
               )}
           </div>
 
           {/* Comments Section */}
-          <div className="border-t pt-8">
-            <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-900">
-              <MessageSquare className="h-5 w-5" />
+          <div className="border-t pt-4 md:pt-8">
+            <h3 className="text-base md:text-lg font-bold mb-3 md:mb-4 flex items-center gap-2 text-gray-900">
+              <MessageSquare className="h-4 md:h-5 w-4 md:w-5" />
               <span>Comments</span>
             </h3>
             
-            <div className="space-y-4">
-              <div className="flex gap-2">
+            <div className="space-y-3">
+              <div className="flex gap-1 md:gap-2">
                 <Input
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
                   placeholder="Add a comment..."
-                  className="text-gray-900"
+                  className="text-gray-900 text-xs md:text-sm h-8 md:h-9"
                   onKeyPress={(e) => e.key === 'Enter' && handleAddComment()}
                 />
-                <Button size="sm" onClick={handleAddComment} className="bg-blue-600 text-white">
-                  <Send className="h-4 w-4" />
+                <Button size="sm" onClick={handleAddComment} className="bg-blue-600 text-white h-8 md:h-9 px-2 md:px-3">
+                  <Send className="h-3 md:h-4 w-3 md:w-4" />
                 </Button>
               </div>
 
               {loadingComments ? (
-                <div className="text-center py-4 text-gray-400">Loading comments...</div>
+                <div className="text-center py-4 text-gray-400 text-xs">Loading comments...</div>
               ) : comments.length === 0 ? (
-                <div className="text-center py-8 text-gray-400 text-sm">No comments yet</div>
+                <div className="text-center py-6 md:py-8 text-gray-400 text-xs">No comments yet</div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2 md:space-y-3">
                   {comments.map((comment) => (
-                    <div key={comment.id} className="bg-gray-50 p-3 rounded-lg">
-                      <div className="flex justify-between items-start mb-1">
-                        <p className="text-sm font-semibold text-gray-900">{comment.author_name}</p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(comment.created_at).toLocaleDateString()}
+                    <div key={comment.id} className="bg-gray-50 p-2 md:p-3 rounded-lg">
+                      <div className="flex justify-between items-start mb-0.5 md:mb-1 gap-2">
+                        <p className="text-xs md:text-sm font-semibold text-gray-900 truncate">{comment.author_name}</p>
+                        <p className="text-xs text-gray-500 whitespace-nowrap">
+                          {formatISTDate(comment.created_at)}
                         </p>
                       </div>
-                      <p className="text-sm text-gray-700">{comment.content}</p>
+                      <p className="text-xs md:text-sm text-gray-700">{comment.content}</p>
                     </div>
                   ))}
                 </div>
@@ -650,63 +670,63 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
           </div>
 
           {/* Time Logs Section */}
-          <div className="border-t pt-8">
-            <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-900">
-              <Clock className="h-5 w-5" />
+          <div className="border-t pt-4 md:pt-8">
+            <h3 className="text-base md:text-lg font-bold mb-3 md:mb-4 flex items-center gap-2 text-gray-900">
+              <Clock className="h-4 md:h-5 w-4 md:w-5" />
               <span>Time Logs</span>
             </h3>
 
-            <div className="space-y-4">
-              <div className="border border-gray-300 rounded-lg p-4 space-y-3 bg-gray-50">
-                <h4 className="font-semibold text-sm text-gray-900">Log Time</h4>
+            <div className="space-y-3">
+              <div className="border border-gray-300 rounded-lg p-2 md:p-4 space-y-2 md:space-y-3 bg-gray-50">
+                <h4 className="font-semibold text-xs md:text-sm text-gray-900">Log Time</h4>
                 <div>
-                  <Label className="text-xs text-gray-900 font-medium">Date</Label>
+                  <Label className="text-xs md:text-sm text-gray-900 font-medium">Date</Label>
                   <Input
                     type="date"
                     value={newTimeLog.log_date}
                     onChange={(e) => setNewTimeLog({ ...newTimeLog, log_date: e.target.value })}
-                    className="mt-1 text-sm text-gray-900"
+                    className="mt-1 text-xs md:text-sm text-gray-900 h-8 md:h-9"
                   />
                 </div>
                 <div>
-                  <Label className="text-xs text-gray-900 font-medium">Time Spent (minutes)</Label>
+                  <Label className="text-xs md:text-sm text-gray-900 font-medium">Time Spent (min)</Label>
                   <Input
                     type="number"
                     value={newTimeLog.time_spent_minutes}
                     onChange={(e) => setNewTimeLog({ ...newTimeLog, time_spent_minutes: e.target.value })}
                     placeholder="e.g., 60"
-                    className="mt-1 text-sm text-gray-900"
+                    className="mt-1 text-xs md:text-sm text-gray-900 h-8 md:h-9"
                   />
                 </div>
                 <div>
-                  <Label className="text-xs text-gray-900 font-medium">Description</Label>
+                  <Label className="text-xs md:text-sm text-gray-900 font-medium">Description</Label>
                   <Input
                     value={newTimeLog.description}
                     onChange={(e) => setNewTimeLog({ ...newTimeLog, description: e.target.value })}
                     placeholder="What did you work on?"
-                    className="mt-1 text-sm text-gray-900"
+                    className="mt-1 text-xs md:text-sm text-gray-900 h-8 md:h-9"
                   />
                 </div>
-                <Button onClick={handleAddTimeLog} className="w-full bg-blue-600 text-white text-sm">
+                <Button onClick={handleAddTimeLog} className="w-full bg-blue-600 text-white text-xs md:text-sm h-8 md:h-9">
                   Log Time
                 </Button>
               </div>
 
               {loadingLogs ? (
-                <div className="text-center py-4 text-gray-400">Loading time logs...</div>
+                <div className="text-center py-4 text-gray-400 text-xs">Loading time logs...</div>
               ) : timeLogs.length === 0 ? (
-                <div className="text-center py-8 text-gray-400 text-sm">No time logs yet</div>
+                <div className="text-center py-6 md:py-8 text-gray-400 text-xs">No time logs yet</div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2 md:space-y-3">
                   {timeLogs.map((log) => (
-                    <div key={log.id} className="bg-gray-50 p-3 rounded-lg">
-                      <div className="flex justify-between items-start">
+                    <div key={log.id} className="bg-gray-50 p-2 md:p-3 rounded-lg">
+                      <div className="flex justify-between items-start gap-2">
                         <div>
-                          <p className="text-sm font-semibold text-gray-900">{log.logged_by_name}</p>
-                          <p className="text-xs text-gray-500 mt-1">{log.log_date}</p>
-                          <p className="text-sm text-gray-700 mt-2">{log.time_spent_minutes} minutes</p>
+                          <p className="text-xs md:text-sm font-semibold text-gray-900">{log.logged_by_name}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{log.log_date}</p>
+                          <p className="text-xs md:text-sm text-gray-700 mt-1">{log.time_spent_minutes} minutes</p>
                           {log.description && (
-                            <p className="text-xs text-gray-600 mt-1">{log.description}</p>
+                            <p className="text-xs text-gray-600 mt-0.5">{log.description}</p>
                           )}
                         </div>
                       </div>
@@ -718,16 +738,16 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
           </div>
 
           {/* Attachments Section */}
-          <div className="border-t pt-8">
-            <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-900">
-              <Paperclip className="h-5 w-5" />
+          <div className="border-t pt-4 md:pt-8">
+            <h3 className="text-base md:text-lg font-bold mb-3 md:mb-4 flex items-center gap-2 text-gray-900">
+              <Paperclip className="h-4 md:h-5 w-4 md:w-5" />
               <span>Attachments</span>
             </h3>
 
-            <div className="space-y-4">
-              <label className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:bg-gray-50 transition">
-                <Paperclip className="h-6 w-6 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600">Click to upload or drag files</p>
+            <div className="space-y-3">
+              <label className="border-2 border-dashed border-gray-300 rounded-lg p-4 md:p-6 text-center cursor-pointer hover:bg-gray-50 transition">
+                <Paperclip className="h-5 md:h-6 w-5 md:w-6 text-gray-400 mx-auto mb-2" />
+                <p className="text-xs md:text-sm text-gray-600">Click to upload files</p>
                 <input
                   type="file"
                   onChange={handleFileUpload}
@@ -736,26 +756,26 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
               </label>
 
               {loadingAttachments ? (
-                <div className="text-center py-4 text-gray-400">Loading attachments...</div>
+                <div className="text-center py-4 text-gray-400 text-xs">Loading attachments...</div>
               ) : attachments.length === 0 ? (
-                <div className="text-center py-8 text-gray-400 text-sm">No attachments yet</div>
+                <div className="text-center py-6 md:py-8 text-gray-400 text-xs">No attachments yet</div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-1 md:space-y-2">
                   {attachments.map((attachment) => (
-                    <div key={attachment.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                    <div key={attachment.id} className="flex items-center justify-between bg-gray-50 p-2 md:p-3 rounded-lg">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 truncate">{attachment.file_name}</p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {attachment.uploaded_by_name} • {new Date(attachment.created_at).toLocaleDateString()}
+                        <p className="text-xs md:text-sm font-semibold text-gray-900 truncate">{attachment.file_name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {attachment.uploaded_by_name} • {formatISTDate(attachment.created_at)}
                         </p>
                       </div>
                       <a
                         href={attachment.file_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="ml-2 text-blue-600 hover:text-blue-800"
+                        className="ml-2 text-blue-600 hover:text-blue-800 flex-shrink-0"
                       >
-                        <Download className="h-4 w-4" />
+                        <Download className="h-3 md:h-4 w-3 md:w-4" />
                       </a>
                     </div>
                   ))}
@@ -884,6 +904,12 @@ export const Tasks = () => {
   };
 
   const handleDragEnd = async (event) => {
+    // Only Admin and Manager can change task status via drag and drop
+    if (user?.role !== 'Admin' && user?.role !== 'Manager') {
+      toast.error('Only Admin and Manager can change task status');
+      return;
+    }
+
     const { active, over } = event;
 
     if (!over || active.id === over.id) return;
@@ -944,6 +970,12 @@ export const Tasks = () => {
   };
 
   const handleStatusChange = async (taskId, newStatus) => {
+    // Only Admin and Manager can change task status
+    if (user?.role !== 'Admin' && user?.role !== 'Manager') {
+      toast.error('Only Admin and Manager can change task status');
+      return;
+    }
+
     try {
       await axios.put(
         `${API}/tasks/${taskId}/status`,
@@ -962,6 +994,12 @@ export const Tasks = () => {
 
   const handleCreateTask = async (e) => {
     e.preventDefault();
+
+    // Check if user has permission to create tasks
+    if (user?.role !== 'Admin' && user?.role !== 'Manager') {
+      toast.error('Only Admin and Manager can create tasks');
+      return;
+    }
 
     if (!formData.title || !formData.assigned_to_employee_id || !formData.due_date) {
       toast.error('Please fill in all required fields');
@@ -1015,31 +1053,33 @@ export const Tasks = () => {
     <div className="h-full flex flex-col bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
-              <p className="text-gray-600 text-xs mt-0.5">
+        <div className="px-3 md:px-6 py-3 md:py-4">
+          <div className="flex items-center justify-between mb-3 gap-2">
+            <div className="min-w-0">
+              <h1 className="text-lg md:text-2xl font-bold text-gray-900">Tasks</h1>
+              <p className="text-gray-600 text-xs mt-0.5 truncate">
                 {boardData?.total_tasks || dashboardStats?.total_tasks || 0} total • {boardData?.user_tasks || 0} assigned to you
               </p>
             </div>
             <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
               <DialogTrigger asChild>
-                <Button className="bg-blue-600 text-white hover:bg-blue-700 h-9 px-3 text-sm">
-                  <Plus className="h-4 w-4 mr-1" />
-                  New Task
-                </Button>
+                {(user?.role === 'Admin' || user?.role === 'Manager') && (
+                  <Button className="bg-blue-600 text-white hover:bg-blue-700 h-9 px-2 md:px-3 text-xs md:text-sm whitespace-nowrap">
+                    <Plus className="h-4 w-4 md:mr-1" />
+                    <span className="hidden md:inline">New Task</span>
+                  </Button>
+                )}
               </DialogTrigger>
-              <DialogContent className="sm:max-w-2xl bg-white rounded-lg border border-gray-200 shadow-xl p-0 max-h-[90vh] overflow-y-auto">
-                <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+              <DialogContent className="sm:max-w-2xl bg-white rounded-lg border border-gray-200 shadow-xl p-0 max-h-[90vh] overflow-y-auto w-[95vw]">
+                <div className="bg-blue-600 text-white p-4 md:p-6 rounded-t-lg">
                   <DialogHeader>
-                    <DialogTitle className="text-xl font-bold text-white">Create New Task</DialogTitle>
-                    <p className="text-blue-100 text-sm mt-1">Assign a new task to team members</p>
+                    <DialogTitle className="text-lg md:text-xl font-bold text-white">Create New Task</DialogTitle>
+                    <p className="text-blue-100 text-xs md:text-sm mt-1">Assign a new task to team members</p>
                   </DialogHeader>
                 </div>
-                <form onSubmit={handleCreateTask} className="space-y-4 p-6">
+                <form onSubmit={handleCreateTask} className="space-y-3 md:space-y-4 p-4 md:p-6">
                   <div>
-                    <Label className="text-sm font-semibold text-gray-900 block mb-1">
+                    <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">
                       Task Title <span className="text-red-500">*</span>
                     </Label>
                     <Input
@@ -1052,7 +1092,7 @@ export const Tasks = () => {
                   </div>
 
                   <div>
-                    <Label className="text-sm font-semibold text-gray-900 block mb-1">Description</Label>
+                    <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">Description</Label>
                     <textarea
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -1062,9 +1102,9 @@ export const Tasks = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-3">
                     <div>
-                      <Label className="text-sm font-semibold text-gray-900 block mb-1">
+                      <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">
                         Priority <span className="text-red-500">*</span>
                       </Label>
                       <select
@@ -1079,7 +1119,7 @@ export const Tasks = () => {
                     </div>
 
                     <div>
-                      <Label className="text-sm font-semibold text-gray-900 block mb-1">
+                      <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">
                         Due Date <span className="text-red-500">*</span>
                       </Label>
                       <Input
@@ -1092,7 +1132,7 @@ export const Tasks = () => {
                     </div>
 
                     <div>
-                      <Label className="text-sm font-semibold text-gray-900 block mb-1">Est. Time (min)</Label>
+                      <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">Est. Time (min)</Label>
                       <Input
                         type="number"
                         value={formData.estimated_time_minutes}
@@ -1104,7 +1144,7 @@ export const Tasks = () => {
                   </div>
 
                   <div>
-                    <Label className="text-sm font-semibold text-gray-900 block mb-1">
+                    <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">
                       Assign To <span className="text-red-500">*</span>
                     </Label>
                     <select
@@ -1127,16 +1167,16 @@ export const Tasks = () => {
                       type="button"
                       variant="outline"
                       onClick={() => setCreateDialogOpen(false)}
-                      className="h-9 px-3 text-sm"
+                      className="h-9 px-3 text-xs md:text-sm"
                     >
                       Cancel
                     </Button>
                     <Button 
                       type="submit" 
-                      className="bg-blue-600 text-white hover:bg-blue-700 h-9 px-3 text-sm"
+                      className="bg-blue-600 text-white hover:bg-blue-700 h-9 px-3 text-xs md:text-sm"
                     >
-                      <Plus className="h-4 w-4 mr-1" />
-                      Create
+                      <Plus className="h-4 w-4 md:mr-1" />
+                      <span className="hidden md:inline">Create</span>
                     </Button>
                   </div>
                 </form>
@@ -1145,14 +1185,14 @@ export const Tasks = () => {
           </div>
 
           {/* Filters Row */}
-          <div className="flex gap-2 items-center flex-wrap">
+          <div className="flex gap-1 md:gap-2 items-center flex-wrap">
             {(user?.role === 'Admin' || user?.role === 'Manager') && (
               <select
                 value={selectedEmployeeFilter}
                 onChange={(e) => setSelectedEmployeeFilter(e.target.value)}
-                className="h-8 border border-gray-300 rounded px-2 text-xs bg-white"
+                className="h-8 border border-gray-300 rounded px-1.5 md:px-2 text-xs bg-white"
               >
-                <option value="">All Employees</option>
+                <option value="">All Emp</option>
                 {employees.map((emp) => (
                   <option key={emp.id} value={emp.employee_id}>
                     {emp.name.split(' ')[0]}
@@ -1164,14 +1204,12 @@ export const Tasks = () => {
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  className="h-8 border border-gray-300 rounded px-2 text-xs bg-white flex items-center gap-1 min-w-[7rem]"
+                  className="h-8 border border-gray-300 rounded px-1.5 md:px-2 text-xs bg-white flex items-center gap-1 min-w-fit"
                   title="Start date"
                 >
-                  <CalendarIcon className="h-3.5 w-3.5 text-gray-500" />
-                  <span className="truncate">
-                    {dateRange.startDate
-                      ? new Date(dateRange.startDate).toLocaleDateString('en-GB')
-                      : 'Start date'}
+                  <CalendarIcon className="h-3 md:h-3.5 w-3 md:w-3.5 text-gray-500 flex-shrink-0" />
+                  <span className="truncate max-w-[80px] md:max-w-none">
+                    {dateRange.startDate ? formatISTDate(dateRange.startDate) : 'Start'}
                   </span>
                 </button>
               </PopoverTrigger>
@@ -1188,19 +1226,17 @@ export const Tasks = () => {
                 />
               </PopoverContent>
             </Popover>
-            <span className="text-gray-400 text-xs">-</span>
+            <span className="text-gray-400 text-xs hidden md:inline">-</span>
             <Popover>
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  className="h-8 border border-gray-300 rounded px-2 text-xs bg-white flex items-center gap-1 min-w-[7rem]"
+                  className="h-8 border border-gray-300 rounded px-1.5 md:px-2 text-xs bg-white flex items-center gap-1 min-w-fit"
                   title="End date"
                 >
-                  <CalendarIcon className="h-3.5 w-3.5 text-gray-500" />
-                  <span className="truncate">
-                    {dateRange.endDate
-                      ? new Date(dateRange.endDate).toLocaleDateString('en-GB')
-                      : 'End date'}
+                  <CalendarIcon className="h-3 md:h-3.5 w-3 md:w-3.5 text-gray-500 flex-shrink-0" />
+                  <span className="truncate max-w-[80px] md:max-w-none">
+                    {dateRange.endDate ? formatISTDate(dateRange.endDate) : 'End'}
                   </span>
                 </button>
               </PopoverTrigger>
@@ -1218,20 +1254,22 @@ export const Tasks = () => {
               </PopoverContent>
             </Popover>
 
-            <div className="relative flex-1 md:flex-0 md:w-56">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-              <Input
-                placeholder="Search tasks..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-7 h-8 text-xs"
-                onKeyUp={() => setTimeout(() => fetchBoardData(), 300)}
-              />
+            <div className="flex-1 md:flex-0 md:w-48 min-w-[120px]">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 md:h-3.5 w-3 md:w-3.5 text-gray-400" />
+                <Input
+                  placeholder="Search..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-6 h-8 text-xs"
+                  onKeyUp={() => setTimeout(() => fetchBoardData(), 300)}
+                />
+              </div>
             </div>
 
             {(user?.role === 'Admin' || user?.role === 'Manager') && (
               <div className="flex gap-1 items-center text-xs text-gray-600">
-                <span>View:</span>
+                <span className="hidden md:inline">View:</span>
                 <button
                   onClick={() => setViewMode('board')}
                   className={`px-2 py-1 rounded text-xs ${
@@ -1250,7 +1288,7 @@ export const Tasks = () => {
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
-                  Dashboard
+                  Dash
                 </button>
               </div>
             )}
@@ -1260,66 +1298,78 @@ export const Tasks = () => {
 
       {/* Dashboard View */}
       {viewMode === 'dashboard' && dashboardStats && (
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-2 md:p-6">
           <div className="max-w-7xl mx-auto">
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <p className="text-xs text-gray-600 font-medium uppercase">Total Tasks</p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">{dashboardStats.total_tasks}</p>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 md:gap-4 mb-4 md:mb-6">
+              <div className="bg-white rounded-lg border border-gray-200 p-2 md:p-4">
+                <p className="text-xs text-gray-600 font-medium uppercase">Total</p>
+                <p className="text-xl md:text-3xl font-bold text-gray-900 mt-1 md:mt-2">{dashboardStats.total_tasks}</p>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="bg-white rounded-lg border border-gray-200 p-2 md:p-4">
                 <p className="text-xs text-gray-600 font-medium uppercase">Pending</p>
-                <p className="text-3xl font-bold text-orange-600 mt-2">{dashboardStats.pending_count}</p>
+                <p className="text-xl md:text-3xl font-bold text-orange-600 mt-1 md:mt-2">{dashboardStats.pending_count}</p>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="hidden md:block bg-white rounded-lg border border-gray-200 p-2 md:p-4">
                 <p className="text-xs text-gray-600 font-medium uppercase">In Progress</p>
-                <p className="text-3xl font-bold text-blue-600 mt-2">{dashboardStats.in_progress_count}</p>
+                <p className="text-xl md:text-3xl font-bold text-blue-600 mt-1 md:mt-2">{dashboardStats.in_progress_count}</p>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="hidden lg:block bg-white rounded-lg border border-gray-200 p-2 md:p-4">
                 <p className="text-xs text-gray-600 font-medium uppercase">Completed</p>
-                <p className="text-3xl font-bold text-green-600 mt-2">{dashboardStats.completed_count}</p>
+                <p className="text-xl md:text-3xl font-bold text-green-600 mt-1 md:mt-2">{dashboardStats.completed_count}</p>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="hidden lg:block bg-white rounded-lg border border-gray-200 p-2 md:p-4">
                 <p className="text-xs text-gray-600 font-medium uppercase">Overdue</p>
-                <p className="text-3xl font-bold text-red-600 mt-2">{dashboardStats.overdue_count}</p>
+                <p className="text-xl md:text-3xl font-bold text-red-600 mt-1 md:mt-2">{dashboardStats.overdue_count}</p>
+              </div>
+            </div>
+
+            {/* Visible on mobile but not desktop */}
+            <div className="grid grid-cols-2 md:hidden gap-2 mb-4">
+              <div className="bg-white rounded-lg border border-gray-200 p-2">
+                <p className="text-xs text-gray-600 font-medium uppercase">In Progress</p>
+                <p className="text-lg font-bold text-blue-600 mt-1">{dashboardStats.in_progress_count}</p>
+              </div>
+              <div className="bg-white rounded-lg border border-gray-200 p-2">
+                <p className="text-xs text-gray-600 font-medium uppercase">Overdue</p>
+                <p className="text-lg font-bold text-red-600 mt-1">{dashboardStats.overdue_count}</p>
               </div>
             </div>
 
             {/* Employee Details */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">Task Details by Employee</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+            <div className="bg-white rounded-lg border border-gray-200 p-3 md:p-6">
+              <h2 className="text-base md:text-lg font-bold text-gray-900 mb-3 md:mb-4">Task Details by Employee</h2>
+              <div className="overflow-x-auto -mx-3 md:-mx-0">
+                <table className="w-full text-xs md:text-sm">
                   <thead>
                     <tr className="border-b border-gray-200">
-                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Employee</th>
-                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Total</th>
-                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Pending</th>
-                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">In Progress</th>
-                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Completed</th>
-                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Overdue</th>
-                      <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Avg Completion %</th>
+                      <th className="text-left py-2 md:py-3 px-3 md:px-4 text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Employee</th>
+                      <th className="text-center py-2 md:py-3 px-1 md:px-4 text-xs font-semibold text-gray-600 uppercase">Total</th>
+                      <th className="hidden md:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs font-semibold text-gray-600 uppercase">Pending</th>
+                      <th className="hidden lg:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs font-semibold text-gray-600 uppercase">Progress</th>
+                      <th className="hidden lg:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs font-semibold text-gray-600 uppercase">Completed</th>
+                      <th className="hidden md:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs font-semibold text-gray-600 uppercase">Overdue</th>
+                      <th className="text-center py-2 md:py-3 px-1 md:px-4 text-xs font-semibold text-gray-600 uppercase">Avg %</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dashboardStats.employees?.map((emp, idx) => (
                       <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-3 px-4 text-sm font-medium text-gray-900">{emp.name}</td>
-                        <td className="py-3 px-4 text-sm text-gray-600">{emp.total_tasks}</td>
-                        <td className="py-3 px-4 text-sm text-orange-600 font-medium">{emp.pending}</td>
-                        <td className="py-3 px-4 text-sm text-blue-600 font-medium">{emp.in_progress}</td>
-                        <td className="py-3 px-4 text-sm text-green-600 font-medium">{emp.completed}</td>
-                        <td className="py-3 px-4 text-sm text-red-600 font-medium">{emp.overdue}</td>
-                        <td className="py-3 px-4 text-sm">
-                          <div className="flex items-center gap-2">
-                            <div className="w-20 bg-gray-200 rounded-full h-2">
+                        <td className="py-2 md:py-3 px-3 md:px-4 text-xs md:text-sm font-medium text-gray-900 whitespace-nowrap">{emp.name.split(' ')[0]}</td>
+                        <td className="text-center py-2 md:py-3 px-1 md:px-4 text-xs md:text-sm text-gray-600 font-medium">{emp.total_tasks}</td>
+                        <td className="hidden md:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs md:text-sm text-orange-600 font-medium">{emp.pending}</td>
+                        <td className="hidden lg:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs md:text-sm text-blue-600 font-medium">{emp.in_progress}</td>
+                        <td className="hidden lg:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs md:text-sm text-green-600 font-medium">{emp.completed}</td>
+                        <td className="hidden md:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs md:text-sm text-red-600 font-medium">{emp.overdue}</td>
+                        <td className="py-2 md:py-3 px-1 md:px-4">
+                          <div className="flex items-center gap-1 justify-center">
+                            <div className="w-10 md:w-20 bg-gray-200 rounded-full h-1.5 md:h-2">
                               <div 
-                                className="bg-blue-600 h-2 rounded-full"
+                                className="bg-blue-600 h-1.5 md:h-2 rounded-full"
                                 style={{ width: `${emp.avg_completion_percentage}%` }}
                               ></div>
                             </div>
-                            <span className="font-semibold text-gray-700 min-w-[45px]">{Math.round(emp.avg_completion_percentage)}%</span>
+                            <span className="font-semibold text-gray-700 min-w-[35px] md:min-w-[45px] text-xs md:text-sm">{Math.round(emp.avg_completion_percentage)}%</span>
                           </div>
                         </td>
                       </tr>
@@ -1331,33 +1381,33 @@ export const Tasks = () => {
 
             {/* Task List by Employee (if filtered) */}
             {selectedEmployeeFilter && dashboardStats.tasks && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6 mt-6">
-                <h2 className="text-lg font-bold text-gray-900 mb-4">
+              <div className="bg-white rounded-lg border border-gray-200 p-3 md:p-6 mt-4 md:mt-6">
+                <h2 className="text-base md:text-lg font-bold text-gray-900 mb-3 md:mb-4">
                   Tasks for {employees.find(e => e.employee_id === selectedEmployeeFilter)?.name}
                 </h2>
-                <div className="space-y-2">
+                <div className="space-y-2 md:space-y-3">
                   {dashboardStats.tasks.map((task) => (
                     <div 
                       key={task.id} 
-                      className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                      className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 p-2 md:p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
                       onClick={() => {
                         setSelectedTask(task);
                         setDetailsOpen(true);
                       }}
                     >
                       <div className="flex-1">
-                        <p className="font-medium text-gray-900">{task.title}</p>
-                        <p className="text-sm text-gray-600">{task.task_id} • {task.status}</p>
+                        <p className="font-medium text-xs md:text-sm text-gray-900">{task.title}</p>
+                        <p className="text-xs text-gray-600">{task.task_id} • {task.status}</p>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-20 bg-gray-200 rounded-full h-2">
+                      <div className="flex items-center gap-2 md:gap-4">
+                        <div className="flex items-center gap-1">
+                          <div className="w-16 md:w-20 bg-gray-200 rounded-full h-1.5 md:h-2">
                             <div 
-                              className="bg-blue-600 h-2 rounded-full"
+                              className="bg-blue-600 h-1.5 md:h-2 rounded-full"
                               style={{ width: `${task.completion_percentage}%` }}
                             ></div>
                           </div>
-                          <span className="font-semibold text-gray-700 min-w-[45px]">{task.completion_percentage}%</span>
+                          <span className="font-semibold text-gray-700 min-w-[35px] md:min-w-[45px] text-xs md:text-sm">{task.completion_percentage}%</span>
                         </div>
                       </div>
                     </div>
@@ -1371,7 +1421,7 @@ export const Tasks = () => {
 
       {/* Kanban Board View */}
       {viewMode === 'board' && boardData && (
-        <div className="flex-1 overflow-x-auto p-6">
+        <div className="flex-1 overflow-auto p-2 md:p-6">
           <DndContext
             sensors={sensors}
             collisionDetection={closestCorners}
@@ -1381,9 +1431,9 @@ export const Tasks = () => {
               items={boardData.columns.flatMap((col) => col.tasks.map((t) => t.id))}
               strategy={verticalListSortingStrategy}
             >
-              <div className="flex gap-6 min-w-max lg:min-w-full">
+              <div className="flex flex-col lg:flex-row gap-3 md:gap-6 min-h-max">
                 {boardData.columns.map((column) => (
-                  <div key={column.status} className="flex-1 min-w-[350px]">
+                  <div key={column.status} className="flex-1 min-w-full lg:min-w-[320px]">
                     <KanbanColumn
                       status={column.status}
                       tasks={column.tasks}
@@ -1392,6 +1442,7 @@ export const Tasks = () => {
                         setDetailsOpen(true);
                       }}
                       onStatusChange={handleStatusChange}
+                      user={user}
                     />
                   </div>
                 ))}
