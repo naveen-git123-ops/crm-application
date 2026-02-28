@@ -1000,6 +1000,12 @@ export const Tasks = () => {
       return;
     }
 
+    // Estimated time hours is required
+    if (!formData.estimated_time_hours || parseFloat(formData.estimated_time_hours) <= 0) {
+      toast.error('Estimated time (hours) is required and must be greater than 0');
+      return;
+    }
+
     try {
       await axios.post(`${API}/tasks`, formData, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
@@ -1108,14 +1114,20 @@ export const Tasks = () => {
                     </div>
 
                     <div>
-                      <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">Est. Time (hours)</Label>
+                      <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">
+                        Est. Time (hours) <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         type="number"
                         value={formData.estimated_time_hours}
                         onChange={(e) => setFormData({ ...formData, estimated_time_hours: e.target.value })}
-                        placeholder="0"
+                        placeholder="Enter hours"
                         className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
+                        required
+                        min="0.5"
+                        step="0.5"
                       />
+                      <p className="text-xs text-gray-500 mt-1">Required for task planning and tracking</p>
                     </div>
                   </div>
 

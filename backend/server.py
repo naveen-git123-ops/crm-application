@@ -5887,6 +5887,10 @@ def get_vehicle_dashboard_summary(
     db: Session = Depends(get_db)
 ):
     """Get vehicle tracking summary for admin dashboard"""
+    # Only Admin and Manager can access dashboard
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Only Admin and Manager can access vehicle dashboard')
+    
     # Total metrics
     total_vehicles = db.query(VehicleModel).count()
     active_vehicles = db.query(VehicleModel).filter(VehicleModel.status == 'Active').count()
@@ -5934,6 +5938,10 @@ def get_employee_vehicle_summary(
     db: Session = Depends(get_db)
 ):
     """Get vehicle usage and expenses by employee"""
+    # Only Admin and Manager can access dashboard
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Only Admin and Manager can access vehicle dashboard')
+    
     usages = db.query(VehicleUsageModel).all()
     claims = db.query(FuelExpenseClaimModel).all()
     
@@ -6014,6 +6022,10 @@ def get_vehicle_usage_summary(
     db: Session = Depends(get_db)
 ):
     """Get vehicle usage statistics"""
+    # Only Admin and Manager can access dashboard
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Only Admin and Manager can access vehicle dashboard')
+    
     vehicles = db.query(VehicleModel).all()
     usages = db.query(VehicleUsageModel).all()
     
@@ -6074,6 +6086,10 @@ def get_claim_status_overview(
     db: Session = Depends(get_db)
 ):
     """Get claims grouped by status"""
+    # Only Admin and Manager can access dashboard
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Only Admin and Manager can access vehicle dashboard')
+    
     claims = db.query(FuelExpenseClaimModel).all()
     
     status_summary = {
