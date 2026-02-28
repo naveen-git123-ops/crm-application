@@ -19,7 +19,8 @@ import {
   Briefcase,
   Target,
   Package,
-  CheckSquare
+  CheckSquare,
+  Fuel
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -44,6 +45,7 @@ export const Layout = ({ children }) => {
     { icon: FileText, label: 'Leaves', path: '/leaves', permission: 'leaves', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
     { icon: CalendarDays, label: 'Government Holidays', path: '/government-holidays', permission: 'holidays', roles: ['Admin', 'HR', 'Manager', 'Employee', 'Sales'] },
     { icon: Receipt, label: 'Expenses', path: '/expenses', permission: 'expenses', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
+    { icon: Fuel, label: 'Vehicle Tracking', path: '/vehicles', permission: 'vehicles', roles: ['Admin', 'HR', 'Manager', 'Employee', 'Accountant'] },
     { icon: Shield, label: 'Roles', path: '/roles', permission: 'roles', roles: ['Admin'] },
     { icon: Briefcase, label: 'Workspace', path: '/workspace', permission: 'workspace', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
     { icon: FileStack, label: 'Documents', path: '/documents', permission: 'documents', roles: ['Admin', 'HR', 'Manager', 'Employee'] },

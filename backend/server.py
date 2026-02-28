@@ -489,6 +489,65 @@ class SubscriptionReminderModel(Base):
     sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
+# ============= VEHICLE TRACKING MODELS =============
+
+class VehicleModel(Base):
+    __tablename__ = "vehicles"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    vehicle_name = Column(String(255), index=True)
+    vehicle_type = Column(String(100))  # Car, Bike, Van, Truck, etc.
+    fuel_type = Column(String(50))  # Petrol, Diesel, Electric, Hybrid
+    registration_number = Column(String(50), unique=True, index=True)
+    milage = Column(Float)  # km/liter or km/charge for electric
+    current_meter_reading = Column(Float, nullable=True)  # Latest meter reading in km
+    status = Column(String(50), default='Active')  # Active, Inactive, Under Maintenance
+    photo_path = Column(String(500), nullable=True)  # Photo of the vehicle
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class VehicleUsageModel(Base):
+    __tablename__ = "vehicle_usage"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    vehicle_id = Column(String(36), ForeignKey('vehicles.id'), index=True)
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
+    start_meter_reading = Column(Float)  # Starting km reading
+    start_reading_photo_path = Column(String(500), nullable=True)  # Photo of meter at start
+    end_meter_reading = Column(Float, nullable=True)  # Ending km reading
+    end_reading_photo_path = Column(String(500), nullable=True)  # Photo of meter at end
+    km_driven = Column(Float, nullable=True)  # Calculated distance (end - start)
+    fuel_consumed = Column(Float, nullable=True)  # Calculated based on km_driven / milage
+    start_date = Column(DateTime, default=datetime.now)
+    end_date = Column(DateTime, nullable=True)
+    status = Column(String(50), default='Active')  # Active, Completed
+    is_claimed = Column(Integer, default=0)  # 1 = already claimed in a fuel expense claim, 0 = not claimed
+    notes = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class FuelExpenseClaimModel(Base):
+    __tablename__ = "fuel_expense_claims"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    vehicle_usage_id = Column(String(36), ForeignKey('vehicle_usage.id'), index=True)
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
+    vehicle_id = Column(String(36), ForeignKey('vehicles.id'), index=True)
+    vehicle_name = Column(String(255))
+    km_driven = Column(Float)  # KM driven for this claim
+    fuel_consumed = Column(Float)  # Fuel consumed based on milage
+    claimed_amount = Column(Float)  # Amount claimed by employee
+    price_per_liter = Column(Float)  # Current fuel price (Petrol rate, etc.)
+    claim_status = Column(String(50), default='Pending')  # Pending, Approved, Rejected, Partially-Approved
+    is_valid = Column(Integer, default=1)  # 1 = Valid (claim matches actual consumption), 0 = Invalid
+    validation_message = Column(String(500), nullable=True)  # Message about validation
+    approver_id = Column(String(50), nullable=True)
+    approver_name = Column(String(255), nullable=True)
+    approved_amount = Column(Float, nullable=True)  # Amount finally approved
+    approval_notes = Column(String(500), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
 # Create all tables
 Base.metadata.create_all(bind=engine)
 
@@ -710,6 +769,21 @@ def migrate_customers():
 
 migrate_customers()
 
+def migrate_vehicle_usage_is_claimed():
+    """Add is_claimed column to vehicle_usage if missing."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            r = conn.execute(text("PRAGMA table_info(vehicle_usage)"))
+            cols = [row[1] for row in r.fetchall()]
+            if 'is_claimed' not in cols:
+                conn.execute(text("ALTER TABLE vehicle_usage ADD COLUMN is_claimed INTEGER DEFAULT 0"))
+            conn.commit()
+        except Exception as e:
+            print(f"Migration error for vehicle_usage is_claimed: {e}")
+
+migrate_vehicle_usage_is_claimed()
+
 # Seed default roles (Admin cannot be edited/deleted; others can)
 DEFAULT_PERMISSION_KEYS = [
     "dashboard", "leads", "employees", "attendance", "leaves", "expenses",
@@ -871,19 +945,18 @@ class Task(BaseModel):
 class TaskCreate(BaseModel):
     title: str
     description: Optional[str] = None
-    priority: Literal['Low', 'Medium', 'High'] = 'Medium'
     assigned_to_employee_id: str
     due_date: str  # YYYY-MM-DD
-    estimated_time_minutes: Optional[int] = None
+    estimated_time_hours: Optional[float] = None
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
-    priority: Optional[Literal['Low', 'Medium', 'High']] = None
     assigned_to_employee_id: Optional[str] = None
     due_date: Optional[str] = None
     status: Optional[Literal['Pending', 'In Progress', 'Completed', 'Overdue', 'Approval Pending']] = None
-    estimated_time_minutes: Optional[int] = None
+    # Keep API in hours but store in minutes
+    estimated_time_hours: Optional[float] = None
     actual_time_minutes: Optional[int] = None
     completion_notes: Optional[str] = None
     completion_percentage: Optional[int] = None
@@ -1463,6 +1536,92 @@ class DashboardStats(BaseModel):
     pending_leaves: int
     total_departments: int
 
+# ============= VEHICLE TRACKING PYDANTIC MODELS =============
+
+class Vehicle(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    vehicle_name: str
+    vehicle_type: str
+    fuel_type: str
+    registration_number: str
+    milage: float
+    current_meter_reading: Optional[float] = None
+    status: str = 'Active'
+    photo_path: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+
+class VehicleCreate(BaseModel):
+    vehicle_name: str
+    vehicle_type: str
+    fuel_type: Literal['Petrol', 'Diesel', 'Electric', 'Hybrid']
+    registration_number: str
+    milage: float
+    status: str = 'Active'
+
+class VehicleUsage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    vehicle_id: str
+    employee_id: str
+    employee_name: str
+    start_meter_reading: float
+    start_reading_photo_path: Optional[str] = None
+    end_meter_reading: Optional[float] = None
+    end_reading_photo_path: Optional[str] = None
+    km_driven: Optional[float] = None
+    fuel_consumed: Optional[float] = None
+    start_date: datetime
+    end_date: Optional[datetime] = None
+    status: str = 'Active'
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class VehicleUsageCreate(BaseModel):
+    vehicle_id: str
+    employee_id: str
+    employee_name: str
+    start_meter_reading: float
+    notes: Optional[str] = None
+
+class VehicleUsageUpdate(BaseModel):
+    end_meter_reading: float
+    notes: Optional[str] = None
+
+class FuelExpenseClaim(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    vehicle_usage_id: str
+    employee_id: str
+    employee_name: str
+    vehicle_id: str
+    vehicle_name: str
+    km_driven: float
+    fuel_consumed: float
+    claimed_amount: float
+    price_per_liter: float
+    claim_status: str = 'Pending'
+    is_valid: int = 1
+    validation_message: Optional[str] = None
+    approver_id: Optional[str] = None
+    approver_name: Optional[str] = None
+    approved_amount: Optional[float] = None
+    approval_notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class FuelExpenseClaimCreate(BaseModel):
+    vehicle_usage_id: str
+    claimed_amount: float
+    price_per_liter: float = 100.0  # Default price
+
+class FuelExpenseClaimAction(BaseModel):
+    claim_status: Literal['Approved', 'Rejected', 'Partially-Approved']
+    approver_id: str
+    approver_name: str
+    approved_amount: Optional[float] = None
+    approval_notes: Optional[str] = None
+
 # ============= DEPENDENCY =============
 
 def get_db():
@@ -2005,8 +2164,8 @@ def delete_customer(customer_id: str, current_user: UserModel = Depends(get_curr
 # ============= TASKS =============
 
 @api_router.post('/tasks', response_model=Task)
-def create_task(task_data: TaskCreate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
-    # Any authenticated user can create tasks (not just Admin/Manager)
+def create_task(task_data: TaskCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Any authenticated user can create tasks (no role restrictions)
     
     # Validate due date is not in the past
     due_date_obj = datetime.strptime(task_data.due_date, '%Y-%m-%d')
@@ -2030,17 +2189,25 @@ def create_task(task_data: TaskCreate, current_user: UserModel = Depends(require
     if not employee:
         raise HTTPException(status_code=404, detail='Assigned employee not found')
     
+    # Convert estimated time from hours (API) to minutes (DB)
+    estimated_minutes = None
+    if task_data.estimated_time_hours is not None:
+        try:
+            estimated_minutes = int(task_data.estimated_time_hours * 60)
+        except (TypeError, ValueError):
+            estimated_minutes = None
+
     new_task = TaskModel(
         task_id=task_id,
         title=task_data.title,
         description=task_data.description,
-        priority=task_data.priority,
+        # Priority is no longer part of the create API; default DB value will be used
         assigned_to_employee_id=employee.employee_id,  # Use human-readable employee_id
         assigned_to_name=employee.name,
         created_by_employee_id=current_user.employee_id,
         created_by_name=current_user.name,
         due_date=task_data.due_date,
-        estimated_time_minutes=task_data.estimated_time_minutes,
+        estimated_time_minutes=estimated_minutes,
         status='Pending'
     )
     
@@ -2054,7 +2221,7 @@ def create_task(task_data: TaskCreate, current_user: UserModel = Depends(require
 def upload_task_attachment(
     task_id: str,
     file: UploadFile = File(...),
-    current_user: UserModel = Depends(require_permission('tasks')),
+    current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Upload attachment to S3 for a task"""
@@ -2102,7 +2269,7 @@ def upload_task_attachment(
 def get_tasks_board(
     search: Optional[str] = None,
     employee_id: Optional[str] = None,
-    current_user: UserModel = Depends(require_permission('tasks')),
+    current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get tasks grouped by status for Kanban board view."""
@@ -2166,7 +2333,7 @@ def get_tasks_board(
 @api_router.get('/tasks/dashboard', response_model=TaskDashboard)
 def get_tasks_dashboard(
     employee_id: Optional[str] = None,
-    current_user: UserModel = Depends(require_permission('tasks')),
+    current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get task dashboard with statistics for all employees or specific employee."""
@@ -2260,7 +2427,7 @@ def get_tasks_dashboard(
 @api_router.get('/tasks', response_model=List[Task])
 def get_tasks(
     filter_type: Optional[str] = None,  # today, tomorrow, overdue, completed, my_tasks
-    current_user: UserModel = Depends(require_permission('tasks')),
+    current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get tasks. Employees see their own tasks; Managers/Admins see all or filtered tasks."""
@@ -2303,7 +2470,7 @@ def get_tasks(
     return tasks
 
 @api_router.get('/tasks/{task_id}', response_model=Task)
-def get_task(task_id: str, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+def get_task(task_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail='Task not found')
@@ -2315,7 +2482,7 @@ def get_task(task_id: str, current_user: UserModel = Depends(require_permission(
     return task
 
 @api_router.put('/tasks/{task_id}', response_model=Task)
-def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail='Task not found')
@@ -2333,8 +2500,6 @@ def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = D
         task.title = task_data.title
     if task_data.description is not None:
         task.description = task_data.description
-    if task_data.priority is not None:
-        task.priority = task_data.priority
     if task_data.assigned_to_employee_id is not None:
         employee = db.query(EmployeeModel).filter(
             (EmployeeModel.id == task_data.assigned_to_employee_id) |
@@ -2350,8 +2515,12 @@ def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = D
         task.status = task_data.status
         if task_data.status == 'Completed':
             task.completed_at = datetime.now()
-    if task_data.estimated_time_minutes is not None:
-        task.estimated_time_minutes = task_data.estimated_time_minutes
+    # Convert estimated time from hours (API) to minutes (DB)
+    if task_data.estimated_time_hours is not None:
+        try:
+            task.estimated_time_minutes = int(task_data.estimated_time_hours * 60)
+        except (TypeError, ValueError):
+            task.estimated_time_minutes = None
     if task_data.actual_time_minutes is not None:
         task.actual_time_minutes = task_data.actual_time_minutes
     if task_data.completion_notes is not None:
@@ -2366,7 +2535,7 @@ def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = D
     return task
 
 @api_router.delete('/tasks/{task_id}')
-def delete_task(task_id: str, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+def delete_task(task_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail='Task not found')
@@ -2387,7 +2556,7 @@ def delete_task(task_id: str, current_user: UserModel = Depends(require_permissi
 def change_task_status(
     task_id: str,
     status_data: TaskStatusChange,
-    current_user: UserModel = Depends(require_permission('tasks')),
+    current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Quick status change endpoint for Kanban board drag-and-drop."""
@@ -2418,7 +2587,7 @@ def change_task_status(
     return task
 
 @api_router.post('/tasks/{task_id}/mark-in-progress')
-def mark_task_in_progress(task_id: str, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+def mark_task_in_progress(task_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     """Employee marks task as In Progress"""
     task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
     if not task:
@@ -2435,7 +2604,7 @@ def mark_task_in_progress(task_id: str, current_user: UserModel = Depends(requir
     return task
 
 @api_router.post('/tasks/{task_id}/complete')
-def complete_task(task_id: str, completion_data: TaskUpdate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+def complete_task(task_id: str, completion_data: TaskUpdate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     """Employee marks task as Completed"""
     task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
     if not task:
@@ -2457,7 +2626,7 @@ def complete_task(task_id: str, completion_data: TaskUpdate, current_user: UserM
     return task
 
 @api_router.post('/tasks/{task_id}/update-completion')
-def update_task_completion(task_id: str, completion_data: TaskUpdate, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+def update_task_completion(task_id: str, completion_data: TaskUpdate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     """Employee updates task completion notes and hours - can be called at any time"""
     task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
     if not task:
@@ -2479,7 +2648,7 @@ def update_task_completion(task_id: str, completion_data: TaskUpdate, current_us
     return task
 
 @api_router.post('/tasks/{task_id}/request-carryforward')
-def request_task_carryforward(task_id: str, approval_data: TaskApprovalRequest, current_user: UserModel = Depends(require_permission('tasks')), db: Session = Depends(get_db)):
+def request_task_carryforward(task_id: str, approval_data: TaskApprovalRequest, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     """Employee requests to carry forward task to next day"""
     task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
     if not task:
@@ -2566,7 +2735,7 @@ def decide_task_approval(approval_id: str, decision: TaskApprovalAction, current
 @api_router.get('/tasks/{task_id}/comments', response_model=List[TaskComment])
 def get_task_comments(
     task_id: str,
-    current_user: UserModel = Depends(require_permission('tasks')),
+    current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get all comments for a task"""
@@ -2584,7 +2753,7 @@ def get_task_comments(
 def add_task_comment(
     task_id: str,
     comment: TaskCommentCreate,
-    current_user: UserModel = Depends(require_permission('tasks')),
+    current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Add a comment to a task"""
@@ -2610,7 +2779,7 @@ def add_task_comment(
 @api_router.get('/tasks/{task_id}/time-logs', response_model=List[TaskTimeLog])
 def get_task_time_logs(
     task_id: str,
-    current_user: UserModel = Depends(require_permission('tasks')),
+    current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get all time logs for a task"""
@@ -2628,7 +2797,7 @@ def get_task_time_logs(
 def add_task_time_log(
     task_id: str,
     time_log: TaskTimeLogCreate,
-    current_user: UserModel = Depends(require_permission('tasks')),
+    current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Log time spent on a task"""
@@ -2656,7 +2825,7 @@ def add_task_time_log(
 @api_router.get('/tasks/{task_id}/attachments', response_model=List[TaskAttachment])
 def get_task_attachments(
     task_id: str,
-    current_user: UserModel = Depends(require_permission('tasks')),
+    current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get all attachments for a task"""
@@ -2674,7 +2843,7 @@ def get_task_attachments(
 def add_task_attachment(
     task_id: str,
     file: UploadFile = File(...),
-    current_user: UserModel = Depends(require_permission('tasks')),
+    current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Upload an attachment to a task"""
@@ -2723,7 +2892,7 @@ def add_task_attachment(
 def delete_task_attachment(
     task_id: str,
     attachment_id: str,
-    current_user: UserModel = Depends(require_permission('tasks')),
+    current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Delete an attachment from a task"""
@@ -5075,6 +5244,852 @@ def generate_payslip(
         media_type='application/pdf',
         filename=f'payslip_{employee.employee_id}_{month}.pdf'
     )
+
+# ============= VEHICLE TRACKING ROUTES =============
+
+# Create a new vehicle
+@api_router.post('/vehicles', response_model=Vehicle)
+def create_vehicle(
+    data: VehicleCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new vehicle (Admin only)"""
+    # Check if registration number already exists
+    existing = db.query(VehicleModel).filter(VehicleModel.registration_number == data.registration_number).first()
+    if existing:
+        raise HTTPException(status_code=400, detail='Vehicle with this registration number already exists')
+    
+    vehicle = VehicleModel(
+        vehicle_name=data.vehicle_name,
+        vehicle_type=data.vehicle_type,
+        fuel_type=data.fuel_type,
+        registration_number=data.registration_number,
+        milage=data.milage,
+        status=data.status
+    )
+    db.add(vehicle)
+    db.commit()
+    db.refresh(vehicle)
+    return vehicle
+
+# Get all vehicles
+@api_router.get('/vehicles', response_model=List[Vehicle])
+def get_vehicles(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all vehicles"""
+    vehicles = db.query(VehicleModel).all()
+    return vehicles
+
+# ============= FUEL PRICE SETTINGS =============
+
+@api_router.get('/vehicles/fuel-price')
+def get_fuel_price(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get current fuel price per liter"""
+    try:
+        fuel_price = db.query(SettingsModel).filter(SettingsModel.config_key == 'fuel_price_per_liter').first()
+        if fuel_price:
+            return {'fuel_price_per_liter': float(fuel_price.value)}
+        return {'fuel_price_per_liter': 0}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Error fetching fuel price: {str(e)}')
+
+
+class FuelPriceUpdate(BaseModel):
+    fuel_price_per_liter: float
+
+
+@api_router.put('/vehicles/fuel-price')
+def update_fuel_price(
+    body: FuelPriceUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update fuel price per liter (Admin only)"""
+    try:
+        if current_user.role != 'Admin':
+            raise HTTPException(status_code=403, detail='Only Admin can update fuel price')
+        
+        fuel_price = db.query(SettingsModel).filter(SettingsModel.config_key == 'fuel_price_per_liter').first()
+        if fuel_price:
+            fuel_price.value = str(body.fuel_price_per_liter)
+        else:
+            fuel_price = SettingsModel(config_key='fuel_price_per_liter', value=str(body.fuel_price_per_liter))
+            db.add(fuel_price)
+        
+        db.commit()
+        return {
+            'message': 'Fuel price updated successfully',
+            'fuel_price_per_liter': body.fuel_price_per_liter
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f'Error updating fuel price: {str(e)}')
+
+# ============= VEHICLE DETAIL ROUTES =============
+
+# Get single vehicle
+@api_router.get('/vehicles/{vehicle_id}', response_model=Vehicle)
+def get_vehicle(
+    vehicle_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get single vehicle details"""
+    vehicle = db.query(VehicleModel).filter(VehicleModel.id == vehicle_id).first()
+    if not vehicle:
+        raise HTTPException(status_code=404, detail='Vehicle not found')
+    return vehicle
+
+# Update vehicle
+@api_router.put('/vehicles/{vehicle_id}', response_model=Vehicle)
+def update_vehicle(
+    vehicle_id: str,
+    data: VehicleCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update vehicle details"""
+    vehicle = db.query(VehicleModel).filter(VehicleModel.id == vehicle_id).first()
+    if not vehicle:
+        raise HTTPException(status_code=404, detail='Vehicle not found')
+    
+    vehicle.vehicle_name = data.vehicle_name
+    vehicle.vehicle_type = data.vehicle_type
+    vehicle.fuel_type = data.fuel_type
+    vehicle.milage = data.milage
+    vehicle.status = data.status
+    
+    db.commit()
+    db.refresh(vehicle)
+    return vehicle
+
+# Upload vehicle photo
+@api_router.post('/vehicles/{vehicle_id}/upload-photo')
+def upload_vehicle_photo(
+    vehicle_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload vehicle photo"""
+    vehicle = db.query(VehicleModel).filter(VehicleModel.id == vehicle_id).first()
+    if not vehicle:
+        raise HTTPException(status_code=404, detail='Vehicle not found')
+    
+    try:
+        file_content = file.file.read()
+        filename = f"vehicle_{uuid.uuid4()}{Path(file.filename).suffix}"
+        photo_path = upload_to_s3(file_content, filename, folder='vehicle_photos')
+        
+        if not photo_path:
+            raise HTTPException(status_code=503, detail='File upload service unavailable')
+        
+        vehicle.photo_path = photo_path
+        db.commit()
+        db.refresh(vehicle)
+        
+        return {'photo_path': photo_path, 'message': 'Vehicle photo uploaded successfully'}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# ============= VEHICLE USAGE ROUTES =============
+
+# Start vehicle usage
+@api_router.post('/vehicle-usage', response_model=VehicleUsage)
+def start_vehicle_usage(
+    data: VehicleUsageCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Employee starts using a vehicle - records start meter reading"""
+    vehicle = db.query(VehicleModel).filter(VehicleModel.id == data.vehicle_id).first()
+    if not vehicle:
+        raise HTTPException(status_code=404, detail='Vehicle not found')
+    
+    # Validate meter reading - should be reasonable (max 1 million km for a vehicle)
+    if data.start_meter_reading < 0 or data.start_meter_reading > 1000000:
+        raise HTTPException(status_code=400, detail='Invalid meter reading. Must be between 0 and 1,000,000 km')
+    
+    usage = VehicleUsageModel(
+        vehicle_id=data.vehicle_id,
+        employee_id=data.employee_id,
+        employee_name=data.employee_name,
+        start_meter_reading=data.start_meter_reading,
+        notes=data.notes
+    )
+    db.add(usage)
+    db.commit()
+    db.refresh(usage)
+    return usage
+
+# Get all vehicle usage records
+@api_router.get('/vehicle-usage', response_model=List[VehicleUsage])
+def get_all_vehicle_usage(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all vehicle usage records - admins see all, others see their own. Excludes already claimed journeys."""
+    if current_user.role in ['Admin', 'Manager']:
+        usages = db.query(VehicleUsageModel).filter(VehicleUsageModel.is_claimed == 0).order_by(VehicleUsageModel.start_date.desc()).all()
+    else:
+        usages = db.query(VehicleUsageModel).filter(
+            VehicleUsageModel.employee_id == current_user.employee_id,
+            VehicleUsageModel.is_claimed == 0
+        ).order_by(VehicleUsageModel.start_date.desc()).all()
+    return usages
+
+# Get last vehicle usage for tracking
+@api_router.get('/vehicle-usage/vehicle/{vehicle_id}/last')
+def get_last_vehicle_usage(
+    vehicle_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get last usage of a vehicle (by any employee) - useful for tracking if vehicle was properly returned"""
+    # Get the most recent usage (completed or ongoing)
+    last_usage = db.query(VehicleUsageModel).filter(
+        VehicleUsageModel.vehicle_id == vehicle_id
+    ).order_by(VehicleUsageModel.start_date.desc()).first()
+    
+    if not last_usage:
+        return {'message': 'No previous usage found'}
+    
+    return {
+        'id': last_usage.id,
+        'employee_id': last_usage.employee_id,
+        'employee_name': last_usage.employee_name,
+        'start_meter_reading': last_usage.start_meter_reading,
+        'end_meter_reading': last_usage.end_meter_reading,
+        'start_date': last_usage.start_date.isoformat() if last_usage.start_date else None,
+        'end_date': last_usage.end_date.isoformat() if last_usage.end_date else None,
+        'status': last_usage.status,
+        'km_driven': last_usage.km_driven,
+        'notes': last_usage.notes
+    }
+
+# Upload start meter reading photo
+@api_router.post('/vehicle-usage/{usage_id}/upload-start-photo')
+def upload_start_reading_photo(
+    usage_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload photo of meter reading at start of journey"""
+    usage = db.query(VehicleUsageModel).filter(VehicleUsageModel.id == usage_id).first()
+    if not usage:
+        raise HTTPException(status_code=404, detail='Vehicle usage record not found')
+    
+    try:
+        file_content = file.file.read()
+        filename = f"meter_start_{uuid.uuid4()}{Path(file.filename).suffix}"
+        photo_path = upload_to_s3(file_content, filename, folder='meter_readings')
+        
+        if not photo_path:
+            raise HTTPException(status_code=503, detail='File upload service unavailable')
+        
+        usage.start_reading_photo_path = photo_path
+        db.commit()
+        db.refresh(usage)
+        
+        return {'photo_path': photo_path, 'message': 'Start reading photo uploaded'}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# Complete vehicle usage
+@api_router.put('/vehicle-usage/{usage_id}/complete', response_model=VehicleUsage)
+def complete_vehicle_usage(
+    usage_id: str,
+    data: VehicleUsageUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Employee completes vehicle usage - records end meter reading"""
+    usage = db.query(VehicleUsageModel).filter(VehicleUsageModel.id == usage_id).first()
+    if not usage:
+        raise HTTPException(status_code=404, detail='Vehicle usage record not found')
+    
+    vehicle = db.query(VehicleModel).filter(VehicleModel.id == usage.vehicle_id).first()
+    if not vehicle:
+        raise HTTPException(status_code=404, detail='Vehicle not found')
+    
+    # Validate meter reading
+    if data.end_meter_reading < 0 or data.end_meter_reading > 1000000:
+        raise HTTPException(status_code=400, detail='Invalid meter reading. Must be between 0 and 1,000,000 km')
+    
+    if data.end_meter_reading < usage.start_meter_reading:
+        raise HTTPException(status_code=400, detail='End meter reading must be greater than or equal to start meter reading')
+    
+    # Calculate KM driven and fuel consumed
+    km_driven = data.end_meter_reading - usage.start_meter_reading
+    fuel_consumed = km_driven / vehicle.milage
+    
+    usage.end_meter_reading = data.end_meter_reading
+    usage.km_driven = km_driven
+    usage.fuel_consumed = fuel_consumed
+    usage.status = 'Completed'
+    usage.end_date = datetime.now(timezone.utc)
+    if data.notes:
+        usage.notes = data.notes
+    
+    # Update vehicle's current meter reading
+    vehicle.current_meter_reading = data.end_meter_reading
+    
+    db.commit()
+    db.refresh(usage)
+    return usage
+
+# Complete vehicle usage (PATCH alternative endpoint for frontend)
+@api_router.patch('/vehicle-usage/{usage_id}', response_model=VehicleUsage)
+def complete_vehicle_usage_patch(
+    usage_id: str,
+    data: VehicleUsageUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Employee completes vehicle usage - records end meter reading (PATCH alternative)"""
+    usage = db.query(VehicleUsageModel).filter(VehicleUsageModel.id == usage_id).first()
+    if not usage:
+        raise HTTPException(status_code=404, detail='Vehicle usage record not found')
+    
+    vehicle = db.query(VehicleModel).filter(VehicleModel.id == usage.vehicle_id).first()
+    if not vehicle:
+        raise HTTPException(status_code=404, detail='Vehicle not found')
+    
+    # Calculate KM driven and fuel consumed
+    km_driven = data.end_meter_reading - usage.start_meter_reading
+    fuel_consumed = km_driven / vehicle.milage
+    
+    usage.end_meter_reading = data.end_meter_reading
+    usage.km_driven = km_driven
+    usage.fuel_consumed = fuel_consumed
+    usage.status = 'Completed'
+    usage.end_date = datetime.now(timezone.utc)
+    if data.notes:
+        usage.notes = data.notes
+    
+    # Update vehicle's current meter reading
+    vehicle.current_meter_reading = data.end_meter_reading
+    
+    db.commit()
+    db.refresh(usage)
+    return usage
+
+# Upload end meter reading photo
+@api_router.post('/vehicle-usage/{usage_id}/upload-end-photo')
+def upload_end_reading_photo(
+    usage_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload photo of meter reading at end of journey"""
+    usage = db.query(VehicleUsageModel).filter(VehicleUsageModel.id == usage_id).first()
+    if not usage:
+        raise HTTPException(status_code=404, detail='Vehicle usage record not found')
+    
+    try:
+        file_content = file.file.read()
+        filename = f"meter_end_{uuid.uuid4()}{Path(file.filename).suffix}"
+        photo_path = upload_to_s3(file_content, filename, folder='meter_readings')
+        
+        if not photo_path:
+            raise HTTPException(status_code=503, detail='File upload service unavailable')
+        
+        usage.end_reading_photo_path = photo_path
+        db.commit()
+        db.refresh(usage)
+        
+        return {'photo_path': photo_path, 'message': 'End reading photo uploaded'}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# Get vehicle usage by ID
+@api_router.get('/vehicle-usage/{usage_id}', response_model=VehicleUsage)
+def get_vehicle_usage(
+    usage_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get vehicle usage details"""
+    usage = db.query(VehicleUsageModel).filter(VehicleUsageModel.id == usage_id).first()
+    if not usage:
+        raise HTTPException(status_code=404, detail='Vehicle usage record not found')
+    return usage
+
+# Get all vehicle usage records for employee
+@api_router.get('/vehicle-usage/employee/{employee_id}')
+def get_employee_vehicle_usage(
+    employee_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all vehicle usage records for an employee"""
+    usages = db.query(VehicleUsageModel).filter(VehicleUsageModel.employee_id == employee_id).all()
+    return usages
+
+# ============= FUEL EXPENSE CLAIM ROUTES =============
+
+# Create fuel expense claim
+@api_router.post('/fuel-expense-claims', response_model=FuelExpenseClaim)
+def create_fuel_expense_claim(
+    data: FuelExpenseClaimCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a fuel expense claim from vehicle usage"""
+    # Get the vehicle usage record
+    usage = db.query(VehicleUsageModel).filter(VehicleUsageModel.id == data.vehicle_usage_id).first()
+    if not usage:
+        raise HTTPException(status_code=404, detail='Vehicle usage record not found')
+    
+    if usage.is_claimed:
+        raise HTTPException(status_code=400, detail='This journey has already been claimed')
+    
+    if usage.status != 'Completed':
+        raise HTTPException(status_code=400, detail='Vehicle usage must be completed before claiming')
+    
+    # Get vehicle details
+    vehicle = db.query(VehicleModel).filter(VehicleModel.id == usage.vehicle_id).first()
+    if not vehicle:
+        raise HTTPException(status_code=404, detail='Vehicle not found')
+    
+    # Validate claim amount against fuel consumed
+    actual_fuel_cost = usage.fuel_consumed * data.price_per_liter
+    max_claimable = actual_fuel_cost * 1.05  # Allow 5% tolerance
+    
+    is_valid = 1
+    validation_message = None
+    
+    if data.claimed_amount > max_claimable:
+        is_valid = 0
+        validation_message = f'Claimed amount (₹{data.claimed_amount}) exceeds calculated fuel cost (₹{actual_fuel_cost:.2f}). Max claimable: ₹{max_claimable:.2f}'
+    
+    claim = FuelExpenseClaimModel(
+        vehicle_usage_id=data.vehicle_usage_id,
+        employee_id=usage.employee_id,
+        employee_name=usage.employee_name,
+        vehicle_id=usage.vehicle_id,
+        vehicle_name=vehicle.vehicle_name,
+        km_driven=usage.km_driven,
+        fuel_consumed=usage.fuel_consumed,
+        claimed_amount=data.claimed_amount,
+        price_per_liter=data.price_per_liter,
+        is_valid=is_valid,
+        validation_message=validation_message
+    )
+    db.add(claim)
+    
+    # Mark the usage record as claimed
+    usage.is_claimed = 1
+    
+    db.commit()
+    db.refresh(claim)
+    return claim
+
+# Get fuel expense claims for employee
+@api_router.get('/fuel-expense-claims/employee/{employee_id}')
+def get_employee_fuel_claims(
+    employee_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all fuel expense claims for an employee"""
+    claims = db.query(FuelExpenseClaimModel).filter(FuelExpenseClaimModel.employee_id == employee_id).all()
+    return claims
+
+# Get all fuel expense claims (for approval)
+@api_router.get('/fuel-expense-claims')
+def get_fuel_claims(
+    status: Optional[str] = None,
+    month: Optional[int] = None,
+    year: Optional[int] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get fuel expense claims - admins see all, others see their own (filter by status if provided)"""
+    # Get fuel price for calculations
+    fuel_price_row = db.query(SettingsModel).filter(SettingsModel.config_key == 'fuel_price_per_liter').first()
+    fuel_price_per_liter = float(fuel_price_row.value) if fuel_price_row else 0
+    
+    query = db.query(FuelExpenseClaimModel)
+    
+    # Filter by employee for non-admin users
+    if current_user.role not in ['Admin', 'Manager', 'HR']:
+        query = query.filter(FuelExpenseClaimModel.employee_id == current_user.employee_id)
+    
+    if status:
+        query = query.filter(FuelExpenseClaimModel.claim_status == status)
+    else:
+        # If no status specified, include both Approved and Partially-Approved
+        query = query.filter(FuelExpenseClaimModel.claim_status.in_(['Approved', 'Partially-Approved']))
+    
+    # Filter by month and year if provided
+    if month and year:
+        start_date = datetime(year, month, 1, 0, 0, 0)
+        if month == 12:
+            end_date = datetime(year + 1, 1, 1, 0, 0, 0)
+        else:
+            end_date = datetime(year, month + 1, 1, 0, 0, 0)
+        query = query.filter(FuelExpenseClaimModel.created_at >= start_date)
+        query = query.filter(FuelExpenseClaimModel.created_at < end_date)
+    
+    claims = query.order_by(FuelExpenseClaimModel.created_at.desc()).all()
+    
+    # Format with calculated fuel cost and over/under claimed indicator
+    result = []
+    for claim in claims:
+        calculated_cost = (claim.fuel_consumed or 0) * fuel_price_per_liter
+        difference = (claim.claimed_amount or 0) - calculated_cost
+        claim_type = 'Over-Claimed' if difference > 0 else ('Under-Claimed' if difference < 0 else 'Exact')
+        
+        result.append({
+            'id': claim.id,
+            'employee_id': claim.employee_id,
+            'employee_name': claim.employee_name,
+            'vehicle_name': claim.vehicle_name,
+            'vehicle_id': claim.vehicle_id,
+            'km_driven': claim.km_driven,
+            'fuel_consumed': claim.fuel_consumed,
+            'claimed_amount': claim.claimed_amount,
+            'price_per_liter': claim.price_per_liter,
+            'calculated_fuel_cost': round(calculated_cost, 2),
+            'difference': round(difference, 2),
+            'claim_type': claim_type,
+            'claim_status': claim.claim_status,
+            'approved_amount': claim.approved_amount if claim.approved_amount is not None else (claim.claimed_amount if claim.claim_status in ['Approved', 'Partially-Approved'] else 0),
+            'is_valid': claim.is_valid,
+            'approver_name': claim.approver_name,
+            'approval_notes': claim.approval_notes,
+            'created_at': claim.created_at.isoformat() if claim.created_at else None,
+            'approved_at': claim.approved_at.isoformat() if claim.approved_at else None
+        })
+    
+    return result
+
+# Get single fuel claim
+@api_router.get('/fuel-expense-claims/{claim_id}', response_model=FuelExpenseClaim)
+def get_fuel_claim(
+    claim_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get single fuel claim details"""
+    claim = db.query(FuelExpenseClaimModel).filter(FuelExpenseClaimModel.id == claim_id).first()
+    if not claim:
+        raise HTTPException(status_code=404, detail='Fuel claim not found')
+    return claim
+
+# Get all claims for approval grid (Admin & Accountant only)
+@api_router.get('/fuel-expense-claims-approval')
+def get_all_claims_for_approval(
+    status: str = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all claims with calculated fuel cost for approval dashboard"""
+    if current_user.role not in ['Admin', 'Accountant']:
+        raise HTTPException(status_code=403, detail='Only Admin and Accountant can view approval dashboard')
+    
+    # Get fuel price for calculations
+    fuel_price_row = db.query(SettingsModel).filter(SettingsModel.config_key == 'fuel_price_per_liter').first()
+    fuel_price_per_liter = float(fuel_price_row.value) if fuel_price_row else 0
+    
+    query = db.query(FuelExpenseClaimModel)
+    
+    # Filter by status if provided
+    if status and status != 'All':
+        query = query.filter(FuelExpenseClaimModel.claim_status == status)
+    
+    claims = query.all()
+    
+    # Sort by date (newest first)
+    claims = sorted(claims, key=lambda x: x.created_at, reverse=True) if claims else []
+    
+    # Format with calculated fuel cost
+    result = []
+    for claim in claims:
+        calculated_cost = (claim.fuel_consumed or 0) * fuel_price_per_liter
+        difference = (claim.claimed_amount or 0) - calculated_cost
+        
+        result.append({
+            'id': claim.id,
+            'employee_id': claim.employee_id,
+            'employee_name': claim.employee_name,
+            'vehicle_name': claim.vehicle_name,
+            'vehicle_id': claim.vehicle_id,
+            'km_driven': claim.km_driven,
+            'fuel_consumed': claim.fuel_consumed,
+            'claimed_amount': claim.claimed_amount,
+            'price_per_liter': claim.price_per_liter,
+            'calculated_fuel_cost': round(calculated_cost, 2),
+            'difference': round(difference, 2),
+            'claim_status': claim.claim_status,
+            'approved_amount': claim.approved_amount,
+            'is_valid': claim.is_valid,
+            'approver_name': claim.approver_name,
+            'approval_notes': claim.approval_notes,
+            'created_at': claim.created_at.isoformat() if claim.created_at else None,
+            'approved_at': claim.approved_at.isoformat() if claim.approved_at else None
+        })
+    
+    return result
+
+# Approve/Reject fuel expense claim
+@api_router.post('/fuel-expense-claims/{claim_id}/decide')
+def decide_fuel_claim(
+    claim_id: str,
+    data: FuelExpenseClaimAction,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Approve, Reject, or Partially-Approve a fuel expense claim - Admin & Accountant only"""
+    # Only Admin and Accountant can approve claims
+    if current_user.role not in ['Admin', 'Accountant']:
+        raise HTTPException(status_code=403, detail='Only Admin and Accountant can approve claims')
+    
+    claim = db.query(FuelExpenseClaimModel).filter(FuelExpenseClaimModel.id == claim_id).first()
+    if not claim:
+        raise HTTPException(status_code=404, detail='Fuel claim not found')
+    
+    if data.claim_status == 'Partially-Approved' and data.approved_amount is None:
+        raise HTTPException(status_code=400, detail='approved_amount required for partial approval')
+    
+    claim.claim_status = data.claim_status
+    claim.approver_id = data.approver_id
+    claim.approver_name = data.approver_name
+    claim.approval_notes = data.approval_notes
+    claim.approved_at = datetime.now(timezone.utc)
+    
+    if data.claim_status == 'Approved':
+        claim.approved_amount = claim.claimed_amount
+    elif data.claim_status == 'Partially-Approved':
+        claim.approved_amount = data.approved_amount
+    
+    db.commit()
+    db.refresh(claim)
+    return claim
+
+# ============= VEHICLE SUMMARY & ANALYTICS ENDPOINTS =============
+
+# Get vehicle tracking dashboard summary (for admin)
+@api_router.get('/vehicles/dashboard/summary')
+def get_vehicle_dashboard_summary(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get vehicle tracking summary for admin dashboard"""
+    # Total metrics
+    total_vehicles = db.query(VehicleModel).count()
+    active_vehicles = db.query(VehicleModel).filter(VehicleModel.status == 'Active').count()
+    total_usages = db.query(VehicleUsageModel).count()
+    completed_usages = db.query(VehicleUsageModel).filter(VehicleUsageModel.status == 'Completed').count()
+    
+    # Fuel expenses
+    all_claims = db.query(FuelExpenseClaimModel).all()
+    total_claims = len(all_claims)
+    approved_claims = [c for c in all_claims if c.claim_status == 'Approved']
+    total_approved_amount = sum(c.approved_amount or c.claimed_amount for c in approved_claims)
+    pending_claims = [c for c in all_claims if c.claim_status == 'Pending']
+    total_pending_amount = sum(c.claimed_amount for c in pending_claims)
+    invalid_claims = [c for c in all_claims if not c.is_valid]
+    
+    # Total distance and fuel
+    total_km = sum(u.km_driven or 0 for u in db.query(VehicleUsageModel).all())
+    total_fuel = sum(u.fuel_consumed or 0 for u in db.query(VehicleUsageModel).all())
+    
+    # Get fuel price
+    fuel_price_row = db.query(SettingsModel).filter(SettingsModel.config_key == 'fuel_price_per_liter').first()
+    fuel_price_per_liter = float(fuel_price_row.value) if fuel_price_row else 0
+    
+    return {
+        'total_vehicles': total_vehicles,
+        'active_vehicles': active_vehicles,
+        'total_journeys': total_usages,
+        'completed_journeys': completed_usages,
+        'total_km_driven': round(total_km, 2),
+        'total_fuel_used': round(total_fuel, 2),
+        'total_claims': total_claims,
+        'approved_claims': len(approved_claims),
+        'pending_claims': len(pending_claims),
+        'invalid_claims': len(invalid_claims),
+        'total_approved_amount': round(total_approved_amount, 2),
+        'total_pending_amount': round(total_pending_amount, 2),
+        'fuel_price_per_liter': fuel_price_per_liter,
+        'calculated_fuel_cost': round(total_fuel * fuel_price_per_liter, 2)
+    }
+
+# Get employee-wise vehicle usage summary
+@api_router.get('/vehicles/dashboard/employee-summary')
+def get_employee_vehicle_summary(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get vehicle usage and expenses by employee"""
+    usages = db.query(VehicleUsageModel).all()
+    claims = db.query(FuelExpenseClaimModel).all()
+    
+    # Get fuel price
+    fuel_price_row = db.query(SettingsModel).filter(SettingsModel.config_key == 'fuel_price_per_liter').first()
+    fuel_price_per_liter = float(fuel_price_row.value) if fuel_price_row else 0
+    
+    # Group by employee - initialize with usages
+    employee_data = {}
+    for usage in usages:
+        if usage.employee_id not in employee_data:
+            employee_data[usage.employee_id] = {
+                'employee_name': usage.employee_name,
+                'total_journeys': 0,
+                'total_km': 0,
+                'total_fuel': 0,
+                'vehicles_used': set(),
+                'total_claimed': 0,
+                'total_approved': 0,
+                'pending_amount': 0,
+                'invalid_claims': 0
+            }
+        
+        employee_data[usage.employee_id]['total_journeys'] += 1
+        employee_data[usage.employee_id]['total_km'] += usage.km_driven or 0
+        employee_data[usage.employee_id]['total_fuel'] += usage.fuel_consumed or 0
+        employee_data[usage.employee_id]['vehicles_used'].add(usage.vehicle_id)
+    
+    # Add claim information and ensure all employees with claims are included
+    for claim in claims:
+        if claim.employee_id not in employee_data:
+            employee_data[claim.employee_id] = {
+                'employee_name': claim.employee_name,
+                'total_journeys': 0,
+                'total_km': 0,
+                'total_fuel': 0,
+                'vehicles_used': set(),
+                'total_claimed': 0,
+                'total_approved': 0,
+                'pending_amount': 0,
+                'invalid_claims': 0
+            }
+        
+        employee_data[claim.employee_id]['total_claimed'] += claim.claimed_amount
+        if claim.claim_status == 'Approved':
+            employee_data[claim.employee_id]['total_approved'] += claim.approved_amount or claim.claimed_amount
+        elif claim.claim_status == 'Pending':
+            employee_data[claim.employee_id]['pending_amount'] += claim.claimed_amount
+        if not claim.is_valid:
+            employee_data[claim.employee_id]['invalid_claims'] += 1
+    
+    # Convert to list and format
+    result = []
+    for emp_id, data in employee_data.items():
+        total_fuel = data['total_fuel']
+        calculated_fuel_cost = total_fuel * fuel_price_per_liter
+        result.append({
+            'employee_id': emp_id,
+            'employee_name': data['employee_name'],
+            'total_journeys': data['total_journeys'],
+            'total_km': round(data['total_km'], 2),
+            'total_fuel': round(data['total_fuel'], 2),
+            'vehicles_used_count': len(data['vehicles_used']),
+            'total_claimed_amount': round(data['total_claimed'], 2),
+            'total_approved_amount': round(data['total_approved'], 2),
+            'pending_amount': round(data['pending_amount'], 2),
+            'invalid_claims_count': data['invalid_claims'],
+            'calculated_fuel_cost': round(calculated_fuel_cost, 2),
+            'fuel_price_per_liter': fuel_price_per_liter
+        })
+    
+    return sorted(result, key=lambda x: x['total_km'], reverse=True)
+
+# Get vehicle-wise usage summary
+@api_router.get('/vehicles/dashboard/vehicle-summary')
+def get_vehicle_usage_summary(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get vehicle usage statistics"""
+    vehicles = db.query(VehicleModel).all()
+    usages = db.query(VehicleUsageModel).all()
+    
+    # Get fuel price
+    fuel_price_row = db.query(SettingsModel).filter(SettingsModel.config_key == 'fuel_price_per_liter').first()
+    fuel_price_per_liter = float(fuel_price_row.value) if fuel_price_row else 0
+    
+    vehicle_data = {}
+    for vehicle in vehicles:
+        vehicle_data[vehicle.id] = {
+            'vehicle_name': vehicle.vehicle_name,
+            'vehicle_type': vehicle.vehicle_type,
+            'fuel_type': vehicle.fuel_type,
+            'registration_number': vehicle.registration_number,
+            'milage': vehicle.milage,
+            'total_journeys': 0,
+            'total_km': 0,
+            'total_fuel_used': 0,
+            'employees_used': set(),
+            'current_meter_reading': vehicle.current_meter_reading or 0,
+            'status': vehicle.status
+        }
+    
+    for usage in usages:
+        if usage.vehicle_id in vehicle_data:
+            vehicle_data[usage.vehicle_id]['total_journeys'] += 1
+            vehicle_data[usage.vehicle_id]['total_km'] += usage.km_driven or 0
+            vehicle_data[usage.vehicle_id]['total_fuel_used'] += usage.fuel_consumed or 0
+            vehicle_data[usage.vehicle_id]['employees_used'].add(usage.employee_id)
+    
+    result = []
+    for v_id, data in vehicle_data.items():
+        total_fuel = data['total_fuel_used']
+        calculated_fuel_cost = total_fuel * fuel_price_per_liter
+        result.append({
+            'vehicle_id': v_id,
+            'vehicle_name': data['vehicle_name'],
+            'vehicle_type': data['vehicle_type'],
+            'fuel_type': data['fuel_type'],
+            'registration_number': data['registration_number'],
+            'milage': data['milage'],
+            'total_journeys': data['total_journeys'],
+            'total_km': round(data['total_km'], 2),
+            'total_fuel_used': round(data['total_fuel_used'], 2),
+            'calculated_fuel_cost': round(calculated_fuel_cost, 2),
+            'fuel_price_per_liter': fuel_price_per_liter,
+            'employees_used_count': len(data['employees_used']),
+            'current_meter_reading': round(data['current_meter_reading'], 1),
+            'status': data['status']
+        })
+    
+    return sorted(result, key=lambda x: x['total_journeys'], reverse=True)
+
+# Get claim status overview
+@api_router.get('/vehicles/dashboard/claim-status')
+def get_claim_status_overview(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get claims grouped by status"""
+    claims = db.query(FuelExpenseClaimModel).all()
+    
+    status_summary = {
+        'Pending': {'count': 0, 'total_amount': 0},
+        'Approved': {'count': 0, 'total_amount': 0},
+        'Rejected': {'count': 0, 'total_amount': 0},
+        'Partially-Approved': {'count': 0, 'total_amount': 0}
+    }
+    
+    for claim in claims:
+        status = claim.claim_status
+        if status in status_summary:
+            status_summary[status]['count'] += 1
+            status_summary[status]['total_amount'] += claim.approved_amount or claim.claimed_amount
+    
+    return status_summary
 
 # ============= DASHBOARD ROUTES =============
 

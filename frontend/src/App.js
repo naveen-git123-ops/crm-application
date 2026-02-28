@@ -22,6 +22,7 @@ import { Roles } from '@/pages/Roles';
 import { Workspace } from '@/pages/Workspace';
 import { Leads } from '@/pages/Leads';
 import { GovernmentHolidays } from '@/pages/GovernmentHolidays';
+import Vehicles from '@/pages/Vehicles';
 import Inventory from '@/pages/Inventory';
 
 function App() {
@@ -127,6 +128,17 @@ function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Expenses />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/vehicles"
+              element={
+                <ProtectedRoute allowedRoles={['Admin', 'HR', 'Manager', 'Employee', 'Accountant']}>
+                  <Layout>
+                    <Vehicles />
                   </Layout>
                 </ProtectedRoute>
               }

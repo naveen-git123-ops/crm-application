@@ -49,6 +49,7 @@ export const Expenses = () => {
   const [partialAmount, setPartialAmount] = useState('');
   const [partialReason, setPartialReason] = useState('');
   const [receiptRetryDialogOpen, setReceiptRetryDialogOpen] = useState(false);
+  const [vehicleClaimsSummary, setVehicleClaimsSummary] = useState({});
   const [retryExpenseId, setRetryExpenseId] = useState(null);
   const [retryReceiptFile, setRetryReceiptFile] = useState(null);
   const [isRetryingReceipt, setIsRetryingReceipt] = useState(false);
@@ -60,6 +61,29 @@ export const Expenses = () => {
     description: ''
   });
 
+  const fetchVehicleClaimsSummary = async () => {
+    try {
+      const res = await axios.get(
+        `${API}/fuel-expense-claims?month=${summaryMonth}&year=${summaryYear}`,
+        authHeaders()
+      );
+      // Group by employee_id
+      const claimsByEmployee = {};
+      if (Array.isArray(res.data)) {
+        res.data.forEach(claim => {
+          if (!claimsByEmployee[claim.employee_id]) {
+            claimsByEmployee[claim.employee_id] = 0;
+          }
+          claimsByEmployee[claim.employee_id] += (claim.approved_amount || 0);
+        });
+      }
+      setVehicleClaimsSummary(claimsByEmployee);
+    } catch (err) {
+      console.log('Error fetching vehicle claims:', err);
+      setVehicleClaimsSummary({});
+    }
+  };
+
   const fetchSummary = async () => {
     try {
       const res = await axios.get(
@@ -67,6 +91,8 @@ export const Expenses = () => {
         authHeaders()
       );
       setSummary(res.data);
+      // Also fetch vehicle claims
+      fetchVehicleClaimsSummary();
     } catch {
       setSummary({ month: summaryMonth, year: summaryYear, employees: [] });
     }
@@ -479,28 +505,40 @@ export const Expenses = () => {
                   <tr className="border-b border-gray-200 bg-gray-50">
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
                     <th className="text-right py-3 px-4 font-semibold text-green-700">Approved (₹)</th>
+                    <th className="text-right py-3 px-4 font-semibold text-blue-700">Fuel Approved (₹)</th>
+                    <th className="text-right py-3 px-4 font-semibold text-purple-700 bg-purple-50">Total to Pay (₹)</th>
                     <th className="text-right py-3 px-4 font-semibold text-red-700">Rejected (₹)</th>
                     <th className="text-right py-3 px-4 font-semibold text-amber-700">Pending (₹)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {summary.employees.map((row) => (
-                    <tr key={row.employee_id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-3 px-4">
-                        <span className="font-medium text-gray-900">{row.employee_name}</span>
-                        <span className="text-gray-500 ml-1">({row.employee_id})</span>
-                      </td>
-                      <td className="text-right py-3 px-4 font-medium text-green-700">
-                        ₹{Number(row.total_approved).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="text-right py-3 px-4 text-red-600">
-                        ₹{Number(row.total_rejected).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="text-right py-3 px-4 text-amber-600">
-                        ₹{Number(row.total_pending).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                    </tr>
-                  ))}
+                  {summary.employees.map((row) => {
+                    const fuelApproved = vehicleClaimsSummary[row.employee_id] || 0;
+                    const totalToPay = (row.total_approved || 0) + fuelApproved;
+                    return (
+                      <tr key={row.employee_id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-3 px-4">
+                          <span className="font-medium text-gray-900">{row.employee_name}</span>
+                          <span className="text-gray-500 ml-1">({row.employee_id})</span>
+                        </td>
+                        <td className="text-right py-3 px-4 font-medium text-green-700">
+                          ₹{Number(row.total_approved).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="text-right py-3 px-4 font-medium text-blue-700">
+                          ₹{Number(fuelApproved).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="text-right py-3 px-4 font-bold text-purple-700 bg-purple-50">
+                          ₹{Number(totalToPay).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="text-right py-3 px-4 text-red-600">
+                          ₹{Number(row.total_rejected).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="text-right py-3 px-4 text-amber-600">
+                          ₹{Number(row.total_pending).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

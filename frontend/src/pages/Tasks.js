@@ -443,7 +443,7 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
               <span>Task Details</span>
             </h3>
             
-            {!editMode && (user?.role === 'Admin' || user?.role === 'Manager') && (
+            {!editMode && (
               <Button
                 size="sm"
                 onClick={() => setEditMode(true)}
@@ -820,10 +820,9 @@ export const Tasks = () => {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    priority: 'Medium',
     assigned_to_employee_id: '',
     due_date: '',
-    estimated_time_minutes: '',
+    estimated_time_hours: '',
   });
 
   const sensors = useSensors(
@@ -995,12 +994,7 @@ export const Tasks = () => {
   const handleCreateTask = async (e) => {
     e.preventDefault();
 
-    // Check if user has permission to create tasks
-    if (user?.role !== 'Admin' && user?.role !== 'Manager') {
-      toast.error('Only Admin and Manager can create tasks');
-      return;
-    }
-
+    // Any authenticated user can create tasks
     if (!formData.title || !formData.assigned_to_employee_id || !formData.due_date) {
       toast.error('Please fill in all required fields');
       return;
@@ -1031,10 +1025,9 @@ export const Tasks = () => {
     setFormData({
       title: '',
       description: '',
-      priority: 'Medium',
       assigned_to_employee_id: '',
       due_date: '',
-      estimated_time_minutes: '',
+      estimated_time_hours: '',
     });
   };
 
@@ -1063,12 +1056,10 @@ export const Tasks = () => {
             </div>
             <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
               <DialogTrigger asChild>
-                {(user?.role === 'Admin' || user?.role === 'Manager') && (
-                  <Button className="bg-blue-600 text-white hover:bg-blue-700 h-9 px-2 md:px-3 text-xs md:text-sm whitespace-nowrap">
-                    <Plus className="h-4 w-4 md:mr-1" />
-                    <span className="hidden md:inline">New Task</span>
-                  </Button>
-                )}
+                <Button className="bg-blue-600 text-white hover:bg-blue-700 h-9 px-2 md:px-3 text-xs md:text-sm whitespace-nowrap">
+                  <Plus className="h-4 w-4 md:mr-1" />
+                  <span className="hidden md:inline">New Task</span>
+                </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-2xl bg-white rounded-lg border border-gray-200 shadow-xl p-0 max-h-[90vh] overflow-y-auto w-[95vw]">
                 <div className="bg-blue-600 text-white p-4 md:p-6 rounded-t-lg">
@@ -1105,21 +1096,6 @@ export const Tasks = () => {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-3">
                     <div>
                       <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">
-                        Priority <span className="text-red-500">*</span>
-                      </Label>
-                      <select
-                        value={formData.priority}
-                        onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                        className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
-                      >
-                        <option value="Low">Low</option>
-                        <option value="Medium">Medium</option>
-                        <option value="High">High</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">
                         Due Date <span className="text-red-500">*</span>
                       </Label>
                       <Input
@@ -1132,11 +1108,11 @@ export const Tasks = () => {
                     </div>
 
                     <div>
-                      <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">Est. Time (min)</Label>
+                      <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">Est. Time (hours)</Label>
                       <Input
                         type="number"
-                        value={formData.estimated_time_minutes}
-                        onChange={(e) => setFormData({ ...formData, estimated_time_minutes: e.target.value })}
+                        value={formData.estimated_time_hours}
+                        onChange={(e) => setFormData({ ...formData, estimated_time_hours: e.target.value })}
                         placeholder="0"
                         className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
                       />
