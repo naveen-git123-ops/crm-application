@@ -573,8 +573,16 @@ export const Attendance = () => {
                 <span className="text-gray-700">Late Login</span>
               </div>
               <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-orange-400 rounded"></div>
+                <span className="text-gray-700">Approved Tour</span>
+              </div>
+              <div className="flex items-center gap-2">
                 <div className="w-4 h-4 bg-red-500 rounded"></div>
                 <span className="text-gray-700">Absent</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-blue-400 rounded"></div>
+                <span className="text-gray-700">On Leave</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 bg-blue-300 rounded"></div>
@@ -596,12 +604,24 @@ export const Attendance = () => {
                 employees.map((emp) => {
                   const todayStr = format(new Date(), 'yyyy-MM-dd');
                   const todayRecord = gridData[emp.employee_id]?.records[todayStr];
-                  const bgColor = !todayRecord ? 'bg-red-500' : 
-                    todayRecord.status === 'Present' ? 'bg-green-500' :
-                    todayRecord.status === 'Late' ? 'bg-yellow-500' :
-                    todayRecord.status === 'Absent' ? 'bg-red-500' :
-                    'bg-red-500';
-                  const textColor = ['bg-yellow-500'].includes(bgColor) ? 'text-gray-800' : 'text-white';
+                  let bgColor = 'bg-red-500';
+                  if (todayRecord) {
+                    if (todayRecord.is_tour === 1 && todayRecord.tour_approval_status === 'approved') {
+                      bgColor = 'bg-orange-400';
+                    } else if (todayRecord.status === 'Present') {
+                      bgColor = 'bg-green-500';
+                    } else if (todayRecord.status === 'Late') {
+                      bgColor = 'bg-yellow-500';
+                    } else if (todayRecord.status === 'Leave') {
+                      bgColor = 'bg-blue-400';
+                    } else if (todayRecord.is_tour === 1) {
+                      // Non-approved or rejected tour
+                      bgColor = 'bg-red-500';
+                    } else {
+                      bgColor = 'bg-red-500';
+                    }
+                  }
+                  const textColor = ['bg-yellow-500', 'bg-orange-400'].includes(bgColor) ? 'text-gray-800' : 'text-white';
                   return (
                     <div key={emp.employee_id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
                       <div className="flex-shrink-0 w-48">
@@ -609,7 +629,7 @@ export const Attendance = () => {
                         <p className="text-xs text-gray-500">{emp.employee_id}</p>
                       </div>
                       <div className={`flex-1 h-10 rounded flex items-center justify-center font-semibold ${bgColor} ${textColor} text-sm`}>
-                        {todayRecord?.status || 'Absent'}
+                        {todayRecord?.is_tour === 1 ? (todayRecord?.tour_approval_status === 'approved' ? 'Tour (Approved)' : 'Tour (Pending)') : (todayRecord?.status || 'Absent')}
                       </div>
                     </div>
                   );
@@ -687,11 +707,29 @@ export const Attendance = () => {
                               bgColor = 'bg-blue-300';
                               statusText = isSunday ? 'Sunday' : 'Holiday';
                             } else if (record) {
-                              statusText = record.status;
-                              bgColor = record.status === 'Present' ? 'bg-green-500' :
-                                record.status === 'Late' ? 'bg-yellow-500' :
-                                record.status === 'Absent' ? 'bg-red-500' :
-                                'bg-gray-300';
+                              // Check for tour status
+                              if (record.is_tour === 1) {
+                                if (record.tour_approval_status === 'approved') {
+                                  statusText = 'Tour (Approved)';
+                                  bgColor = 'bg-orange-400';
+                                } else {
+                                  // Non-approved or rejected tour
+                                  statusText = 'Tour (Pending)';
+                                  bgColor = 'bg-red-500';
+                                }
+                              } else if (record.status === 'Leave') {
+                                statusText = 'Leave';
+                                bgColor = 'bg-blue-400';
+                              } else if (record.status === 'Present') {
+                                statusText = 'Present';
+                                bgColor = 'bg-green-500';
+                              } else if (record.status === 'Late') {
+                                statusText = 'Late';
+                                bgColor = 'bg-yellow-500';
+                              } else {
+                                statusText = record.status;
+                                bgColor = 'bg-red-500';
+                              }
                             } else if (isFutureDate) {
                               statusText = 'No Data';
                               bgColor = 'bg-gray-300';

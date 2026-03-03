@@ -1090,7 +1090,7 @@ class Attendance(BaseModel):
     punch_out: Optional[str] = None
     work_hours: float = 0.0
     total_work_hours: float = 0.0
-    status: Literal['Present', 'Absent', 'Late', 'Half Day'] = 'Present'
+    status: Literal['Present', 'Absent', 'Late', 'Half Day', 'Leave'] = 'Present'
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_tour: Optional[int] = None
     tour_approval_status: Optional[str] = None
@@ -3319,7 +3319,59 @@ def get_attendance(
             if emp:
                 record.employee_name = emp.name
     
-    return records
+    # Get approved leaves and add them to records if not already present
+    leave_query = db.query(LeaveModel).filter(LeaveModel.status == 'Approved')
+    if month:
+        # Filter leaves that overlap with the month
+        year, month_num = [int(part) for part in month.split('-')]
+        month_start = f'{year}-{month_num:02d}-01'
+        month_end = f'{year}-{month_num:02d}-{monthrange(year, month_num)[1]:02d}'
+        leave_query = leave_query.filter(
+            LeaveModel.start_date <= month_end,
+            LeaveModel.end_date >= month_start
+        )
+    
+    if start_date:
+        leave_query = leave_query.filter(LeaveModel.end_date >= start_date)
+    if end_date:
+        leave_query = leave_query.filter(LeaveModel.start_date <= end_date)
+    
+    approved_leaves = leave_query.all()
+    
+    # Create a set of (employee_id, date) tuples for existing records
+    existing_records = set((r.employee_id, r.date) for r in records)
+    
+    # For each approved leave, add attendance records with status='Leave' for dates without records
+    for leave in approved_leaves:
+        current = datetime.strptime(leave.start_date, '%Y-%m-%d').date()
+        end = datetime.strptime(leave.end_date, '%Y-%m-%d').date()
+        
+        while current <= end:
+            date_str = current.isoformat()
+            
+            # Only add if this (employee_id, date) doesn't already have a record
+            if (leave.employee_id, date_str) not in existing_records:
+                # Create a virtual attendance record for the leave
+                leave_record = AttendanceModel(
+                    id=str(uuid.uuid4()),
+                    employee_id=leave.employee_id,
+                    employee_name=leave.employee_name,
+                    date=date_str,
+                    punch_in=None,
+                    punch_out=None,
+                    status='Leave',
+                    work_hours=0.0,
+                    total_work_hours=0.0,
+                    is_tour=0,
+                    is_active_session=0,
+                    created_at=datetime.now(timezone.utc)
+                )
+                records.append(leave_record)
+                existing_records.add((leave.employee_id, date_str))
+            
+            current += timedelta(days=1)
+    
+    return sorted(records, key=lambda x: x.date, reverse=True)
 
 @api_router.get('/attendance/summary', response_model=List[AttendanceSummary])
 def get_attendance_summary(month: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
