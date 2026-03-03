@@ -1084,7 +1084,7 @@ class Attendance(BaseModel):
     model_config = ConfigDict(extra="ignore", from_attributes=True)
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     employee_id: str
-    employee_name: str
+    employee_name: Optional[str] = None
     date: str
     punch_in: Optional[str] = None
     punch_out: Optional[str] = None
@@ -3213,6 +3213,11 @@ class TourApproveAction(BaseModel):
     status: Literal['approved', 'rejected']
 
 
+class RegularizeAttendanceRequest(BaseModel):
+    employee_id: str
+    date: str
+
+
 @api_router.post('/attendance/tour-approve')
 def approve_tour(
     body: TourApproveAction,
@@ -3234,6 +3239,61 @@ def approve_tour(
     return {'message': f'Tour {body.status}', 'attendance_id': rec.id}
 
 
+@api_router.post('/attendance/regularize')
+def regularize_attendance(
+    body: RegularizeAttendanceRequest,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Regularize attendance for an employee on a specific date. Admin only."""
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can regularize attendance')
+    
+    employee_id = body.employee_id
+    date = body.date
+    
+    if not employee_id or not date:
+        raise HTTPException(status_code=400, detail='Employee ID and date are required')
+    
+    employee = db.query(EmployeeModel).filter(EmployeeModel.employee_id == employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Employee not found')
+    
+    # Check if already exists
+    existing = db.query(AttendanceModel).filter(
+        AttendanceModel.employee_id == employee_id,
+        AttendanceModel.date == date
+    ).first()
+    
+    if existing:
+        # Update existing record
+        existing.punch_in = '10:00:00'
+        existing.punch_out = '18:00:00'
+        existing.status = 'Present'
+        existing.work_hours = 8.0
+        existing.is_active_session = 0
+        existing.employee_name = employee.name
+        db.commit()
+        return {'message': 'Attendance regularized successfully', 'attendance_id': existing.id}
+    else:
+        # Create new record
+        new_record = AttendanceModel(
+            id=str(uuid.uuid4()),
+            employee_id=employee_id,
+            employee_name=employee.name,
+            date=date,
+            punch_in='10:00:00',
+            punch_out='18:00:00',
+            status='Present',
+            work_hours=8.0,
+            is_active_session=0,
+            is_tour=0
+        )
+        db.add(new_record)
+        db.commit()
+        return {'message': 'Attendance regularized successfully', 'attendance_id': new_record.id}
+
+
 @api_router.get('/attendance', response_model=List[Attendance])
 def get_attendance(
     month: Optional[str] = None,
@@ -3249,7 +3309,17 @@ def get_attendance(
         query = query.filter(AttendanceModel.date >= start_date)
     if end_date:
         query = query.filter(AttendanceModel.date <= end_date)
-    return query.order_by(AttendanceModel.date.desc()).all()
+    
+    records = query.order_by(AttendanceModel.date.desc()).all()
+    
+    # Ensure all records have employee_name populated
+    for record in records:
+        if not record.employee_name:
+            emp = db.query(EmployeeModel).filter(EmployeeModel.employee_id == record.employee_id).first()
+            if emp:
+                record.employee_name = emp.name
+    
+    return records
 
 @api_router.get('/attendance/summary', response_model=List[AttendanceSummary])
 def get_attendance_summary(month: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):

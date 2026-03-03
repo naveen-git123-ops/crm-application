@@ -6,8 +6,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Clock, Calendar, LogIn, LogOut, AlertCircle, User, TrendingDown, MapPin, Briefcase, Check, X } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { Clock, Calendar, LogIn, LogOut, AlertCircle, User, TrendingDown, MapPin, Briefcase, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, subMonths, addMonths, eachDayOfInterval, getDate, isToday as isTodayDate, isWeekend } from 'date-fns';
 import { formatISTDate, formatISTDateTime } from '@/utils/date';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
@@ -91,7 +91,7 @@ export const Attendance = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-mm-dd'));
-  const [activeTab, setActiveTab] = useState('punch'); // punch | report | late | summary | tour
+  const [activeTab, setActiveTab] = useState('punch'); // punch | report | late | summary | tour | grid
   const [reportLoading, setReportLoading] = useState(false);
   const [lateLoading, setLateLoading] = useState(false);
   const [punchLoading, setPunchLoading] = useState(false);
@@ -101,6 +101,20 @@ export const Attendance = () => {
   const [workLogSummary, setWorkLogSummary] = useState('');
   const [isSubmittingWorkLog, setIsSubmittingWorkLog] = useState(false);
   const [pendingPunchAction, setPendingPunchAction] = useState(null);
+  
+  // Grid view states
+  const [gridMonth, setGridMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [gridData, setGridData] = useState({});
+  const [gridLoading, setGridLoading] = useState(false);
+  const [gridViewMode, setGridViewMode] = useState('month'); // 'today' or 'month'
+  
+  // Regularize states
+  const [regularizeEmployee, setRegularizeEmployee] = useState('');
+  const [regularizeDate, setRegularizeDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [regularizeLoading, setRegularizeLoading] = useState(false);
+  
+  // Holidays
+  const [holidays, setHolidays] = useState([]);
 
   const canManageAttendance = ['Admin', 'HR'].includes(user?.role);
   const canApproveTour = ['Admin', 'Manager'].includes(user?.role);
@@ -130,6 +144,13 @@ export const Attendance = () => {
   useEffect(() => {
     if (user) fetchAttendanceSummary(summaryMonth);
   }, [summaryMonth, user]);
+
+  // Set grid view as default for admin users
+  useEffect(() => {
+    if (canManageAttendance) {
+      setActiveTab('grid');
+    }
+  }, [canManageAttendance]);
 
   const fetchEmployees = async () => {
     try {
@@ -225,9 +246,80 @@ export const Attendance = () => {
     }
   };
 
+  const fetchMonthlyAttendanceGrid = async (monthStr) => {
+    if (!canManageAttendance) return;
+    setGridLoading(true);
+    try {
+      const month = monthStr || gridMonth;
+      const year = parseInt(month.split('-')[0]);
+      const res = await axios.get(`${API}/attendance`, { params: { month }, headers: authHeader() });
+      // Organize attendance records by employee_id and date
+      const gridMap = {};
+      res.data.forEach((record) => {
+        if (!gridMap[record.employee_id]) {
+          gridMap[record.employee_id] = {
+            employee_id: record.employee_id,
+            employee_name: record.employee_name || employees.find(e => e.employee_id === record.employee_id)?.name || record.employee_id,
+            records: {}
+          };
+        }
+        gridMap[record.employee_id].records[record.date] = record;
+      });
+      setGridData(gridMap);
+      fetchHolidays(year);
+    } catch (err) {
+      console.error('Failed to load monthly attendance grid:', err);
+      toast.error('Failed to load attendance grid');
+    } finally {
+      setGridLoading(false);
+    }
+  };
+
+  const fetchHolidays = async (year) => {
+    try {
+      const res = await axios.get(`${API}/government-holidays`, { params: { year }, headers: authHeader() });
+      setHolidays(res.data.map(h => h.date));
+    } catch (err) {
+      console.error('Failed to load holidays:', err);
+    }
+  };
+
+  const handleRegularizeAttendance = async () => {
+    if (!regularizeEmployee || !regularizeDate) {
+      toast.error('Please select both employee and date');
+      return;
+    }
+
+    setRegularizeLoading(true);
+    try {
+      const payload = {
+        employee_id: regularizeEmployee,
+        date: regularizeDate,
+        punch_in: '10:00:00',
+        punch_out: '18:00:00',
+        status: 'Present'
+      };
+      const res = await axios.post(`${API}/attendance/regularize`, payload, { headers: authHeader() });
+      toast.success(res.data?.message || 'Attendance regularized successfully');
+      fetchMonthlyAttendanceGrid(gridMonth);
+      setRegularizeEmployee('');
+      setRegularizeDate(format(new Date(), 'yyyy-MM-dd'));
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to regularize attendance');
+    } finally {
+      setRegularizeLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (canApproveTour && activeTab === 'tour') fetchTourPending();
   }, [canApproveTour, activeTab]);
+
+  useEffect(() => {
+    if (canManageAttendance && activeTab === 'grid') {
+      fetchMonthlyAttendanceGrid(gridMonth);
+    }
+  }, [gridMonth, activeTab, canManageAttendance]);
 
   const getLocation = () =>
     new Promise((resolve, reject) => {
@@ -370,23 +462,6 @@ export const Attendance = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6" data-testid="attendance-page">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Attendance</h1>
-        <p className="text-gray-600 text-sm mt-1">Punch in to mark your attendance. Login window 10:00 – 10:30.</p>
-      </div>
-
-      {/* Login window notice */}
-      <Card className="p-4 rounded-lg border border-blue-200 bg-blue-50 flex items-center gap-3">
-        <AlertCircle className="h-6 w-6 text-blue-600 shrink-0" />
-        <div>
-          <p className="font-semibold text-blue-900">Login window: 10:00 AM – 10:30 AM</p>
-          <p className="text-sm text-blue-800">
-            Punch in between 10:00 and 10:30 to be marked on time. After 10:30 will be marked <strong>Late</strong>. If you do not punch in, you will be marked <strong>Absent</strong>.
-          </p>
-        </div>
-      </Card>
-
       {/* Location notice for employees */}
       {!canManageAttendance && (
         <Card className="p-4 rounded-lg border border-amber-200 bg-amber-50 flex items-center gap-3">
@@ -406,6 +481,8 @@ export const Attendance = () => {
           <div className="flex gap-2 flex-wrap [&_button]:min-h-[44px]">
             {[
               { id: 'punch', label: 'Mark Attendance', show: true },
+              { id: 'grid', label: 'Attendance Grid', show: canManageAttendance },
+              { id: 'regularize', label: 'Regularize', show: canManageAttendance },
               { id: 'tour', label: 'Tour Requests', show: canApproveTour },
               { id: 'report', label: 'Report (Date Range)', show: canManageAttendance },
               { id: 'late', label: 'Late Logins', show: canManageAttendance },
@@ -425,17 +502,290 @@ export const Attendance = () => {
         </Card>
       )}
 
-      {/* Current time card */}
-      <Card className="p-4 sm:p-6 border border-gray-200 bg-white shadow-sm">
-        <div className="flex justify-between items-center gap-4">
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-widest mb-1">Current Time (IST)</p>
-            <p className="text-2xl sm:text-4xl font-bold font-mono text-gray-900">{formatCurrentTimeIST(currentTime)}</p>
-            <p className="text-xs sm:text-sm text-gray-600 mt-1">{formatCurrentDateIST(currentTime)}</p>
+      {/* Admin Attendance Grid View */}
+      {canManageAttendance && activeTab === 'grid' && (
+        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-x-auto">
+          <div className="mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Attendance Grid</h3>
+                <p className="text-sm text-gray-600">View all employees' attendance for the month at a glance</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={gridViewMode === 'today' ? 'default' : 'outline'}
+                  onClick={() => setGridViewMode('today')}
+                  className={gridViewMode === 'today' ? 'bg-blue-600 text-white' : 'border-gray-300'}
+                >
+                  Today
+                </Button>
+                <Button
+                  size="sm"
+                  variant={gridViewMode === 'month' ? 'default' : 'outline'}
+                  onClick={() => setGridViewMode('month')}
+                  className={gridViewMode === 'month' ? 'bg-blue-600 text-white' : 'border-gray-300'}
+                >
+                  This Month
+                </Button>
+              </div>
+            </div>
+
+            {/* Month Navigation */}
+            {gridViewMode === 'month' && (
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setGridMonth(format(subMonths(new Date(gridMonth + '-01'), 1), 'yyyy-MM'))}
+                  className="border-gray-300"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium text-gray-700">Month:</label>
+                  <input
+                    type="month"
+                    value={gridMonth}
+                    onChange={(e) => setGridMonth(e.target.value)}
+                    className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setGridMonth(format(addMonths(new Date(gridMonth + '-01'), 1), 'yyyy-MM'))}
+                  className="border-gray-300"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+
+            {/* Color Legend */}
+            <div className="flex flex-wrap gap-4 text-sm mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-green-500 rounded"></div>
+                <span className="text-gray-700">Present</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-yellow-500 rounded"></div>
+                <span className="text-gray-700">Late Login</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-red-500 rounded"></div>
+                <span className="text-gray-700">Absent</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-blue-300 rounded"></div>
+                <span className="text-gray-700">Sunday / Holiday</span>
+              </div>
+            </div>
           </div>
-          <Clock className="h-10 w-10 sm:h-14 sm:w-14 text-gray-300 flex-shrink-0" />
-        </div>
-      </Card>
+
+          {gridLoading ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent" />
+            </div>
+          ) : gridViewMode === 'today' ? (
+            // Today's attendance view
+            <div className="space-y-3">
+              {employees.length === 0 ? (
+                <p className="text-center py-8 text-gray-500">No employees found.</p>
+              ) : (
+                employees.map((emp) => {
+                  const todayStr = format(new Date(), 'yyyy-MM-dd');
+                  const todayRecord = gridData[emp.employee_id]?.records[todayStr];
+                  const bgColor = !todayRecord ? 'bg-red-500' : 
+                    todayRecord.status === 'Present' ? 'bg-green-500' :
+                    todayRecord.status === 'Late' ? 'bg-yellow-500' :
+                    todayRecord.status === 'Absent' ? 'bg-red-500' :
+                    'bg-red-500';
+                  const textColor = ['bg-yellow-500'].includes(bgColor) ? 'text-gray-800' : 'text-white';
+                  return (
+                    <div key={emp.employee_id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex-shrink-0 w-48">
+                        <p className="text-sm font-medium text-gray-900">{emp.name}</p>
+                        <p className="text-xs text-gray-500">{emp.employee_id}</p>
+                      </div>
+                      <div className={`flex-1 h-10 rounded flex items-center justify-center font-semibold ${bgColor} ${textColor} text-sm`}>
+                        {todayRecord?.status || 'Absent'}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            // Month grid view
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs sm:text-sm border-collapse">
+                <thead>
+                  <tr>
+                    <th className="sticky left-0 z-10 bg-gray-100 p-2 text-left font-semibold text-gray-700 border border-gray-200 min-w-[150px]">Employee</th>
+                    {(() => {
+                      const year = parseInt(gridMonth.split('-')[0]);
+                      const month = parseInt(gridMonth.split('-')[1]);
+                      const monthStart = new Date(year, month - 1, 1);
+                      const monthEnd = endOfMonth(monthStart);
+                      const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+                      return days.map((day) => {
+                        const dateStr = format(day, 'yyyy-MM-dd');
+                        const isSunday = day.getDay() === 0;
+                        const isHoliday = holidays.includes(dateStr);
+                        return (
+                          <th
+                            key={dateStr}
+                            className={`p-1 sm:p-2 text-center font-medium border border-gray-200 min-w-[40px] ${
+                              isSunday || isHoliday ? 'bg-blue-200 text-blue-700' :
+                              isWeekend(day) ? 'bg-gray-100 text-gray-500' : 'bg-white text-gray-700'
+                            }`}
+                            title={format(day, 'EEEE, MMM dd')}
+                          >
+                            <div className="text-xs">{getDate(day)}</div>
+                          </th>
+                        );
+                      });
+                    })()}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.values(gridData).length === 0 ? (
+                    <tr>
+                      <td colSpan="32" className="p-4 text-center text-gray-500">
+                        No attendance data yet for this month.
+                      </td>
+                    </tr>
+                  ) : (
+                    Object.values(gridData).map((empData) => (
+                      <tr key={empData.employee_id}>
+                        <td className="sticky left-0 z-10 bg-gray-50 p-3 text-left font-medium text-gray-900 border border-gray-200 min-w-[150px]">
+                          <div>{empData.employee_name}</div>
+                        </td>
+                        {(() => {
+                          const year = parseInt(gridMonth.split('-')[0]);
+                          const month = parseInt(gridMonth.split('-')[1]);
+                          const monthStart = new Date(year, month - 1, 1);
+                          const monthEnd = endOfMonth(monthStart);
+                          const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+                          return days.map((day) => {
+                            const dateStr = format(day, 'yyyy-MM-dd');
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const dayDate = new Date(day);
+                            dayDate.setHours(0, 0, 0, 0);
+                            const isFutureDate = dayDate > today;
+                            const isSunday = day.getDay() === 0;
+                            const isHoliday = holidays.includes(dateStr);
+                            const record = empData.records[dateStr];
+                            
+                            let bgColor = 'bg-gray-300';
+                            let statusText = '';
+                            
+                            // Check for Sunday or Holiday first
+                            if (isSunday || isHoliday) {
+                              bgColor = 'bg-blue-300';
+                              statusText = isSunday ? 'Sunday' : 'Holiday';
+                            } else if (record) {
+                              statusText = record.status;
+                              bgColor = record.status === 'Present' ? 'bg-green-500' :
+                                record.status === 'Late' ? 'bg-yellow-500' :
+                                record.status === 'Absent' ? 'bg-red-500' :
+                                'bg-gray-300';
+                            } else if (isFutureDate) {
+                              statusText = 'No Data';
+                              bgColor = 'bg-gray-300';
+                            } else {
+                              statusText = 'Absent';
+                              bgColor = 'bg-red-500';
+                            }
+                            
+                            return (
+                              <td
+                                key={dateStr}
+                                className={`p-2 border border-gray-200 text-center cursor-default hover:opacity-80 transition-opacity ${
+                                  isWeekend(day) ? 'bg-gray-50' : 'bg-white'
+                                }`}
+                                title={`${empData.employee_name} - ${format(day, 'EEEE, MMM dd')}: ${statusText}`}
+                              >
+                                <div className={`w-8 h-8 rounded mx-auto ${bgColor}`}></div>
+                              </td>
+                            );
+                          });
+                        })()}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Regularize Attendance - Admin only */}
+      {canManageAttendance && activeTab === 'regularize' && (
+        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold text-gray-900">Regularize Attendance</h3>
+            <p className="text-sm text-gray-600 mt-1">Mark an employee as present for a specific date with standard office hours (10:00 AM - 6:00 PM)</p>
+          </div>
+
+          <div className="space-y-4 max-w-md">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Select Employee*</label>
+              <select
+                value={regularizeEmployee}
+                onChange={(e) => setRegularizeEmployee(e.target.value)}
+                className="flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+              >
+                <option value="">Choose an employee</option>
+                {employees.map((emp) => (
+                  <option key={emp.employee_id} value={emp.employee_id}>
+                    {emp.name} ({emp.employee_id})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Select Date*</label>
+              <input
+                type="date"
+                value={regularizeDate}
+                onChange={(e) => setRegularizeDate(e.target.value)}
+                className="flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+              />
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
+              <p className="text-blue-900">
+                <strong>Note:</strong> Regularization will mark attendance as <strong>Present</strong> with:
+              </p>
+              <ul className="text-blue-800 mt-2 list-disc list-inside space-y-1">
+                <li>Punch In: 10:00 AM</li>
+                <li>Punch Out: 6:00 PM</li>
+              </ul>
+            </div>
+
+            <Button
+              size="lg"
+              className="w-full h-12 bg-blue-600 text-white font-semibold hover:bg-blue-700 min-h-[48px]"
+              onClick={handleRegularizeAttendance}
+              disabled={!regularizeEmployee || !regularizeDate || regularizeLoading}
+            >
+              {regularizeLoading ? (
+                <span className="flex items-center gap-2 justify-center">
+                  <span className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
+                  Regularizing...
+                </span>
+              ) : (
+                'Regularize Attendance'
+              )}
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Punch In/Out - show for punch tab or for employees (no tabs) */}
       {(activeTab === 'punch' || !(canManageAttendance || canApproveTour)) && (
