@@ -35,30 +35,27 @@ export const Layout = ({ children }) => {
   };
 
   const navItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', permission: 'dashboard', roles: ['Admin'] },
-    { icon: Target, label: 'Leads', path: '/leads', permission: 'leads', roles: ['Admin', 'Manager', 'Sales'] },
-    { icon: Package, label: 'Inventory', path: '/inventory', permission: 'leads', roles: ['Admin', 'Manager', 'Sales'] },
-    { icon: Users, label: 'Employees', path: '/employees', permission: 'employees', roles: ['Admin', 'HR', 'Manager'] },
-    { icon: Users, label: 'Customers', path: '/customers', permission: 'customers', roles: ['Admin', 'HR', 'Manager'] },
-    { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks', roles: ['Admin', 'Manager', 'Employee'] },
-    { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: FileText, label: 'Leaves', path: '/leaves', permission: 'leaves', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: CalendarDays, label: 'Government Holidays', path: '/government-holidays', permission: 'holidays', roles: ['Admin', 'HR', 'Manager', 'Employee', 'Sales'] },
-    { icon: Receipt, label: 'Expenses', path: '/expenses', permission: 'expenses', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: Fuel, label: 'Vehicle Tracking', path: '/vehicles', permission: 'vehicles', roles: ['Admin', 'HR', 'Manager', 'Employee', 'Accountant'] },
-    { icon: Shield, label: 'Roles', path: '/roles', permission: 'roles', roles: ['Admin'] },
-    { icon: Briefcase, label: 'Workspace', path: '/workspace', permission: 'workspace', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: FileStack, label: 'Documents', path: '/documents', permission: 'documents', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: IDCard, label: 'ID Cards', path: '/idcards', permission: 'idcards', roles: ['Admin', 'HR', 'Manager'] },
-    { icon: Settings, label: 'Settings', path: '/settings', permission: 'settings', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', permission: 'dashboard' },
+    { icon: Target, label: 'Leads', path: '/leads', permission: 'leads' },
+    { icon: Package, label: 'Inventory', path: '/inventory', permission: 'leads' },
+    { icon: Users, label: 'Employees', path: '/employees', permission: 'employees' },
+    { icon: Users, label: 'Customers', path: '/customers', permission: 'customers' },
+    { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
+    { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance' },
+    { icon: FileText, label: 'Leaves', path: '/leaves', permission: 'leaves' },
+    { icon: CalendarDays, label: 'Government Holidays', path: '/government-holidays', permission: 'holidays' },
+    { icon: Receipt, label: 'Expenses', path: '/expenses', permission: 'expenses' },
+    { icon: Fuel, label: 'Vehicle Tracking', path: '/vehicles', permission: 'vehicles' },
+    { icon: Shield, label: 'Roles', path: '/roles', permission: 'roles' },
+    { icon: Briefcase, label: 'Workspace', path: '/workspace', permission: 'workspace' },
+    { icon: FileStack, label: 'Documents', path: '/documents', permission: 'documents' },
+    { icon: IDCard, label: 'ID Cards', path: '/idcards', permission: 'idcards' },
+    { icon: Settings, label: 'Settings', path: '/settings', permission: 'settings' },
   ];
 
   const filteredNavItems = navItems.filter(item => {
     const hasPermission = Array.isArray(user?.permissions) && user.permissions.includes(item.permission);
-    const hasRole = item.roles.includes(user?.role);
-    if (hasPermission) return true;
-    if (hasRole) return true;
-    return false;
+    return hasPermission;
   });
 
   const currentPath = window.location.pathname;
