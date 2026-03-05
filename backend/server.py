@@ -795,15 +795,14 @@ def seed_roles_if_needed():
     try:
         if db.query(RoleModel).first() is not None:
             return
-        defaults = [
-            RoleModel(name="Admin", permissions=json.dumps(DEFAULT_PERMISSION_KEYS), is_system=1),
-            RoleModel(name="Accountant", permissions=json.dumps(["expenses", "workspace", "documents", "settings"]), is_system=0),
-            RoleModel(name="HR", permissions=json.dumps(["employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers"]), is_system=0),
-            RoleModel(name="Manager", permissions=json.dumps(["leads", "employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers"]), is_system=0),
-            RoleModel(name="Employee", permissions=json.dumps(["attendance", "leaves", "expenses", "workspace", "documents", "settings", "holidays", "tasks"]), is_system=0),
-        ]
-        for model in defaults:
-            db.add(model)
+        # Only create Admin role with full permissions (hardcoded, system role)
+        # All other roles are managed dynamically through the UI
+        admin_role = RoleModel(
+            name="Admin", 
+            permissions=json.dumps(DEFAULT_PERMISSION_KEYS), 
+            is_system=1
+        )
+        db.add(admin_role)
         db.commit()
     finally:
         db.close()
@@ -1740,14 +1739,7 @@ def require_permission(permission: str):
         return current_user
     return verify_permission
 
-def get_permissions_for_role(db: Session, role_name: str) -> List[str]:
-    """Get list of permissions for a given role"""
-    role = db.query(RoleModel).filter(RoleModel.name == role_name).first()
-    if not role:
-        return []
-    
-    permissions = json.loads(role.permissions) if isinstance(role.permissions, str) else role.permissions
-    return permissions if isinstance(permissions, list) else []
+
 
 # ============= HEALTH CHECK ROUTES =============
 
@@ -4257,6 +4249,7 @@ def update_user_role(
 
 # --------------- Role CRUD (create/edit/delete roles; Admin role protected) ---------------
 def get_permissions_for_role(db: Session, role_name: str) -> List[str]:
+    """Get list of permissions for a given role from the database"""
     r = db.query(RoleModel).filter(RoleModel.name == role_name).first()
     if not r:
         return []
@@ -4266,9 +4259,6 @@ def get_permissions_for_role(db: Session, role_name: str) -> List[str]:
             perms = json.loads(r.permissions)
         except Exception:
             perms = []
-    # Ensure "documents" is included for built-in roles if missing (e.g. DB seeded before documents was added)
-    if role_name in ('Admin', 'HR', 'Manager', 'Employee') and 'documents' not in perms:
-        perms.append('documents')
     return perms
 
 
