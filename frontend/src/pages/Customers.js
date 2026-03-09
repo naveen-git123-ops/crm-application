@@ -133,8 +133,6 @@ export const Customers = () => {
     setEditingCustomer(null);
   };
 
-  const canManageCustomers = ['Admin', 'HR', 'Manager'].includes(user?.role);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -151,15 +149,14 @@ export const Customers = () => {
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Customers</h1>
           <p className="text-gray-600 text-sm mt-1">{customers.length} total customers</p>
         </div>
-        {canManageCustomers && (
-          <Dialog open={dialogOpen} onOpenChange={(open) => {
-            setDialogOpen(open);
-            if (!open) resetForm();
-          }}>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 text-white hover:bg-blue-700" data-testid="add-customer-button">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Customer
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) resetForm();
+        }}>
+          <DialogTrigger asChild>
+            <Button className="bg-blue-600 text-white hover:bg-blue-700" data-testid="add-customer-button">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Customer
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-white rounded-lg border border-gray-200 shadow-xl p-0">
@@ -329,7 +326,6 @@ export const Customers = () => {
               </form>
             </DialogContent>
           </Dialog>
-        )}
       </div>
 
       {/* Search */}
@@ -360,9 +356,7 @@ export const Customers = () => {
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">GST Number</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">City</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
-                {canManageCustomers && (
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
-                )}
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -404,32 +398,30 @@ export const Customers = () => {
                       {customer.status}
                     </span>
                   </td>
-                  {canManageCustomers && (
-                    <td className="py-3 px-4">
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 border-gray-200 text-gray-700 hover:bg-gray-50"
-                          onClick={() => handleEdit(customer)}
-                          data-testid={`edit-customer-${customer.customer_id}`}
-                        >
-                          <Edit className="h-3.5 w-3 mr-1" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 border-gray-200 text-red-600 hover:bg-red-50"
-                          onClick={() => handleDelete(customer.id)}
-                          data-testid={`delete-customer-${customer.customer_id}`}
-                        >
-                          <Trash2 className="h-3.5 w-3 mr-1" />
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  )}
+                  <td className="py-3 px-4">
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 border-gray-200 text-gray-700 hover:bg-gray-50"
+                        onClick={() => handleEdit(customer)}
+                        data-testid={`edit-customer-${customer.customer_id}`}
+                      >
+                        <Edit className="h-3.5 w-3 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 border-gray-200 text-red-600 hover:bg-red-50"
+                        onClick={() => handleDelete(customer.id)}
+                        data-testid={`delete-customer-${customer.customer_id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3 mr-1" />
+                        Delete
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

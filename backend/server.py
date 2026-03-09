@@ -2096,8 +2096,6 @@ def is_within_office(db: Session, lat: float, lng: float) -> bool:
 
 @api_router.post('/customers', response_model=Customer)
 def create_customer(cust_data: CustomerCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.role not in ['Admin', 'HR', 'Manager']:
-        raise HTTPException(status_code=403, detail='Not authorized to create customers')
     
     max_cust_num = db.query(
         func.max(cast(func.substr(CustomerModel.customer_id, 5), Integer))
@@ -2143,8 +2141,6 @@ def get_customer(customer_id: str, current_user: UserModel = Depends(get_current
 
 @api_router.put('/customers/{customer_id}', response_model=Customer)
 def update_customer(customer_id: str, cust_data: CustomerCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.role not in ['Admin', 'HR', 'Manager']:
-        raise HTTPException(status_code=403, detail='Not authorized to update customers')
     
     customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
     if not customer:
@@ -2160,8 +2156,6 @@ def update_customer(customer_id: str, cust_data: CustomerCreate, current_user: U
 
 @api_router.delete('/customers/{customer_id}')
 def delete_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.role not in ['Admin', 'HR', 'Manager']:
-        raise HTTPException(status_code=403, detail='Not authorized to delete customers')
     
     customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
     if not customer:
@@ -3589,8 +3583,6 @@ def get_customers(current_user: UserModel = Depends(get_current_user), db: Sessi
 @api_router.post('/customers', response_model=Customer)
 def create_customer(customer_data: CustomerCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     """Create a new customer"""
-    if current_user.role not in ['Admin', 'HR', 'Manager']:
-        raise HTTPException(status_code=403, detail='Not authorized')
     
     # Generate customer ID
     max_customer_num = db.query(
@@ -3634,8 +3626,6 @@ def get_customer(customer_id: str, current_user: UserModel = Depends(get_current
 @api_router.put('/customers/{customer_id}', response_model=Customer)
 def update_customer(customer_id: str, customer_data: CustomerCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     """Update a customer"""
-    if current_user.role not in ['Admin', 'HR', 'Manager']:
-        raise HTTPException(status_code=403, detail='Not authorized')
     
     customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
     if not customer:
@@ -3667,8 +3657,6 @@ def update_customer(customer_id: str, customer_data: CustomerCreate, current_use
 @api_router.delete('/customers/{customer_id}')
 def delete_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     """Delete a customer"""
-    if current_user.role not in ['Admin', 'HR', 'Manager']:
-        raise HTTPException(status_code=403, detail='Not authorized')
     
     customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
     if not customer:
