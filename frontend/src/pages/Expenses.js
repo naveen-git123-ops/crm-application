@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Check, X, Receipt, Image as ImageIcon, Calculator, Loader, Paperclip } from 'lucide-react';
+import { Plus, Check, X, Receipt, Image as ImageIcon, Calculator, Loader, Paperclip, ChevronDown, ChevronRight } from 'lucide-react';
 import { FilePreviewSimple } from '@/components/FilePreviewSimple';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
@@ -43,6 +43,7 @@ export const Expenses = () => {
   const [summaryMonth, setSummaryMonth] = useState(new Date().getMonth() + 1);
   const [summaryYear, setSummaryYear] = useState(new Date().getFullYear());
   const [summaryEmployeeFilter, setSummaryEmployeeFilter] = useState('');
+  const [expandedEmployees, setExpandedEmployees] = useState({});
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewFileUrl, setPreviewFileUrl] = useState(null);
   const [previewFileName, setPreviewFileName] = useState('Receipt');
@@ -595,6 +596,7 @@ export const Expenses = () => {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700 w-8"></th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
                     <th className="text-right py-3 px-4 font-semibold text-green-700">Approved (₹)</th>
                     <th className="text-right py-3 px-4 font-semibold text-blue-700">Fuel Approved (₹)</th>
@@ -609,28 +611,95 @@ export const Expenses = () => {
                     .map((row) => {
                     const fuelApproved = vehicleClaimsSummary[row.employee_id] || 0;
                     const totalToPay = (row.total_approved || 0) + fuelApproved;
+                    const isExpanded = expandedEmployees[row.employee_id];
+                    const employeeExpenses = expenses.filter(exp => exp.employee_id === row.employee_id && new Date(exp.created_at).getMonth() === summaryMonth - 1 && new Date(exp.created_at).getFullYear() === summaryYear);
+                    
                     return (
-                      <tr key={row.employee_id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-3 px-4">
-                          <span className="font-medium text-gray-900">{row.employee_name}</span>
-                          <span className="text-gray-500 ml-1">({row.employee_id})</span>
-                        </td>
-                        <td className="text-right py-3 px-4 font-medium text-green-700">
-                          ₹{Number(row.total_approved).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="text-right py-3 px-4 font-medium text-blue-700">
-                          ₹{Number(fuelApproved).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="text-right py-3 px-4 font-bold text-purple-700 bg-purple-50">
-                          ₹{Number(totalToPay).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="text-right py-3 px-4 text-red-600">
-                          ₹{Number(row.total_rejected).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="text-right py-3 px-4 text-amber-600">
-                          ₹{Number(row.total_pending).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                      </tr>
+                      <React.Fragment key={row.employee_id}>
+                        <tr key={`main-${row.employee_id}`} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => setExpandedEmployees(prev => ({ ...prev, [row.employee_id]: !prev[row.employee_id] }))}
+                              className="text-blue-600 hover:text-blue-800 p-1"
+                              title={isExpanded ? 'Collapse' : 'Expand'}
+                            >
+                              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </button>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-medium text-gray-900">{row.employee_name}</span>
+                            <span className="text-gray-500 ml-1">({row.employee_id})</span>
+                          </td>
+                          <td className="text-right py-3 px-4 font-medium text-green-700">
+                            ₹{Number(row.total_approved).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="text-right py-3 px-4 font-medium text-blue-700">
+                            ₹{Number(fuelApproved).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="text-right py-3 px-4 font-bold text-purple-700 bg-purple-50">
+                            ₹{Number(totalToPay).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="text-right py-3 px-4 text-red-600">
+                            ₹{Number(row.total_rejected).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="text-right py-3 px-4 text-amber-600">
+                            ₹{Number(row.total_pending).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr key={`detail-${row.employee_id}`} className="bg-gray-50 border-b border-gray-200">
+                            <td colSpan="7" className="py-4 px-4">
+                              <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                <h4 className="font-semibold text-gray-900 mb-3">Expense Details</h4>
+                                {employeeExpenses.length > 0 ? (
+                                  <div className="space-y-2">
+                                    {employeeExpenses.map(expense => (
+                                      <div key={expense.id} className="flex flex-wrap gap-4 p-3 bg-gray-50 rounded-lg text-sm">
+                                        <div className="flex-1 min-w-[150px]">
+                                          <p className="text-gray-600">Category</p>
+                                          <p className="font-medium text-gray-900">{expense.category}</p>
+                                        </div>
+                                        <div className="flex-1 min-w-[100px]">
+                                          <p className="text-gray-600">Amount</p>
+                                          <p className="font-medium text-gray-900">₹{Number(expense.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+                                        </div>
+                                        <div className="flex-1 min-w-[120px]">
+                                          <p className="text-gray-600">Description</p>
+                                          <p className="font-medium text-gray-900">{expense.description}</p>
+                                        </div>
+                                        <div className="flex-1 min-w-[100px]">
+                                          <p className="text-gray-600">Status</p>
+                                          <p className={`font-medium ${
+                                            expense.status === 'Approved' ? 'text-green-700' :
+                                            expense.status === 'Partially-Approved' ? 'text-purple-700' :
+                                            expense.status === 'Accountant-Approved' ? 'text-blue-700' :
+                                            expense.status === 'Rejected' ? 'text-red-700' :
+                                            'text-amber-700'
+                                          }`}>{expense.status}</p>
+                                        </div>
+                                        {expense.status === 'Partially-Approved' && (
+                                          <div className="flex-1 min-w-[100px]">
+                                            <p className="text-gray-600">Approved Amount</p>
+                                            <p className="font-medium text-gray-900">₹{Number(expense.accountant_approved_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+                                          </div>
+                                        )}
+                                        {expense.accountant_approval_reason && (
+                                          <div className="flex-1 min-w-[150px]">
+                                            <p className="text-gray-600">Reason</p>
+                                            <p className="font-medium text-gray-900">{expense.accountant_approval_reason}</p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-gray-500 text-sm">No expenses found for this employee in the selected month.</p>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
@@ -705,21 +774,60 @@ export const Expenses = () => {
                   <span className="text-xs text-gray-500">
                     Submitted {new Date(exp.created_at).toLocaleDateString()}
                   </span>
-                  {exp.receipt_path && (
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="text-emerald-600 hover:text-emerald-700 p-0 h-auto"
-                      onClick={() => {
-                        setPreviewFileUrl(exp.receipt_path);
-                        setPreviewFileName(`Receipt-${exp.id}`);
-                        setPreviewOpen(true);
-                      }}
-                    >
-                      <ImageIcon className="h-4 w-4 mr-1" />
-                      View receipt
-                    </Button>
-                  )}
+                </div>
+                {/* Show all attachments */}
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs font-semibold text-gray-700">Attachments:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {exp.receipt_path && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-emerald-600 hover:text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                        onClick={() => {
+                          setPreviewFileUrl(exp.receipt_path);
+                          setPreviewFileName(`Receipt-${exp.id}`);
+                          setPreviewOpen(true);
+                        }}
+                      >
+                        <ImageIcon className="h-4 w-4 mr-1" />
+                        Receipt
+                      </Button>
+                    )}
+                    {exp.attachment_path_1 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-blue-600 hover:text-blue-700 border-blue-300 hover:bg-blue-50"
+                        onClick={() => {
+                          setPreviewFileUrl(exp.attachment_path_1);
+                          setPreviewFileName(`Attachment 1-${exp.id}`);
+                          setPreviewOpen(true);
+                        }}
+                      >
+                        <ImageIcon className="h-4 w-4 mr-1" />
+                        Attachment 1
+                      </Button>
+                    )}
+                    {exp.attachment_path_2 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-purple-600 hover:text-purple-700 border-purple-300 hover:bg-purple-50"
+                        onClick={() => {
+                          setPreviewFileUrl(exp.attachment_path_2);
+                          setPreviewFileName(`Attachment 2-${exp.id}`);
+                          setPreviewOpen(true);
+                        }}
+                      >
+                        <ImageIcon className="h-4 w-4 mr-1" />
+                        Attachment 2
+                      </Button>
+                    )}
+                    {!exp.receipt_path && !exp.attachment_path_1 && !exp.attachment_path_2 && (
+                      <p className="text-xs text-gray-500 italic">No attachments</p>
+                    )}
+                  </div>
                 </div>
                 {/* Show approval chain status */}
                 <div className="space-y-2 border-t border-gray-200 pt-2">
