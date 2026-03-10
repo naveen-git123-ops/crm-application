@@ -949,7 +949,7 @@ class CustomerContactCreate(BaseModel):
     designation: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
-    is_primary: int = 0
+    is_primary: Optional[int] = 0
 
 class CustomerAddress(BaseModel):
     model_config = ConfigDict(extra="ignore", from_attributes=True)
@@ -970,7 +970,7 @@ class CustomerAddressCreate(BaseModel):
     state: Optional[str] = None
     pincode: Optional[str] = None
     country: str = 'India'
-    is_primary: int = 0
+    is_primary: Optional[int] = 0
 
 class Customer(BaseModel):
     model_config = ConfigDict(extra="ignore")
