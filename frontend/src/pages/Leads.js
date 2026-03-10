@@ -1014,6 +1014,30 @@ export const Leads = () => {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-gray-700">Category</Label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900"
+                  >
+                    <option value="">Select category</option>
+                    {CATEGORY_OPTIONS.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-gray-700">Sub Category</Label>
+                  <Input
+                    value={formData.sub_category}
+                    onChange={(e) => setFormData({ ...formData, sub_category: e.target.value })}
+                    placeholder="Enter sub category"
+                    className="h-11 border border-gray-300"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
                   <Label className="text-sm font-semibold text-gray-700">Source</Label>
                   <select
                     value={formData.source}
@@ -1080,28 +1104,6 @@ export const Leads = () => {
                   placeholder="Brief notes..."
                   rows={3}
                   className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm resize-none"
-                />
-              </div>
-              <div className="flex gap-2">
-                <Label className="text-sm font-semibold text-gray-700">Category</Label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900"
-                >
-                  <option value="">Select category</option>
-                  {CATEGORY_OPTIONS.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex gap-2">
-                <Label className="text-sm font-semibold text-gray-700">Sub Category</Label>
-                <Input
-                  value={formData.sub_category}
-                  onChange={(e) => setFormData({ ...formData, sub_category: e.target.value })}
-                  placeholder="Enter sub category"
-                  className="flex-1"
                 />
               </div>
               <div className="space-y-2">
@@ -2125,6 +2127,30 @@ export const Leads = () => {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
+                <Label className="text-sm font-semibold text-gray-700">Category</Label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900"
+                >
+                  <option value="">Select category</option>
+                  {CATEGORY_OPTIONS.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-gray-700">Sub Category</Label>
+                <Input
+                  value={formData.sub_category}
+                  onChange={(e) => setFormData({ ...formData, sub_category: e.target.value })}
+                  placeholder="Enter sub category"
+                  className="h-11 border border-gray-300"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <Label className="text-sm font-semibold text-gray-700">Source</Label>
                 <select
                   value={formData.source}
@@ -2189,28 +2215,6 @@ export const Leads = () => {
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                 rows={3}
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm resize-none"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Label className="text-sm font-semibold text-gray-700">Category</Label>
-              <select
-                value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900"
-              >
-                <option value="">Select category</option>
-                {CATEGORY_OPTIONS.map(opt => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex gap-2">
-              <Label className="text-sm font-semibold text-gray-700">Sub Category</Label>
-              <Input
-                value={formData.sub_category}
-                onChange={(e) => setFormData({ ...formData, sub_category: e.target.value })}
-                placeholder="Enter sub category"
-                className="flex-1"
               />
             </div>
             <div className="space-y-2">

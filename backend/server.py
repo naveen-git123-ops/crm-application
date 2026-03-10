@@ -228,6 +228,8 @@ class ExpenseModel(Base):
     category = Column(String(100))
     description = Column(String(500))
     receipt_path = Column(String(500), nullable=True)
+    attachment_path_1 = Column(String(500), nullable=True)
+    attachment_path_2 = Column(String(500), nullable=True)
     status = Column(String(50), default='Pending')
     # First level approval (Accountant)
     accountant_approver_id = Column(String(50), nullable=True)
@@ -1267,6 +1269,8 @@ class Expense(BaseModel):
     category: str
     description: str
     receipt_path: Optional[str] = None
+    attachment_path_1: Optional[str] = None
+    attachment_path_2: Optional[str] = None
     status: Literal['Pending', 'Partially-Approved', 'Accountant-Approved', 'Approved', 'Rejected'] = 'Pending'
     # First level approval (Accountant)
     accountant_approver_id: Optional[str] = None
@@ -4048,6 +4052,51 @@ def upload_expense_receipt(
     db.commit()
     db.refresh(expense)
     return {'receipt_path': receipt_path, 'message': 'Receipt uploaded successfully'}
+
+@api_router.post('/expenses/{expense_id}/attachment')
+def upload_expense_attachment(
+    expense_id: str,
+    file: UploadFile = File(...),
+    attachment_index: int = Form(...),  # 1 or 2 for optional attachments
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload optional attachments (1 or 2) to S3 for an expense"""
+    if attachment_index not in [1, 2]:
+        raise HTTPException(status_code=400, detail='attachment_index must be 1 or 2')
+    
+    expense = db.query(ExpenseModel).filter(ExpenseModel.id == expense_id).first()
+    if not expense:
+        raise HTTPException(status_code=404, detail='Expense not found')
+    if expense.employee_id != current_user.employee_id and current_user.role not in ['Admin', 'HR', 'Accountant']:
+        raise HTTPException(status_code=403, detail='Not authorized to upload attachment for this expense')
+    
+    # Read file content
+    file_content = file.file.read()
+    filename = f"attachment_{attachment_index}_{uuid.uuid4()}{Path(file.filename).suffix or '.jpg'}"
+    
+    # Upload to S3
+    attachment_path = upload_to_s3(file_content, filename, folder='expenses')
+    
+    if not attachment_path:
+        raise HTTPException(
+            status_code=503,
+            detail='File upload service is temporarily unavailable. Please try again in a few moments.'
+        )
+    
+    # Update the appropriate attachment field
+    if attachment_index == 1:
+        expense.attachment_path_1 = attachment_path
+    elif attachment_index == 2:
+        expense.attachment_path_2 = attachment_path
+    
+    db.commit()
+    db.refresh(expense)
+    
+    return {
+        f'attachment_path_{attachment_index}': attachment_path,
+        'message': f'Optional attachment {attachment_index} uploaded successfully'
+    }
 
 @api_router.get('/expenses', response_model=List[Expense])
 def get_expenses(

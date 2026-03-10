@@ -37,6 +37,8 @@ export const Expenses = () => {
   const [pageTab, setPageTab] = useState('Requests');
   const [activeTab, setActiveTab] = useState('All');
   const [receiptFile, setReceiptFile] = useState(null);
+  const [optionalAttachment1, setOptionalAttachment1] = useState(null);
+  const [optionalAttachment2, setOptionalAttachment2] = useState(null);
   const [summary, setSummary] = useState(null);
   const [summaryMonth, setSummaryMonth] = useState(new Date().getMonth() + 1);
   const [summaryYear, setSummaryYear] = useState(new Date().getFullYear());
@@ -174,13 +176,55 @@ export const Expenses = () => {
         toast.warning('Expense created, but receipt upload failed. Please retry uploading the receipt.');
       }
       
+      // Upload optional attachments to S3
+      let optionalAttachmentErrors = [];
+      if (optionalAttachment1) {
+        try {
+          const formDataUpload = new FormData();
+          formDataUpload.append('file', optionalAttachment1);
+          formDataUpload.append('attachment_index', 1);
+          await axios.post(`${API}/expenses/${data.id}/attachment`, formDataUpload, {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem('token')}`,
+              'Content-Type': 'multipart/form-data'
+            }
+          });
+        } catch (uploadError) {
+          console.error('Optional attachment 1 upload failed:', uploadError);
+          optionalAttachmentErrors.push('Attachment 1');
+        }
+      }
+      
+      if (optionalAttachment2) {
+        try {
+          const formDataUpload = new FormData();
+          formDataUpload.append('file', optionalAttachment2);
+          formDataUpload.append('attachment_index', 2);
+          await axios.post(`${API}/expenses/${data.id}/attachment`, formDataUpload, {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem('token')}`,
+              'Content-Type': 'multipart/form-data'
+            }
+          });
+        } catch (uploadError) {
+          console.error('Optional attachment 2 upload failed:', uploadError);
+          optionalAttachmentErrors.push('Attachment 2');
+        }
+      }
+      
       if (receiptUploadSuccess) {
-        toast.success('Expense submitted successfully with receipt');
+        if (optionalAttachmentErrors.length > 0) {
+          toast.success(`Expense submitted with receipt, but ${optionalAttachmentErrors.join(', ')} failed to upload`);
+        } else {
+          toast.success('Expense submitted successfully with all attachments');
+        }
       }
       
       setDialogOpen(false);
       setFormData({ employee_id: '', employee_name: '', amount: '', category: 'Travel', description: '' });
       setReceiptFile(null);
+      setOptionalAttachment1(null);
+      setOptionalAttachment2(null);
       fetchExpenses();
       if (user?.role === 'Admin') fetchSummary();
     } catch (error) {
@@ -416,6 +460,36 @@ export const Expenses = () => {
                   />
                   {receiptFile && (
                     <span className="text-xs text-gray-500 truncate max-w-[120px]">{receiptFile.name}</span>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold text-gray-700">Additional Attachment 1 (Optional)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => setOptionalAttachment1(e.target.files?.[0] || null)}
+                    className="h-11 border border-gray-300"
+                    disabled={isSubmitting}
+                  />
+                  {optionalAttachment1 && (
+                    <span className="text-xs text-gray-500 truncate max-w-[120px]">{optionalAttachment1.name}</span>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold text-gray-700">Additional Attachment 2 (Optional)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => setOptionalAttachment2(e.target.files?.[0] || null)}
+                    className="h-11 border border-gray-300"
+                    disabled={isSubmitting}
+                  />
+                  {optionalAttachment2 && (
+                    <span className="text-xs text-gray-500 truncate max-w-[120px]">{optionalAttachment2.name}</span>
                   )}
                 </div>
               </div>
