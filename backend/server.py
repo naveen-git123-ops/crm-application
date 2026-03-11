@@ -535,7 +535,7 @@ class VehicleModel(Base):
 class VehicleUsageModel(Base):
     __tablename__ = "vehicle_usage"
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    vehicle_id = Column(String(36), ForeignKey('vehicles.id'), index=True)
+    vehicle_id = Column(String(36), ForeignKey('vehicles.id'), index=True, nullable=True)
     employee_id = Column(String(50), index=True)
     employee_name = Column(String(255))
     start_meter_reading = Column(Float)  # Starting km reading
@@ -544,6 +544,8 @@ class VehicleUsageModel(Base):
     end_reading_photo_path = Column(String(500), nullable=True)  # Photo of meter at end
     km_driven = Column(Float, nullable=True)  # Calculated distance (end - start)
     fuel_consumed = Column(Float, nullable=True)  # Calculated based on km_driven / milage
+    own_vehicle_type = Column(String(100), nullable=True)  # Car, Bike, Van, etc. when using own vehicle
+    own_vehicle_milage = Column(Float, nullable=True)  # Mileage when using own vehicle (km/liter)
     start_date = Column(DateTime, default=datetime.now)
     end_date = Column(DateTime, nullable=True)
     status = Column(String(50), default='Active')  # Active, Completed
@@ -798,18 +800,36 @@ migrate_customers()
 
 def migrate_vehicle_usage_is_claimed():
     """Add is_claimed column to vehicle_usage if missing."""
-    from sqlalchemy import text
-    with engine.connect() as conn:
-        try:
-            r = conn.execute(text("PRAGMA table_info(vehicle_usage)"))
-            cols = [row[1] for row in r.fetchall()]
-            if 'is_claimed' not in cols:
+    from sqlalchemy import text, inspect
+    try:
+        # Use SQLAlchemy inspector to check for columns (works with all DB types)
+        inspector = inspect(engine)
+        existing_columns = [col['name'] for col in inspector.get_columns('vehicle_usage')]
+        if 'is_claimed' not in existing_columns:
+            with engine.connect() as conn:
                 conn.execute(text("ALTER TABLE vehicle_usage ADD COLUMN is_claimed INTEGER DEFAULT 0"))
-            conn.commit()
-        except Exception as e:
-            print(f"Migration error for vehicle_usage is_claimed: {e}")
+                conn.commit()
+    except Exception as e:
+        print(f"Migration error for vehicle_usage is_claimed: {e}")
 
 migrate_vehicle_usage_is_claimed()
+
+def migrate_vehicle_usage_own_vehicle():
+    """Add own_vehicle_type and own_vehicle_milage columns to vehicle_usage if missing."""
+    from sqlalchemy import text, inspect
+    try:
+        inspector = inspect(engine)
+        existing_columns = [col['name'] for col in inspector.get_columns('vehicle_usage')]
+        with engine.connect() as conn:
+            if 'own_vehicle_type' not in existing_columns:
+                conn.execute(text("ALTER TABLE vehicle_usage ADD COLUMN own_vehicle_type VARCHAR(100) NULL"))
+            if 'own_vehicle_milage' not in existing_columns:
+                conn.execute(text("ALTER TABLE vehicle_usage ADD COLUMN own_vehicle_milage FLOAT NULL"))
+            conn.commit()
+    except Exception as e:
+        print(f"Migration error for vehicle_usage own vehicle fields: {e}")
+
+migrate_vehicle_usage_own_vehicle()
 
 def migrate_expenses_add_attachments():
     """Add attachment_path_1 and attachment_path_2 columns to expenses if missing."""
@@ -1653,7 +1673,7 @@ class VehicleCreate(BaseModel):
 class VehicleUsage(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    vehicle_id: str
+    vehicle_id: Optional[str] = None
     employee_id: str
     employee_name: str
     start_meter_reading: float
@@ -1662,6 +1682,8 @@ class VehicleUsage(BaseModel):
     end_reading_photo_path: Optional[str] = None
     km_driven: Optional[float] = None
     fuel_consumed: Optional[float] = None
+    own_vehicle_type: Optional[str] = None
+    own_vehicle_milage: Optional[float] = None
     start_date: datetime
     end_date: Optional[datetime] = None
     status: str = 'Active'
@@ -1669,10 +1691,12 @@ class VehicleUsage(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class VehicleUsageCreate(BaseModel):
-    vehicle_id: str
+    vehicle_id: Optional[str] = None
     employee_id: str
     employee_name: str
     start_meter_reading: float
+    own_vehicle_type: Optional[str] = None
+    own_vehicle_milage: Optional[float] = None
     notes: Optional[str] = None
 
 class VehicleUsageUpdate(BaseModel):
@@ -5645,10 +5669,18 @@ def start_vehicle_usage(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Employee starts using a vehicle - records start meter reading"""
-    vehicle = db.query(VehicleModel).filter(VehicleModel.id == data.vehicle_id).first()
-    if not vehicle:
-        raise HTTPException(status_code=404, detail='Vehicle not found')
+    """Employee starts using a vehicle or own vehicle - records start meter reading"""
+    # If using own vehicle, validate own_vehicle fields
+    if not data.vehicle_id:
+        if not data.own_vehicle_type or not data.own_vehicle_milage:
+            raise HTTPException(status_code=400, detail='For own vehicle, vehicle type and mileage are required')
+        if data.own_vehicle_milage <= 0 or data.own_vehicle_milage > 100:
+            raise HTTPException(status_code=400, detail='Invalid mileage. Must be between 0.1 and 100 km/liter')
+    else:
+        # For company vehicles, verify vehicle exists
+        vehicle = db.query(VehicleModel).filter(VehicleModel.id == data.vehicle_id).first()
+        if not vehicle:
+            raise HTTPException(status_code=404, detail='Vehicle not found')
     
     # Validate meter reading - should be reasonable (max 1 million km for a vehicle)
     if data.start_meter_reading < 0 or data.start_meter_reading > 1000000:
@@ -5659,6 +5691,8 @@ def start_vehicle_usage(
         employee_id=data.employee_id,
         employee_name=data.employee_name,
         start_meter_reading=data.start_meter_reading,
+        own_vehicle_type=data.own_vehicle_type,
+        own_vehicle_milage=data.own_vehicle_milage,
         notes=data.notes
     )
     db.add(usage)
@@ -5753,9 +5787,14 @@ def complete_vehicle_usage(
     if not usage:
         raise HTTPException(status_code=404, detail='Vehicle usage record not found')
     
-    vehicle = db.query(VehicleModel).filter(VehicleModel.id == usage.vehicle_id).first()
-    if not vehicle:
-        raise HTTPException(status_code=404, detail='Vehicle not found')
+    # Determine vehicle mileage (own vehicle or company vehicle)
+    if usage.own_vehicle_milage:
+        milage = usage.own_vehicle_milage
+    else:
+        vehicle = db.query(VehicleModel).filter(VehicleModel.id == usage.vehicle_id).first()
+        if not vehicle:
+            raise HTTPException(status_code=404, detail='Vehicle not found')
+        milage = vehicle.milage
     
     # Validate meter reading
     if data.end_meter_reading < 0 or data.end_meter_reading > 1000000:
@@ -5766,7 +5805,7 @@ def complete_vehicle_usage(
     
     # Calculate KM driven and fuel consumed
     km_driven = data.end_meter_reading - usage.start_meter_reading
-    fuel_consumed = km_driven / vehicle.milage
+    fuel_consumed = km_driven / milage
     
     usage.end_meter_reading = data.end_meter_reading
     usage.km_driven = km_driven
@@ -5776,8 +5815,9 @@ def complete_vehicle_usage(
     if data.notes:
         usage.notes = data.notes
     
-    # Update vehicle's current meter reading
-    vehicle.current_meter_reading = data.end_meter_reading
+    # Update vehicle's current meter reading only for company vehicles
+    if usage.vehicle_id:
+        vehicle.current_meter_reading = data.end_meter_reading
     
     db.commit()
     db.refresh(usage)
@@ -5893,10 +5933,16 @@ def create_fuel_expense_claim(
     if usage.status != 'Completed':
         raise HTTPException(status_code=400, detail='Vehicle usage must be completed before claiming')
     
-    # Get vehicle details
-    vehicle = db.query(VehicleModel).filter(VehicleModel.id == usage.vehicle_id).first()
-    if not vehicle:
-        raise HTTPException(status_code=404, detail='Vehicle not found')
+    # Get vehicle details (company or own vehicle)
+    if usage.own_vehicle_type:
+        # Own vehicle case
+        vehicle_name = f"Own Vehicle - {usage.own_vehicle_type} ({usage.employee_name})"
+    else:
+        # Company vehicle case
+        vehicle = db.query(VehicleModel).filter(VehicleModel.id == usage.vehicle_id).first()
+        if not vehicle:
+            raise HTTPException(status_code=404, detail='Vehicle not found')
+        vehicle_name = vehicle.vehicle_name
     
     # Validate claim amount against fuel consumed
     actual_fuel_cost = usage.fuel_consumed * data.price_per_liter
@@ -5914,7 +5960,7 @@ def create_fuel_expense_claim(
         employee_id=usage.employee_id,
         employee_name=usage.employee_name,
         vehicle_id=usage.vehicle_id,
-        vehicle_name=vehicle.vehicle_name,
+        vehicle_name=vehicle_name,
         km_driven=usage.km_driven,
         fuel_consumed=usage.fuel_consumed,
         claimed_amount=data.claimed_amount,

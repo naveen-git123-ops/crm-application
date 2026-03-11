@@ -45,6 +45,8 @@ const Vehicles = () => {
     employee_id: user?.employee_id || user?.id || '',
     employee_name: user?.name || '',
     start_meter_reading: '',
+    own_vehicle_type: '',
+    own_vehicle_milage: '',
     notes: ''
   });
   const [completeUsageData, setCompleteUsageData] = useState({
@@ -57,6 +59,7 @@ const Vehicles = () => {
   const [fuelClaims, setFuelClaims] = useState([]);
   const [createClaimDialogOpen, setCreateClaimDialogOpen] = useState(false);
   const [selectedClaim, setSelectedClaim] = useState(null);
+  const [claimEmployeeFilter, setClaimEmployeeFilter] = useState('');
   const [claimData, setClaimData] = useState({
     vehicle_usage_id: '',
     claimed_amount: '',
@@ -299,8 +302,25 @@ const Vehicles = () => {
   };
 
   const handleStartUsage = async () => {
-    if (!startUsageData.vehicle_id || !startUsageData.start_meter_reading) {
-      toast.error('Please select vehicle and enter meter reading');
+    // Check if using company vehicle or own vehicle
+    const isOwnVehicle = !startUsageData.vehicle_id;
+    
+    if (isOwnVehicle) {
+      // Own vehicle case
+      if (!startUsageData.own_vehicle_type || !startUsageData.own_vehicle_milage) {
+        toast.error('For own vehicle, please select type and enter mileage');
+        return;
+      }
+    } else {
+      // Company vehicle case
+      if (!startUsageData.vehicle_id) {
+        toast.error('Please select a vehicle');
+        return;
+      }
+    }
+    
+    if (!startUsageData.start_meter_reading) {
+      toast.error('Please enter starting meter reading');
       return;
     }
     if (!startPhotoFile) {
@@ -316,15 +336,23 @@ const Vehicles = () => {
     setIsSubmitting(true);
     try {
       // Create journey first
+      const payload = {
+        vehicle_id: startUsageData.vehicle_id || null,
+        employee_id: startUsageData.employee_id,
+        employee_name: startUsageData.employee_name,
+        start_meter_reading: parseFloat(startUsageData.start_meter_reading),
+        notes: startUsageData.notes
+      };
+      
+      // Add own vehicle fields if using own vehicle
+      if (startUsageData.own_vehicle_type) {
+        payload.own_vehicle_type = startUsageData.own_vehicle_type;
+        payload.own_vehicle_milage = parseFloat(startUsageData.own_vehicle_milage);
+      }
+      
       const response = await axios.post(
         `${API}/vehicle-usage`,
-        {
-          vehicle_id: startUsageData.vehicle_id,
-          employee_id: startUsageData.employee_id,
-          employee_name: startUsageData.employee_name,
-          start_meter_reading: parseFloat(startUsageData.start_meter_reading),
-          notes: startUsageData.notes
-        },
+        payload,
         { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
       );
 
@@ -343,7 +371,9 @@ const Vehicles = () => {
         vehicle_id: '', 
         employee_id: user?.employee_id || user?.id || '',
         employee_name: user?.name || '',
-        start_meter_reading: '', 
+        start_meter_reading: '',
+        own_vehicle_type: '',
+        own_vehicle_milage: '',
         notes: '' 
       });
       setPreviousVehicleUsage(null);
@@ -531,7 +561,7 @@ const Vehicles = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Vehicle Management</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Vehicle Management</h1>
           <p className="text-gray-600 mt-1">Track vehicles, monitor usage, and manage fuel expenses</p>
         </div>
       </div>
@@ -594,19 +624,19 @@ const Vehicles = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {vehicles.map(vehicle => (
-              <Card key={vehicle.id} className="p-4 space-y-3">
+              <Card key={vehicle.id} className="p-4 space-y-3 bg-white text-gray-900">
                 {vehicle.photo_path && (
                   <img src={vehicle.photo_path} alt={vehicle.vehicle_name} className="w-full h-32 object-cover rounded"/>
                 )}
-                <h3 className="font-bold text-lg">{vehicle.vehicle_name}</h3>
-                <div className="space-y-1 text-sm">
-                  <p><span className="text-gray-600">Type:</span> {vehicle.vehicle_type}</p>
-                  <p><span className="text-gray-600">Fuel:</span> {vehicle.fuel_type}</p>
-                  <p><span className="text-gray-600">Reg:</span> {vehicle.registration_number}</p>
-                  <p><span className="text-gray-600">Mileage:</span> {vehicle.milage} km/L</p>
-                  <p><span className="text-gray-600">Status:</span> <span className={`px-2 py-1 rounded text-xs ${vehicle.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{vehicle.status}</span></p>
+                <h3 className="font-bold text-lg text-gray-900">{vehicle.vehicle_name}</h3>
+                <div className="space-y-1 text-sm text-gray-900">
+                  <p><span className="text-gray-700 font-medium">Type:</span> <span className="text-gray-900">{vehicle.vehicle_type}</span></p>
+                  <p><span className="text-gray-700 font-medium">Fuel:</span> <span className="text-gray-900">{vehicle.fuel_type}</span></p>
+                  <p><span className="text-gray-700 font-medium">Reg:</span> <span className="text-gray-900">{vehicle.registration_number}</span></p>
+                  <p><span className="text-gray-700 font-medium">Mileage:</span> <span className="text-gray-900">{vehicle.milage} km/L</span></p>
+                  <p><span className="text-gray-700 font-medium">Status:</span> <span className={`px-2 py-1 rounded text-xs ${vehicle.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{vehicle.status}</span></p>
                 </div>
-                <Button onClick={() => setSelectedVehicleForPhoto(vehicle.id)} size="sm" className="w-full bg-gray-500">
+                <Button onClick={() => setSelectedVehicleForPhoto(vehicle.id)} size="sm" className="w-full bg-gray-500 hover:bg-gray-600 text-white">
                   <Camera className="h-4 w-4 mr-2" /> Photo
                 </Button>
               </Card>
@@ -634,18 +664,86 @@ const Vehicles = () => {
                   </DialogHeader>
                 </div>
                 <div className="p-6 space-y-6">
-                  {/* Vehicle Selection */}
+                  {/* Vehicle Selection - Toggle between Company and Own Vehicle */}
                   <div className="space-y-3">
-                    <Label className="text-sm font-semibold text-gray-700">Vehicle *</Label>
-                    <select
-                      value={startUsageData.vehicle_id}
-                      onChange={e => handleVehicleSelection(e.target.value)}
-                      className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-                    >
-                      <option value="">Choose vehicle</option>
-                      {vehicles.map(v => <option key={v.id} value={v.id}>{v.vehicle_name}</option>)}
-                    </select>
+                    <Label className="text-sm font-semibold text-gray-700">Vehicle Type *</Label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setStartUsageData({ ...startUsageData, vehicle_id: '', own_vehicle_type: '', own_vehicle_milage: '' });
+                          setConfirmedPreviousUsage(false);
+                          setPreviousVehicleUsage(null);
+                        }}
+                        className={`flex-1 py-2 px-4 rounded-lg border-2 font-medium transition ${
+                          !startUsageData.own_vehicle_type
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                        }`}
+                      >
+                        🚗 Company Vehicle
+                      </button>
+                      <button
+                        onClick={() => setStartUsageData({ ...startUsageData, vehicle_id: '', own_vehicle_type: 'Car' })}
+                        className={`flex-1 py-2 px-4 rounded-lg border-2 font-medium transition ${
+                          startUsageData.own_vehicle_type
+                            ? 'border-orange-500 bg-orange-50 text-orange-700'
+                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                        }`}
+                      >
+                        🏍️ Own Vehicle
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Company Vehicle Selection */}
+                  {!startUsageData.own_vehicle_type && (
+                    <div className="space-y-3">
+                      <Label className="text-sm font-semibold text-gray-700">Select Company Vehicle *</Label>
+                      <select
+                        value={startUsageData.vehicle_id}
+                        onChange={e => handleVehicleSelection(e.target.value)}
+                        className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                      >
+                        <option value="">Choose vehicle</option>
+                        {vehicles.map(v => <option key={v.id} value={v.id}>{v.vehicle_name}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Own Vehicle Selection */}
+                  {startUsageData.own_vehicle_type && (
+                    <>
+                      <div className="space-y-3">
+                        <Label className="text-sm font-semibold text-gray-700">Vehicle Type *</Label>
+                        <select
+                          value={startUsageData.own_vehicle_type}
+                          onChange={e => setStartUsageData({ ...startUsageData, own_vehicle_type: e.target.value })}
+                          className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                        >
+                          <option value="Car">Car</option>
+                          <option value="Bike">Bike/Motorcycle</option>
+                          <option value="Van">Van</option>
+                          <option value="Truck">Truck</option>
+                          <option value="Auto">Auto/Tuk-Tuk</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-sm font-semibold text-gray-700">Mileage (km/L) *</Label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          min="0.1"
+                          max="100"
+                          value={startUsageData.own_vehicle_milage}
+                          onChange={e => setStartUsageData({ ...startUsageData, own_vehicle_milage: e.target.value })}
+                          placeholder="e.g., 12.5"
+                          className="h-11 border border-gray-300 rounded-lg px-4 text-gray-900"
+                        />
+                        <p className="text-xs text-gray-500">How many kilometers per liter does your vehicle run?</p>
+                      </div>
+                    </>
+                  )}
 
                   {/* Meter Reading */}
                   <div className="space-y-3">
@@ -655,7 +753,7 @@ const Vehicles = () => {
                       value={startUsageData.start_meter_reading}
                       onChange={e => setStartUsageData({ ...startUsageData, start_meter_reading: e.target.value })}
                       placeholder="e.g., 45000"
-                      className="h-11 border border-gray-300 rounded-lg px-4"
+                      className="h-11 border border-gray-300 rounded-lg px-4 text-gray-900"
                     />
                   </div>
 
@@ -727,7 +825,9 @@ const Vehicles = () => {
                         vehicle_id: '', 
                         employee_id: user?.employee_id || user?.id || '',
                         employee_name: user?.name || '',
-                        start_meter_reading: '', 
+                        start_meter_reading: '',
+                        own_vehicle_type: '',
+                        own_vehicle_milage: '',
                         notes: '' 
                       });
                       setPreviousVehicleUsage(null);
@@ -750,19 +850,19 @@ const Vehicles = () => {
 
             {/* Previous Vehicle Usage Confirmation Dialog */}
             <Dialog open={showPreviousUsageDialog} onOpenChange={setShowPreviousUsageDialog}>
-              <DialogContent className="max-w-lg bg-white rounded-lg border border-yellow-200 shadow-xl">
-                <div className="bg-yellow-600 text-white p-6 rounded-t-lg -m-6 mb-6">
+              <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl">
+                <div className="bg-blue-600 text-white p-6 rounded-t-lg -m-6 mb-6">
                   <DialogHeader>
                     <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
                       <AlertCircle className="h-5 w-5" />
                       Vehicle Previously Used
                     </DialogTitle>
-                    <p className="text-yellow-100 text-sm mt-2">This vehicle was last used by another employee. Please confirm details.</p>
+                    <p className="text-blue-100 text-sm mt-2">This vehicle was last used by another employee. Please confirm details.</p>
                   </DialogHeader>
                 </div>
                 {previousVehicleUsage && (
                   <div className="space-y-6 p-6">
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-3">
+                    <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
                       <div>
                         <p className="text-sm text-gray-600">Last User</p>
                         <p className="font-semibold text-gray-900">{previousVehicleUsage.employee_name} ({previousVehicleUsage.employee_id})</p>
@@ -813,7 +913,7 @@ const Vehicles = () => {
                             setShowPreviousUsageDialog(false);
                             toast.success('Ready to start journey. Please enter meter reading and photo.');
                           }}
-                          className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white"
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
                         >
                           Yes, I Confirm
                         </Button>
@@ -937,48 +1037,41 @@ const Vehicles = () => {
           )}
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Journey History</h3>
-            {usageRecords.map(usage => (
-              <Card key={usage.id} className="p-4 space-y-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-semibold">{getVehicleName(usage.vehicle_id)}</h4>
-                    <p className="text-sm text-gray-600">{usage.employee_name}</p>
-                    <div className="text-xs text-gray-500 mt-2 space-y-1">
-                      <p><span className="font-medium">Start:</span> {formatDateTime(usage.start_date)}</p>
-                      {usage.end_date && (
-                        <p><span className="font-medium">End:</span> {formatDateTime(usage.end_date)}</p>
-                      )}
-                    </div>
-                  </div>
-                  <span className={`px-3 py-1 rounded text-xs font-medium ${usage.status === 'Active' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
-                    {usage.status}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-4 text-sm border-t pt-3">
-                  <div>
-                    <p className="text-gray-600">Start</p>
-                    <p className="font-medium">{usage.start_meter_reading} km</p>
-                  </div>
-                  {usage.end_meter_reading && (
-                    <>
-                      <div>
-                        <p className="text-gray-600">End</p>
-                        <p className="font-medium">{usage.end_meter_reading} km</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Distance</p>
-                        <p className="font-medium text-green-600">{usage.km_driven} km</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Fuel</p>
-                        <p className="font-medium text-blue-600">{usage.fuel_consumed?.toFixed(2)} L</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </Card>
-            ))}
+            <h3 className="text-lg font-semibold text-gray-900">Journey History</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b-2 border-gray-200 bg-gray-50">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Vehicle</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Employee</th>
+                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Status</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Start (km)</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">End (km)</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Distance (km)</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Fuel (L)</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Started</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usageRecords.map(usage => (
+                    <tr key={usage.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
+                      <td className="px-4 py-3 font-medium text-gray-900">{usage.own_vehicle_type ? `Own ${usage.own_vehicle_type}` : getVehicleName(usage.vehicle_id)}</td>
+                      <td className="px-4 py-3 text-gray-700">{usage.employee_name}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${usage.status === 'Active' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
+                          {usage.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-gray-900 font-medium">{usage.start_meter_reading}</td>
+                      <td className="px-4 py-3 text-right text-gray-900 font-medium">{usage.end_meter_reading || '-'}</td>
+                      <td className="px-4 py-3 text-right text-green-600 font-medium">{usage.km_driven ? usage.km_driven.toFixed(1) : '-'}</td>
+                      <td className="px-4 py-3 text-right text-blue-600 font-medium">{usage.fuel_consumed ? usage.fuel_consumed.toFixed(2) : '-'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{formatDateTime(usage.start_date)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             {usageRecords.length === 0 && <p className="text-center text-gray-500 py-8">No journeys yet</p>}
           </div>
         </div>
@@ -991,18 +1084,18 @@ const Vehicles = () => {
             <Button className="bg-purple-600 hover:bg-purple-700 text-white" onClick={() => setCreateClaimDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-2" /> Create Claim
             </Button>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl text-gray-900">
               <DialogHeader>
-                <DialogTitle>Create Fuel Claim</DialogTitle>
-                <DialogDescription>Claim fuel expenses for completed journeys</DialogDescription>
+                <DialogTitle className="text-gray-900">Create Fuel Claim</DialogTitle>
+                <DialogDescription className="text-gray-600">Claim fuel expenses for completed journeys</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label>Journey *</Label>
+                  <Label className="text-gray-900">Journey *</Label>
                   <select
                     value={claimData.vehicle_usage_id}
                     onChange={e => setClaimData({ ...claimData, vehicle_usage_id: e.target.value })}
-                    className="w-full border rounded px-3 py-2"
+                    className="w-full border rounded px-3 py-2 text-gray-900 bg-white"
                   >
                     <option value="">Select journey</option>
                     {usageRecords
@@ -1022,7 +1115,7 @@ const Vehicles = () => {
                   </select>
                 </div>
                 <div>
-                  <Label>Price Per Liter (₹)</Label>
+                  <Label className="text-gray-900">Price Per Liter (₹)</Label>
                   <Input
                     type="number"
                     value={claimData.price_per_liter}
@@ -1031,7 +1124,7 @@ const Vehicles = () => {
                   />
                 </div>
                 <div>
-                  <Label>Claimed Amount (₹) *</Label>
+                  <Label className="text-gray-900">Claimed Amount (₹) *</Label>
                   <Input
                     type="number"
                     value={claimData.claimed_amount}
@@ -1039,58 +1132,107 @@ const Vehicles = () => {
                     placeholder="e.g., 500"
                   />
                 </div>
-                <Button onClick={handleCreateClaim} disabled={loading} className="w-full">
+                <Button onClick={handleCreateClaim} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
                   {loading ? 'Creating...' : 'Create Claim'}
                 </Button>
               </div>
             </DialogContent>
           </Dialog>
 
-          <div className="space-y-3">
-            {fuelClaims.map(claim => (
-              <Card key={claim.id} className="p-4 cursor-pointer hover:shadow-md" onClick={() => setSelectedClaim(claim)}>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-semibold">{claim.vehicle_name}</h4>
-                    <p className="text-sm text-gray-600">{claim.km_driven} km • {claim.fuel_consumed?.toFixed(2)} L</p>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <span className={`text-xs px-2 py-1 rounded font-medium ${getClaimStatusBadge(claim.claim_status)}`}>
-                      {claim.claim_status}
-                    </span>
-                    <span className={`text-xs px-2 py-1 rounded font-medium ${
-                      claim.claim_type === 'Over-Claimed' ? 'bg-red-100 text-red-800' :
-                      claim.claim_type === 'Under-Claimed' ? 'bg-blue-100 text-blue-800' :
-                      'bg-green-100 text-green-800'
-                    }`}>
-                      {claim.claim_type || 'Exact'}
-                    </span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-3 text-sm mt-3 border-t pt-3">
-                  <div>
-                    <p className="text-gray-600">Claimed</p>
-                    <p className="font-semibold">₹{claim.claimed_amount}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Expected</p>
-                    <p className="font-semibold">₹{claim.calculated_fuel_cost?.toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Difference</p>
-                    <p className={`font-semibold ${(claim.difference || 0) > 0 ? 'text-red-600' : (claim.difference || 0) < 0 ? 'text-blue-600' : 'text-green-600'}`}>
-                      {(claim.difference || 0) > 0 ? '+' : ''}{claim.difference}
-                    </p>
-                  </div>
-                  {claim.approved_amount && (
-                    <div>
-                      <p className="text-gray-600">Approved</p>
-                      <p className="font-semibold text-green-600">₹{claim.approved_amount}</p>
-                    </div>
+          {user?.role === 'Admin' && (
+            <div className="mb-4 flex items-center gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <Label className="text-gray-900 font-semibold">Filter by Employee:</Label>
+              <select
+                value={claimEmployeeFilter}
+                onChange={e => setClaimEmployeeFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:border-blue-500"
+              >
+                <option value="">All Employees</option>
+                {Array.from(new Set(fuelClaims.map(c => c.employee_name))).sort().map(empName => (
+                  <option key={empName} value={empName}>{empName}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b-2 border-gray-200 bg-gray-50">
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Employee</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Vehicle</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">KM</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Fuel (L)</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Expected (₹)</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Claimed (₹)</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Difference (₹)</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Type</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Status</th>
+                  {fuelClaims.some(c => c.approved_amount) && (
+                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Approved (₹)</th>
                   )}
-                </div>
-              </Card>
-            ))}
+                </tr>
+              </thead>
+              <tbody>
+                {fuelClaims
+                  .filter(claim => !claimEmployeeFilter || claim.employee_name === claimEmployeeFilter)
+                  .map(claim => (
+                  <tr 
+                    key={claim.id} 
+                    className="border-b border-gray-100 hover:bg-gray-50 transition cursor-pointer"
+                    onClick={() => setSelectedClaim(claim)}
+                  >
+                    <td className="px-4 py-3 font-medium text-gray-900">{claim.employee_name || 'Unknown'}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">{claim.vehicle_name}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">{claim.km_driven}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">{claim.fuel_consumed?.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-gray-900">
+                      <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm font-semibold">
+                        ₹{claim.calculated_fuel_cost?.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-900">
+                      <span className="inline-block px-2 py-1 bg-orange-100 text-orange-800 rounded text-sm font-semibold">
+                        ₹{claim.claimed_amount}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-900">
+                      <span className={`inline-block px-2 py-1 rounded text-sm font-semibold ${
+                        (claim.difference || 0) > 0 ? 'bg-red-100 text-red-800' : 
+                        (claim.difference || 0) < 0 ? 'bg-blue-100 text-blue-800' :
+                        'bg-green-100 text-green-800'
+                      }`}>
+                        {(claim.difference || 0) > 0 ? '+₹' : (claim.difference || 0) < 0 ? '-₹' : '₹'}{Math.abs(claim.difference || 0).toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-block text-xs px-2 py-1 rounded font-medium ${
+                        claim.claim_type === 'Over-Claimed' ? 'bg-red-100 text-red-800' :
+                        claim.claim_type === 'Under-Claimed' ? 'bg-blue-100 text-blue-800' :
+                        'bg-green-100 text-green-800'
+                      }`}>
+                        {claim.claim_type || 'Exact'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`text-xs px-2 py-1 rounded font-medium ${getClaimStatusBadge(claim.claim_status)}`}>
+                        {claim.claim_status}
+                      </span>
+                    </td>
+                    {fuelClaims.some(c => c.approved_amount) && (
+                      <td className="px-4 py-3 text-right text-gray-900">
+                        {claim.approved_amount ? (
+                          <span className="inline-block px-2 py-1 bg-green-100 text-green-800 rounded text-sm font-semibold">
+                            ₹{claim.approved_amount}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
           {fuelClaims.length === 0 && <p className="text-center text-gray-500 py-8">No claims yet</p>}
         </div>
@@ -1215,9 +1357,9 @@ const Vehicles = () => {
                             <span className="font-semibold text-red-800">⚠ Over Claim</span>
                             <p className="text-red-700">Claimed more than 10% high</p>
                           </div>
-                          <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
-                            <span className="font-semibold text-yellow-800">! Under Claim</span>
-                            <p className="text-yellow-700">Claimed more than 10% low</p>
+                          <div className="bg-gray-50 border border-gray-200 rounded p-2">
+                            <span className="font-semibold text-gray-800">! Under Claim</span>
+                            <p className="text-gray-700">Claimed more than 10% low</p>
                           </div>
                         </div>
                       </div>
@@ -1261,7 +1403,7 @@ const Vehicles = () => {
                                   <td className="px-4 py-3 text-right">
                                     <span className={`inline-block px-3 py-1 rounded text-sm font-semibold ${
                                       overClaim ? 'bg-red-100 text-red-800' : 
-                                      underClaim ? 'bg-yellow-100 text-yellow-800' :
+                                      underClaim ? 'bg-gray-100 text-gray-800' :
                                       'bg-green-100 text-green-800'
                                     }`}>
                                       ₹{claimed.toLocaleString()}
@@ -1270,7 +1412,7 @@ const Vehicles = () => {
                                   <td className="px-4 py-3 text-right">
                                     <span className={`inline-block px-3 py-1 rounded text-sm font-semibold whitespace-nowrap ${
                                       overClaim ? 'bg-red-100 text-red-800' :
-                                      underClaim ? 'bg-yellow-100 text-yellow-800' :
+                                      underClaim ? 'bg-gray-100 text-gray-800' :
                                       'bg-gray-100 text-gray-700'
                                     }`}>
                                       {difference > 0 ? '+' : ''} ₹{difference.toLocaleString()}
@@ -1420,35 +1562,35 @@ const Vehicles = () => {
       {/* APPROVAL DIALOG */}
       {selectedClaimForApproval && (
         <Dialog open={approvalDialogOpen} onOpenChange={setApprovalDialogOpen}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl text-gray-900">
             <DialogHeader>
-              <DialogTitle>Approve Fuel Claim</DialogTitle>
-              <DialogDescription>Review and approve the fuel expense claim</DialogDescription>
+              <DialogTitle className="text-gray-900">Approve Fuel Claim</DialogTitle>
+              <DialogDescription className="text-gray-600">Review and approve the fuel expense claim</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="bg-gray-50 border rounded-lg p-4 space-y-2 text-sm">
+              <div className="bg-gray-50 border rounded-lg p-4 space-y-2 text-sm text-gray-900">
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Employee:</span>
-                  <span className="font-semibold">{selectedClaimForApproval.employee_name}</span>
+                  <span className="text-gray-700 font-medium">Employee:</span>
+                  <span className="font-semibold text-gray-900">{selectedClaimForApproval.employee_name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Vehicle:</span>
-                  <span className="font-semibold">{selectedClaimForApproval.vehicle_name}</span>
+                  <span className="text-gray-700 font-medium">Vehicle:</span>
+                  <span className="font-semibold text-gray-900">{selectedClaimForApproval.vehicle_name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Fuel Consumed:</span>
-                  <span className="font-semibold">{selectedClaimForApproval.fuel_consumed?.toFixed(2)} L</span>
+                  <span className="text-gray-700 font-medium">Fuel Consumed:</span>
+                  <span className="font-semibold text-gray-900">{selectedClaimForApproval.fuel_consumed?.toFixed(2)} L</span>
                 </div>
                 <div className="border-t pt-2 flex justify-between">
-                  <span className="text-gray-600">Should Cost (Calculated):</span>
+                  <span className="text-gray-700 font-medium">Should Cost (Calculated):</span>
                   <span className="font-bold text-blue-600">₹{selectedClaimForApproval.calculated_fuel_cost?.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Claimed Amount:</span>
+                  <span className="text-gray-700 font-medium">Claimed Amount:</span>
                   <span className="font-bold text-orange-600">₹{selectedClaimForApproval.claimed_amount?.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between pt-2 border-t">
-                  <span className="text-gray-600">Difference:</span>
+                  <span className="text-gray-700 font-medium">Difference:</span>
                   <span className={`font-bold ${selectedClaimForApproval.difference > 0 ? 'text-red-600' : 'text-green-600'}`}>
                     {selectedClaimForApproval.difference > 0 ? '+' : ''} ₹{selectedClaimForApproval.difference?.toLocaleString()}
                   </span>
@@ -1456,7 +1598,7 @@ const Vehicles = () => {
               </div>
 
               <div>
-                <Label>Approval Action</Label>
+                <Label className="text-gray-900">Approval Action</Label>
                 <select
                   value={approvalAction}
                   onChange={(e) => {
@@ -1467,7 +1609,7 @@ const Vehicles = () => {
                       setApprovalAmount(selectedClaimForApproval.calculated_fuel_cost?.toString() || '');
                     }
                   }}
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full border rounded px-3 py-2 text-gray-900 bg-white"
                 >
                   <option value="Approved">Approve (Full Amount)</option>
                   <option value="Partially-Approved">Partially Approve (Custom Amount)</option>
@@ -1477,7 +1619,7 @@ const Vehicles = () => {
 
               {approvalAction === 'Partially-Approved' && (
                 <div>
-                  <Label>Approved Amount (₹)</Label>
+                  <Label className="text-gray-900">Approved Amount (₹)</Label>
                   <Input
                     type="number"
                     value={approvalAmount}
@@ -1525,14 +1667,14 @@ const Vehicles = () => {
 // DIALOG COMPONENTS
 const CreateVehicleDialog = ({ open, onOpenChange, newVehicle, setNewVehicle, onSubmit, loading }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent>
+    <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl text-gray-900">
       <DialogHeader>
-        <DialogTitle>Create New Vehicle</DialogTitle>
-        <DialogDescription>Add a new company vehicle</DialogDescription>
+        <DialogTitle className="text-gray-900">Create New Vehicle</DialogTitle>
+        <DialogDescription className="text-gray-600">Add a new company vehicle</DialogDescription>
       </DialogHeader>
       <div className="space-y-4">
         <div>
-          <Label>Vehicle Name *</Label>
+          <Label className="text-gray-900">Vehicle Name *</Label>
           <Input
             value={newVehicle.vehicle_name}
             onChange={e => setNewVehicle({ ...newVehicle, vehicle_name: e.target.value })}
@@ -1540,11 +1682,11 @@ const CreateVehicleDialog = ({ open, onOpenChange, newVehicle, setNewVehicle, on
           />
         </div>
         <div>
-          <Label>Vehicle Type *</Label>
+          <Label className="text-gray-900">Vehicle Type *</Label>
           <select
             value={newVehicle.vehicle_type}
             onChange={e => setNewVehicle({ ...newVehicle, vehicle_type: e.target.value })}
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-gray-900 bg-white"
           >
             <option>Car</option>
             <option>Bike</option>
@@ -1553,11 +1695,11 @@ const CreateVehicleDialog = ({ open, onOpenChange, newVehicle, setNewVehicle, on
           </select>
         </div>
         <div>
-          <Label>Fuel Type *</Label>
+          <Label className="text-gray-900">Fuel Type *</Label>
           <select
             value={newVehicle.fuel_type}
             onChange={e => setNewVehicle({ ...newVehicle, fuel_type: e.target.value })}
-            className="w-full border rounded px-3 py-2"
+            className="w-full border rounded px-3 py-2 text-gray-900 bg-white"
           >
             <option>Petrol</option>
             <option>Diesel</option>
@@ -1565,7 +1707,7 @@ const CreateVehicleDialog = ({ open, onOpenChange, newVehicle, setNewVehicle, on
           </select>
         </div>
         <div>
-          <Label>Registration Number *</Label>
+          <Label className="text-gray-900">Registration Number *</Label>
           <Input
             value={newVehicle.registration_number}
             onChange={e => setNewVehicle({ ...newVehicle, registration_number: e.target.value })}
@@ -1573,7 +1715,7 @@ const CreateVehicleDialog = ({ open, onOpenChange, newVehicle, setNewVehicle, on
           />
         </div>
         <div>
-          <Label>Mileage (km/liter) *</Label>
+          <Label className="text-gray-900">Mileage (km/liter) *</Label>
           <Input
             type="number"
             value={newVehicle.milage}
@@ -1582,7 +1724,7 @@ const CreateVehicleDialog = ({ open, onOpenChange, newVehicle, setNewVehicle, on
             step="0.1"
           />
         </div>
-        <Button onClick={onSubmit} disabled={loading} className="w-full">
+        <Button onClick={onSubmit} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700">
           {loading ? 'Creating...' : 'Create'}
         </Button>
       </div>
@@ -1592,13 +1734,13 @@ const CreateVehicleDialog = ({ open, onOpenChange, newVehicle, setNewVehicle, on
 
 const VehiclePhotoDialog = ({ open, onOpenChange, vehiclePhotoFile, setVehiclePhotoFile, onUpload, loading }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent>
+    <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl text-gray-900">
       <DialogHeader>
-        <DialogTitle>Upload Vehicle Photo</DialogTitle>
+        <DialogTitle className="text-gray-900">Upload Vehicle Photo</DialogTitle>
       </DialogHeader>
       <div className="space-y-4">
         <Input type="file" accept="image/*" onChange={e => setVehiclePhotoFile(e.target.files?.[0] || null)} />
-        <Button onClick={onUpload} disabled={!vehiclePhotoFile || loading} className="w-full">
+        <Button onClick={onUpload} disabled={!vehiclePhotoFile || loading} className="w-full bg-blue-600 hover:bg-blue-700">
           {loading ? 'Uploading...' : 'Upload'}
         </Button>
       </div>

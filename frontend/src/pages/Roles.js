@@ -23,6 +23,7 @@ const PERMISSION_LABELS = {
   leaves: 'Leaves',
   tasks: 'Tasks',
   expenses: 'Expenses',
+  vehicles: 'Vehicle Tracking',
   roles: 'Roles',
   workspace: 'Workspace',
   idcards: 'ID Cards',
