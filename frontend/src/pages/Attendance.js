@@ -116,7 +116,7 @@ export const Attendance = () => {
   // Holidays
   const [holidays, setHolidays] = useState([]);
 
-  const canManageAttendance = ['Admin', 'HR'].includes(user?.role);
+  const canManageAttendance = ['Admin', 'HR', 'Accountant'].includes(user?.role);
   const canApproveTour = ['Admin', 'Manager'].includes(user?.role);
 
   const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });

@@ -35,7 +35,6 @@ import {
   Search,
   Trash2,
   Edit2,
-  Clock,
   Calendar as CalendarIcon,
   User,
   Flag,
@@ -75,7 +74,8 @@ const TaskCard = ({ task, onClick, onStatusChange, user }) => {
   };
 
   const isOverdue = task.due_date < new Date().toISOString().split('T')[0] && task.status !== 'Completed';
-  const canEditTask = user?.role === 'Admin' || user?.role === 'Manager';
+  const isAssignedToUser = task.assigned_to_employee_id === user?.employee_id;
+  const canEditTask = user?.role === 'Admin' || user?.role === 'Manager' || isAssignedToUser;
 
   const handleStatusChange = (e) => {
     e.stopPropagation();
@@ -132,20 +132,6 @@ const TaskCard = ({ task, onClick, onStatusChange, user }) => {
             <CalendarIcon className="h-2.5 md:h-3 w-2.5 md:w-3 flex-shrink-0" />
             <span>{task.due_date}</span>
           </div>
-          {task.completion_percentage > 0 && (
-            <div className="mt-1 md:mt-2">
-              <div className="flex items-center justify-between mb-0.5 md:mb-1 text-xs">
-                <span className="text-xs font-medium">Progress</span>
-                <span className="text-xs font-semibold">{task.completion_percentage}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-1 md:h-1.5">
-                <div 
-                  className="bg-blue-600 h-1 md:h-1.5 rounded-full transition-all duration-300"
-                  style={{ width: `${task.completion_percentage}%` }}
-                ></div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Status Dropdown */}
@@ -362,8 +348,16 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
   const handleSaveEdit = async () => {
     if (!task) return;
 
-    // Only Admin and Manager can edit task details
-    if (user?.role !== 'Admin' && user?.role !== 'Manager') {
+    // Check if this is a status-only update (allowed for all users) or full edit (Admin/Manager only)
+    const isStatusOnlyUpdate = 
+      editForm.title === task.title &&
+      editForm.description === task.description &&
+      editForm.priority === task.priority &&
+      editForm.due_date === task.due_date &&
+      editForm.assigned_to_employee_id === task.assigned_to_employee_id;
+
+    // Only Admin and Manager can edit task details (non-status fields)
+    if (!isStatusOnlyUpdate && user?.role !== 'Admin' && user?.role !== 'Manager') {
       toast.error('Only Admin and Manager can edit task details');
       return;
     }
@@ -378,9 +372,35 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
       );
       toast.success('Task updated');
       setEditMode(false);
-      onUpdate();
+      
+      // If this is a quick status update, close the modal and refresh board
+      if (isStatusOnlyUpdate && editForm.status !== task.status) {
+        onUpdate();
+        onClose();
+      } else {
+        onUpdate();
+      }
     } catch (error) {
       toast.error('Failed to update task');
+    }
+  };
+
+  const handleQuickStatusUpdate = async (newStatus) => {
+    if (!task) return;
+
+    try {
+      await axios.put(
+        `${API}/tasks/${task.id}`,
+        { status: newStatus },
+        {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        }
+      );
+      toast.success('Status updated');
+      onUpdate();
+      onClose();
+    } catch (error) {
+      toast.error('Failed to update status');
     }
   };
 
@@ -414,6 +434,8 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
 
   if (!task || !isOpen) return null;
 
+  const isAssignedToUser = task.assigned_to_employee_id === user?.employee_id;
+
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent className="w-full sm:w-[600px] lg:w-[720px] bg-white border-l border-gray-200 overflow-y-auto" side="right">
@@ -443,7 +465,7 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
               <span>Task Details</span>
             </h3>
             
-            {!editMode && (
+            {!editMode && (user?.role === 'Admin' || user?.role === 'Manager') && (
               <Button
                 size="sm"
                 onClick={() => setEditMode(true)}
@@ -474,32 +496,28 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
                       className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs md:text-sm text-gray-900"
                     />
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
-                    <div>
-                      <Label className="text-xs md:text-sm font-medium text-gray-900">Priority</Label>
-                      <select
-                        value={editForm.priority}
-                        onChange={(e) => setEditForm({ ...editForm, priority: e.target.value })}
-                        className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs md:text-sm text-gray-900 bg-white"
-                      >
-                        <option value="Low">Low</option>
-                        <option value="Medium">Medium</option>
-                        <option value="High">High</option>
-                      </select>
-                    </div>
-                    <div>
-                      <Label className="text-xs md:text-sm font-medium text-gray-900">Status</Label>
-                      <select
-                        value={editForm.status}
-                        onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                        className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs md:text-sm text-gray-900 bg-white"
-                      >
-                        <option value="Pending">Pending</option>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Completed">Completed</option>
-                        <option value="Overdue">Overdue</option>
-                      </select>
-                    </div>
+                  <div>
+                    <Label className="text-xs md:text-sm font-medium text-gray-900">Status</Label>
+                    <select
+                      value={editForm.status}
+                      onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                      className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs md:text-sm text-gray-900 bg-white"
+                    >
+                      {isAssignedToUser ? (
+                        <>
+                          <option value="Pending">Not Started</option>
+                          <option value="In Progress">In Progress</option>
+                          <option value="Completed">Completed</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="Pending">Pending</option>
+                          <option value="In Progress">In Progress</option>
+                          <option value="Completed">Completed</option>
+                          <option value="Overdue">Overdue</option>
+                        </>
+                      )}
+                    </select>
                   </div>
                   <div>
                     <Label className="text-xs md:text-sm font-medium text-gray-900">Due Date</Label>
@@ -510,20 +528,7 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
                       className="mt-1 text-gray-900 text-xs md:text-sm"
                     />
                   </div>
-                  <div>
-                    <Label className="text-xs md:text-sm font-medium text-gray-900">Completion %</Label>
-                    <div className="flex items-center gap-2 md:gap-3 mt-1">
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={editForm.completion_percentage}
-                        onChange={(e) => setEditForm({ ...editForm, completion_percentage: parseInt(e.target.value) })}
-                        className="flex-1 h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                      />
-                      <span className="text-xs md:text-sm font-semibold text-gray-900 min-w-[40px] md:min-w-[50px]">{editForm.completion_percentage}%</span>
-                    </div>
-                  </div>
+
                   <div>
                     <Label className="text-xs md:text-sm font-medium text-gray-900">Assign To</Label>
                     <select
@@ -549,72 +554,56 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-2 md:gap-4">
-                  <div>
-                    <p className="text-xs text-gray-500 font-medium uppercase">Status</p>
-                    <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">{task.status || 'Not set'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 font-medium uppercase">Priority</p>
-                    <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">{task.priority || 'Not set'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 font-medium uppercase">Due Date</p>
-                    <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">{task.due_date || 'Not set'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 font-medium uppercase">Completion</p>
-                    <div className="mt-1 md:mt-2 space-y-1 md:space-y-2">
-                      <div className="flex items-center gap-1 md:gap-3">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="5"
-                          value={completionUpdate}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value, 10);
-                            if (Number.isNaN(val)) {
-                              setCompletionUpdate(0);
-                            } else {
-                              setCompletionUpdate(Math.min(100, Math.max(0, val)));
-                            }
-                          }}
-                          className="w-16 md:w-20 border border-gray-300 rounded px-1 md:px-2 py-1 text-xs md:text-sm text-gray-900"
-                        />
-                        <span className="text-xs md:text-sm font-bold text-gray-900 min-w-[35px] md:min-w-[45px]">
-                          {completionUpdate}%
-                        </span>
-                        <Button
-                          size="sm"
-                          className="bg-blue-600 text-white text-xs md:text-sm h-7 md:h-8 px-2 md:px-3"
-                          onClick={handleQuickCompletionUpdate}
-                        >
-                          Update
-                        </Button>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5 md:h-2">
-                        <div
-                          className="bg-blue-600 h-1.5 md:h-2 rounded-full"
-                          style={{ width: `${completionUpdate}%` }}
-                        ></div>
-                      </div>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-2 md:gap-4">
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium uppercase">Status</p>
+                      <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">{task.status || 'Not set'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium uppercase">Due Date</p>
+                      <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">{task.due_date || 'Not set'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium uppercase">Assigned To</p>
+                      <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900 truncate">{task.assigned_to_name || 'Unassigned'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium uppercase">Created By</p>
+                      <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900 truncate">{task.created_by_name || 'Unknown'}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-500 font-medium uppercase">Created At</p>
+                      <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">
+                        {task.created_at ? formatISTDateTime(task.created_at) : 'Not available'}
+                      </p>
                     </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-gray-500 font-medium uppercase">Assigned To</p>
-                    <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900 truncate">{task.assigned_to_name || 'Unassigned'}</p>
+
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 md:p-4 space-y-2">
+                    <p className="text-xs font-semibold text-blue-900">Quick Status Update</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {task.status !== 'In Progress' && (
+                        <Button
+                          size="sm"
+                          className="bg-blue-600 text-white text-xs md:text-sm h-8 md:h-9 px-2 md:px-3"
+                          onClick={() => handleQuickStatusUpdate('In Progress')}
+                        >
+                          Start Work
+                        </Button>
+                      )}
+                      {task.status !== 'Completed' && task.status !== 'Overdue' && (
+                        <Button
+                          size="sm"
+                          className="bg-green-600 text-white text-xs md:text-sm h-8 md:h-9 px-2 md:px-3"
+                          onClick={() => handleQuickStatusUpdate('Completed')}
+                        >
+                          Mark Done
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-gray-500 font-medium uppercase">Created By</p>
-                    <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900 truncate">{task.created_by_name || 'Unknown'}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-xs text-gray-500 font-medium uppercase">Created At</p>
-                    <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">
-                      {task.created_at ? formatISTDateTime(task.created_at) : 'Not available'}
-                    </p>
-                  </div>
+
                 </div>
               )}
 
@@ -669,73 +658,7 @@ const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [
             </div>
           </div>
 
-          {/* Time Logs Section */}
-          <div className="border-t pt-4 md:pt-8">
-            <h3 className="text-base md:text-lg font-bold mb-3 md:mb-4 flex items-center gap-2 text-gray-900">
-              <Clock className="h-4 md:h-5 w-4 md:w-5" />
-              <span>Time Logs</span>
-            </h3>
 
-            <div className="space-y-3">
-              <div className="border border-gray-300 rounded-lg p-2 md:p-4 space-y-2 md:space-y-3 bg-gray-50">
-                <h4 className="font-semibold text-xs md:text-sm text-gray-900">Log Time</h4>
-                <div>
-                  <Label className="text-xs md:text-sm text-gray-900 font-medium">Date</Label>
-                  <Input
-                    type="date"
-                    value={newTimeLog.log_date}
-                    onChange={(e) => setNewTimeLog({ ...newTimeLog, log_date: e.target.value })}
-                    className="mt-1 text-xs md:text-sm text-gray-900 h-8 md:h-9"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs md:text-sm text-gray-900 font-medium">Time Spent (min)</Label>
-                  <Input
-                    type="number"
-                    value={newTimeLog.time_spent_minutes}
-                    onChange={(e) => setNewTimeLog({ ...newTimeLog, time_spent_minutes: e.target.value })}
-                    placeholder="e.g., 60"
-                    className="mt-1 text-xs md:text-sm text-gray-900 h-8 md:h-9"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs md:text-sm text-gray-900 font-medium">Description</Label>
-                  <Input
-                    value={newTimeLog.description}
-                    onChange={(e) => setNewTimeLog({ ...newTimeLog, description: e.target.value })}
-                    placeholder="What did you work on?"
-                    className="mt-1 text-xs md:text-sm text-gray-900 h-8 md:h-9"
-                  />
-                </div>
-                <Button onClick={handleAddTimeLog} className="w-full bg-blue-600 text-white text-xs md:text-sm h-8 md:h-9">
-                  Log Time
-                </Button>
-              </div>
-
-              {loadingLogs ? (
-                <div className="text-center py-4 text-gray-400 text-xs">Loading time logs...</div>
-              ) : timeLogs.length === 0 ? (
-                <div className="text-center py-6 md:py-8 text-gray-400 text-xs">No time logs yet</div>
-              ) : (
-                <div className="space-y-2 md:space-y-3">
-                  {timeLogs.map((log) => (
-                    <div key={log.id} className="bg-gray-50 p-2 md:p-3 rounded-lg">
-                      <div className="flex justify-between items-start gap-2">
-                        <div>
-                          <p className="text-xs md:text-sm font-semibold text-gray-900">{log.logged_by_name}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{log.log_date}</p>
-                          <p className="text-xs md:text-sm text-gray-700 mt-1">{log.time_spent_minutes} minutes</p>
-                          {log.description && (
-                            <p className="text-xs text-gray-600 mt-0.5">{log.description}</p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
 
           {/* Attachments Section */}
           <div className="border-t pt-4 md:pt-8">
