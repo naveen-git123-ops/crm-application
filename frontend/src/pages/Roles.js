@@ -46,10 +46,52 @@ export const Roles = () => {
   const [savingRole, setSavingRole] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
+  // Admin password reset dialog (no email verification)
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetTargetUser, setResetTargetUser] = useState(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetSaving, setResetSaving] = useState(false);
+
   useEffect(() => {
     fetchUsers();
     fetchRoles();
   }, []);
+
+  const openResetPasswordDialog = (targetUser) => {
+    setResetTargetUser(targetUser);
+    setResetPassword('');
+    setResetDialogOpen(true);
+  };
+
+  const submitResetPassword = async () => {
+    if (user?.role !== 'Admin') return;
+    if (!resetTargetUser) return;
+
+    const newPassword = (resetPassword || '').trim();
+    if (newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+
+    setResetSaving(true);
+    try {
+      await axios.post(
+        `${API}/users/${resetTargetUser.id}/reset-password`,
+        { new_password: newPassword },
+        authHeaders()
+      );
+      toast.success('Password reset successfully');
+      setResetDialogOpen(false);
+      setResetTargetUser(null);
+      setResetPassword('');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to reset password');
+    } finally {
+      setResetSaving(false);
+      // No need to refetch users, but keep UI consistent in case role changes occurred.
+      fetchUsers();
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -273,27 +315,48 @@ export const Roles = () => {
                     </select>
                   </td>
                   <td className="py-3 px-4">
-                    {u.id !== user?.id && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-9"
-                        onClick={() => saveRole(u.id)}
-                        disabled={savingId === u.id}
-                      >
-                        {savingId === u.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <>
-                            <Save className="h-4 w-4 mr-1" />
-                            Save
-                          </>
-                        )}
-                      </Button>
-                    )}
-                    {u.id === user?.id && (
-                      <span className="text-xs text-gray-500">(You)</span>
-                    )}
+                    <div className="flex flex-col gap-2">
+                      {u.id !== user?.id && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9"
+                          onClick={() => saveRole(u.id)}
+                          disabled={savingId === u.id}
+                        >
+                          {savingId === u.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Save className="h-4 w-4 mr-1" />
+                              Save
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {u.id === user?.id && (
+                        <span className="text-xs text-gray-500">(You)</span>
+                      )}
+
+                      {user?.role === 'Admin' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9"
+                          onClick={() => openResetPasswordDialog(u)}
+                          disabled={resetSaving && resetTargetUser?.id === u.id}
+                        >
+                          {resetSaving && resetTargetUser?.id === u.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Lock className="h-4 w-4 mr-1" />
+                              Reset Password
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -350,6 +413,64 @@ export const Roles = () => {
               <Button variant="outline" onClick={() => setRoleDialogOpen(false)} className="px-4 py-2">Cancel</Button>
               <Button onClick={saveRoleForm} disabled={savingRole} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2">
                 {savingRole ? <Loader2 className="h-4 w-4 animate-spin" /> : (editingRole ? 'Update' : 'Create')}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Admin reset password dialog */}
+      <Dialog
+        open={resetDialogOpen}
+        onOpenChange={(open) => {
+          setResetDialogOpen(open);
+          if (!open) {
+            setResetTargetUser(null);
+            setResetPassword('');
+            setResetSaving(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+          <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold text-white">Reset Password</DialogTitle>
+              <p className="text-blue-100 text-sm mt-1">
+                {resetTargetUser ? `For ${resetTargetUser.name}` : 'For selected user'}
+              </p>
+            </DialogHeader>
+          </div>
+          <div className="space-y-4 p-6">
+            <div className="space-y-2">
+              <Label htmlFor="new-password" className="text-sm font-semibold text-gray-900 block">
+                New Password *
+              </Label>
+              <Input
+                id="new-password"
+                type="password"
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                placeholder="Enter new password"
+                className="h-10 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={resetSaving}
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-gray-200">
+              <Button
+                variant="outline"
+                onClick={() => setResetDialogOpen(false)}
+                className="px-4 py-2"
+                disabled={resetSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={submitResetPassword}
+                disabled={resetSaving || !resetPassword.trim() || user?.role !== 'Admin'}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2"
+              >
+                {resetSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Reset'}
               </Button>
             </div>
           </div>

@@ -1437,6 +1437,11 @@ class DailyWorkLogCreate(BaseModel):
 class UserRoleUpdate(BaseModel):
     role: str  # must exist in roles table
 
+
+class AdminPasswordResetRequest(BaseModel):
+    # Admin can set a new password for any user (no email verification flow).
+    new_password: str = Field(min_length=6, max_length=255)
+
 class RoleCreate(BaseModel):
     name: str
     permissions: List[str]
@@ -4674,6 +4679,30 @@ def update_user_role(
                 'emergency_contact': emp.emergency_contact
             })
     return user_data
+
+
+@api_router.post('/users/{user_id}/reset-password')
+def admin_reset_user_password(
+    user_id: str,
+    payload: AdminPasswordResetRequest,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Admin-only: set a new password for any user (no verification flow)."""
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can reset user passwords')
+
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail='User not found')
+
+    new_password = (payload.new_password or '').strip()
+    if not new_password:
+        raise HTTPException(status_code=400, detail='new_password is required')
+
+    user.password = hash_password(new_password)
+    db.commit()
+    return {'message': 'Password reset successfully'}
 
 
 # --------------- Role CRUD (create/edit/delete roles; Admin role protected) ---------------
