@@ -3652,6 +3652,63 @@ def approve_tour(
     return {'message': f'Tour {body.status}', 'attendance_id': rec.id}
 
 
+@api_router.get('/attendance/employee-locations')
+def get_employee_locations(
+    employee_id: str,
+    date: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get employee's location history (punch-in/out locations) from attendance records. Admin/Manager only."""
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Only Admin and Manager can view employee locations')
+    
+    # Fetch all attendance records for the employee with location data
+    query = db.query(AttendanceModel).filter(AttendanceModel.employee_id == employee_id)
+    
+    if date:
+        query = query.filter(AttendanceModel.date == date)
+    else:
+        # Default to today if no date specified
+        from datetime import date as date_type
+        today = date_type.today().strftime('%Y-%m-%d')
+        query = query.filter(AttendanceModel.date == today)
+    
+    records = query.order_by(AttendanceModel.created_at.desc()).all()
+    
+    locations = []
+    for record in records:
+        # Collect all location points for this record
+        if record.punch_in_lat and record.punch_in_lng:
+            locations.append({
+                'id': f"{record.id}_punch_in",
+                'type': 'punch_in',
+                'latitude': record.punch_in_lat,
+                'longitude': record.punch_in_lng,
+                'time': record.punch_in,
+                'timestamp': record.created_at.isoformat() if record.created_at else None,
+                'date': record.date
+            })
+        
+        if record.punch_out_lat and record.punch_out_lng:
+            locations.append({
+                'id': f"{record.id}_punch_out",
+                'type': 'punch_out',
+                'latitude': record.punch_out_lat,
+                'longitude': record.punch_out_lng,
+                'time': record.punch_out,
+                'timestamp': record.updated_at.isoformat() if record.updated_at else None,
+                'date': record.date
+            })
+    
+    return {
+        'employee_id': employee_id,
+        'date': date or today,
+        'locations': locations,
+        'total_locations': len(locations)
+    }
+
+
 @api_router.get('/attendance/late-punch-in-requests')
 def get_late_punch_in_requests(
     current_user: UserModel = Depends(get_current_user),

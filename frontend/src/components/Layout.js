@@ -20,7 +20,8 @@ import {
   Target,
   Package,
   CheckSquare,
-  Fuel
+  Fuel,
+  MapPin
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -42,6 +43,7 @@ export const Layout = ({ children }) => {
     { icon: Users, label: 'Customers', path: '/customers', permission: 'customers' },
     { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
     { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance' },
+    { icon: MapPin, label: 'Location Tracker', path: '/location-tracker', permission: 'attendance' },
     { icon: FileText, label: 'Leaves', path: '/leaves', permission: 'leaves' },
     { icon: CalendarDays, label: 'Government Holidays', path: '/government-holidays', permission: 'holidays' },
     { icon: Receipt, label: 'Expenses', path: '/expenses', permission: 'expenses' },

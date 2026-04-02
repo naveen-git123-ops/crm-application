@@ -24,6 +24,7 @@ import { Leads } from '@/pages/Leads';
 import { GovernmentHolidays } from '@/pages/GovernmentHolidays';
 import Vehicles from '@/pages/Vehicles';
 import Inventory from '@/pages/Inventory';
+import LocationTracker from '@/pages/LocationTracker';
 
 function App() {
   return (
@@ -139,6 +140,17 @@ function App() {
                 <ProtectedRoute requiredPermission="vehicles">
                   <Layout>
                     <Vehicles />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/location-tracker"
+              element={
+                <ProtectedRoute requiredPermission="attendance">
+                  <Layout>
+                    <LocationTracker />
                   </Layout>
                 </ProtectedRoute>
               }
