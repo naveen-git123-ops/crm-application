@@ -42,6 +42,25 @@ app.add_middleware(
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# Attendance business rules use local wall-clock time (default: India).
+# Set ATTENDANCE_TIMEZONE in .env e.g. Asia/Kolkata, Asia/Dubai
+ATTENDANCE_TZ_NAME = os.environ.get('ATTENDANCE_TIMEZONE', 'Asia/Kolkata')
+
+
+def attendance_local_now() -> datetime:
+    """Current time in the configured attendance timezone (for punch-in/out thresholds)."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo(ATTENDANCE_TZ_NAME))
+    except Exception:
+        ist = timezone(timedelta(hours=5, minutes=30))
+        return datetime.now(ist)
+
+
+def attendance_local_date_str() -> str:
+    return attendance_local_now().strftime('%Y-%m-%d')
+
+
 # Database Setup - MySQL or PostgreSQL
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if not DATABASE_URL:
@@ -1264,7 +1283,7 @@ class Attendance(BaseModel):
     punch_out: Optional[str] = None
     work_hours: float = 0.0
     total_work_hours: float = 0.0
-    status: Literal['Present', 'Absent', 'Late', 'Half Day', 'Leave', 'Pending Approval'] = 'Present'
+    status: Literal['Present', 'Absent', 'Late', 'Half Day', 'Leave', 'Pending Approval', 'Incomplete'] = 'Present'
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_tour: Optional[int] = None
     tour_approval_status: Optional[str] = None
@@ -3188,9 +3207,29 @@ def delete_task_attachment(
 
 # ============= ATTENDANCE ROUTES =============
 
+
+def finalize_stale_attendance_without_punch_out(db: Session) -> None:
+    """Past calendar days with punch in but no punch out → Absent (incomplete day)."""
+    today_str = attendance_local_date_str()
+    stale = db.query(AttendanceModel).filter(
+        AttendanceModel.date < today_str,
+        AttendanceModel.punch_out.is_(None),
+    ).all()
+    changed = False
+    for rec in stale:
+        if rec.status == 'Leave':
+            continue
+        rec.status = 'Absent'
+        rec.is_active_session = 0
+        changed = True
+    if changed:
+        db.commit()
+
+
 @api_router.post('/attendance/punch')
 def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    finalize_stale_attendance_without_punch_out(db)
+    today = attendance_local_date_str()
     
     employee = db.query(EmployeeModel).filter(EmployeeModel.employee_id == punch_data.employee_id).first()
     if not employee:
@@ -3201,7 +3240,7 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         AttendanceModel.date == today
     ).first()
     
-    current_time = datetime.now(timezone.utc).strftime('%H:%M:%S')
+    current_time = attendance_local_now().strftime('%H:%M:%S')
     office = get_office_location(db)
     # Roles that can manage attendance from the grid (Admin, HR, Accountant)
     # should not be forced to send location for punch in/out.
@@ -3223,16 +3262,47 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             # If they already have an active session, don't allow another punch in
             if existing.is_active_session == 1:
                 raise HTTPException(status_code=400, detail='Already punched in today')
-            # If they've punched out before, they can punch in again for a new session
-            # Just mark the existing record as active again
+            # New session after a previous punch-out: update session start time and late rules
+            hour, minute = int(current_time.split(':')[0]), int(current_time.split(':')[1])
+            is_late = hour > 10 or (hour == 10 and minute > 30)
+            minutes_late = 0
+            if is_late:
+                late_threshold = datetime.strptime('10:30:00', '%H:%M:%S')
+                punch_time = datetime.strptime(current_time, '%H:%M:%S')
+                minutes_late = int((punch_time - late_threshold).total_seconds() / 60)
+            existing.punch_in = current_time
+            existing.punch_in_lat = punch_data.latitude
+            existing.punch_in_lng = punch_data.longitude
+            existing.is_tour = 1 if not at_office else 0
+            existing.tour_approval_status = 'pending' if not at_office else None
             existing.is_active_session = 1
+            existing.status = 'Late' if is_late else 'Incomplete'
             db.commit()
             db.refresh(existing)
+            if is_late:
+                pending_in = db.query(LatePunchInRequestModel).filter(
+                    LatePunchInRequestModel.attendance_id == existing.id,
+                    LatePunchInRequestModel.status == 'Pending',
+                ).first()
+                if not pending_in:
+                    late_request = LatePunchInRequestModel(
+                        attendance_id=existing.id,
+                        employee_id=punch_data.employee_id,
+                        employee_name=employee.name,
+                        punch_in_time=current_time,
+                        minutes_late=minutes_late,
+                        punch_in_date=today,
+                        status='Pending'
+                    )
+                    db.add(late_request)
+                    db.commit()
             return {
                 'message': 'Punched in again successfully (new session)' if at_office else 'Recorded as Tour (official travel). Pending approval from Admin/Manager.',
                 'attendance': existing,
                 'is_tour': not at_office,
                 'is_new_session': True,
+                'is_late': is_late,
+                'minutes_late': minutes_late if is_late else None,
             }
         
         # First punch in of the day
@@ -3246,7 +3316,8 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             punch_time = datetime.strptime(current_time, '%H:%M:%S')
             minutes_late = int((punch_time - late_threshold).total_seconds() / 60)
         
-        status = 'Pending Approval' if is_late else 'Present'
+        # On-time punch-in: day not complete until punch-out (before 7 PM) and approvals
+        status = 'Late' if is_late else 'Incomplete'
         
         new_attendance = AttendanceModel(
             employee_id=punch_data.employee_id,
@@ -3295,7 +3366,6 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         
         # Check if work log has been submitted for today (for employees only, not admin)
         if current_user.role == 'Employee':
-            today = datetime.now().strftime('%Y-%m-%d')
             work_log_exists = db.query(DailyWorkLogModel).filter(
                 DailyWorkLogModel.employee_id == current_user.employee_id,
                 DailyWorkLogModel.log_date == today
@@ -3350,9 +3420,16 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         existing.punch_out_lng = punch_data.longitude
         existing.is_active_session = 0  # Mark as not active
         
-        # Set status to Pending Approval if late punch-out, otherwise keep existing status
-        if is_late_punch_out and existing.status == 'Present':
+        # Late punch-out → admin approval required (any prior day status except already-absent)
+        if is_late_punch_out:
             existing.status = 'Pending Approval'
+        else:
+            # Punch-out on time: mark present only when the day was completed within rules
+            if existing.status == 'Incomplete':
+                existing.status = 'Present'
+            # If status was Late (late punch-in pending), keep Late until admin approves punch-in
+            elif existing.status == 'Present':
+                existing.status = 'Present'
         
         # Calculate total work hours from all sessions
         all_sessions = db.query(AttendanceSessionModel).filter(
@@ -3403,7 +3480,8 @@ def get_today_attendance(
     db: Session = Depends(get_db)
 ):
     """Get today's attendance with all sessions for current user."""
-    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    finalize_stale_attendance_without_punch_out(db)
+    today = attendance_local_date_str()
     existing = db.query(AttendanceModel).filter(
         AttendanceModel.employee_id == current_user.employee_id,
         AttendanceModel.date == today
@@ -3783,6 +3861,7 @@ def get_attendance(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    finalize_stale_attendance_without_punch_out(db)
     query = db.query(AttendanceModel)
     if month:
         query = query.filter(AttendanceModel.date.like(f'{month}%'))
@@ -3856,9 +3935,10 @@ def get_attendance(
 
 @api_router.get('/attendance/summary', response_model=List[AttendanceSummary])
 def get_attendance_summary(month: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    finalize_stale_attendance_without_punch_out(db)
     year, month_num = [int(part) for part in month.split('-')]
     total_days = monthrange(year, month_num)[1]
-    today = datetime.now(timezone.utc).date()
+    today = attendance_local_now().date()
     if year == today.year and month_num == today.month:
         total_days = today.day
 
@@ -3914,11 +3994,17 @@ def get_attendance_summary(month: str, current_user: UserModel = Depends(get_cur
         # Tour punches count as present only when approved
         if getattr(record, 'is_tour', 0) == 1 and getattr(record, 'tour_approval_status', None) != 'approved':
             continue  # pending or rejected tour: do not count as present
-        data['present_days'] += 1
-        if record.status == 'Late':
+        st = record.status
+        # Only fully approved / completed days count as present
+        if st == 'Present':
+            data['present_days'] += 1
+        elif st == 'Late':
+            # Late punch-in pending admin approval — not counted as present until approved
             data['late_days'] += 1
-        if record.status == 'Half Day':
+        elif st == 'Half Day':
+            data['present_days'] += 1
             data['half_day_days'] += 1
+        # Incomplete, Pending Approval, Absent, Leave: do not increment present
 
     for data in summary_map.values():
         data['absent_days'] = max(working_days - data['present_days'], 0)
@@ -6718,10 +6804,13 @@ def get_claim_status_overview(
 
 @api_router.get('/dashboard/stats', response_model=DashboardStats)
 def get_dashboard_stats(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    today = attendance_local_date_str()
     
     total_employees = db.query(EmployeeModel).filter(EmployeeModel.status == 'Active').count()
-    present_today = db.query(AttendanceModel).filter(AttendanceModel.date == today).count()
+    present_today = db.query(AttendanceModel).filter(
+        AttendanceModel.date == today,
+        AttendanceModel.status != 'Absent',
+    ).count()
     pending_leaves = db.query(LeaveModel).filter(LeaveModel.status == 'Pending').count()
     
     employees = db.query(EmployeeModel).all()

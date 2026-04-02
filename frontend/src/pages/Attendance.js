@@ -714,6 +714,10 @@ export const Attendance = () => {
                       bgColor = 'bg-green-500';
                     } else if (todayRecord.status === 'Late') {
                       bgColor = 'bg-yellow-500';
+                    } else if (todayRecord.status === 'Incomplete') {
+                      bgColor = 'bg-orange-400';
+                    } else if (todayRecord.status === 'Pending Approval') {
+                      bgColor = 'bg-purple-500';
                     } else if (todayRecord.status === 'Leave') {
                       bgColor = 'bg-blue-400';
                     } else if (todayRecord.is_tour === 1) {
@@ -840,8 +844,14 @@ export const Attendance = () => {
                                 statusText = 'Present';
                                 bgColor = 'bg-green-500';
                               } else if (record.status === 'Late') {
-                                statusText = 'Late';
+                                statusText = 'Late (approval pending)';
                                 bgColor = 'bg-yellow-500';
+                              } else if (record.status === 'Incomplete') {
+                                statusText = 'Checked in (no punch-out yet)';
+                                bgColor = 'bg-orange-400';
+                              } else if (record.status === 'Pending Approval') {
+                                statusText = 'Pending approval';
+                                bgColor = 'bg-purple-500';
                               } else {
                                 statusText = record.status;
                                 bgColor = 'bg-red-500';
@@ -860,19 +870,12 @@ export const Attendance = () => {
                               totalWorkingDays += 1;
                               const countsAsPresent =
                                 (record?.is_tour === 1 && record?.tour_approval_status === 'approved') ||
-                                record?.status === 'Present' ||
-                                record?.status === 'Late';
+                                record?.status === 'Present';
                               if (countsAsPresent) presentDays += 1;
                               
                               // Count tours
                               if (record?.is_tour === 1 && record?.tour_approval_status === 'approved') {
                                 tourCount += 1;
-                              }
-                              
-                              // Count approved late punch-ins
-                              if (record?.status === 'Present' && record?.status !== 'Late') {
-                                // This would be marked as Present due to approved late punch-in
-                                // We need to check for pending approval status
                               }
                             }
                           
