@@ -645,7 +645,8 @@ class CGWFlowMetreModel(Base):
     contact_person = Column(String(255), nullable=True)
     equipment_name = Column(String(255), nullable=True)
     flowmeter_details = Column(String(1000), nullable=True)
-    telemetric_system = Column(String(500), nullable=True)
+    product_code = Column(String(100), nullable=True)
+    model_no = Column(String(100), nullable=True)
     system_mobile_number = Column(String(20), nullable=True)
     person_mobile_number = Column(String(20), nullable=True)
     email_id = Column(String(255), nullable=True)
@@ -1890,7 +1891,8 @@ class CGWFlowMetre(BaseModel):
     contact_person: Optional[str] = None
     equipment_name: Optional[str] = None
     flowmeter_details: Optional[str] = None
-    telemetric_system: Optional[str] = None
+    product_code: Optional[str] = None
+    model_no: Optional[str] = None
     system_mobile_number: Optional[str] = None
     person_mobile_number: Optional[str] = None
     email_id: Optional[str] = None
@@ -1913,7 +1915,8 @@ class CGWFlowMetreCreate(BaseModel):
     contact_person: Optional[str] = None
     equipment_name: Optional[str] = None
     flowmeter_details: Optional[str] = None
-    telemetric_system: Optional[str] = None
+    product_code: Optional[str] = None
+    model_no: Optional[str] = None
     system_mobile_number: Optional[str] = None
     person_mobile_number: Optional[str] = None
     email_id: Optional[str] = None
@@ -1931,7 +1934,8 @@ class CGWFlowMetreUpdate(BaseModel):
     contact_person: Optional[str] = None
     equipment_name: Optional[str] = None
     flowmeter_details: Optional[str] = None
-    telemetric_system: Optional[str] = None
+    product_code: Optional[str] = None
+    model_no: Optional[str] = None
     system_mobile_number: Optional[str] = None
     person_mobile_number: Optional[str] = None
     email_id: Optional[str] = None

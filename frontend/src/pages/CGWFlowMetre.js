@@ -33,7 +33,8 @@ const CGWFlowMetre = () => {
     contact_person: '',
     equipment_name: '',
     flowmeter_details: '',
-    telemetric_system: '',
+    product_code: '',
+    model_no: '',
     system_mobile_number: '',
     person_mobile_number: '',
     email_id: '',
@@ -131,7 +132,8 @@ const CGWFlowMetre = () => {
       contact_person: item.contact_person || '',
       equipment_name: item.equipment_name || '',
       flowmeter_details: item.flowmeter_details || '',
-      telemetric_system: item.telemetric_system || '',
+      product_code: item.product_code || '',
+      model_no: item.model_no || '',
       system_mobile_number: item.system_mobile_number || '',
       person_mobile_number: item.person_mobile_number || '',
       email_id: item.email_id || '',
@@ -260,7 +262,8 @@ const CGWFlowMetre = () => {
       contact_person: '',
       equipment_name: '',
       flowmeter_details: '',
-      telemetric_system: '',
+      product_code: '',
+      model_no: '',
       system_mobile_number: '',
       person_mobile_number: '',
       email_id: '',
@@ -600,15 +603,25 @@ const CGWFlowMetre = () => {
                 </div>
 
                 {/* Telemetric System */}
-                <div className="space-y-2">
-                  <Label htmlFor="telemetric_system" className="text-sm font-medium text-gray-700">Telemetric System</Label>
-                  <textarea
-                    id="telemetric_system"
-                    value={formData.telemetric_system}
-                    onChange={(e) => setFormData({ ...formData, telemetric_system: e.target.value })}
-                    rows="2"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="product_code" className="text-sm font-medium text-gray-700">Product Code</Label>
+                    <Input
+                      id="product_code"
+                      value={formData.product_code}
+                      onChange={(e) => setFormData({ ...formData, product_code: e.target.value })}
+                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="model_no" className="text-sm font-medium text-gray-700">Model No</Label>
+                    <Input
+                      id="model_no"
+                      value={formData.model_no}
+                      onChange={(e) => setFormData({ ...formData, model_no: e.target.value })}
+                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    />
+                  </div>
                 </div>
 
                 {/* Review & Remarks */}
@@ -679,6 +692,8 @@ const CGWFlowMetre = () => {
                     <tr className="border-b border-gray-200 bg-gray-50">
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">ID</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Equipment</th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Product Code</th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Model No</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Location</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Contact</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-700">Email</th>
@@ -694,6 +709,8 @@ const CGWFlowMetre = () => {
                       <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/50">
                         <td className="py-3 px-4 font-mono text-gray-900">{item.inventory_id}</td>
                         <td className="py-3 px-4 font-medium text-gray-900">{item.equipment_name || '—'}</td>
+                        <td className="py-3 px-4 text-gray-600">{item.product_code || '—'}</td>
+                        <td className="py-3 px-4 text-gray-600">{item.model_no || '—'}</td>
                         <td className="py-3 px-4 text-gray-600">{item.location || '—'}</td>
                         <td className="py-3 px-4 text-gray-600">
                           {item.person_mobile_number ? (
