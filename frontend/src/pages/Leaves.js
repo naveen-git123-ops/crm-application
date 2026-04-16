@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,8 @@ export const Leaves = () => {
   const [policy, setPolicy] = useState(null);
   const [policyInput, setPolicyInput] = useState('');
   const [savingPolicy, setSavingPolicy] = useState(false);
+  const [attachment, setAttachment] = useState(null);
+  const attachmentFileRef = useRef(null);
   const [formData, setFormData] = useState({
     employee_id: '',
     employee_name: '',
@@ -76,7 +78,24 @@ export const Leaves = () => {
       toast.success('Leave policy updated');
       fetchLeaveBalance();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Failed to update policy');
+      // Handle Pydantic validation errors
+      let errorMsg = 'Failed to update policy';
+      
+      if (e.response?.data?.detail) {
+        if (Array.isArray(e.response.data.detail)) {
+          errorMsg = e.response.data.detail
+            .map(err => err.msg || JSON.stringify(err))
+            .join(', ');
+        } else if (typeof e.response.data.detail === 'string') {
+          errorMsg = e.response.data.detail;
+        } else if (typeof e.response.data.detail === 'object') {
+          errorMsg = e.response.data.detail.msg || JSON.stringify(e.response.data.detail);
+        }
+      } else if (e.response?.data?.message) {
+        errorMsg = e.response.data.message;
+      }
+      
+      toast.error(errorMsg);
     } finally {
       setSavingPolicy(false);
     }
@@ -90,6 +109,14 @@ export const Leaves = () => {
         employee_id: user.employee_id,
         employee_name: user.name
       }));
+    }
+    
+    // Reset attachment when dialog closes
+    if (!dialogOpen) {
+      setAttachment(null);
+      if (attachmentFileRef.current) {
+        attachmentFileRef.current.value = '';
+      }
     }
   }, [dialogOpen, user]);
 
@@ -115,13 +142,46 @@ export const Leaves = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validate required fields
+    if (!formData.employee_id) {
+      toast.error('Please select an employee');
+      return;
+    }
+    if (!formData.leave_type) {
+      toast.error('Please select a leave type');
+      return;
+    }
+    if (!formData.start_date) {
+      toast.error('Please select a start date');
+      return;
+    }
+    if (!formData.end_date) {
+      toast.error('Please select an end date');
+      return;
+    }
+    if (!formData.reason || formData.reason.trim() === '') {
+      toast.error('Please provide a reason for the leave');
+      return;
+    }
+    
     try {
-      // Ensure employee_name is included
-      const submitData = {
-        ...formData,
-        employee_name: formData.employee_name || user?.name
-      };
-      await axios.post(`${API}/leaves`, submitData, {
+      // Use FormData to handle file upload
+      const formDataToSend = new FormData();
+      formDataToSend.append('employee_id', formData.employee_id);
+      formDataToSend.append('employee_name', formData.employee_name || user?.name);
+      formDataToSend.append('leave_type', formData.leave_type);
+      formDataToSend.append('start_date', formData.start_date);
+      formDataToSend.append('end_date', formData.end_date);
+      formDataToSend.append('days', String(formData.days));
+      formDataToSend.append('reason', formData.reason);
+      
+      // Append file if present (attachment is completely optional)
+      if (attachment) {
+        formDataToSend.append('file', attachment);
+      }
+      
+      await axios.post(`${API}/leaves`, formDataToSend, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -132,7 +192,25 @@ export const Leaves = () => {
       fetchLeaves();
       fetchLeaveBalance();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to submit leave');
+      // Handle Pydantic validation errors (array of error objects)
+      let errorMsg = 'Failed to submit leave';
+      
+      if (error.response?.data?.detail) {
+        // If detail is an array of error objects (Pydantic validation)
+        if (Array.isArray(error.response.data.detail)) {
+          errorMsg = error.response.data.detail
+            .map(e => e.msg || JSON.stringify(e))
+            .join(', ');
+        } else if (typeof error.response.data.detail === 'string') {
+          errorMsg = error.response.data.detail;
+        } else if (typeof error.response.data.detail === 'object') {
+          errorMsg = error.response.data.detail.msg || JSON.stringify(error.response.data.detail);
+        }
+      } else if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      }
+      
+      toast.error(errorMsg);
     }
   };
 
@@ -161,6 +239,10 @@ export const Leaves = () => {
       days: 1,
       reason: ''
     });
+    setAttachment(null);
+    if (attachmentFileRef.current) {
+      attachmentFileRef.current.value = '';
+    }
   };
 
   const handleEmployeeChange = (selectedEmployeeId) => {
@@ -364,6 +446,26 @@ export const Leaves = () => {
                 />
               </div>
 
+              <div className="space-y-3">
+                <Label htmlFor="attachment" className="text-sm font-semibold text-gray-700">Attachment (Optional)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="attachment"
+                    type="file"
+                    ref={attachmentFileRef}
+                    onChange={(e) => setAttachment(e.target.files?.[0] || null)}
+                    className="h-10 border border-gray-300"
+                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.msg,.eml,.ics"
+                  />
+                  {attachment && (
+                    <span className="text-xs text-gray-600 truncate max-w-[150px]" title={attachment.name}>
+                      ✓ {attachment.name}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500">Supported: Images, PDF, Documents, Outlook Emails (.msg, .eml)</p>
+              </div>
+
               <div className="flex justify-end gap-3 pt-4">
                 <Button 
                   type="button" 
@@ -508,6 +610,20 @@ export const Leaves = () => {
                   <p className="text-sm text-gray-600 mb-1">Reason:</p>
                   <p className="text-sm text-gray-900">{leave.reason}</p>
                 </div>
+
+                {leave.attachment_path && (
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Attachment:</p>
+                    <a 
+                      href={leave.attachment_path} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-600 hover:text-blue-800 underline"
+                    >
+                      View Attachment
+                    </a>
+                  </div>
+                )}
 
                 {leave.approver_name && (
                   <p className="text-xs text-gray-600">

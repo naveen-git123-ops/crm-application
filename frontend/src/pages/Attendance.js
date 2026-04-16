@@ -20,9 +20,10 @@ const formatPunchTime = (punchTimeStr) => {
   if (!punchTimeStr) return '–';
   
   // If it's a full ISO timestamp, parse it and convert to IST
-  if (punchTimeStr.includes('T') || punchTimeStr.includes('Z')) {
+  if (punchTimeStr.includes('T')) {
     try {
       const date = new Date(punchTimeStr);
+      // Format using Intl with IST timezone
       const istTime = new Intl.DateTimeFormat('en-IN', {
         hour: '2-digit',
         minute: '2-digit',
@@ -30,23 +31,23 @@ const formatPunchTime = (punchTimeStr) => {
         hour12: false,
         timeZone: 'Asia/Kolkata'
       }).format(date);
-      return istTime;
+      return istTime + ' IST';
     } catch {
-      return punchTimeStr; // Fallback if parsing fails
+      return punchTimeStr;
     }
   }
   
-  // If it's just HH:MM:SS in UTC, convert to IST by adding 5.5 hours
-  try {
-    const [hours, minutes, seconds] = punchTimeStr.split(':').map(Number);
-    let totalMinutes = hours * 60 + minutes + 330; // 330 minutes = 5.5 hours
-    const istHours = Math.floor(totalMinutes / 60) % 24;
-    const istMinutes = totalMinutes % 60;
-    const istSeconds = seconds || 0;
-    return `${String(istHours).padStart(2, '0')}:${String(istMinutes).padStart(2, '0')}:${String(istSeconds).padStart(2, '0')}`;
-  } catch {
-    return punchTimeStr; // Fallback if conversion fails
+  // If it's just HH:MM:SS format, display as is (assuming already in IST)
+  if (punchTimeStr.match(/^\d{2}:\d{2}:\d{2}$/)) {
+    return punchTimeStr + ' IST';
   }
+  
+  // If it's HH:MM format, add seconds
+  if (punchTimeStr.match(/^\d{2}:\d{2}$/)) {
+    return punchTimeStr + ':00 IST';
+  }
+  
+  return punchTimeStr;
 };
 
 // Helper function to format current time in IST (HH:MM:SS format)
@@ -1150,8 +1151,8 @@ export const Attendance = () => {
                   <tr className="border-b border-gray-200 bg-gray-50">
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Date</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch In</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch Out</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch In (IST)</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch Out (IST)</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Hours</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
                   </tr>
@@ -1242,10 +1243,10 @@ export const Attendance = () => {
                         <span className="font-medium text-gray-900">{req.employee_name}</span>
                         <span className="text-xs text-gray-500 block">{req.employee_id}</span>
                       </td>
-                      <td className="py-3 px-4 font-mono text-gray-700">{req.punch_in_time}</td>
+                      <td className="py-3 px-4 font-mono font-semibold text-gray-900">{formatPunchTime(req.punch_in_time)}</td>
                       <td className="py-3 px-4">
                         <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700">
-                          {req.minutes_late} min
+                          {req.minutes_late !== null && req.minutes_late !== undefined ? req.minutes_late : '0'} min
                         </span>
                       </td>
                       <td className="py-3 px-4 text-xs text-gray-500">
@@ -1413,8 +1414,8 @@ export const Attendance = () => {
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="text-left p-3 font-medium text-gray-700">Date</th>
                   <th className="text-left p-3 font-medium text-gray-700">Employee</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Punch In</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Punch Out</th>
+                  <th className="text-left p-3 font-medium text-gray-700">Punch In (IST)</th>
+                  <th className="text-left p-3 font-medium text-gray-700">Punch Out (IST)</th>
                   <th className="text-left p-3 font-medium text-gray-700">Hours</th>
                   <th className="text-left p-3 font-medium text-gray-700">Status</th>
                 </tr>
@@ -1488,7 +1489,7 @@ export const Attendance = () => {
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="text-left p-3 font-medium text-gray-700">Date</th>
                   <th className="text-left p-3 font-medium text-gray-700">Employee</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Punch In</th>
+                  <th className="text-left p-3 font-medium text-gray-700">Punch In (IST)</th>
                   <th className="text-left p-3 font-medium text-gray-700">Minutes Late</th>
                 </tr>
               </thead>
@@ -1574,8 +1575,8 @@ export const Attendance = () => {
               <thead>
                 <tr className="border-b border-gray-200">
                   <th className="text-left p-3 text-gray-600 font-medium">Date</th>
-                  <th className="text-left p-3 text-gray-600 font-medium">Punch In</th>
-                  <th className="text-left p-3 text-gray-600 font-medium">Punch Out</th>
+                  <th className="text-left p-3 text-gray-600 font-medium">Punch In (IST)</th>
+                  <th className="text-left p-3 text-gray-600 font-medium">Punch Out (IST)</th>
                   <th className="text-left p-3 text-gray-600 font-medium">Hours</th>
                   <th className="text-left p-3 text-gray-600 font-medium">Status</th>
                 </tr>

@@ -241,6 +241,7 @@ class LeaveModel(Base):
     end_date = Column(String(10))
     days = Column(Integer)
     reason = Column(String(500))
+    attachment_path = Column(String(500), nullable=True)
     status = Column(String(50), default='Pending')
     approver_id = Column(String(50), nullable=True)
     approver_name = Column(String(255), nullable=True)
@@ -915,6 +916,27 @@ def migrate_expenses_add_attachments():
 
 migrate_expenses_add_attachments()
 
+def migrate_leaves_add_attachment():
+    """Add attachment_path column to leaves if missing."""
+    from sqlalchemy import text, inspect
+    try:
+        inspector = inspect(engine)
+        existing_columns = [col['name'] for col in inspector.get_columns('leaves')]
+        
+        if 'attachment_path' not in existing_columns:
+            with engine.connect() as conn:
+                try:
+                    conn.execute(text("ALTER TABLE leaves ADD COLUMN attachment_path VARCHAR(500) NULL"))
+                    conn.commit()
+                    print("Added column attachment_path to leaves table")
+                except Exception as alter_err:
+                    print(f"Could not add column attachment_path: {alter_err}")
+                    conn.rollback()
+    except Exception as e:
+        print(f"Migration error for leaves attachment: {e}")
+
+migrate_leaves_add_attachment()
+
 # Seed default roles (Admin cannot be edited/deleted; others can)
 DEFAULT_PERMISSION_KEYS = [
     "dashboard", "leads", "employees", "attendance", "leaves", "expenses",
@@ -1347,6 +1369,7 @@ class Leave(BaseModel):
     end_date: str
     days: int
     reason: str
+    attachment_path: Optional[str] = None
     status: Literal['Pending', 'Approved', 'Rejected'] = 'Pending'
     approver_id: Optional[str] = None
     approver_name: Optional[str] = None
@@ -1360,6 +1383,7 @@ class LeaveCreate(BaseModel):
     end_date: str
     days: int
     reason: str
+    attachment_path: Optional[str] = None
 
 class LeavePolicyUpdate(BaseModel):
     paid_leaves_per_year: int
@@ -3209,7 +3233,7 @@ def delete_task_attachment(
 
 
 def finalize_stale_attendance_without_punch_out(db: Session) -> None:
-    """Past calendar days with punch in but no punch out → Absent (incomplete day)."""
+    """Past calendar days with punch in but no punch out → Incomplete. Records with no punch_in → Absent."""
     today_str = attendance_local_date_str()
     stale = db.query(AttendanceModel).filter(
         AttendanceModel.date < today_str,
@@ -3219,9 +3243,19 @@ def finalize_stale_attendance_without_punch_out(db: Session) -> None:
     for rec in stale:
         if rec.status == 'Leave':
             continue
-        rec.status = 'Absent'
-        rec.is_active_session = 0
-        changed = True
+        # If they have a punch_in but no punch_out, they started work but didn't finish → Incomplete
+        # If they have NO punch_in, they didn't work at all → Absent
+        if rec.punch_in is not None:
+            # Has punch_in but no punch_out: keep as Incomplete (don't mark as Absent)
+            if rec.status != 'Incomplete':
+                rec.status = 'Incomplete'
+                rec.is_active_session = 0
+                changed = True
+        else:
+            # No punch_in and no punch_out: truly absent
+            rec.status = 'Absent'
+            rec.is_active_session = 0
+            changed = True
     if changed:
         db.commit()
 
@@ -4195,22 +4229,67 @@ def get_attendance_report(
 
 # ============= LEAVE ROUTES =============
 
-@api_router.post('/leaves', response_model=Leave)
-def create_leave(leave_data: LeaveCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    new_leave = LeaveModel(
-        employee_id=leave_data.employee_id,
-        employee_name=leave_data.employee_name,
-        leave_type=leave_data.leave_type,
-        start_date=leave_data.start_date,
-        end_date=leave_data.end_date,
-        days=leave_data.days,
-        reason=leave_data.reason
-    )
-    db.add(new_leave)
-    db.commit()
-    db.refresh(new_leave)
-    
-    return new_leave
+@api_router.post('/leaves')
+def create_leave(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    employee_id: str = Form(...),
+    employee_name: str = Form(...),
+    leave_type: str = Form(...),
+    start_date: str = Form(...),
+    end_date: str = Form(...),
+    days: int = Form(...),
+    reason: str = Form(...),
+    file: Optional[UploadFile] = File(None),
+):
+    """Create a new leave request with optional file attachment."""
+    try:
+        attachment_path = None
+        
+        # Handle file upload if provided
+        if file and file.filename:
+            try:
+                file_content = file.file.read()
+                file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'bin'
+                new_filename = f"leaves_{uuid.uuid4()}.{file_extension}"
+                
+                # Try to upload to S3
+                attachment_path = upload_to_s3(file_content, new_filename, folder='leaves')
+                
+                # If S3 upload failed or not configured, save locally
+                if not attachment_path:
+                    upload_folder = UPLOAD_DIR / 'leaves'
+                    upload_folder.mkdir(exist_ok=True)
+                    file_path = upload_folder / new_filename
+                    with open(file_path, 'wb') as f:
+                        f.write(file_content)
+                    attachment_path = f"/uploads/leaves/{new_filename}"
+            except Exception as e:
+                logging.error(f"File upload error: {str(e)}")
+        
+        # Convert days to integer if it's a string
+        days_int = int(days) if isinstance(days, str) else days
+        
+        new_leave = LeaveModel(
+            employee_id=employee_id,
+            employee_name=employee_name,
+            leave_type=leave_type,
+            start_date=start_date,
+            end_date=end_date,
+            days=days_int,
+            reason=reason,
+            attachment_path=attachment_path
+        )
+        db.add(new_leave)
+        db.commit()
+        db.refresh(new_leave)
+        
+        return Leave.model_validate(new_leave)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logging.error(f"Error creating leave: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create leave request")
 
 @api_router.get('/leaves', response_model=List[Leave])
 def get_leaves(
