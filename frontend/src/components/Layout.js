@@ -21,7 +21,8 @@ import {
   Package,
   CheckSquare,
   Fuel,
-  MapPin
+  MapPin,
+  Droplets
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -41,6 +42,7 @@ export const Layout = ({ children }) => {
     { icon: Package, label: 'Inventory', path: '/inventory', permission: 'leads' },
     { icon: Users, label: 'Employees', path: '/employees', permission: 'employees' },
     { icon: Users, label: 'Customers', path: '/customers', permission: 'customers' },
+    { icon: Droplets, label: 'CGW Flow Metre', path: '/cgw-flow-metre', permission: 'customers' },
     { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
     { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance' },
     { icon: MapPin, label: 'Location Tracker', path: '/location-tracker', permission: 'attendance' },

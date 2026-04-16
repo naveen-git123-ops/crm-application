@@ -28,6 +28,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import boto3
 from botocore.exceptions import ClientError
+import pandas as pd
+from openpyxl import load_workbook
 
 app = FastAPI()
 app.add_middleware(
@@ -630,6 +632,32 @@ class FuelExpenseClaimModel(Base):
     approved_amount = Column(Float, nullable=True)  # Amount finally approved
     approval_notes = Column(String(500), nullable=True)
     approved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class CGWFlowMetreModel(Base):
+    __tablename__ = "cgw_flow_metres"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    inventory_id = Column(String(50), unique=True, index=True)
+    customer_id = Column(String(36), ForeignKey('customers.id'), index=True)
+    customer_name = Column(String(255), index=True)
+    location = Column(String(500), nullable=True)
+    contact_person = Column(String(255), nullable=True)
+    equipment_name = Column(String(255), nullable=True)
+    flowmeter_details = Column(String(1000), nullable=True)
+    telemetric_system = Column(String(500), nullable=True)
+    system_mobile_number = Column(String(20), nullable=True)
+    person_mobile_number = Column(String(20), nullable=True)
+    email_id = Column(String(255), nullable=True)
+    date_of_commissioning = Column(String(10), nullable=True)  # YYYY-MM-DD
+    url_link = Column(String(500), nullable=True)
+    user_id = Column(String(100), nullable=True)
+    password = Column(String(255), nullable=True)
+    status = Column(String(50), default='Active')  # Active, Inactive, Maintenance
+    renewal_date = Column(String(10), nullable=True)  # YYYY-MM-DD
+    review = Column(String(1000), nullable=True)
+    calibration_certificate = Column(String(500), nullable=True)  # File URL
+    remarks = Column(String(1000), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -1852,6 +1880,70 @@ class FuelExpenseClaimAction(BaseModel):
     approved_amount: Optional[float] = None
     approval_notes: Optional[str] = None
 
+class CGWFlowMetre(BaseModel):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    inventory_id: str
+    customer_id: str
+    customer_name: str
+    location: Optional[str] = None
+    contact_person: Optional[str] = None
+    equipment_name: Optional[str] = None
+    flowmeter_details: Optional[str] = None
+    telemetric_system: Optional[str] = None
+    system_mobile_number: Optional[str] = None
+    person_mobile_number: Optional[str] = None
+    email_id: Optional[str] = None
+    date_of_commissioning: Optional[str] = None
+    url_link: Optional[str] = None
+    user_id: Optional[str] = None
+    password: Optional[str] = None
+    status: Literal['Active', 'Inactive', 'Maintenance'] = 'Active'
+    renewal_date: Optional[str] = None
+    review: Optional[str] = None
+    calibration_certificate: Optional[str] = None
+    remarks: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+
+class CGWFlowMetreCreate(BaseModel):
+    customer_id: str
+    customer_name: str
+    location: Optional[str] = None
+    contact_person: Optional[str] = None
+    equipment_name: Optional[str] = None
+    flowmeter_details: Optional[str] = None
+    telemetric_system: Optional[str] = None
+    system_mobile_number: Optional[str] = None
+    person_mobile_number: Optional[str] = None
+    email_id: Optional[str] = None
+    date_of_commissioning: Optional[str] = None
+    url_link: Optional[str] = None
+    user_id: Optional[str] = None
+    password: Optional[str] = None
+    status: Literal['Active', 'Inactive', 'Maintenance'] = 'Active'
+    renewal_date: Optional[str] = None
+    review: Optional[str] = None
+    remarks: Optional[str] = None
+
+class CGWFlowMetreUpdate(BaseModel):
+    location: Optional[str] = None
+    contact_person: Optional[str] = None
+    equipment_name: Optional[str] = None
+    flowmeter_details: Optional[str] = None
+    telemetric_system: Optional[str] = None
+    system_mobile_number: Optional[str] = None
+    person_mobile_number: Optional[str] = None
+    email_id: Optional[str] = None
+    date_of_commissioning: Optional[str] = None
+    url_link: Optional[str] = None
+    user_id: Optional[str] = None
+    password: Optional[str] = None
+    status: Optional[Literal['Active', 'Inactive', 'Maintenance']] = None
+    renewal_date: Optional[str] = None
+    review: Optional[str] = None
+    remarks: Optional[str] = None
+
 # ============= DEPENDENCY =============
 
 def get_db():
@@ -2477,6 +2569,262 @@ def delete_customer(customer_id: str, current_user: UserModel = Depends(get_curr
     db.commit()
     
     return {'message': 'Customer deleted successfully'}
+
+# ============= CGW FLOW METRE INVENTORY =============
+
+@api_router.post('/cgw-flow-metres', response_model=CGWFlowMetre)
+def create_cgw_flow_metre(data: CGWFlowMetreCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    # Generate inventory_id
+    max_inv_num = db.query(
+        func.max(cast(func.substr(CGWFlowMetreModel.inventory_id, 4), Integer))
+    ).scalar()
+    next_inv_num = (max_inv_num or 0) + 1
+    inv_id = f'INV{str(next_inv_num).zfill(4)}'
+    
+    new_item = CGWFlowMetreModel(
+        inventory_id=inv_id,
+        customer_id=data.customer_id,
+        customer_name=data.customer_name,
+        location=data.location,
+        contact_person=data.contact_person,
+        equipment_name=data.equipment_name,
+        flowmeter_details=data.flowmeter_details,
+        telemetric_system=data.telemetric_system,
+        system_mobile_number=data.system_mobile_number,
+        person_mobile_number=data.person_mobile_number,
+        email_id=data.email_id,
+        date_of_commissioning=data.date_of_commissioning,
+        url_link=data.url_link,
+        user_id=data.user_id,
+        password=data.password,
+        status=data.status,
+        renewal_date=data.renewal_date,
+        review=data.review,
+        remarks=data.remarks
+    )
+    db.add(new_item)
+    try:
+        db.commit()
+        db.refresh(new_item)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Inventory item already exists')
+    
+    return new_item
+
+@api_router.get('/cgw-flow-metres', response_model=List[CGWFlowMetre])
+def get_cgw_flow_metres(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    items = db.query(CGWFlowMetreModel).all()
+    return items
+
+@api_router.get('/cgw-flow-metres/{inventory_id}', response_model=CGWFlowMetre)
+def get_cgw_flow_metre(inventory_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail='Inventory item not found')
+    return item
+
+@api_router.get('/cgw-flow-metres/customer/{customer_id}', response_model=List[CGWFlowMetre])
+def get_cgw_by_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    items = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.customer_id == customer_id).all()
+    return items
+
+@api_router.put('/cgw-flow-metres/{inventory_id}', response_model=CGWFlowMetre)
+def update_cgw_flow_metre(inventory_id: str, data: CGWFlowMetreUpdate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail='Inventory item not found')
+    
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(item, key, value)
+    item.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(item)
+    
+    return item
+
+@api_router.delete('/cgw-flow-metres/{inventory_id}')
+def delete_cgw_flow_metre(inventory_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail='Inventory item not found')
+    
+    db.delete(item)
+    db.commit()
+    
+    return {'message': 'Inventory item deleted successfully'}
+
+@api_router.post('/cgw-flow-metres/{inventory_id}/upload-certificate')
+def upload_calibration_certificate(
+    inventory_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail='Inventory item not found')
+    
+    # Upload to S3 or local storage
+    try:
+        file_data = file.file.read()
+        file_name = f"certificates/{inventory_id}/{file.filename}"
+        
+        if USE_S3:
+            s3_client.put_object(
+                Bucket=S3_BUCKET_NAME,
+                Key=file_name,
+                Body=file_data,
+                ContentType=file.content_type
+            )
+            file_url = f"s3://{S3_BUCKET_NAME}/{file_name}"
+        else:
+            cert_path = UPLOAD_DIR / file_name
+            cert_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(cert_path, 'wb') as f:
+                f.write(file_data)
+            file_url = f"uploads/{file_name}"
+        
+        item.calibration_certificate = file_url
+        item.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        
+        return {'file_url': file_url, 'message': 'Certificate uploaded successfully'}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Upload failed: {str(e)}')
+
+@api_router.post('/cgw-flow-metres/import/excel')
+def import_cgw_from_excel(
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Import CGW Flow Metre items from Excel file"""
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    try:
+        # Read Excel file
+        contents = file.file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+        
+        # Column mapping from Excel headers to database fields
+        column_mapping = {
+            'CUSTOMER NAME': 'customer_name',
+            'LOCATION': 'location',
+            'CONTACT PERSON': 'contact_person',
+            'NAME OF EQUIPMENT': 'equipment_name',
+            'FLOWMETER/PIEZOMETER DETAILS': 'flowmeter_details',
+            'TELEMETRIC SYSTEM': 'telemetric_system',
+            'SYSTEM MOBILE NUMBER': 'system_mobile_number',
+            'PERSON MOBILE NUMBER': 'person_mobile_number',
+            'EMAIL ID': 'email_id',
+            'DATE OF COMMISSONING': 'date_of_commissioning',
+            'URL LINK': 'url_link',
+            'USER ID': 'user_id',
+            'PASSWORD': 'password',
+            'STATUS': 'status',
+            'RENEWAL DATE WILL BE': 'renewal_date',
+            'REVIEW': 'review',
+            'CALIBARATION CERTIFICATE': 'calibration_certificate',
+            'REMARKS': 'remarks'
+        }
+        
+        # Normalize column names (strip whitespace)
+        df.columns = df.columns.str.strip()
+        
+        imported_count = 0
+        failed_count = 0
+        errors = []
+        
+        for index, row in df.iterrows():
+            try:
+                # Get or verify customer exists
+                customer_name = str(row.get('CUSTOMER NAME', '')).strip()
+                if not customer_name:
+                    errors.append(f"Row {index + 2}: Missing customer name")
+                    failed_count += 1
+                    continue
+                
+                # Find customer by name
+                customer = db.query(CustomerModel).filter(
+                    CustomerModel.company_name == customer_name
+                ).first()
+                
+                if not customer:
+                    errors.append(f"Row {index + 2}: Customer '{customer_name}' not found in database")
+                    failed_count += 1
+                    continue
+                
+                # Generate inventory_id
+                max_inv_num = db.query(
+                    func.max(cast(func.substr(CGWFlowMetreModel.inventory_id, 4), Integer))
+                ).scalar()
+                next_inv_num = (max_inv_num or 0) + 1
+                inv_id = f'INV{str(next_inv_num).zfill(4)}'
+                
+                # Prepare data
+                data = {
+                    'inventory_id': inv_id,
+                    'customer_id': customer.id,
+                    'customer_name': customer_name,
+                    'location': str(row.get('LOCATION', '')).strip() or None,
+                    'contact_person': str(row.get('CONTACT PERSON', '')).strip() or None,
+                    'equipment_name': str(row.get('NAME OF EQUIPMENT', '')).strip() or None,
+                    'flowmeter_details': str(row.get('FLOWMETER/PIEZOMETER DETAILS', '')).strip() or None,
+                    'telemetric_system': str(row.get('TELEMETRIC SYSTEM', '')).strip() or None,
+                    'system_mobile_number': str(row.get('SYSTEM MOBILE NUMBER', '')).strip() or None,
+                    'person_mobile_number': str(row.get('PERSON MOBILE NUMBER', '')).strip() or None,
+                    'email_id': str(row.get('EMAIL ID', '')).strip() or None,
+                    'date_of_commissioning': str(row.get('DATE OF COMMISSONING', '')).strip() or None,
+                    'url_link': str(row.get('URL LINK', '')).strip() or None,
+                    'user_id': str(row.get('USER ID', '')).strip() or None,
+                    'password': str(row.get('PASSWORD', '')).strip() or None,
+                    'status': str(row.get('STATUS', 'Active')).strip() or 'Active',
+                    'renewal_date': str(row.get('RENEWAL DATE WILL BE', '')).strip() or None,
+                    'review': str(row.get('REVIEW', '')).strip() or None,
+                    'calibration_certificate': str(row.get('CALIBARATION CERTIFICATE', '')).strip() or None,
+                    'remarks': str(row.get('REMARKS', '')).strip() or None
+                }
+                
+                # Create new item
+                new_item = CGWFlowMetreModel(**data)
+                db.add(new_item)
+                imported_count += 1
+                
+            except Exception as e:
+                errors.append(f"Row {index + 2}: {str(e)}")
+                failed_count += 1
+                continue
+        
+        # Commit all items at once
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=f'Database error: {str(e)}')
+        
+        return {
+            'message': 'Import completed',
+            'imported': imported_count,
+            'failed': failed_count,
+            'errors': errors if errors else []
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Import failed: {str(e)}')
 
 # ============= TASKS =============
 

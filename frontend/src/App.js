@@ -25,6 +25,7 @@ import { GovernmentHolidays } from '@/pages/GovernmentHolidays';
 import Vehicles from '@/pages/Vehicles';
 import Inventory from '@/pages/Inventory';
 import LocationTracker from '@/pages/LocationTracker';
+import CGWFlowMetre from '@/pages/CGWFlowMetre';
 
 function App() {
   return (
@@ -85,6 +86,17 @@ function App() {
                 <ProtectedRoute requiredPermission="customers">
                   <Layout>
                     <Customers />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            
+            <Route
+              path="/cgw-flow-metre"
+              element={
+                <ProtectedRoute requiredPermission="customers">
+                  <Layout>
+                    <CGWFlowMetre />
                   </Layout>
                 </ProtectedRoute>
               }
