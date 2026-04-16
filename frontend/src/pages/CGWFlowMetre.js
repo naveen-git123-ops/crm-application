@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -103,6 +103,18 @@ const CGWFlowMetre = () => {
     });
     setFilteredItems(filtered);
   }, [searchTerm, columnFilters, items]);
+
+  const groupedItems = useMemo(() => {
+    const map = new Map();
+    for (const item of filteredItems) {
+      const key = item.customer_id || item.customer_name || item.id;
+      if (!map.has(key)) {
+        map.set(key, { key, rows: [] });
+      }
+      map.get(key).rows.push(item);
+    }
+    return Array.from(map.values());
+  }, [filteredItems]);
 
   const fetchCustomers = async () => {
     try {
@@ -586,147 +598,190 @@ const CGWFlowMetre = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredItems.map((item, index) => (
-                  <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/50 align-top">
-                    <td className="py-1.5 px-2 text-gray-900 whitespace-nowrap">{index + 1}</td>
-                    <td className="py-1.5 px-2 font-medium text-gray-900 whitespace-nowrap">
-                      {inlineEditId === item.id ? (
-                        <Input value={inlineEditData.customer_name} onChange={(e) => handleInlineChange('customer_name', e.target.value)} className="h-7 text-[11px] px-2" />
-                      ) : (item.customer_name || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
-                      {inlineEditId === item.id ? <Input value={inlineEditData.location} onChange={(e) => handleInlineChange('location', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.location || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
-                      {inlineEditId === item.id ? <Input value={inlineEditData.contact_person} onChange={(e) => handleInlineChange('contact_person', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.contact_person || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
-                      {inlineEditId === item.id ? <Input value={inlineEditData.equipment_name} onChange={(e) => handleInlineChange('equipment_name', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.equipment_name || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 min-w-[160px]">
-                      {inlineEditId === item.id ? <Input value={inlineEditData.flowmeter_details} onChange={(e) => handleInlineChange('flowmeter_details', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.flowmeter_details || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
-                      {inlineEditId === item.id ? <Input value={inlineEditData.product_code} onChange={(e) => handleInlineChange('product_code', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.product_code || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
-                      {inlineEditId === item.id ? <Input value={inlineEditData.model_no} onChange={(e) => handleInlineChange('model_no', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.model_no || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
-                      {inlineEditId === item.id ? <Input value={inlineEditData.system_mobile_number} onChange={(e) => handleInlineChange('system_mobile_number', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.system_mobile_number || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
-                      {inlineEditId === item.id ? (
-                        <Input value={inlineEditData.person_mobile_number} onChange={(e) => handleInlineChange('person_mobile_number', e.target.value)} className="h-7 text-[11px] px-2" />
-                      ) : item.person_mobile_number ? (
-                        <span className="flex items-center gap-1">
-                          <Phone className="h-3 w-3 text-gray-400 shrink-0" />
-                          {item.person_mobile_number}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 min-w-[180px]">
-                      {inlineEditId === item.id ? (
-                        <Input value={inlineEditData.email_id} onChange={(e) => handleInlineChange('email_id', e.target.value)} className="h-7 text-[11px] px-2" />
-                      ) : item.email_id ? (
-                        <span className="flex items-center gap-1">
-                          <Mail className="h-3 w-3 text-gray-400 shrink-0" />
-                          <span>{item.email_id}</span>
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
-                      {inlineEditId === item.id ? <Input type="date" value={inlineEditData.date_of_commissioning} onChange={(e) => handleInlineChange('date_of_commissioning', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.date_of_commissioning || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-blue-700 min-w-[140px] break-all">
-                      {inlineEditId === item.id ? <Input value={inlineEditData.url_link} onChange={(e) => handleInlineChange('url_link', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.url_link || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
-                      {inlineEditId === item.id ? <Input value={inlineEditData.user_id} onChange={(e) => handleInlineChange('user_id', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.user_id || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
-                      {inlineEditId === item.id ? <Input value={inlineEditData.password} onChange={(e) => handleInlineChange('password', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.password || '—')}
-                    </td>
-                    <td className="py-1.5 px-2">
-                      {inlineEditId === item.id ? (
-                        <select
-                          value={inlineEditData.status}
-                          onChange={(e) => handleInlineChange('status', e.target.value)}
-                          className="h-7 text-[11px] px-2 border border-gray-300 rounded w-full"
-                        >
-                          <option value="Active">Active</option>
-                          <option value="Inactive">Inactive</option>
-                          <option value="Maintenance">Maintenance</option>
-                        </select>
-                      ) : (
-                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap ${
-                          item.status === 'Active' ? 'bg-green-50 text-green-700' :
-                          item.status === 'Maintenance' ? 'bg-yellow-50 text-yellow-700' :
-                          'bg-gray-100 text-gray-600'
-                        }`}>
-                          {item.status || '—'}
-                        </span>
+                {groupedItems.map((group, groupIndex) => {
+                  const groupEditActive = group.rows.some(r => r.id === inlineEditId);
+                  const groupAnchor = group.rows[0];
+
+                  return group.rows.map((item, rowIndex) => (
+                    <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/50 align-top">
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-900 whitespace-nowrap">
+                          {groupIndex + 1}
+                        </td>
                       )}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
-                      {inlineEditId === item.id ? <Input type="date" value={inlineEditData.renewal_date} onChange={(e) => handleInlineChange('renewal_date', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.renewal_date || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 min-w-[160px]">
-                      {inlineEditId === item.id ? <Input value={inlineEditData.review} onChange={(e) => handleInlineChange('review', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.review || '—')}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-600 min-w-[160px]">{item.calibration_certificate || '—'}</td>
-                    <td className="py-1.5 px-2 text-gray-600 min-w-[160px]">
-                      {inlineEditId === item.id ? <Input value={inlineEditData.remarks} onChange={(e) => handleInlineChange('remarks', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.remarks || '—')}
-                    </td>
-                    {canManage && (
-                      <td className="py-1.5 px-2">
-                        <div className="flex gap-1.5">
-                          {inlineEditId === item.id ? (
-                            <>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 border-gray-200 text-xs text-green-700 hover:bg-green-50"
-                                onClick={() => handleInlineSave(item.id)}
-                              >
-                                Save
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
-                                onClick={handleInlineCancel}
-                              >
-                                Cancel
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
-                                onClick={() => handleEdit(item)}
-                              >
-                                <Edit className="h-3 w-3 mr-1" />
-                                Edit
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 border-gray-200 text-xs text-red-600 hover:bg-red-50"
-                                onClick={() => handleDelete(item.id)}
-                              >
-                                <Trash2 className="h-3 w-3 mr-1" />
-                                Delete
-                              </Button>
-                            </>
-                          )}
-                        </div>
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 font-medium text-gray-900 whitespace-nowrap">
+                          {groupEditActive ? (
+                            <Input value={inlineEditData.customer_name} onChange={(e) => handleInlineChange('customer_name', e.target.value)} className="h-7 text-[11px] px-2" />
+                          ) : (groupAnchor.customer_name || '—')}
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                          {groupEditActive ? <Input value={inlineEditData.location} onChange={(e) => handleInlineChange('location', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.location || '—')}
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                          {groupEditActive ? <Input value={inlineEditData.contact_person} onChange={(e) => handleInlineChange('contact_person', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.contact_person || '—')}
+                        </td>
+                      )}
+
+                      {/* equipment-specific columns */}
+                      <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                        {inlineEditId === item.id ? <Input value={inlineEditData.equipment_name} onChange={(e) => handleInlineChange('equipment_name', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.equipment_name || '—')}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td className="py-1.5 px-2 text-gray-600 min-w-[160px]">
+                        {inlineEditId === item.id ? <Input value={inlineEditData.flowmeter_details} onChange={(e) => handleInlineChange('flowmeter_details', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.flowmeter_details || '—')}
+                      </td>
+                      <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                        {inlineEditId === item.id ? <Input value={inlineEditData.product_code} onChange={(e) => handleInlineChange('product_code', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.product_code || '—')}
+                      </td>
+                      <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                        {inlineEditId === item.id ? <Input value={inlineEditData.model_no} onChange={(e) => handleInlineChange('model_no', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.model_no || '—')}
+                      </td>
+
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                          {groupEditActive ? <Input value={inlineEditData.system_mobile_number} onChange={(e) => handleInlineChange('system_mobile_number', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.system_mobile_number || '—')}
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                          {groupEditActive ? (
+                            <Input value={inlineEditData.person_mobile_number} onChange={(e) => handleInlineChange('person_mobile_number', e.target.value)} className="h-7 text-[11px] px-2" />
+                          ) : groupAnchor.person_mobile_number ? (
+                            <span className="flex items-center gap-1">
+                              <Phone className="h-3 w-3 text-gray-400 shrink-0" />
+                              {groupAnchor.person_mobile_number}
+                            </span>
+                          ) : '—'}
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 min-w-[180px]">
+                          {groupEditActive ? (
+                            <Input value={inlineEditData.email_id} onChange={(e) => handleInlineChange('email_id', e.target.value)} className="h-7 text-[11px] px-2" />
+                          ) : groupAnchor.email_id ? (
+                            <span className="flex items-center gap-1">
+                              <Mail className="h-3 w-3 text-gray-400 shrink-0" />
+                              <span>{groupAnchor.email_id}</span>
+                            </span>
+                          ) : '—'}
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                          {groupEditActive ? <Input type="date" value={inlineEditData.date_of_commissioning} onChange={(e) => handleInlineChange('date_of_commissioning', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.date_of_commissioning || '—')}
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-blue-700 min-w-[140px] break-all">
+                          {groupEditActive ? <Input value={inlineEditData.url_link} onChange={(e) => handleInlineChange('url_link', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.url_link || '—')}
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                          {groupEditActive ? <Input value={inlineEditData.user_id} onChange={(e) => handleInlineChange('user_id', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.user_id || '—')}
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                          {groupEditActive ? <Input value={inlineEditData.password} onChange={(e) => handleInlineChange('password', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.password || '—')}
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2">
+                          {groupEditActive ? (
+                            <select
+                              value={inlineEditData.status}
+                              onChange={(e) => handleInlineChange('status', e.target.value)}
+                              className="h-7 text-[11px] px-2 border border-gray-300 rounded w-full"
+                            >
+                              <option value="Active">Active</option>
+                              <option value="Inactive">Inactive</option>
+                              <option value="Maintenance">Maintenance</option>
+                            </select>
+                          ) : (
+                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap ${
+                              groupAnchor.status === 'Active' ? 'bg-green-50 text-green-700' :
+                              groupAnchor.status === 'Maintenance' ? 'bg-yellow-50 text-yellow-700' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>
+                              {groupAnchor.status || '—'}
+                            </span>
+                          )}
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                          {groupEditActive ? <Input type="date" value={inlineEditData.renewal_date} onChange={(e) => handleInlineChange('renewal_date', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.renewal_date || '—')}
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 min-w-[160px]">
+                          {groupEditActive ? <Input value={inlineEditData.review} onChange={(e) => handleInlineChange('review', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.review || '—')}
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 min-w-[160px]">{groupAnchor.calibration_certificate || '—'}</td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 min-w-[160px]">
+                          {groupEditActive ? <Input value={inlineEditData.remarks} onChange={(e) => handleInlineChange('remarks', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.remarks || '—')}
+                        </td>
+                      )}
+
+                      {canManage && (
+                        <td className="py-1.5 px-2">
+                          <div className="flex gap-1.5">
+                            {inlineEditId === item.id ? (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 border-gray-200 text-xs text-green-700 hover:bg-green-50"
+                                  onClick={() => handleInlineSave(item.id)}
+                                >
+                                  Save
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
+                                  onClick={handleInlineCancel}
+                                >
+                                  Cancel
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
+                                  onClick={() => handleEdit(item)}
+                                >
+                                  <Edit className="h-3 w-3 mr-1" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 border-gray-200 text-xs text-red-600 hover:bg-red-50"
+                                  onClick={() => handleDelete(item.id)}
+                                >
+                                  <Trash2 className="h-3 w-3 mr-1" />
+                                  Delete
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))
+                })}
               </tbody>
             </table>
           </div>

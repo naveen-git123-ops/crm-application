@@ -22,14 +22,31 @@ import {
   CheckSquare,
   Fuel,
   MapPin,
-  Droplets
+  Droplets,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export const Layout = ({ children }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('desktop-sidebar-collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('desktop-sidebar-collapsed', String(desktopSidebarCollapsed));
+    } catch {
+      // ignore persistence errors (private mode/storage limitations)
+    }
+  }, [desktopSidebarCollapsed]);
 
   const handleLogout = () => {
     logout();
@@ -70,12 +87,12 @@ export const Layout = ({ children }) => {
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Sidebar - Desktop */}
-      <aside className="hidden lg:flex flex-col w-64 border-r border-gray-200 bg-white flex-shrink-0">
-        <div className="p-6 border-b border-gray-200 bg-white">
+      <aside className={`hidden lg:flex flex-col border-r border-gray-200 bg-white flex-shrink-0 transition-all duration-200 ${desktopSidebarCollapsed ? 'w-20' : 'w-64'}`}>
+        <div className={`border-b border-gray-200 bg-white ${desktopSidebarCollapsed ? 'p-3 flex justify-center' : 'p-6'}`}>
           <img 
             src={`${process.env.PUBLIC_URL}/logo1.png`}
             alt="Company Logo" 
-            className="h-12 object-contain"
+            className={`${desktopSidebarCollapsed ? 'h-10' : 'h-12'} object-contain`}
           />
         </div>
         
@@ -86,32 +103,36 @@ export const Layout = ({ children }) => {
               to={item.path}
               data-testid={`nav-${item.label.toLowerCase()}`}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors text-sm ${
+                `flex items-center ${desktopSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 rounded-lg transition-colors text-sm ${
                   isActive
                     ? 'bg-blue-100 text-blue-700 font-medium'
                     : 'text-gray-700 hover:bg-gray-100'
                 }`
               }
+              title={item.label}
             >
               <item.icon className="h-5 w-5" />
-              <span>{item.label}</span>
+              {!desktopSidebarCollapsed && <span>{item.label}</span>}
             </NavLink>
           ))}
         </nav>
 
         <div className="p-4 border-t border-gray-200 space-y-2">
-          <div className="px-4 py-2">
-            <p className="text-sm font-medium text-gray-900">{user?.name}</p>
-            <p className="text-xs text-gray-600">{user?.role}</p>
-          </div>
+          {!desktopSidebarCollapsed && (
+            <div className="px-4 py-2">
+              <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+              <p className="text-xs text-gray-600">{user?.role}</p>
+            </div>
+          )}
           <Button
             variant="ghost"
-            className="w-full justify-start bg-red-50 text-red-700 border-red-200 hover:bg-red-100 font-medium text-sm h-10"
+            className={`w-full ${desktopSidebarCollapsed ? 'justify-center px-2' : 'justify-start'} bg-red-50 text-red-700 border-red-200 hover:bg-red-100 font-medium text-sm h-10`}
             onClick={handleLogout}
             data-testid="logout-button"
+            title="Logout"
           >
-            <LogOut className="h-4 w-4 mr-2" />
-            Logout
+            <LogOut className={`h-4 w-4 ${desktopSidebarCollapsed ? '' : 'mr-2'}`} />
+            {!desktopSidebarCollapsed && 'Logout'}
           </Button>
         </div>
       </aside>
@@ -187,6 +208,17 @@ export const Layout = ({ children }) => {
             aria-label="Open menu"
           >
             <Menu className="h-6 w-6" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden lg:inline-flex mr-2 h-10 w-10 flex-shrink-0 border border-gray-300 text-gray-700 hover:bg-gray-100"
+            onClick={() => setDesktopSidebarCollapsed(prev => !prev)}
+            data-testid="desktop-sidebar-toggle"
+            aria-label={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {desktopSidebarCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
           </Button>
           <h2 className="text-base sm:text-lg font-semibold tracking-tight text-gray-900 truncate">
             {filteredNavItems.find(item => currentPath === item.path)?.label || 'Dashboard'}
