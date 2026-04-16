@@ -1,5 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import L from 'leaflet';
+import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,136 +11,90 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { MapPin, Calendar, User, Clock, AlertCircle } from 'lucide-react';
-import { GoogleMap, useJsApiLoader, Marker, Polyline, InfoWindow } from '@react-google-maps/api';
 import { formatISTDateTime } from '@/utils/date';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
-const GOOGLE_MAPS_API_KEY = (process.env.REACT_APP_GOOGLE_MAPS_API_KEY || '').trim();
 
-const mapContainerStyle = {
-  width: '100%',
-  height: '560px',
-  borderRadius: '8px',
-};
+/** OpenStreetMap tiles — free, no API key (fair-use; fine for typical internal CRM traffic). */
+const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const OSM_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
-const defaultCenter = { lat: 28.6139, lng: 77.209 };
-
-const polylineOptions = {
-  strokeColor: '#2563eb',
-  strokeOpacity: 0.85,
-  strokeWeight: 3,
-  geodesic: true,
-};
+const defaultCenter = [28.6139, 77.209];
 
 const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
 
-const getMarkerColor = (type) => (type === 'punch_in' ? '#16a34a' : '#dc2626');
-
-/** Map + markers; isolated so `useJsApiLoader` only runs when a real API key exists. */
-function RouteMap({ locations, selectedLocation, onSelectLocation }) {
-  const mapRef = useRef(null);
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: 'google-maps-location-tracker',
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-  });
-
+function FitBounds({ points }) {
+  const map = useMap();
   useEffect(() => {
-    if (!isLoaded || !locations.length || !mapRef.current) return;
-    const m = mapRef.current;
-    m.panTo({ lat: locations[0].latitude, lng: locations[0].longitude });
-    if (locations.length === 1) m.setZoom(15);
-    else m.setZoom(14);
-  }, [isLoaded, locations]);
+    if (!points.length) return;
+    if (points.length === 1) {
+      map.setView(points[0], 15);
+      return;
+    }
+    const bounds = L.latLngBounds(points.map((p) => [p[0], p[1]]));
+    map.fitBounds(bounds, { padding: [48, 48], maxZoom: 16 });
+  }, [map, points]);
+  return null;
+}
 
-  if (loadError) {
-    return (
-      <Card className="p-8 border border-red-200 bg-red-50/80">
-        <div className="flex gap-3">
-          <AlertCircle className="w-6 h-6 text-red-600 shrink-0" />
-          <div>
-            <p className="font-semibold text-red-900">Google Maps could not load</p>
-            <p className="text-sm text-red-800 mt-1">
-              Check that <code className="text-xs bg-red-100 px-1 rounded">REACT_APP_GOOGLE_MAPS_API_KEY</code> is set
-              at build time and that Maps JavaScript API + billing are enabled for this key.
-            </p>
-          </div>
-        </div>
-      </Card>
-    );
-  }
-
-  if (!isLoaded) {
-    return (
-      <div className="flex items-center justify-center bg-gray-50 rounded-lg border border-gray-200" style={{ height: mapContainerStyle.height }}>
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent" />
-          <p className="mt-4 text-gray-600 text-sm">Loading map…</p>
-        </div>
-      </div>
-    );
-  }
-
-  const center =
-    locations.length > 0 ? { lat: locations[0].latitude, lng: locations[0].longitude } : defaultCenter;
-
-  const path = locations.map((loc) => ({ lat: loc.latitude, lng: loc.longitude }));
+function RouteMapLeaflet({ locations, selectedId, onSelectLocation }) {
+  const path = locations.map((loc) => [loc.latitude, loc.longitude]);
+  const center = path.length ? path[0] : defaultCenter;
 
   return (
-    <GoogleMap
-      mapContainerStyle={mapContainerStyle}
+    <MapContainer
       center={center}
-      zoom={locations.length ? 14 : 5}
-      onLoad={(map) => {
-        mapRef.current = map;
-      }}
-      options={{
-        disableDefaultUI: false,
-        zoomControl: true,
-        mapTypeControl: true,
-        streetViewControl: false,
-      }}
+      zoom={14}
+      className="h-[560px] w-full rounded-lg z-0 [&_.leaflet-control-attribution]:text-[10px] [&_.leaflet-control-attribution]:max-w-[90%]"
+      scrollWheelZoom
     >
-      {locations.length > 1 && <Polyline path={path} options={polylineOptions} />}
-      {locations.map((location, index) => (
-        <Marker
-          key={location.id}
-          position={{ lat: location.latitude, lng: location.longitude }}
-          title={`${location.type === 'punch_in' ? 'In' : 'Out'} ${index + 1} · ${location.time || ''}`}
-          icon={{
-            path: window.google.maps.SymbolPath.CIRCLE,
-            scale: 10,
-            fillColor: getMarkerColor(location.type),
-            fillOpacity: 0.9,
-            strokeColor: '#fff',
-            strokeWeight: 2,
-          }}
-          onClick={() => onSelectLocation(location)}
+      <TileLayer attribution={OSM_ATTRIBUTION} url={OSM_TILE_URL} />
+      {path.length > 1 && (
+        <Polyline
+          positions={path}
+          pathOptions={{ color: '#2563eb', weight: 4, opacity: 0.85 }}
         />
-      ))}
-      {selectedLocation && (
-        <InfoWindow
-          position={{ lat: selectedLocation.latitude, lng: selectedLocation.longitude }}
-          onCloseClick={() => onSelectLocation(null)}
-        >
-          <div className="p-1 text-gray-800 max-w-xs text-sm">
-            <p className="font-semibold mb-1 capitalize">
-              {selectedLocation.type === 'punch_in' ? 'Punch in' : 'Punch out'}
-            </p>
-            <p>
-              <span className="text-gray-500">Time:</span> {selectedLocation.time || '—'}
-            </p>
-            <p>
-              <span className="text-gray-500">Coords:</span>{' '}
-              {Number(selectedLocation.latitude).toFixed(5)}, {Number(selectedLocation.longitude).toFixed(5)}
-            </p>
-            {selectedLocation.timestamp && (
-              <p className="text-gray-500 text-xs mt-1">{formatISTDateTime(selectedLocation.timestamp)}</p>
-            )}
-          </div>
-        </InfoWindow>
       )}
-    </GoogleMap>
+      {locations.map((location, index) => {
+        const isIn = location.type === 'punch_in';
+        const isSelected = selectedId === location.id;
+        return (
+          <CircleMarker
+            key={location.id}
+            center={[location.latitude, location.longitude]}
+            radius={isSelected ? 12 : 9}
+            pathOptions={{
+              color: isIn ? '#15803d' : '#b91c1c',
+              fillColor: isIn ? '#22c55e' : '#ef4444',
+              fillOpacity: 0.92,
+              weight: 2,
+            }}
+            eventHandlers={{
+              click: () => onSelectLocation(selectedId === location.id ? null : location),
+            }}
+          >
+            <Popup>
+              <div className="text-sm text-gray-800 min-w-[160px]">
+                <p className="font-semibold capitalize mb-1">{isIn ? 'Punch in' : 'Punch out'}</p>
+                <p>
+                  <span className="text-gray-500">Time:</span> {location.time || '—'}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
+                </p>
+                {location.timestamp && (
+                  <p className="text-xs text-gray-500 mt-1">{formatISTDateTime(location.timestamp)}</p>
+                )}
+                <p className="text-[10px] text-gray-400 mt-2">Point {index + 1}</p>
+              </div>
+            </Popup>
+          </CircleMarker>
+        );
+      })}
+      {path.length > 0 && <FitBounds points={path} />}
+    </MapContainer>
   );
 }
 
@@ -206,6 +164,8 @@ const LocationTracker = () => {
   const selectedEmployeeName =
     employees.find((emp) => emp.employee_id === selectedEmployee)?.name || 'Employee';
 
+  const selectedId = selectedLocation?.id ?? null;
+
   if (!isAdmin) {
     return (
       <div className="space-y-6 p-6" data-testid="location-tracker-page">
@@ -229,7 +189,9 @@ const LocationTracker = () => {
           <MapPin className="w-7 h-7 text-blue-600 shrink-0" />
           Location tracker
         </h1>
-        <p className="text-gray-600 text-sm mt-1">View punch-in and punch-out GPS points by employee and date (Admin only).</p>
+        <p className="text-gray-600 text-sm mt-1">
+          Map uses free <strong>OpenStreetMap</strong> tiles (no Google billing). GPS points come from punch in/out.
+        </p>
       </div>
 
       <Card className="p-4 sm:p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -278,20 +240,7 @@ const LocationTracker = () => {
 
       <Card className="p-4 sm:p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Route · {selectedEmployeeName}</h2>
-        {!GOOGLE_MAPS_API_KEY ? (
-          <Card className="p-8 border border-amber-200 bg-amber-50/90">
-            <div className="flex gap-3">
-              <AlertCircle className="w-6 h-6 text-amber-700 shrink-0" />
-              <div>
-                <p className="font-semibold text-amber-900">Google Maps API key missing</p>
-                <p className="text-sm text-amber-800 mt-1">
-                  Set <code className="text-xs bg-amber-100 px-1 rounded">REACT_APP_GOOGLE_MAPS_API_KEY</code> in your
-                  frontend environment and rebuild the app. Enable the Maps JavaScript API for that key.
-                </p>
-              </div>
-            </div>
-          </Card>
-        ) : loading ? (
+        {loading ? (
           <div className="flex items-center justify-center h-[560px] bg-gray-50 rounded-lg border border-gray-200">
             <div className="text-center">
               <div className="inline-block animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent" />
@@ -310,7 +259,11 @@ const LocationTracker = () => {
             </div>
           </div>
         ) : (
-          <RouteMap locations={locations} selectedLocation={selectedLocation} onSelectLocation={setSelectedLocation} />
+          <RouteMapLeaflet
+            locations={locations}
+            selectedId={selectedId}
+            onSelectLocation={setSelectedLocation}
+          />
         )}
       </Card>
 
@@ -333,7 +286,9 @@ const LocationTracker = () => {
                 {locations.map((location, index) => (
                   <tr
                     key={location.id}
-                    className="border-b border-gray-100 hover:bg-gray-50/80 cursor-pointer"
+                    className={`border-b border-gray-100 hover:bg-gray-50/80 cursor-pointer ${
+                      selectedLocation?.id === location.id ? 'bg-blue-50/80' : ''
+                    }`}
                     onClick={() => setSelectedLocation(location)}
                   >
                     <td className="py-3 px-4 text-gray-900">{index + 1}</td>
@@ -354,7 +309,7 @@ const LocationTracker = () => {
                     </td>
                     <td className="py-3 px-4 font-mono text-gray-700">{Number(location.latitude).toFixed(5)}</td>
                     <td className="py-3 px-4 font-mono text-gray-700">{Number(location.longitude).toFixed(5)}</td>
-                    <td className="py-3 px-4 text-gray-600 text-xs">
+                    <td className="text-gray-600 text-xs py-3 px-4">
                       {location.timestamp ? formatISTDateTime(location.timestamp) : '—'}
                     </td>
                   </tr>

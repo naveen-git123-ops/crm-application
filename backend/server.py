@@ -15,7 +15,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import List, Optional, Literal, Any, Dict
 from collections import defaultdict
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from calendar import monthrange
 import jwt
 import bcrypt
@@ -24,6 +24,7 @@ from reportlab.pdfgen import canvas
 import io
 import uuid
 import json
+import re
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -680,8 +681,69 @@ class CGWFlowMetreModel(Base):
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
+
+class AppSettingModel(Base):
+    """Key/value application settings (e.g. CGW renewal digest recipient)."""
+    __tablename__ = 'app_settings'
+    key = Column(String(100), primary_key=True)
+    value = Column(String(2000), nullable=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 # Create all tables
 Base.metadata.create_all(bind=engine)
+
+SETTING_CGW_DIGEST_EMAIL = 'cgw_renewal_digest_email'
+SETTING_CGW_DIGEST_ENABLED = 'cgw_renewal_digest_enabled'
+
+
+def app_setting_get(db: Session, key: str) -> Optional[str]:
+    row = db.query(AppSettingModel).filter(AppSettingModel.key == key).first()
+    return row.value if row else None
+
+
+def app_setting_set(db: Session, key: str, value: Optional[str]):
+    """Persist a setting; value None clears to empty string."""
+    v = value if value is not None else ''
+    row = db.query(AppSettingModel).filter(AppSettingModel.key == key).first()
+    now = datetime.now(timezone.utc)
+    if row:
+        row.value = v
+        row.updated_at = now
+    else:
+        db.add(AppSettingModel(key=key, value=v, updated_at=now))
+    db.commit()
+
+
+def parse_cgw_renewal_date(raw) -> Optional[date]:
+    """Parse renewal_date from DB (YYYY-MM-DD, DD/MM/YYYY, etc.)."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})', s)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+    m = re.match(r'^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$', s)
+    if m:
+        try:
+            d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            return date(y, mo, d)
+        except ValueError:
+            return None
+    try:
+        return datetime.strptime(s[:10], '%Y-%m-%d').date()
+    except ValueError:
+        pass
+    try:
+        t = datetime.fromisoformat(s.replace('Z', '+00:00'))
+        return t.date()
+    except ValueError:
+        return None
 
 def migrate_leads_add_created_by():
     """Add created_by_employee_id, created_by_name to leads if missing (for Sales ownership)."""
@@ -2869,6 +2931,69 @@ def delete_cgw_flow_metre(inventory_id: str, current_user: UserModel = Depends(g
     db.commit()
     
     return {'message': 'Inventory item deleted successfully'}
+
+
+class CGWRenewalDigestSettingsResponse(BaseModel):
+    notification_email: Optional[str] = None
+    enabled: bool = False
+    schedule_timezone: str = ATTENDANCE_TZ_NAME
+
+
+class CGWRenewalDigestSettingsUpdate(BaseModel):
+    notification_email: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+@api_router.get('/settings/cgw-renewal-digest', response_model=CGWRenewalDigestSettingsResponse)
+def get_cgw_renewal_digest_settings(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    email = (app_setting_get(db, SETTING_CGW_DIGEST_EMAIL) or '').strip() or None
+    en = (app_setting_get(db, SETTING_CGW_DIGEST_ENABLED) or '0').strip().lower()
+    enabled = en in ('1', 'true', 'yes', 'on')
+    return CGWRenewalDigestSettingsResponse(
+        notification_email=email,
+        enabled=enabled,
+        schedule_timezone=ATTENDANCE_TZ_NAME,
+    )
+
+
+@api_router.put('/settings/cgw-renewal-digest', response_model=CGWRenewalDigestSettingsResponse)
+def update_cgw_renewal_digest_settings(
+    data: CGWRenewalDigestSettingsUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    payload = data.model_dump(exclude_unset=True)
+    if 'notification_email' in payload:
+        cleaned = (payload['notification_email'] or '').strip()
+        if cleaned:
+            try:
+                from pydantic import TypeAdapter
+                TypeAdapter(EmailStr).validate_python(cleaned)
+            except Exception:
+                raise HTTPException(status_code=422, detail='Invalid notification email address')
+            app_setting_set(db, SETTING_CGW_DIGEST_EMAIL, cleaned)
+        else:
+            app_setting_set(db, SETTING_CGW_DIGEST_EMAIL, '')
+    if 'enabled' in payload and payload['enabled'] is not None:
+        app_setting_set(db, SETTING_CGW_DIGEST_ENABLED, '1' if payload['enabled'] else '0')
+    return get_cgw_renewal_digest_settings(current_user=current_user, db=db)
+
+
+@api_router.post('/settings/cgw-renewal-digest/run-now')
+def run_cgw_renewal_digest_now(current_user: UserModel = Depends(get_current_user)):
+    """Manually trigger the same job as the morning digest (Admin/HR)."""
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    run_cgw_renewal_digest_job()
+    return {'message': 'Digest job finished. If enabled and SMTP is configured, check the notification inbox and server logs.'}
+
 
 @api_router.post('/cgw-flow-metres/{inventory_id}/upload-certificate')
 def upload_calibration_certificate(
@@ -6445,6 +6570,64 @@ def send_email(to_email: str, subject: str, body: str, is_html: bool = False) ->
         logging.error(f'Failed to send email to {to_email}: {str(e)}')
         return False
 
+
+def run_cgw_renewal_digest_job():
+    """Send one email listing all CGW flow metre rows whose renewal date is before today (attendance timezone)."""
+    db = SessionLocal()
+    try:
+        enabled_raw = (app_setting_get(db, SETTING_CGW_DIGEST_ENABLED) or '').strip().lower()
+        enabled = enabled_raw in ('1', 'true', 'yes', 'on')
+        to_email = (app_setting_get(db, SETTING_CGW_DIGEST_EMAIL) or '').strip()
+        if not enabled or not to_email:
+            logging.debug('CGW renewal digest skipped: disabled or no notification email configured')
+            return
+        today = attendance_local_now().date()
+        rows = db.query(CGWFlowMetreModel).all()
+        past = []
+        for r in rows:
+            if not r.renewal_date or not str(r.renewal_date).strip():
+                continue
+            rd = parse_cgw_renewal_date(r.renewal_date)
+            if rd and rd < today:
+                past.append(r)
+        if not past:
+            logging.info('CGW renewal digest: no past-due rows; email not sent')
+            return
+        past.sort(key=lambda x: (parse_cgw_renewal_date(x.renewal_date) or date.min, (x.customer_name or ''), (x.inventory_id or '')))
+        body_lines = [
+            f'CGW Flow Metre — past-due renewals ({len(past)} line(s))',
+            f'As of: {today.isoformat()} ({ATTENDANCE_TZ_NAME})',
+            '',
+            'Follow up with each customer using the contact details below.',
+            '',
+        ]
+        for r in past:
+            body_lines.append('---')
+            body_lines.append(f'Inventory ID: {r.inventory_id or "—"}')
+            body_lines.append(f'Customer: {r.customer_name or "—"}')
+            body_lines.append(f'Contact person: {r.contact_person or "—"}')
+            body_lines.append(f'Person mobile: {r.person_mobile_number or "—"}')
+            body_lines.append(f'System mobile: {r.system_mobile_number or "—"}')
+            body_lines.append(f'Email: {r.email_id or "—"}')
+            body_lines.append(f'Location: {r.location or "—"}')
+            body_lines.append(f'Renewal date (past due): {r.renewal_date}')
+            body_lines.append(f'Equipment: {r.equipment_name or "—"}')
+            body_lines.append(f'Flowmeter / details: {r.flowmeter_details or "—"}')
+            body_lines.append(f'Status: {r.status or "—"}')
+            body_lines.append(f'Remarks: {r.remarks or "—"}')
+        body = '\n'.join(body_lines)
+        subject = f'[CRM] CGW past-due renewals ({len(past)}) — {today.isoformat()}'
+        ok = send_email(to_email, subject, body, is_html=False)
+        if ok:
+            logging.info('CGW renewal digest sent to %s (%d rows)', to_email, len(past))
+        else:
+            logging.warning('CGW renewal digest could not be sent to %s (check SMTP .env)', to_email)
+    except Exception as e:
+        logging.exception('CGW renewal digest job failed: %s', e)
+    finally:
+        db.close()
+
+
 def calculate_subscription_status(subscription_end_date: Optional[datetime]) -> str:
     """Calculate subscription status based on end date."""
     if not subscription_end_date:
@@ -7909,3 +8092,45 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+_cgw_digest_scheduler = None
+
+
+def _start_cgw_renewal_digest_scheduler():
+    """Fire `run_cgw_renewal_digest_job` every day at 09:00 in ATTENDANCE_TIMEZONE."""
+    global _cgw_digest_scheduler
+    if _cgw_digest_scheduler is not None:
+        return
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.cron import CronTrigger
+    except ImportError:
+        logger.warning('APScheduler is not installed; CGW renewal morning digest is disabled')
+        return
+    try:
+        from zoneinfo import ZoneInfo
+        sched_tz = ZoneInfo(ATTENDANCE_TZ_NAME)
+    except Exception:
+        sched_tz = timezone(timedelta(hours=5, minutes=30))
+    _cgw_digest_scheduler = BackgroundScheduler(timezone=sched_tz)
+    _cgw_digest_scheduler.add_job(
+        run_cgw_renewal_digest_job,
+        CronTrigger(hour=9, minute=0, timezone=sched_tz),
+        id='cgw_renewal_digest_daily',
+        replace_existing=True,
+    )
+    _cgw_digest_scheduler.start()
+    logger.info('CGW past-due renewal digest scheduled daily at 09:00 (%s)', ATTENDANCE_TZ_NAME)
+
+
+@app.on_event('startup')
+def _cgw_digest_scheduler_startup():
+    _start_cgw_renewal_digest_scheduler()
+
+
+@app.on_event('shutdown')
+def _cgw_digest_scheduler_shutdown():
+    global _cgw_digest_scheduler
+    if _cgw_digest_scheduler is not None:
+        _cgw_digest_scheduler.shutdown(wait=False)
+        _cgw_digest_scheduler = None

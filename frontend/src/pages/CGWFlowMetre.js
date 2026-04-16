@@ -82,6 +82,97 @@ const FILTER_LABELS = {
   remarks: 'Remarks'
 };
 
+/** Parse commissioning / renewal strings (YYYY-MM-DD, DD/MM/YYYY, or Date.parse). */
+function parseGridDate(raw) {
+  if (raw == null || raw === '') return null;
+  const s = String(raw).trim();
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const y = parseInt(iso[1], 10);
+    const m = parseInt(iso[2], 10) - 1;
+    const d = parseInt(iso[3], 10);
+    const dt = new Date(y, m, d);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  const dmy = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/);
+  if (dmy) {
+    const d = parseInt(dmy[1], 10);
+    const m = parseInt(dmy[2], 10) - 1;
+    const y = parseInt(dmy[3], 10);
+    const dt = new Date(y, m, d);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  const t = Date.parse(s);
+  if (!Number.isNaN(t)) return new Date(t);
+  return null;
+}
+
+function startOfLocalDay(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+/** overdue = renewal date before today; dueSoon = within next 30 days; ok = later; empty = no date */
+function renewalUrgency(renewalDateRaw) {
+  const dt = parseGridDate(renewalDateRaw);
+  if (!dt) return 'empty';
+  const today = startOfLocalDay(new Date());
+  const renewal = startOfLocalDay(dt);
+  if (renewal.getTime() < today.getTime()) return 'overdue';
+  const limit = new Date(today);
+  limit.setDate(limit.getDate() + 30);
+  if (renewal.getTime() <= limit.getTime()) return 'dueSoon';
+  return 'ok';
+}
+
+function RenewalDateCell({ groupEditActive, inlineEditData, groupAnchor, onChange }) {
+  const rawForUrgency = groupEditActive ? inlineEditData.renewal_date : groupAnchor.renewal_date;
+  const urgency = renewalUrgency(rawForUrgency);
+  if (groupEditActive) {
+    return (
+      <div className="flex flex-col gap-0.5 min-w-[108px]">
+        <Input
+          type="date"
+          value={inlineEditData.renewal_date}
+          onChange={(e) => onChange('renewal_date', e.target.value)}
+          className="h-7 text-[11px] px-2"
+        />
+        {urgency === 'overdue' && (
+          <span className="text-[10px] font-semibold text-red-600 leading-tight">Still past due — pick a future date</span>
+        )}
+        {urgency === 'dueSoon' && (
+          <span className="text-[10px] font-medium text-amber-700 leading-tight">Due within 30 days</span>
+        )}
+      </div>
+    );
+  }
+  const display = groupAnchor.renewal_date || '—';
+  return (
+    <div className="flex flex-col gap-0.5 min-w-[108px]">
+      <span
+        className={`font-mono tabular-nums text-[11px] font-semibold ${
+          urgency === 'overdue'
+            ? 'text-red-700'
+            : urgency === 'dueSoon'
+              ? 'text-amber-800'
+              : urgency === 'ok'
+                ? 'text-gray-800'
+                : 'text-gray-400'
+        }`}
+      >
+        {display}
+      </span>
+      {urgency === 'overdue' && (
+        <span className="text-[10px] font-bold uppercase tracking-wide text-red-600 leading-tight">Past due</span>
+      )}
+      {urgency === 'dueSoon' && (
+        <span className="text-[10px] font-medium text-amber-700 leading-tight">Due in ≤30 days</span>
+      )}
+    </div>
+  );
+}
+
 const CGWFlowMetre = () => {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
@@ -102,11 +193,38 @@ const CGWFlowMetre = () => {
   const [columnFilters, setColumnFilters] = useState(
     FILTER_FIELDS.reduce((acc, key) => ({ ...acc, [key]: '' }), {})
   );
+  const [digestNotificationEmail, setDigestNotificationEmail] = useState('');
+  const [digestEnabled, setDigestEnabled] = useState(false);
+  const [digestScheduleTz, setDigestScheduleTz] = useState('');
+  const [digestSaving, setDigestSaving] = useState(false);
 
   useEffect(() => {
     fetchCustomers();
     fetchItems();
   }, []);
+
+  const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
+
+  useEffect(() => {
+    if (!['Admin', 'HR'].includes(user?.role)) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await axios.get(`${API}/settings/cgw-renewal-digest`, { headers: authHeaders() });
+        if (cancelled) return;
+        setDigestNotificationEmail(res.data.notification_email || '');
+        setDigestEnabled(!!res.data.enabled);
+        setDigestScheduleTz(res.data.schedule_timezone || '');
+      } catch {
+        if (!cancelled) {
+          toast.error('Could not load renewal digest settings');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.role]);
 
   useEffect(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -310,6 +428,34 @@ const CGWFlowMetre = () => {
     setSelectedFilterValue('');
     setColumnFilters(FILTER_FIELDS.reduce((acc, key) => ({ ...acc, [key]: '' }), {}));
     setShowColumnFilter(false);
+  };
+
+  const saveDigestSettings = async () => {
+    setDigestSaving(true);
+    try {
+      const res = await axios.put(
+        `${API}/settings/cgw-renewal-digest`,
+        { notification_email: digestNotificationEmail, enabled: digestEnabled },
+        { headers: authHeaders() }
+      );
+      setDigestNotificationEmail(res.data.notification_email || '');
+      setDigestEnabled(!!res.data.enabled);
+      setDigestScheduleTz(res.data.schedule_timezone || '');
+      toast.success('Renewal digest settings saved');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to save digest settings');
+    } finally {
+      setDigestSaving(false);
+    }
+  };
+
+  const runDigestNow = async () => {
+    try {
+      await axios.post(`${API}/settings/cgw-renewal-digest/run-now`, {}, { headers: authHeaders() });
+      toast.success('Digest job completed. Check the notification inbox and server logs.');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to run digest job');
+    }
   };
 
   if (loading) {
@@ -656,6 +802,64 @@ const CGWFlowMetre = () => {
         )}
       </div>
 
+      {canManage && (
+        <Card className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1 min-w-0 flex-1">
+              <h3 className="text-sm font-semibold text-gray-900">Daily past-due renewal email</h3>
+              <p className="text-xs text-gray-600 leading-relaxed">
+                Each morning at <span className="font-medium text-gray-800">9:00</span>
+                {digestScheduleTz ? (
+                  <> ({digestScheduleTz})</>
+                ) : null}
+                , the server emails a list of all CGW rows whose renewal date is already past, including customer name and contact details for follow-up. Requires SMTP variables in the server environment (
+                <span className="font-mono text-[11px]">SMTP_SERVER</span>,{' '}
+                <span className="font-mono text-[11px]">SMTP_USERNAME</span>,{' '}
+                <span className="font-mono text-[11px]">SMTP_PASSWORD</span>,{' '}
+                <span className="font-mono text-[11px]">SENDER_EMAIL</span>).
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 sm:items-end">
+            <div className="space-y-1.5 sm:col-span-2 lg:col-span-2">
+              <Label htmlFor="digest_notification_email" className="text-xs font-medium text-gray-700">
+                Notification email (digest recipient)
+              </Label>
+              <Input
+                id="digest_notification_email"
+                type="email"
+                placeholder="team@company.com"
+                value={digestNotificationEmail}
+                onChange={(e) => setDigestNotificationEmail(e.target.value)}
+                className="h-9 text-sm border-gray-300"
+              />
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer select-none pb-1">
+              <input
+                type="checkbox"
+                checked={digestEnabled}
+                onChange={(e) => setDigestEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-800">Enable daily digest</span>
+            </label>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              className="bg-blue-600 text-white hover:bg-blue-700 h-9"
+              disabled={digestSaving}
+              onClick={saveDigestSettings}
+            >
+              {digestSaving ? 'Saving…' : 'Save settings'}
+            </Button>
+            <Button type="button" variant="outline" className="h-9 border-gray-300" onClick={runDigestNow}>
+              Send digest now
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {/* Excel-like Grid */}
       {filteredItems.length > 0 ? (
         <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
@@ -678,7 +882,13 @@ const CGWFlowMetre = () => {
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">USER ID</th>
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">PASSWORD</th>
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">STATUS</th>
-                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">RENEWAL DATE WILL BE</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 align-top min-w-[132px] whitespace-normal">
+                    <span className="block leading-snug">RENEWAL DATE WILL BE</span>
+                    <span className="mt-1 block text-[10px] font-normal text-gray-500 leading-tight">
+                      <span className="text-red-600 font-semibold">Red</span> = past due ·{' '}
+                      <span className="text-amber-700 font-semibold">Amber</span> = ≤30 days
+                    </span>
+                  </th>
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">REVIEW</th>
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">CALIBARATION CERTIFICATE</th>
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">REMARKS</th>
@@ -695,9 +905,17 @@ const CGWFlowMetre = () => {
                 {pagedGroups.map((group, groupIndex) => {
                   const groupEditActive = group.rows.some(r => r.id === inlineEditId);
                   const groupAnchor = group.rows[0];
+                  const rawRenewal = groupEditActive ? inlineEditData.renewal_date : groupAnchor.renewal_date;
+                  const renewalU = renewalUrgency(rawRenewal);
+                  const rowRenewalClass =
+                    renewalU === 'overdue'
+                      ? 'border-b border-red-100 hover:bg-red-50/40 bg-red-50/20'
+                      : renewalU === 'dueSoon'
+                        ? 'border-b border-amber-100 hover:bg-amber-50/35 bg-amber-50/12'
+                        : 'border-b border-gray-100 hover:bg-gray-50/50';
 
                   return group.rows.map((item, rowIndex) => (
-                    <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/50 align-top">
+                    <tr key={item.id} className={`${rowRenewalClass} align-top`}>
                       {rowIndex === 0 && (
                         <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-900 whitespace-nowrap">
                           {pageStartIndex + groupIndex + 1}
@@ -808,8 +1026,13 @@ const CGWFlowMetre = () => {
                         </td>
                       )}
                       {rowIndex === 0 && (
-                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
-                          {groupEditActive ? <Input type="date" value={inlineEditData.renewal_date} onChange={(e) => handleInlineChange('renewal_date', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.renewal_date || '—')}
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 whitespace-nowrap align-top">
+                          <RenewalDateCell
+                            groupEditActive={groupEditActive}
+                            inlineEditData={inlineEditData}
+                            groupAnchor={groupAnchor}
+                            onChange={handleInlineChange}
+                          />
                         </td>
                       )}
                       {rowIndex === 0 && (
