@@ -12,6 +12,7 @@ import { Employees } from '@/pages/Employees';
 import { Customers } from '@/pages/Customers';
 import { Tasks } from '@/pages/Tasks';
 import { Attendance } from '@/pages/Attendance';
+import { MonthlyReport } from '@/pages/MonthlyReport';
 import { Leaves } from '@/pages/Leaves';
 import { Documents } from '@/pages/Documents';
 import { Payroll } from '@/pages/Payroll';
@@ -119,6 +120,17 @@ function App() {
                 <ProtectedRoute requiredPermission="attendance">
                   <Layout>
                     <Attendance />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/monthly-report"
+              element={
+                <ProtectedRoute requiredPermission="monthly-report">
+                  <Layout>
+                    <MonthlyReport />
                   </Layout>
                 </ProtectedRoute>
               }

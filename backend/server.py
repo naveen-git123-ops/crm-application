@@ -13,7 +13,8 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Any, Dict
+from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 from calendar import monthrange
 import jwt
@@ -1047,7 +1048,7 @@ migrate_cgw_flow_metres_product_columns()
 
 # Seed default roles (Admin cannot be edited/deleted; others can)
 DEFAULT_PERMISSION_KEYS = [
-    "dashboard", "leads", "employees", "attendance", "leaves", "expenses",
+    "dashboard", "leads", "employees", "attendance", "monthly-report", "leaves", "expenses",
     "roles", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers", "cgw-flow-metre", "vehicles"
 ]
 
@@ -1088,6 +1089,28 @@ def ensure_admin_has_all_permissions():
 
 seed_roles_if_needed()
 ensure_admin_has_all_permissions()
+
+
+def migrate_grant_monthly_report_to_employee_role():
+    """Ensure the Employee role includes monthly-report (new screen); other roles stay as configured in DB."""
+    db = SessionLocal()
+    try:
+        emp = db.query(RoleModel).filter(RoleModel.name == 'Employee').first()
+        if not emp or not emp.permissions:
+            return
+        try:
+            perms = json.loads(emp.permissions) if isinstance(emp.permissions, str) else list(emp.permissions or [])
+        except Exception:
+            perms = []
+        if 'monthly-report' not in perms:
+            perms.append('monthly-report')
+            emp.permissions = json.dumps(perms)
+            db.commit()
+    finally:
+        db.close()
+
+
+migrate_grant_monthly_report_to_employee_role()
 
 # ============= PYDANTIC MODELS =============
 
@@ -1419,6 +1442,22 @@ class Attendance(BaseModel):
     tour_approval_status: Optional[str] = None
     is_active_session: Optional[int] = None
     sessions: Optional[List[AttendanceSession]] = None
+
+
+def _punch_time_to_minutes(value: Optional[str]) -> Optional[int]:
+    """Parse HH:MM or HH:MM:SS to minutes since midnight; None if invalid."""
+    if not value or not isinstance(value, str):
+        return None
+    parts = value.strip().split(':')
+    if len(parts) < 2:
+        return None
+    try:
+        h = int(parts[0])
+        m = int(parts[1])
+        return h * 60 + m
+    except ValueError:
+        return None
+
 
 class LatePunchInRequest(BaseModel):
     model_config = ConfigDict(extra="ignore", from_attributes=True)
@@ -3873,6 +3912,9 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
                 late_threshold = datetime.strptime('10:30:00', '%H:%M:%S')
                 punch_time = datetime.strptime(current_time, '%H:%M:%S')
                 minutes_late = int((punch_time - late_threshold).total_seconds() / 60)
+            late_reason_in = (punch_data.late_reason or '').strip()
+            if is_late and not late_reason_in:
+                raise HTTPException(status_code=400, detail='Reason is required for late punch-in before approval can be requested')
             existing.punch_in = current_time
             existing.punch_in_lat = punch_data.latitude
             existing.punch_in_lng = punch_data.longitude
@@ -3883,9 +3925,6 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             db.commit()
             db.refresh(existing)
             if is_late:
-                late_reason = (punch_data.late_reason or '').strip()
-                if current_user.role == 'Employee' and not late_reason:
-                    raise HTTPException(status_code=400, detail='Reason is required for late punch-in')
                 pending_in = db.query(LatePunchInRequestModel).filter(
                     LatePunchInRequestModel.attendance_id == existing.id,
                     LatePunchInRequestModel.status == 'Pending',
@@ -3897,7 +3936,7 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
                         employee_name=employee.name,
                         punch_in_time=current_time,
                         minutes_late=minutes_late,
-                        employee_reason=late_reason,
+                        employee_reason=late_reason_in,
                         punch_in_date=today,
                         status='Pending'
                     )
@@ -3923,6 +3962,10 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             punch_time = datetime.strptime(current_time, '%H:%M:%S')
             minutes_late = int((punch_time - late_threshold).total_seconds() / 60)
         
+        late_reason_first = (punch_data.late_reason or '').strip()
+        if is_late and not late_reason_first:
+            raise HTTPException(status_code=400, detail='Reason is required for late punch-in before approval can be requested')
+        
         # On-time punch-in: day not complete until punch-out (before 7 PM) and approvals
         status = 'Late' if is_late else 'Incomplete'
         
@@ -3944,16 +3987,13 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         
         # If late punch-in, create approval request
         if is_late:
-            late_reason = (punch_data.late_reason or '').strip()
-            if current_user.role == 'Employee' and not late_reason:
-                raise HTTPException(status_code=400, detail='Reason is required for late punch-in')
             late_request = LatePunchInRequestModel(
                 attendance_id=new_attendance.id,
                 employee_id=punch_data.employee_id,
                 employee_name=employee.name,
                 punch_in_time=current_time,
                 minutes_late=minutes_late,
-                employee_reason=late_reason,
+                employee_reason=late_reason_first,
                 punch_in_date=today,
                 status='Pending'
             )
@@ -3995,6 +4035,9 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             late_threshold = datetime.strptime('19:00:00', '%H:%M:%S')
             punch_out_time_parsed = datetime.strptime(current_time, '%H:%M:%S')
             minutes_late_out = int((punch_out_time_parsed - late_threshold).total_seconds() / 60)
+        late_reason_out = (punch_data.late_reason or '').strip()
+        if is_late_punch_out and not late_reason_out:
+            raise HTTPException(status_code=400, detail='Reason is required for late punch-out before approval can be requested')
         
         # Find the session number for this session
         last_session = db.query(AttendanceSessionModel).filter(
@@ -4059,16 +4102,13 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         
         # If late punch-out, create approval request
         if is_late_punch_out:
-            late_reason = (punch_data.late_reason or '').strip()
-            if current_user.role == 'Employee' and not late_reason:
-                raise HTTPException(status_code=400, detail='Reason is required for late punch-out')
             late_out_request = LatePunchOutRequestModel(
                 attendance_id=existing.id,
                 employee_id=punch_data.employee_id,
                 employee_name=employee.name,
                 punch_out_time=current_time,
                 minutes_late=minutes_late_out,
-                employee_reason=late_reason,
+                employee_reason=late_reason_out,
                 punch_out_date=today,
                 status='Pending'
             )
@@ -4324,21 +4364,64 @@ def get_employee_locations(
     }
 
 
+def _serialize_late_punch_in_request(r: LatePunchInRequestModel) -> dict:
+    """Plain dict so employee_reason is always present in JSON for approval screens."""
+    ra = r.requested_at
+    aa = r.approved_at
+    return {
+        'id': r.id,
+        'attendance_id': r.attendance_id,
+        'employee_id': r.employee_id,
+        'employee_name': r.employee_name or '',
+        'punch_in_time': r.punch_in_time,
+        'minutes_late': r.minutes_late if r.minutes_late is not None else 0,
+        'status': r.status,
+        'employee_reason': (getattr(r, 'employee_reason', None) or '').strip() or None,
+        'approver_id': r.approver_id,
+        'approver_name': r.approver_name,
+        'approval_reason': r.approval_reason,
+        'punch_in_date': r.punch_in_date,
+        'requested_at': ra.isoformat() if hasattr(ra, 'isoformat') else ra,
+        'approved_at': aa.isoformat() if aa and hasattr(aa, 'isoformat') else aa,
+    }
+
+
+def _serialize_late_punch_out_request(r: LatePunchOutRequestModel) -> dict:
+    ra = r.requested_at
+    aa = r.approved_at
+    return {
+        'id': r.id,
+        'attendance_id': r.attendance_id,
+        'employee_id': r.employee_id,
+        'employee_name': r.employee_name or '',
+        'punch_out_time': r.punch_out_time,
+        'minutes_late': r.minutes_late if r.minutes_late is not None else 0,
+        'status': r.status,
+        'employee_reason': (getattr(r, 'employee_reason', None) or '').strip() or None,
+        'approver_id': r.approver_id,
+        'approver_name': r.approver_name,
+        'approval_reason': r.approval_reason,
+        'punch_out_date': r.punch_out_date,
+        'requested_at': ra.isoformat() if hasattr(ra, 'isoformat') else ra,
+        'approved_at': aa.isoformat() if aa and hasattr(aa, 'isoformat') else aa,
+    }
+
+
 @api_router.get('/attendance/late-punch-in-requests')
 def get_late_punch_in_requests(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
     status: str = 'Pending'
 ):
-    """Get pending late punch-in requests. Admin only."""
-    if current_user.role != 'Admin':
-        raise HTTPException(status_code=403, detail='Only Admin can view late punch-in requests')
+    """Get late punch-in requests (default pending). Admin and HR."""
+    if current_user.role not in ('Admin', 'HR'):
+        raise HTTPException(status_code=403, detail='Only Admin or HR can view late punch-in requests')
     
     requests = db.query(LatePunchInRequestModel).filter(
         LatePunchInRequestModel.status == status
     ).order_by(LatePunchInRequestModel.requested_at.desc()).all()
     
-    return [LatePunchInRequest.model_validate(r) for r in requests]
+    return [_serialize_late_punch_in_request(r) for r in requests]
 
 
 @api_router.post('/attendance/late-punch-in-approve')
@@ -4347,9 +4430,9 @@ def approve_late_punch_in(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Approve or reject a late punch-in request. Admin only."""
-    if current_user.role != 'Admin':
-        raise HTTPException(status_code=403, detail='Only Admin can approve late punch-in requests')
+    """Approve or reject a late punch-in request. Admin and HR."""
+    if current_user.role not in ('Admin', 'HR'):
+        raise HTTPException(status_code=403, detail='Only Admin or HR can approve late punch-in requests')
     
     request_id = body.request_id
     status = body.status  # 'Approved' or 'Rejected'
@@ -4403,15 +4486,15 @@ def get_late_punch_out_requests(
     db: Session = Depends(get_db),
     status: str = 'Pending'
 ):
-    """Get late punch-out requests. Admin only."""
-    if current_user.role != 'Admin':
-        raise HTTPException(status_code=403, detail='Only Admin can view late punch-out requests')
+    """Get late punch-out requests (default pending). Admin and HR."""
+    if current_user.role not in ('Admin', 'HR'):
+        raise HTTPException(status_code=403, detail='Only Admin or HR can view late punch-out requests')
     
     requests = db.query(LatePunchOutRequestModel).filter(
         LatePunchOutRequestModel.status == status
     ).order_by(LatePunchOutRequestModel.requested_at.desc()).all()
     
-    return [LatePunchOutRequest.model_validate(r) for r in requests]
+    return [_serialize_late_punch_out_request(r) for r in requests]
 
 
 @api_router.post('/attendance/late-punch-out-approve')
@@ -4420,9 +4503,9 @@ def approve_late_punch_out(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Approve or reject a late punch-out request. Admin only."""
-    if current_user.role != 'Admin':
-        raise HTTPException(status_code=403, detail='Only Admin can approve late punch-out requests')
+    """Approve or reject a late punch-out request. Admin and HR."""
+    if current_user.role not in ('Admin', 'HR'):
+        raise HTTPException(status_code=403, detail='Only Admin or HR can approve late punch-out requests')
     
     request_id = body.request_id
     status = body.status  # 'Approved' or 'Rejected'
@@ -4535,6 +4618,10 @@ def get_attendance(
 ):
     finalize_stale_attendance_without_punch_out(db)
     query = db.query(AttendanceModel)
+    if current_user.role == 'Employee':
+        if not current_user.employee_id:
+            raise HTTPException(status_code=403, detail='Employee ID not linked to your account')
+        query = query.filter(AttendanceModel.employee_id == current_user.employee_id)
     if month:
         query = query.filter(AttendanceModel.date.like(f'{month}%'))
     if start_date:
@@ -4553,6 +4640,8 @@ def get_attendance(
     
     # Get approved leaves and add them to records if not already present
     leave_query = db.query(LeaveModel).filter(LeaveModel.status == 'Approved')
+    if current_user.role == 'Employee' and current_user.employee_id:
+        leave_query = leave_query.filter(LeaveModel.employee_id == current_user.employee_id)
     if month:
         # Filter leaves that overlap with the month
         year, month_num = [int(part) for part in month.split('-')]
@@ -4604,6 +4693,218 @@ def get_attendance(
             current += timedelta(days=1)
     
     return sorted(records, key=lambda x: x.date, reverse=True)
+
+
+@api_router.get('/attendance/monthly-report')
+def get_attendance_monthly_report(
+    month: str,
+    employee_id: Optional[str] = None,
+    current_user: UserModel = Depends(require_permission('monthly-report')),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Monthly attendance with per-day sessions (first in / last out),
+    late-login flag (first non-tour punch after 10:30), and tour markers.
+    Requires ``monthly-report`` permission. Non-admins always see their own linked ``employee_id`` only.
+    Admins may pass ``employee_id`` (business employee id) to view any employee's report.
+    """
+    finalize_stale_attendance_without_punch_out(db)
+    try:
+        parts = month.split('-')
+        if len(parts) != 2:
+            raise ValueError('bad')
+        year, month_num = int(parts[0]), int(parts[1])
+        if month_num < 1 or month_num > 12:
+            raise ValueError('bad')
+    except (ValueError, IndexError):
+        raise HTTPException(status_code=400, detail='Invalid month; use YYYY-MM')
+
+    requested = (employee_id or '').strip()
+    if current_user.role == 'Admin':
+        if requested:
+            emp_row = db.query(EmployeeModel).filter(EmployeeModel.employee_id == requested).first()
+            if not emp_row:
+                raise HTTPException(status_code=404, detail='Employee not found')
+            emp_id = requested
+        elif current_user.employee_id:
+            emp_id = current_user.employee_id
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail='Select an employee (pass employee_id), or link an employee profile to your admin account.',
+            )
+    else:
+        if not current_user.employee_id:
+            raise HTTPException(status_code=403, detail='Employee profile not linked to your account')
+        if requested and requested != current_user.employee_id:
+            raise HTTPException(status_code=403, detail='You can only view your own monthly report')
+        emp_id = current_user.employee_id
+    query = db.query(AttendanceModel).filter(
+        AttendanceModel.employee_id == emp_id,
+        AttendanceModel.date.like(f'{month}%'),
+    )
+    records = query.order_by(AttendanceModel.date.asc()).all()
+
+    for record in records:
+        if not record.employee_name:
+            emp = db.query(EmployeeModel).filter(EmployeeModel.employee_id == record.employee_id).first()
+            if emp:
+                record.employee_name = emp.name
+
+    leave_query = db.query(LeaveModel).filter(
+        LeaveModel.status == 'Approved',
+        LeaveModel.employee_id == emp_id,
+    )
+    month_start = f'{year}-{month_num:02d}-01'
+    month_end = f'{year}-{month_num:02d}-{monthrange(year, month_num)[1]:02d}'
+    leave_query = leave_query.filter(
+        LeaveModel.start_date <= month_end,
+        LeaveModel.end_date >= month_start,
+    )
+    approved_leaves = leave_query.all()
+    existing_records = set((r.employee_id, r.date) for r in records)
+    for leave in approved_leaves:
+        current = datetime.strptime(leave.start_date, '%Y-%m-%d').date()
+        end = datetime.strptime(leave.end_date, '%Y-%m-%d').date()
+        while current <= end:
+            date_str = current.isoformat()
+            if (leave.employee_id, date_str) not in existing_records:
+                leave_record = AttendanceModel(
+                    id=str(uuid.uuid4()),
+                    employee_id=leave.employee_id,
+                    employee_name=leave.employee_name,
+                    date=date_str,
+                    punch_in=None,
+                    punch_out=None,
+                    status='Leave',
+                    work_hours=0.0,
+                    total_work_hours=0.0,
+                    is_tour=0,
+                    is_active_session=0,
+                    created_at=datetime.now(timezone.utc),
+                )
+                records.append(leave_record)
+                existing_records.add((leave.employee_id, date_str))
+            current += timedelta(days=1)
+
+    records = sorted(records, key=lambda x: x.date)
+    attendance_ids = [r.id for r in records if getattr(r, 'id', None)]
+    session_map: Dict[str, List[AttendanceSessionModel]] = defaultdict(list)
+    if attendance_ids:
+        sess_rows = (
+            db.query(AttendanceSessionModel)
+            .filter(AttendanceSessionModel.attendance_id.in_(attendance_ids))
+            .order_by(AttendanceSessionModel.session_number.asc())
+            .all()
+        )
+        for s in sess_rows:
+            session_map[s.attendance_id].append(s)
+
+    late_threshold = 10 * 60 + 30
+    days_out: List[Dict[str, Any]] = []
+    total_work_sum = 0.0
+    worked_days = 0
+    late_login_days = 0
+    tour_days_approved = 0
+
+    for record in records:
+        sessions = session_map.get(record.id, [])
+        first_punch_in = None
+        last_punch_out = None
+        if sessions:
+            first_punch_in = sessions[0].punch_in
+            for s in reversed(sessions):
+                if s.punch_out:
+                    last_punch_out = s.punch_out
+                    break
+            if last_punch_out is None:
+                last_punch_out = record.punch_out
+        else:
+            first_punch_in = record.punch_in
+            last_punch_out = record.punch_out
+
+        first_office = next((s for s in sessions if (s.is_tour or 0) != 1), None)
+        late_login = False
+        if first_office and first_office.punch_in:
+            pm = _punch_time_to_minutes(first_office.punch_in)
+            if pm is not None and pm > late_threshold:
+                late_login = True
+        elif not sessions and record.punch_in and (record.is_tour or 0) != 1:
+            pm = _punch_time_to_minutes(record.punch_in)
+            if pm is not None and pm > late_threshold:
+                late_login = True
+
+        has_tour = (record.is_tour or 0) == 1 or any((s.is_tour or 0) == 1 for s in sessions)
+        tour_approved = False
+        if (record.is_tour or 0) == 1 and (record.tour_approval_status or '') == 'approved':
+            tour_approved = True
+        if not tour_approved:
+            tour_approved = any(
+                (s.is_tour or 0) == 1 and (s.tour_approval_status or '') == 'approved' for s in sessions
+            )
+        tour_pending_or_other = bool(has_tour and not tour_approved)
+
+        tw = float(record.total_work_hours or 0.0)
+        if tw > 0:
+            total_work_sum += tw
+            worked_days += 1
+
+        if late_login:
+            late_login_days += 1
+        if has_tour and tour_approved:
+            tour_days_approved += 1
+
+        session_payload = [
+            {
+                'id': s.id,
+                'session_number': s.session_number,
+                'punch_in': s.punch_in,
+                'punch_out': s.punch_out,
+                'work_hours': float(s.work_hours or 0.0),
+                'is_tour': s.is_tour,
+                'tour_approval_status': s.tour_approval_status,
+            }
+            for s in sessions
+        ]
+
+        days_out.append(
+            {
+                'date': record.date,
+                'first_punch_in': first_punch_in,
+                'last_punch_out': last_punch_out,
+                'total_work_hours': tw,
+                'status': record.status,
+                'is_tour_day': has_tour,
+                'tour_approved': tour_approved,
+                'tour_pending_or_other': tour_pending_or_other,
+                'tour_approval_status': record.tour_approval_status,
+                'late_login': late_login,
+                'sessions': session_payload,
+            }
+        )
+
+    avg_hours = round(total_work_sum / worked_days, 2) if worked_days else 0.0
+
+    display_name = None
+    if records:
+        display_name = records[0].employee_name
+    if not display_name:
+        emp_lookup = db.query(EmployeeModel).filter(EmployeeModel.employee_id == emp_id).first()
+        if emp_lookup:
+            display_name = emp_lookup.name
+
+    return {
+        'month': month,
+        'employee_id': emp_id,
+        'employee_name': display_name,
+        'days': days_out,
+        'avg_hours_per_worked_day': avg_hours,
+        'total_work_hours': round(total_work_sum, 2),
+        'worked_days': worked_days,
+        'late_login_days': late_login_days,
+        'tour_days_approved': tour_days_approved,
+    }
+
 
 @api_router.get('/attendance/summary', response_model=List[AttendanceSummary])
 def get_attendance_summary(month: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):

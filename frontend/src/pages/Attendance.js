@@ -15,6 +15,29 @@ const API = `${BACKEND_URL}/api`;
 const LOGIN_START = '10:00';
 const LOGIN_END = '10:30';
 
+/** Wall-clock hour/minute in office attendance timezone (matches server default). */
+const getAttendanceWallClockHM = (date, timeZone = 'Asia/Kolkata') => {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(date);
+  const hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10);
+  const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10);
+  return { hour, minute };
+};
+
+const isLatePunchInNow = (date = new Date()) => {
+  const { hour, minute } = getAttendanceWallClockHM(date);
+  return hour > 10 || (hour === 10 && minute > 30);
+};
+
+const isLatePunchOutNow = (date = new Date()) => {
+  const { hour, minute } = getAttendanceWallClockHM(date);
+  return hour > 19 || (hour === 19 && minute > 0);
+};
+
 // Helper function to format punch times in IST (HH:MM:SS format)
 const formatPunchTime = (punchTimeStr) => {
   if (!punchTimeStr) return '–';
@@ -106,7 +129,10 @@ export const Attendance = () => {
   const [workLogSummary, setWorkLogSummary] = useState('');
   const [isSubmittingWorkLog, setIsSubmittingWorkLog] = useState(false);
   const [pendingPunchAction, setPendingPunchAction] = useState(null);
-  
+  const [showLateReasonDialog, setShowLateReasonDialog] = useState(false);
+  const [lateReasonText, setLateReasonText] = useState('');
+  const [pendingLatePunch, setPendingLatePunch] = useState(null); // { action, employeeId }
+
   // Grid view states
   const [gridMonth, setGridMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [gridData, setGridData] = useState({});
@@ -128,7 +154,10 @@ export const Attendance = () => {
   const canManageAttendance = ['Admin', 'HR', 'Accountant'].includes(user?.role); // legacy flag used in logic below
   const canManageAttendanceFull = ['Admin', 'HR'].includes(user?.role);
   const canManageAttendanceGrid = ['Admin', 'HR', 'Accountant'].includes(user?.role);
+  /** Employees (and others not on the admin grid) can open a personal month grid with only their rows */
+  const canViewOwnAttendanceGrid = !canManageAttendanceGrid && !!user?.employee_id;
   const canApproveTour = ['Admin', 'Manager'].includes(user?.role);
+  const showAttendanceTabs = canManageAttendance || canApproveTour || canViewOwnAttendanceGrid;
 
   const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
 
@@ -258,7 +287,7 @@ export const Attendance = () => {
   };
 
   const fetchLatePunchInRequests = async () => {
-    if (user?.role !== 'Admin') return;
+    if (!canManageAttendanceFull) return;
     setLatePunchInLoading(true);
     try {
       const res = await axios.get(`${API}/attendance/late-punch-in-requests?status=Pending`, { headers: authHeader() });
@@ -287,7 +316,7 @@ export const Attendance = () => {
   };
 
   const fetchLatePunchOutRequests = async () => {
-    if (user?.role !== 'Admin') return;
+    if (!canManageAttendanceFull) return;
     setLatePunchOutLoading(true);
     try {
       const res = await axios.get(`${API}/attendance/late-punch-out-requests?status=Pending`, { headers: authHeader() });
@@ -316,7 +345,7 @@ export const Attendance = () => {
   };
 
   const fetchMonthlyAttendanceGrid = async (monthStr) => {
-    if (!canManageAttendanceGrid) return;
+    if (!canManageAttendanceGrid && !canViewOwnAttendanceGrid) return;
     setGridLoading(true);
     try {
       const month = monthStr || gridMonth;
@@ -324,11 +353,14 @@ export const Attendance = () => {
       
       // Fetch attendance records
       const res = await axios.get(`${API}/attendance`, { params: { month }, headers: authHeader() });
+      const gridRecords = canViewOwnAttendanceGrid && user?.employee_id
+        ? res.data.filter((r) => r.employee_id === user.employee_id)
+        : res.data;
 
       // Count late logins per employee for this month (punched in after 10:30 AM)
       const lateThresholdMinutes = 10 * 60 + 30;
       const lateLoginMap = {};
-      res.data.forEach((record) => {
+      gridRecords.forEach((record) => {
         // Tour punches are handled separately on the grid (do not count as "late logins")
         if (record.is_tour === 1) return;
 
@@ -351,7 +383,7 @@ export const Attendance = () => {
 
       // Organize attendance records by employee_id and date
       const gridMap = {};
-      res.data.forEach((record) => {
+      gridRecords.forEach((record) => {
         if (!gridMap[record.employee_id]) {
           gridMap[record.employee_id] = {
             employee_id: record.employee_id,
@@ -412,15 +444,15 @@ export const Attendance = () => {
 
   useEffect(() => {
     if (canApproveTour && activeTab === 'tour') fetchTourPending();
-    if (user?.role === 'Admin' && activeTab === 'latepunchin') fetchLatePunchInRequests();
-    if (user?.role === 'Admin' && activeTab === 'latepunchout') fetchLatePunchOutRequests();
-  }, [canApproveTour, activeTab, user?.role]);
+    if (canManageAttendanceFull && activeTab === 'latepunchin') fetchLatePunchInRequests();
+    if (canManageAttendanceFull && activeTab === 'latepunchout') fetchLatePunchOutRequests();
+  }, [canApproveTour, canManageAttendanceFull, activeTab, user?.role]);
 
   useEffect(() => {
-    if (canManageAttendance && activeTab === 'grid') {
+    if ((canManageAttendanceGrid || canViewOwnAttendanceGrid) && activeTab === 'grid') {
       fetchMonthlyAttendanceGrid(gridMonth);
     }
-  }, [gridMonth, activeTab, canManageAttendance]);
+  }, [gridMonth, activeTab, canManageAttendanceGrid, canViewOwnAttendanceGrid]);
 
   const getLocation = () =>
     new Promise((resolve, reject) => {
@@ -460,26 +492,45 @@ export const Attendance = () => {
       }
     }
 
-    // Work log exists or is punch_in or user is admin, proceed with punch
-    let lateReason = '';
-    if (!canManageAttendance) {
-      const now = currentTime || new Date();
-      const hour = now.getHours();
-      const minute = now.getMinutes();
-      const isLatePunchIn = action === 'punch_in' && (hour > 10 || (hour === 10 && minute > 30));
-      const isLatePunchOut = action === 'punch_out' && (hour > 19 || (hour === 19 && minute > 0));
-
-      if (isLatePunchIn || isLatePunchOut) {
-        const reasonText = isLatePunchIn ? 'late punch-in' : 'late punch-out';
-        lateReason = window.prompt(`You are marking a ${reasonText}. Please enter reason (required for admin approval):`, '') || '';
-        if (!lateReason.trim()) {
-          toast.error('Reason is required for late attendance approval');
-          return;
-        }
-      }
+    // Late punch-in / late punch-out: require reason in a dialog before calling API (all roles)
+    const now = new Date();
+    if (action === 'punch_in' && isLatePunchInNow(now)) {
+      setPendingLatePunch({ action, employeeId });
+      setLateReasonText('');
+      setShowLateReasonDialog(true);
+      return;
+    }
+    if (action === 'punch_out' && isLatePunchOutNow(now)) {
+      setPendingLatePunch({ action, employeeId });
+      setLateReasonText('');
+      setShowLateReasonDialog(true);
+      return;
     }
 
-    await executePunch(action, employeeId, lateReason.trim());
+    await executePunch(action, employeeId, '');
+  };
+
+  const handleSubmitLateReasonAndPunch = async () => {
+    const reason = lateReasonText.trim();
+    if (!reason) {
+      toast.error('Please enter a reason before submitting for admin approval');
+      return;
+    }
+    if (!pendingLatePunch?.action || !pendingLatePunch?.employeeId) {
+      setShowLateReasonDialog(false);
+      return;
+    }
+    setShowLateReasonDialog(false);
+    const { action, employeeId } = pendingLatePunch;
+    setPendingLatePunch(null);
+    setLateReasonText('');
+    await executePunch(action, employeeId, reason);
+  };
+
+  const handleCancelLateReasonDialog = () => {
+    setShowLateReasonDialog(false);
+    setPendingLatePunch(null);
+    setLateReasonText('');
   };
 
   const executePunch = async (action, employeeId, lateReason = '') => {
@@ -548,7 +599,14 @@ export const Attendance = () => {
       if (pendingPunchAction) {
         const employeeId = user?.employee_id;
         setPendingPunchAction(null);
-        await executePunch(pendingPunchAction, employeeId);
+        const now = new Date();
+        if (pendingPunchAction === 'punch_out' && isLatePunchOutNow(now)) {
+          setPendingLatePunch({ action: 'punch_out', employeeId });
+          setLateReasonText('');
+          setShowLateReasonDialog(true);
+        } else {
+          await executePunch(pendingPunchAction, employeeId, '');
+        }
       }
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to submit work log');
@@ -595,17 +653,17 @@ export const Attendance = () => {
         </Card>
       )}
 
-      {/* Tabs for Admin/HR and Tour for Admin/Manager */}
-      {(canManageAttendance || canApproveTour) && (
+      {/* Tabs: admin/HR/accountant full set; employees get punch + personal grid + summary */}
+      {showAttendanceTabs && (
         <Card className="p-2 rounded-lg border border-gray-200 bg-white shadow-sm">
           <div className="flex gap-2 flex-wrap [&_button]:min-h-[44px]">
             {[
               { id: 'punch', label: 'Mark Attendance', show: true },
-              { id: 'grid', label: 'Attendance Grid', show: canManageAttendanceGrid },
+              { id: 'grid', label: canViewOwnAttendanceGrid ? 'My Attendance Grid' : 'Attendance Grid', show: canManageAttendanceGrid || canViewOwnAttendanceGrid },
               { id: 'regularize', label: 'Regularize', show: canManageAttendanceFull },
               { id: 'tour', label: 'Tour Requests', show: canApproveTour },
-              { id: 'latepunchin', label: 'Late Punch-In Approvals', show: user?.role === 'Admin' },
-              { id: 'latepunchout', label: 'Late Punch-Out Approvals', show: user?.role === 'Admin' },
+              { id: 'latepunchin', label: 'Late Punch-In Approvals', show: canManageAttendanceFull },
+              { id: 'latepunchout', label: 'Late Punch-Out Approvals', show: canManageAttendanceFull },
               { id: 'report', label: 'Report (Date Range)', show: canManageAttendanceFull },
               { id: 'late', label: 'Late Logins', show: canManageAttendanceFull },
               { id: 'summary', label: 'Monthly Summary', show: true },
@@ -624,14 +682,20 @@ export const Attendance = () => {
         </Card>
       )}
 
-      {/* Admin Attendance Grid View */}
-      {canManageAttendanceGrid && activeTab === 'grid' && (
+      {/* Attendance Grid: all staff (admin) or personal rows only (employee) */}
+      {(canManageAttendanceGrid || canViewOwnAttendanceGrid) && activeTab === 'grid' && (
         <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-x-auto">
           <div className="mb-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Attendance Grid</h3>
-                <p className="text-sm text-gray-600">View all employees' attendance for the month at a glance</p>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {canViewOwnAttendanceGrid ? 'My Attendance Grid' : 'Attendance Grid'}
+                </h3>
+                <p className="text-sm text-gray-600">
+                  {canViewOwnAttendanceGrid
+                    ? 'Your month at a glance: present, late logins, tours, leave, and pending approvals.'
+                    : "View all employees' attendance for the month at a glance"}
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button
@@ -720,10 +784,10 @@ export const Attendance = () => {
           ) : gridViewMode === 'today' ? (
             // Today's attendance view
             <div className="space-y-3">
-              {employees.length === 0 ? (
-                <p className="text-center py-8 text-gray-500">No employees found.</p>
+              {(canManageAttendanceGrid ? employees : user?.employee_id ? [{ employee_id: user.employee_id, name: user.name }] : []).length === 0 ? (
+                <p className="text-center py-8 text-gray-500">No employee data available.</p>
               ) : (
-                employees.map((emp) => {
+                (canManageAttendanceGrid ? employees : [{ employee_id: user.employee_id, name: user.name }]).map((emp) => {
                   const todayStr = format(new Date(), 'yyyy-MM-dd');
                   const todayRecord = gridData[emp.employee_id]?.records[todayStr];
                   let bgColor = 'bg-red-500';
@@ -1004,8 +1068,8 @@ export const Attendance = () => {
         </Card>
       )}
 
-      {/* Punch In/Out - show for punch tab or for employees (no tabs) */}
-      {(activeTab === 'punch' || !(canManageAttendance || canApproveTour)) && (
+      {/* Punch In/Out - punch tab when tabs shown; always when no tab bar */}
+      {(activeTab === 'punch' || !showAttendanceTabs) && (
         <Card className="p-4 sm:p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
           <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Mark Attendance</h3>
 
@@ -1217,13 +1281,15 @@ export const Attendance = () => {
         </Card>
       )}
 
-      {/* Late Punch-In Requests - Admin */}
-      {user?.role === 'Admin' && activeTab === 'latepunchin' && (
+      {/* Late Punch-In Requests - Admin / HR */}
+      {canManageAttendanceFull && activeTab === 'latepunchin' && (
         <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Late Punch-In Approval Requests</h3>
-              <p className="text-sm text-gray-600">Employees who punched in after 10:30 AM</p>
+              <p className="text-sm text-gray-600">
+                Employees who punched in after 10:30 AM. Each request includes the <strong>reason</strong> they entered before punching.
+              </p>
             </div>
             <Button 
               size="sm" 
@@ -1248,29 +1314,33 @@ export const Attendance = () => {
                   <tr className="border-b border-gray-200 bg-gray-50">
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Date</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700 min-w-[220px]">Employee reason</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch In Time</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Minutes Late</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee Reason</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Requested</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {latePunchInRequests.map((req) => (
+                  {latePunchInRequests.map((req) => {
+                    const employeeReason = (req.employee_reason || req.employeeReason || '').trim();
+                    return (
                     <tr key={req.id} className="border-b border-gray-100 hover:bg-gray-50/50">
                       <td className="py-3 px-4 font-mono text-gray-900">{req.punch_in_date}</td>
                       <td className="py-3 px-4">
                         <span className="font-medium text-gray-900">{req.employee_name}</span>
                         <span className="text-xs text-gray-500 block">{req.employee_id}</span>
                       </td>
+                      <td className="py-3 px-4 align-top max-w-[360px]">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 whitespace-pre-wrap break-words">
+                          {employeeReason || <span className="text-amber-700 font-medium">No reason on file — contact employee or check app version.</span>}
+                        </div>
+                      </td>
                       <td className="py-3 px-4 font-mono font-semibold text-gray-900">{formatPunchTime(req.punch_in_time)}</td>
                       <td className="py-3 px-4">
                         <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700">
                           {req.minutes_late !== null && req.minutes_late !== undefined ? req.minutes_late : '0'} min
                         </span>
-                      </td>
-                      <td className="py-3 px-4 text-gray-700 max-w-[320px]">
-                        <span className="text-sm break-words">{req.employee_reason || '—'}</span>
                       </td>
                       <td className="py-3 px-4 text-xs text-gray-500">
                         {new Date(req.requested_at).toLocaleString()}
@@ -1297,7 +1367,8 @@ export const Attendance = () => {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1305,13 +1376,15 @@ export const Attendance = () => {
         </Card>
       )}
 
-      {/* Late Punch-Out Requests - Admin */}
-      {user?.role === 'Admin' && activeTab === 'latepunchout' && (
+      {/* Late Punch-Out Requests - Admin / HR */}
+      {canManageAttendanceFull && activeTab === 'latepunchout' && (
         <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Late Punch-Out Approval Requests</h3>
-              <p className="text-sm text-gray-600">Employees who punched out after 7:00 PM</p>
+              <p className="text-sm text-gray-600">
+                Employees who punched out after 7:00 PM. Each request includes the <strong>reason</strong> they entered before punching out.
+              </p>
             </div>
             <Button 
               size="sm" 
@@ -1336,29 +1409,33 @@ export const Attendance = () => {
                   <tr className="border-b border-gray-200 bg-gray-50">
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Date</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700 min-w-[220px]">Employee reason</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch Out Time</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Minutes Late</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee Reason</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Requested</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {latePunchOutRequests.map((req) => (
+                  {latePunchOutRequests.map((req) => {
+                    const employeeReason = (req.employee_reason || req.employeeReason || '').trim();
+                    return (
                     <tr key={req.id} className="border-b border-gray-100 hover:bg-gray-50/50">
                       <td className="py-3 px-4 font-mono text-gray-900">{req.punch_out_date}</td>
                       <td className="py-3 px-4">
                         <span className="font-medium text-gray-900">{req.employee_name}</span>
                         <span className="text-xs text-gray-500 block">{req.employee_id}</span>
                       </td>
+                      <td className="py-3 px-4 align-top max-w-[360px]">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 whitespace-pre-wrap break-words">
+                          {employeeReason || <span className="text-amber-700 font-medium">No reason on file — contact employee or check app version.</span>}
+                        </div>
+                      </td>
                       <td className="py-3 px-4 font-mono text-gray-700">{req.punch_out_time}</td>
                       <td className="py-3 px-4">
                         <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-orange-100 text-orange-700">
                           {req.minutes_late} min
                         </span>
-                      </td>
-                      <td className="py-3 px-4 text-gray-700 max-w-[320px]">
-                        <span className="text-sm break-words">{req.employee_reason || '—'}</span>
                       </td>
                       <td className="py-3 px-4 text-xs text-gray-500">
                         {new Date(req.requested_at).toLocaleString()}
@@ -1385,7 +1462,8 @@ export const Attendance = () => {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1538,8 +1616,8 @@ export const Attendance = () => {
         </Card>
       )}
 
-      {/* Monthly summary - show for summary tab (Admin/HR) or always for employees */}
-      {(activeTab === 'summary' || !canManageAttendance) && (
+      {/* Monthly summary - summary tab when tabs shown; always for employees without tab bar */}
+      {(activeTab === 'summary' || (!showAttendanceTabs && !canManageAttendance)) && (
         <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div>
@@ -1593,8 +1671,8 @@ export const Attendance = () => {
         </Card>
       )}
 
-      {/* Recent attendance history - for current user / selected employee */}
-      {!canManageAttendance && (
+      {/* Recent attendance history - employees: only on punch tab when tab bar exists */}
+      {!canManageAttendance && (!showAttendanceTabs || activeTab === 'punch') && (
         <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent History</h3>
           <div className="overflow-x-auto">
@@ -1643,6 +1721,49 @@ export const Attendance = () => {
       )}
 
       {/* Punch Out Work Log Dialog - MANDATORY */}
+      {/* Late punch-in / punch-out reason — required before admin approval request */}
+      <Dialog open={showLateReasonDialog} onOpenChange={(open) => { if (!open) handleCancelLateReasonDialog(); }}>
+        <DialogContent className="sm:max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0 pointer-events-auto">
+          <div className="bg-blue-600 text-white p-5 rounded-t-lg">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+                <AlertCircle className="h-5 w-5" />
+                {pendingLatePunch?.action === 'punch_out' ? 'Late punch-out' : 'Late punch-in'}
+              </DialogTitle>
+              <DialogDescription className="text-blue-100 text-sm mt-1">
+                Enter a reason below. Your request is sent to admin only after you submit this form.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="space-y-3 p-5">
+            <Label htmlFor="late-reason-text" className="text-sm font-semibold text-gray-900">
+              Reason (required) *
+            </Label>
+            <textarea
+              id="late-reason-text"
+              value={lateReasonText}
+              onChange={(e) => setLateReasonText(e.target.value)}
+              rows={4}
+              placeholder="e.g. Client meeting ran over, production issue, traffic, approved overtime…"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div className="flex gap-2 justify-end p-5 border-t border-gray-200 bg-gray-50">
+            <Button type="button" variant="outline" className="border-gray-300" onClick={handleCancelLateReasonDialog} disabled={punchLoading}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-blue-600 text-white hover:bg-blue-700"
+              onClick={handleSubmitLateReasonAndPunch}
+              disabled={punchLoading || !lateReasonText.trim()}
+            >
+              {punchLoading ? 'Submitting…' : 'Submit for approval'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showPunchOutWorkLogDialog} onOpenChange={() => {}} >
         <DialogContent className="sm:max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0 pointer-events-auto">
           <div className="bg-amber-600 text-white p-6 rounded-t-lg">

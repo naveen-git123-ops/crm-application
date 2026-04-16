@@ -21,6 +21,7 @@ const PERMISSION_LABELS = {
   'cgw-flow-metre': 'CGW Flow Metre',
   employees: 'Employees',
   attendance: 'Attendance',
+  'monthly-report': 'Monthly Report',
   leaves: 'Leaves',
   tasks: 'Tasks',
   expenses: 'Expenses',

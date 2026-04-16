@@ -24,7 +24,8 @@ import {
   MapPin,
   Droplets,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  BarChart3
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -62,6 +63,7 @@ export const Layout = ({ children }) => {
     { icon: Droplets, label: 'CGW Flow Metre', path: '/cgw-flow-metre', permission: 'cgw-flow-metre' },
     { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
     { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance' },
+    { icon: BarChart3, label: 'Monthly Report', path: '/monthly-report', permission: 'monthly-report' },
     { icon: MapPin, label: 'Location Tracker', path: '/location-tracker', permission: 'attendance' },
     { icon: FileText, label: 'Leaves', path: '/leaves', permission: 'leaves' },
     { icon: CalendarDays, label: 'Government Holidays', path: '/government-holidays', permission: 'holidays' },
