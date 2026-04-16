@@ -40,13 +40,16 @@ app = FastAPI()
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://crm.resoline.in",
     "https://resoline.in",
     "https://www.resoline.in",
 ]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    # We authenticate via Authorization headers (Bearer tokens), not cookies.
+    # Keeping credentials disabled avoids wildcard/credential pitfalls and is sufficient.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
