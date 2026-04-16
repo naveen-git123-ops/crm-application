@@ -4314,53 +4314,107 @@ def get_employee_locations(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get employee's location history (punch-in/out locations) from attendance records. Admin/Manager only."""
-    if current_user.role not in ['Admin', 'Manager']:
-        raise HTTPException(status_code=403, detail='Only Admin and Manager can view employee locations')
-    
-    # Fetch all attendance records for the employee with location data
-    query = db.query(AttendanceModel).filter(AttendanceModel.employee_id == employee_id)
-    
-    if date:
-        query = query.filter(AttendanceModel.date == date)
-    else:
-        # Default to today if no date specified
-        from datetime import date as date_type
-        today = date_type.today().strftime('%Y-%m-%d')
-        query = query.filter(AttendanceModel.date == today)
-    
-    records = query.order_by(AttendanceModel.created_at.desc()).all()
-    
-    locations = []
+    """Get punch-in/out GPS points for an employee on a given day (attendance row + per-session coords). Admin only."""
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can view employee locations')
+
+    effective_date = (date or '').strip() or attendance_local_date_str()
+
+    records = (
+        db.query(AttendanceModel)
+        .filter(
+            AttendanceModel.employee_id == employee_id,
+            AttendanceModel.date == effective_date,
+        )
+        .order_by(AttendanceModel.created_at.asc())
+        .all()
+    )
+
+    locations: List[Dict[str, Any]] = []
+
+    def _ts(dt):
+        if dt and hasattr(dt, 'isoformat'):
+            return dt.isoformat()
+        return None
+
     for record in records:
-        # Collect all location points for this record
-        if record.punch_in_lat and record.punch_in_lng:
-            locations.append({
-                'id': f"{record.id}_punch_in",
-                'type': 'punch_in',
-                'latitude': record.punch_in_lat,
-                'longitude': record.punch_in_lng,
-                'time': record.punch_in,
-                'timestamp': record.created_at.isoformat() if record.created_at else None,
-                'date': record.date
-            })
-        
-        if record.punch_out_lat and record.punch_out_lng:
-            locations.append({
-                'id': f"{record.id}_punch_out",
-                'type': 'punch_out',
-                'latitude': record.punch_out_lat,
-                'longitude': record.punch_out_lng,
-                'time': record.punch_out,
-                'timestamp': record.updated_at.isoformat() if record.updated_at else None,
-                'date': record.date
-            })
-    
+        sessions = (
+            db.query(AttendanceSessionModel)
+            .filter(AttendanceSessionModel.attendance_id == record.id)
+            .order_by(AttendanceSessionModel.session_number.asc())
+            .all()
+        )
+
+        session_points: List[Dict[str, Any]] = []
+        for ses in sessions:
+            if ses.punch_in_lat is not None and ses.punch_in_lng is not None:
+                session_points.append(
+                    {
+                        'id': f'{ses.id}_session_in',
+                        'type': 'punch_in',
+                        'latitude': float(ses.punch_in_lat),
+                        'longitude': float(ses.punch_in_lng),
+                        'time': ses.punch_in,
+                        'timestamp': _ts(getattr(ses, 'created_at', None)),
+                        'date': record.date,
+                        'session_number': ses.session_number,
+                    }
+                )
+            if ses.punch_out_lat is not None and ses.punch_out_lng is not None and ses.punch_out:
+                session_points.append(
+                    {
+                        'id': f'{ses.id}_session_out',
+                        'type': 'punch_out',
+                        'latitude': float(ses.punch_out_lat),
+                        'longitude': float(ses.punch_out_lng),
+                        'time': ses.punch_out,
+                        'timestamp': _ts(getattr(ses, 'updated_at', None) or getattr(ses, 'created_at', None)),
+                        'date': record.date,
+                        'session_number': ses.session_number,
+                    }
+                )
+
+        if session_points:
+            locations.extend(session_points)
+        else:
+            if record.punch_in_lat is not None and record.punch_in_lng is not None:
+                locations.append(
+                    {
+                        'id': f'{record.id}_punch_in',
+                        'type': 'punch_in',
+                        'latitude': float(record.punch_in_lat),
+                        'longitude': float(record.punch_in_lng),
+                        'time': record.punch_in,
+                        'timestamp': _ts(record.created_at),
+                        'date': record.date,
+                    }
+                )
+            if record.punch_out_lat is not None and record.punch_out_lng is not None and record.punch_out:
+                locations.append(
+                    {
+                        'id': f'{record.id}_punch_out',
+                        'type': 'punch_out',
+                        'latitude': float(record.punch_out_lat),
+                        'longitude': float(record.punch_out_lng),
+                        'time': record.punch_out,
+                        'timestamp': _ts(record.created_at),
+                        'date': record.date,
+                    }
+                )
+
+    def _time_key(loc: Dict[str, Any]) -> str:
+        t = loc.get('time') or '00:00:00'
+        if isinstance(t, str) and len(t) >= 5:
+            return t
+        return '99:99:99'
+
+    locations.sort(key=_time_key)
+
     return {
         'employee_id': employee_id,
-        'date': date or today,
+        'date': effective_date,
         'locations': locations,
-        'total_locations': len(locations)
+        'total_locations': len(locations),
     }
 
 

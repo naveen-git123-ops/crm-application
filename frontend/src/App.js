@@ -172,7 +172,7 @@ function App() {
             <Route
               path="/location-tracker"
               element={
-                <ProtectedRoute requiredPermission="attendance">
+                <ProtectedRoute allowedRoles={['Admin']}>
                   <Layout>
                     <LocationTracker />
                   </Layout>

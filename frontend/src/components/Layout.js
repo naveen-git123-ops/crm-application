@@ -64,7 +64,7 @@ export const Layout = ({ children }) => {
     { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
     { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance' },
     { icon: BarChart3, label: 'Monthly Report', path: '/monthly-report', permission: 'monthly-report' },
-    { icon: MapPin, label: 'Location Tracker', path: '/location-tracker', permission: 'attendance' },
+    { icon: MapPin, label: 'Location Tracker', path: '/location-tracker', permission: 'attendance', adminOnly: true },
     { icon: FileText, label: 'Leaves', path: '/leaves', permission: 'leaves' },
     { icon: CalendarDays, label: 'Government Holidays', path: '/government-holidays', permission: 'holidays' },
     { icon: Receipt, label: 'Expenses', path: '/expenses', permission: 'expenses' },
@@ -76,7 +76,8 @@ export const Layout = ({ children }) => {
     { icon: Settings, label: 'Settings', path: '/settings', permission: 'settings' },
   ];
 
-  const filteredNavItems = navItems.filter(item => {
+  const filteredNavItems = navItems.filter((item) => {
+    if (item.adminOnly && user?.role !== 'Admin') return false;
     const hasPermission =
       user?.role === 'Admin' ||
       (Array.isArray(user?.permissions) && user.permissions.includes(item.permission));
