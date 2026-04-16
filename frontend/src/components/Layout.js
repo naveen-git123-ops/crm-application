@@ -42,7 +42,7 @@ export const Layout = ({ children }) => {
     { icon: Package, label: 'Inventory', path: '/inventory', permission: 'leads' },
     { icon: Users, label: 'Employees', path: '/employees', permission: 'employees' },
     { icon: Users, label: 'Customers', path: '/customers', permission: 'customers' },
-    { icon: Droplets, label: 'CGW Flow Metre', path: '/cgw-flow-metre', permission: 'customers' },
+    { icon: Droplets, label: 'CGW Flow Metre', path: '/cgw-flow-metre', permission: 'cgw-flow-metre' },
     { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
     { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance' },
     { icon: MapPin, label: 'Location Tracker', path: '/location-tracker', permission: 'attendance' },
@@ -58,7 +58,9 @@ export const Layout = ({ children }) => {
   ];
 
   const filteredNavItems = navItems.filter(item => {
-    const hasPermission = Array.isArray(user?.permissions) && user.permissions.includes(item.permission);
+    const hasPermission =
+      user?.role === 'Admin' ||
+      (Array.isArray(user?.permissions) && user.permissions.includes(item.permission));
     return hasPermission;
   });
 

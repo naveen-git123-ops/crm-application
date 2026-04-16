@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,10 +7,52 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2, Search, Mail, Phone, Download, Upload, X, FileUp, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Mail, Phone } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
+const EMPTY_FORM = {
+  customer_id: '',
+  customer_name: '',
+  location: '',
+  contact_person: '',
+  equipment_name: '',
+  flowmeter_details: '',
+  product_code: '',
+  model_no: '',
+  system_mobile_number: '',
+  person_mobile_number: '',
+  email_id: '',
+  date_of_commissioning: '',
+  url_link: '',
+  user_id: '',
+  password: '',
+  status: 'Active',
+  renewal_date: '',
+  review: '',
+  remarks: ''
+};
+const FILTER_FIELDS = [
+  'customer_name',
+  'location',
+  'contact_person',
+  'equipment_name',
+  'flowmeter_details',
+  'product_code',
+  'model_no',
+  'system_mobile_number',
+  'person_mobile_number',
+  'email_id',
+  'date_of_commissioning',
+  'url_link',
+  'user_id',
+  'password',
+  'status',
+  'renewal_date',
+  'review',
+  'calibration_certificate',
+  'remarks'
+];
 
 const CGWFlowMetre = () => {
   const { user } = useAuth();
@@ -20,33 +62,12 @@ const CGWFlowMetre = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
-  const [uploadingCertificate, setUploadingCertificate] = useState(null);
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importResults, setImportResults] = useState(null);
-  const fileInputRef = useRef(null);
-  const [formData, setFormData] = useState({
-    customer_id: '',
-    customer_name: '',
-    location: '',
-    contact_person: '',
-    equipment_name: '',
-    flowmeter_details: '',
-    product_code: '',
-    model_no: '',
-    system_mobile_number: '',
-    person_mobile_number: '',
-    email_id: '',
-    date_of_commissioning: '',
-    url_link: '',
-    user_id: '',
-    password: '',
-    status: 'Active',
-    renewal_date: '',
-    review: '',
-    remarks: ''
-  });
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [inlineEditId, setInlineEditId] = useState(null);
+  const [inlineEditData, setInlineEditData] = useState(EMPTY_FORM);
+  const [columnFilters, setColumnFilters] = useState(
+    FILTER_FIELDS.reduce((acc, key) => ({ ...acc, [key]: '' }), {})
+  );
 
   useEffect(() => {
     fetchCustomers();
@@ -54,16 +75,27 @@ const CGWFlowMetre = () => {
   }, []);
 
   useEffect(() => {
-    const filtered = items.filter(item =>
-      item.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.equipment_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.inventory_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.product_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.model_no?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const term = searchTerm.trim().toLowerCase();
+    const filtered = items.filter(item => {
+      const matchesGlobal =
+        !term ||
+        item.customer_name?.toLowerCase().includes(term) ||
+        item.equipment_name?.toLowerCase().includes(term) ||
+        item.location?.toLowerCase().includes(term) ||
+        item.inventory_id?.toLowerCase().includes(term) ||
+        item.product_code?.toLowerCase().includes(term) ||
+        item.model_no?.toLowerCase().includes(term);
+
+      const matchesColumns = Object.entries(columnFilters).every(([key, value]) => {
+        const filterValue = value.trim().toLowerCase();
+        if (!filterValue) return true;
+        return String(item[key] ?? '').toLowerCase().includes(filterValue);
+      });
+
+      return matchesGlobal && matchesColumns;
+    });
     setFilteredItems(filtered);
-  }, [searchTerm, items]);
+  }, [searchTerm, columnFilters, items]);
 
   const fetchCustomers = async () => {
     try {
@@ -93,17 +125,10 @@ const CGWFlowMetre = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      if (editingItem) {
-        await axios.put(`${API}/cgw-flow-metres/${editingItem.id}`, formData, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        });
-        toast.success('Inventory item updated successfully');
-      } else {
-        await axios.post(`${API}/cgw-flow-metres`, formData, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        });
-        toast.success('Inventory item added successfully');
-      }
+      await axios.post(`${API}/cgw-flow-metres`, formData, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      toast.success('Inventory item added successfully');
       setDialogOpen(false);
       resetForm();
       fetchItems();
@@ -126,8 +151,8 @@ const CGWFlowMetre = () => {
   };
 
   const handleEdit = (item) => {
-    setEditingItem(item);
-    setFormData({
+    setInlineEditId(item.id);
+    setInlineEditData({
       customer_id: item.customer_id,
       customer_name: item.customer_name,
       location: item.location || '',
@@ -148,137 +173,33 @@ const CGWFlowMetre = () => {
       review: item.review || '',
       remarks: item.remarks || ''
     });
-    setDialogOpen(true);
   };
 
-  const handleDownloadTemplate = () => {
-    // Create Excel template with proper headers
-    const templateData = {
-      'CUSTOMER NAME': '',
-      'LOCATION': '',
-      'CONTACT PERSON': '',
-      'NAME OF EQUIPMENT': '',
-      'FLOWMETER/PIEZOMETER DETAILS': '',
-      'TELEMETRIC SYSTEM': '',
-      'SYSTEM MOBILE NUMBER': '',
-      'PERSON MOBILE NUMBER': '',
-      'EMAIL ID': '',
-      'DATE OF COMMISSONING': '',
-      'URL LINK': '',
-      'USER ID': '',
-      'PASSWORD': '',
-      'STATUS': 'Active',
-      'RENEWAL DATE WILL BE': '',
-      'REVIEW': '',
-      'CALIBARATION CERTIFICATE': '',
-      'REMARKS': ''
-    };
-
-    // Create CSV content
-    const headers = Object.keys(templateData);
-    const csvContent = [
-      headers.join(','),
-      Object.values(templateData).join(',')
-    ].join('\n');
-
-    // Create and download file
-    const element = document.createElement('a');
-    element.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent));
-    element.setAttribute('download', 'CGW_FlowMetre_Template.csv');
-    element.style.display = 'none';
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-    
-    toast.success('Template downloaded! Fill it with your data and import.');
+  const handleInlineChange = (field, value) => {
+    setInlineEditData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleCertificateUpload = async (itemId, file) => {
-    setUploadingCertificate(itemId);
+  const handleInlineSave = async (id) => {
     try {
-      const formDataUpload = new FormData();
-      formDataUpload.append('file', file);
-      
-      const response = await axios.post(
-        `${API}/cgw-flow-metres/${itemId}/upload-certificate`,
-        formDataUpload,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'multipart/form-data'
-          }
-        }
-      );
-      toast.success('Certificate uploaded successfully');
+      await axios.put(`${API}/cgw-flow-metres/${id}`, inlineEditData, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      toast.success('Inventory item updated successfully');
+      setInlineEditId(null);
+      setInlineEditData(EMPTY_FORM);
       fetchItems();
     } catch (error) {
-      toast.error('Failed to upload certificate');
-    } finally {
-      setUploadingCertificate(null);
+      toast.error(error.response?.data?.detail || 'Update failed');
     }
   };
 
-  const handleImportExcel = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setImporting(true);
-    try {
-      const formDataUpload = new FormData();
-      formDataUpload.append('file', file);
-
-      const response = await axios.post(
-        `${API}/cgw-flow-metres/import/excel`,
-        formDataUpload,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'multipart/form-data'
-          }
-        }
-      );
-
-      setImportResults(response.data);
-      toast.success(`Imported ${response.data.imported} items successfully!`);
-      
-      // Refresh items after import
-      setTimeout(() => {
-        fetchItems();
-        setImportDialogOpen(true);
-      }, 500);
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Import failed');
-    } finally {
-      setImporting(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
+  const handleInlineCancel = () => {
+    setInlineEditId(null);
+    setInlineEditData(EMPTY_FORM);
   };
 
   const resetForm = () => {
-    setFormData({
-      customer_id: '',
-      customer_name: '',
-      location: '',
-      contact_person: '',
-      equipment_name: '',
-      flowmeter_details: '',
-      product_code: '',
-      model_no: '',
-      system_mobile_number: '',
-      person_mobile_number: '',
-      email_id: '',
-      date_of_commissioning: '',
-      url_link: '',
-      user_id: '',
-      password: '',
-      status: 'Active',
-      renewal_date: '',
-      review: '',
-      remarks: ''
-    });
-    setEditingItem(null);
+    setFormData(EMPTY_FORM);
   };
 
   const handleCustomerChange = (e) => {
@@ -303,122 +224,21 @@ const CGWFlowMetre = () => {
   }
 
   return (
-    <div className="space-y-6" data-testid="cgw-flow-metre-page">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">
-            CGW Flow Metre Inventory
-          </h1>
-          <p className="text-gray-600 text-sm mt-1">{items.length} total items</p>
+    <div className="space-y-3" data-testid="cgw-flow-metre-page">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+        <div className="flex-1">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <Input
+              placeholder="Search across all columns..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 border border-gray-300 h-9 rounded-md text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            />
+          </div>
         </div>
         {canManage && (
-          <div className="flex gap-2">
-            <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-              <DialogTrigger asChild>
-                <Button 
-                  className="bg-green-600 text-white hover:bg-green-700" 
-                  data-testid="import-button"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <FileUp className="h-4 w-4 mr-2" />
-                  Import Excel
-                </Button>
-              </DialogTrigger>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: 'none' }}
-                onChange={handleImportExcel}
-                disabled={importing}
-              />
-              {importResults ? (
-                <DialogContent className="max-w-2xl bg-white rounded-lg border border-gray-200 shadow-xl p-0">
-                  <div className="bg-green-600 text-white p-6 rounded-t-lg">
-                    <DialogHeader>
-                      <DialogTitle className="text-xl font-bold text-white">Import Results</DialogTitle>
-                    </DialogHeader>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    <div className="flex items-center gap-3 p-4 bg-green-50 rounded-lg border border-green-200">
-                      <CheckCircle className="h-5 w-5 text-green-600" />
-                      <div>
-                        <p className="font-semibold text-green-900">Successfully Imported</p>
-                        <p className="text-sm text-green-700">{importResults.imported} items</p>
-                      </div>
-                    </div>
-                    
-                    {importResults.failed > 0 && (
-                      <div className="flex items-start gap-3 p-4 bg-red-50 rounded-lg border border-red-200">
-                        <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="font-semibold text-red-900">Failed Items</p>
-                          <p className="text-sm text-red-700">{importResults.failed} items</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {importResults.errors && importResults.errors.length > 0 && (
-                      <div className="max-h-60 overflow-y-auto p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <p className="font-semibold text-gray-900 mb-2">Error Details:</p>
-                        <ul className="space-y-1">
-                          {importResults.errors.map((error, idx) => (
-                            <li key={idx} className="text-sm text-gray-700 font-mono">
-                              ⚠️ {error}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    
-                    <Button 
-                      onClick={() => {
-                        setImportDialogOpen(false);
-                        setImportResults(null);
-                      }}
-                      className="w-full bg-green-600 text-white hover:bg-green-700"
-                    >
-                      Close
-                    </Button>
-                  </div>
-                </DialogContent>
-              ) : (
-                <DialogContent className="max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0">
-                  <div className="bg-green-600 text-white p-6 rounded-t-lg">
-                    <DialogHeader>
-                      <DialogTitle className="text-xl font-bold text-white">Import from Excel</DialogTitle>
-                    </DialogHeader>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                      <p className="text-sm text-blue-900">
-                        <strong>Note:</strong> Your Excel file must have all the required columns. Download the template below to get the correct format.
-                      </p>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Button 
-                        onClick={handleDownloadTemplate}
-                        className="w-full bg-blue-600 text-white hover:bg-blue-700"
-                      >
-                        <Download className="h-4 w-4 mr-2" />
-                        Download Template
-                      </Button>
-                      <Button 
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={importing}
-                        className="w-full bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                      >
-                        <Upload className="h-4 w-4 mr-2" />
-                        {importing ? 'Importing...' : 'Choose Excel File'}
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              )}
-            </Dialog>
-
+          <div className="flex gap-2 shrink-0">
             <Dialog open={dialogOpen} onOpenChange={(open) => {
               setDialogOpen(open);
               if (!open) resetForm();
@@ -432,11 +252,9 @@ const CGWFlowMetre = () => {
             <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-white rounded-lg border border-gray-200 shadow-xl p-0">
               <div className="bg-blue-600 text-white p-6 rounded-t-lg">
                 <DialogHeader>
-                  <DialogTitle className="text-xl font-bold text-white">
-                    {editingItem ? 'Edit Flow Metre' : 'Add New Flow Metre'}
-                  </DialogTitle>
+                  <DialogTitle className="text-xl font-bold text-white">Add New Flow Metre</DialogTitle>
                   <p className="text-blue-100 text-sm mt-1">
-                    {editingItem ? 'Update inventory details and save changes' : 'Create a new inventory item'}
+                    Create a new inventory item
                   </p>
                 </DialogHeader>
               </div>
@@ -646,7 +464,7 @@ const CGWFlowMetre = () => {
                     Cancel
                   </Button>
                   <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700">
-                    {editingItem ? 'Update' : 'Add'} Item
+                    Add Item
                   </Button>
                 </div>
               </form>
@@ -656,120 +474,196 @@ const CGWFlowMetre = () => {
         )}
       </div>
 
-      {/* Search */}
-      <Card className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input
-            placeholder="Search by customer, equipment, location, or inventory ID..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 border border-gray-300 h-10 rounded-lg text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-          />
-        </div>
-      </Card>
-
       {/* Excel-like Grid */}
       {filteredItems.length > 0 ? (
         <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="overflow-x-auto table-scroll">
-            <table className="w-full text-sm min-w-[2200px]">
+            <table className="w-full text-xs min-w-[1900px]">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-100">
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">SL NO</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">CUSTOMER NAME</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">LOCATION</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">CONTACT PERSON</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">NAME OF EQUIPMENT</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">FLOWMETER/PIEZOMETER DETAILS</th>
-                  <th colSpan="2" className="text-center py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">TELEMETRIC SYSTEM</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">SYSTEM MOBILE NUMBER</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">PERSON MOBILE NUMBER</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">EMAIL ID</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">DATE OF COMMISSONING</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">URL LINK</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">USER ID</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">PASSWORD</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">STATUS</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">RENEWAL DATE WILL BE</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">REVIEW</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">CALIBARATION CERTIFICATE</th>
-                  <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">REMARKS</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">SL NO</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">CUSTOMER NAME</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">LOCATION</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">CONTACT PERSON</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">NAME OF EQUIPMENT</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">FLOWMETER/PIEZOMETER DETAILS</th>
+                  <th colSpan="2" className="text-center py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">TELEMETRIC SYSTEM</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">SYSTEM MOBILE NUMBER</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">PERSON MOBILE NUMBER</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">EMAIL ID</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">DATE OF COMMISSONING</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">URL LINK</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">USER ID</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">PASSWORD</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">STATUS</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">RENEWAL DATE WILL BE</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">REVIEW</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">CALIBARATION CERTIFICATE</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">REMARKS</th>
                   {canManage && (
-                    <th rowSpan="2" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap">ACTIONS</th>
+                    <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">ACTIONS</th>
                   )}
                 </tr>
                 <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="text-left py-2 px-4 font-semibold text-gray-700 whitespace-nowrap">PRODUCT CODE</th>
-                  <th className="text-left py-2 px-4 font-semibold text-gray-700 whitespace-nowrap">MODEL NO</th>
+                  <th className="text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap">PRODUCT CODE</th>
+                  <th className="text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap">MODEL NO</th>
+                </tr>
+                <tr className="border-b border-gray-200 bg-white">
+                  <th className="p-1"></th>
+                  {[
+                    'customer_name','location','contact_person','equipment_name','flowmeter_details','product_code','model_no',
+                    'system_mobile_number','person_mobile_number','email_id','date_of_commissioning','url_link','user_id',
+                    'password','status','renewal_date','review','calibration_certificate','remarks'
+                  ].map((field) => (
+                    <th key={field} className="p-1">
+                      <Input
+                        value={columnFilters[field]}
+                        onChange={(e) => setColumnFilters(prev => ({ ...prev, [field]: e.target.value }))}
+                        placeholder="Filter"
+                        className="h-7 text-[11px] px-2"
+                      />
+                    </th>
+                  ))}
+                  {canManage && <th className="p-1"></th>}
                 </tr>
               </thead>
               <tbody>
                 {filteredItems.map((item, index) => (
                   <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/50 align-top">
-                    <td className="py-3 px-4 text-gray-900 whitespace-nowrap">{index + 1}</td>
-                    <td className="py-3 px-4 font-medium text-gray-900 whitespace-nowrap">{item.customer_name || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap">{item.location || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap">{item.contact_person || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap">{item.equipment_name || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 min-w-[220px]">{item.flowmeter_details || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap">{item.product_code || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap">{item.model_no || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap">{item.system_mobile_number || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap">
-                      {item.person_mobile_number ? (
-                        <span className="flex items-center gap-1.5">
-                          <Phone className="h-3.5 w-3 text-gray-400 shrink-0" />
+                    <td className="py-1.5 px-2 text-gray-900 whitespace-nowrap">{index + 1}</td>
+                    <td className="py-1.5 px-2 font-medium text-gray-900 whitespace-nowrap">
+                      {inlineEditId === item.id ? (
+                        <Input value={inlineEditData.customer_name} onChange={(e) => handleInlineChange('customer_name', e.target.value)} className="h-7 text-[11px] px-2" />
+                      ) : (item.customer_name || '—')}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                      {inlineEditId === item.id ? <Input value={inlineEditData.location} onChange={(e) => handleInlineChange('location', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.location || '—')}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                      {inlineEditId === item.id ? <Input value={inlineEditData.contact_person} onChange={(e) => handleInlineChange('contact_person', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.contact_person || '—')}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                      {inlineEditId === item.id ? <Input value={inlineEditData.equipment_name} onChange={(e) => handleInlineChange('equipment_name', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.equipment_name || '—')}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 min-w-[160px]">
+                      {inlineEditId === item.id ? <Input value={inlineEditData.flowmeter_details} onChange={(e) => handleInlineChange('flowmeter_details', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.flowmeter_details || '—')}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                      {inlineEditId === item.id ? <Input value={inlineEditData.product_code} onChange={(e) => handleInlineChange('product_code', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.product_code || '—')}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                      {inlineEditId === item.id ? <Input value={inlineEditData.model_no} onChange={(e) => handleInlineChange('model_no', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.model_no || '—')}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                      {inlineEditId === item.id ? <Input value={inlineEditData.system_mobile_number} onChange={(e) => handleInlineChange('system_mobile_number', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.system_mobile_number || '—')}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                      {inlineEditId === item.id ? (
+                        <Input value={inlineEditData.person_mobile_number} onChange={(e) => handleInlineChange('person_mobile_number', e.target.value)} className="h-7 text-[11px] px-2" />
+                      ) : item.person_mobile_number ? (
+                        <span className="flex items-center gap-1">
+                          <Phone className="h-3 w-3 text-gray-400 shrink-0" />
                           {item.person_mobile_number}
                         </span>
                       ) : '—'}
                     </td>
-                    <td className="py-3 px-4 text-gray-600 min-w-[220px]">
-                      {item.email_id ? (
-                        <span className="flex items-center gap-1.5">
-                          <Mail className="h-3.5 w-3 text-gray-400 shrink-0" />
+                    <td className="py-1.5 px-2 text-gray-600 min-w-[180px]">
+                      {inlineEditId === item.id ? (
+                        <Input value={inlineEditData.email_id} onChange={(e) => handleInlineChange('email_id', e.target.value)} className="h-7 text-[11px] px-2" />
+                      ) : item.email_id ? (
+                        <span className="flex items-center gap-1">
+                          <Mail className="h-3 w-3 text-gray-400 shrink-0" />
                           <span>{item.email_id}</span>
                         </span>
                       ) : '—'}
                     </td>
-                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap">{item.date_of_commissioning || '—'}</td>
-                    <td className="py-3 px-4 text-blue-700 min-w-[180px] break-all">{item.url_link || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap">{item.user_id || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap">{item.password || '—'}</td>
-                    <td className="py-3 px-4">
-                      <span className={`inline-flex px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap ${
-                        item.status === 'Active' ? 'bg-green-50 text-green-700' :
-                        item.status === 'Maintenance' ? 'bg-yellow-50 text-yellow-700' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
-                        {item.status || '—'}
-                      </span>
+                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                      {inlineEditId === item.id ? <Input type="date" value={inlineEditData.date_of_commissioning} onChange={(e) => handleInlineChange('date_of_commissioning', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.date_of_commissioning || '—')}
                     </td>
-                    <td className="py-3 px-4 text-gray-600 whitespace-nowrap">{item.renewal_date || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 min-w-[220px]">{item.review || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 min-w-[220px]">{item.calibration_certificate || '—'}</td>
-                    <td className="py-3 px-4 text-gray-600 min-w-[220px]">{item.remarks || '—'}</td>
+                    <td className="py-1.5 px-2 text-blue-700 min-w-[140px] break-all">
+                      {inlineEditId === item.id ? <Input value={inlineEditData.url_link} onChange={(e) => handleInlineChange('url_link', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.url_link || '—')}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                      {inlineEditId === item.id ? <Input value={inlineEditData.user_id} onChange={(e) => handleInlineChange('user_id', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.user_id || '—')}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                      {inlineEditId === item.id ? <Input value={inlineEditData.password} onChange={(e) => handleInlineChange('password', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.password || '—')}
+                    </td>
+                    <td className="py-1.5 px-2">
+                      {inlineEditId === item.id ? (
+                        <select
+                          value={inlineEditData.status}
+                          onChange={(e) => handleInlineChange('status', e.target.value)}
+                          className="h-7 text-[11px] px-2 border border-gray-300 rounded w-full"
+                        >
+                          <option value="Active">Active</option>
+                          <option value="Inactive">Inactive</option>
+                          <option value="Maintenance">Maintenance</option>
+                        </select>
+                      ) : (
+                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[11px] font-medium whitespace-nowrap ${
+                          item.status === 'Active' ? 'bg-green-50 text-green-700' :
+                          item.status === 'Maintenance' ? 'bg-yellow-50 text-yellow-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {item.status || '—'}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 whitespace-nowrap">
+                      {inlineEditId === item.id ? <Input type="date" value={inlineEditData.renewal_date} onChange={(e) => handleInlineChange('renewal_date', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.renewal_date || '—')}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 min-w-[160px]">
+                      {inlineEditId === item.id ? <Input value={inlineEditData.review} onChange={(e) => handleInlineChange('review', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.review || '—')}
+                    </td>
+                    <td className="py-1.5 px-2 text-gray-600 min-w-[160px]">{item.calibration_certificate || '—'}</td>
+                    <td className="py-1.5 px-2 text-gray-600 min-w-[160px]">
+                      {inlineEditId === item.id ? <Input value={inlineEditData.remarks} onChange={(e) => handleInlineChange('remarks', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.remarks || '—')}
+                    </td>
                     {canManage && (
-                      <td className="py-3 px-4">
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 border-gray-200 text-gray-700 hover:bg-gray-50"
-                            onClick={() => handleEdit(item)}
-                          >
-                            <Edit className="h-3.5 w-3 mr-1" />
-                            Edit
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 border-gray-200 text-red-600 hover:bg-red-50"
-                            onClick={() => handleDelete(item.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3 mr-1" />
-                            Delete
-                          </Button>
+                      <td className="py-1.5 px-2">
+                        <div className="flex gap-1.5">
+                          {inlineEditId === item.id ? (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 border-gray-200 text-xs text-green-700 hover:bg-green-50"
+                                onClick={() => handleInlineSave(item.id)}
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
+                                onClick={handleInlineCancel}
+                              >
+                                Cancel
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
+                                onClick={() => handleEdit(item)}
+                              >
+                                <Edit className="h-3 w-3 mr-1" />
+                                Edit
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 border-gray-200 text-xs text-red-600 hover:bg-red-50"
+                                onClick={() => handleDelete(item.id)}
+                              >
+                                <Trash2 className="h-3 w-3 mr-1" />
+                                Delete
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </td>
                     )}

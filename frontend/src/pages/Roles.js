@@ -18,6 +18,7 @@ const PERMISSION_LABELS = {
   dashboard: 'Dashboard',
   leads: 'Leads',
   customers: 'Customers',
+  'cgw-flow-metre': 'CGW Flow Metre',
   employees: 'Employees',
   attendance: 'Attendance',
   leaves: 'Leaves',

@@ -1012,7 +1012,7 @@ migrate_cgw_flow_metres_product_columns()
 # Seed default roles (Admin cannot be edited/deleted; others can)
 DEFAULT_PERMISSION_KEYS = [
     "dashboard", "leads", "employees", "attendance", "leaves", "expenses",
-    "roles", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers", "vehicles"
+    "roles", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers", "cgw-flow-metre", "vehicles"
 ]
 
 def seed_roles_if_needed():

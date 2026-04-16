@@ -94,7 +94,7 @@ function App() {
             <Route
               path="/cgw-flow-metre"
               element={
-                <ProtectedRoute requiredPermission="customers">
+                <ProtectedRoute requiredPermission="cgw-flow-metre">
                   <Layout>
                     <CGWFlowMetre />
                   </Layout>

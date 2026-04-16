@@ -19,7 +19,9 @@ export const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission
 
   // Check permission-based access (preferred, fully dynamic)
   if (requiredPermission) {
-    const hasPermission = Array.isArray(user?.permissions) && user.permissions.includes(requiredPermission);
+    const hasPermission =
+      user?.role === 'Admin' ||
+      (Array.isArray(user?.permissions) && user.permissions.includes(requiredPermission));
     if (!hasPermission) {
       const fallback = user?.role === 'Admin' ? '/dashboard' : '/leaves';
       return <Navigate to={fallback} replace />;
