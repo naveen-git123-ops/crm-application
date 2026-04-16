@@ -1954,7 +1954,7 @@ class CGWFlowMetre(BaseModel):
     url_link: Optional[str] = None
     user_id: Optional[str] = None
     password: Optional[str] = None
-    status: Literal['Active', 'Inactive', 'Maintenance'] = 'Active'
+    status: Optional[str] = 'Active'
     renewal_date: Optional[str] = None
     review: Optional[str] = None
     calibration_certificate: Optional[str] = None
@@ -1978,7 +1978,7 @@ class CGWFlowMetreCreate(BaseModel):
     url_link: Optional[str] = None
     user_id: Optional[str] = None
     password: Optional[str] = None
-    status: Literal['Active', 'Inactive', 'Maintenance'] = 'Active'
+    status: Optional[str] = 'Active'
     renewal_date: Optional[str] = None
     review: Optional[str] = None
     remarks: Optional[str] = None
@@ -2001,7 +2001,7 @@ class CGWFlowMetreBulkCreate(BaseModel):
     url_link: Optional[str] = None
     user_id: Optional[str] = None
     password: Optional[str] = None
-    status: Literal['Active', 'Inactive', 'Maintenance'] = 'Active'
+    status: Optional[str] = 'Active'
     renewal_date: Optional[str] = None
     review: Optional[str] = None
     remarks: Optional[str] = None
@@ -2021,7 +2021,7 @@ class CGWFlowMetreUpdate(BaseModel):
     url_link: Optional[str] = None
     user_id: Optional[str] = None
     password: Optional[str] = None
-    status: Optional[Literal['Active', 'Inactive', 'Maintenance']] = None
+    status: Optional[str] = None
     renewal_date: Optional[str] = None
     review: Optional[str] = None
     remarks: Optional[str] = None
@@ -2910,6 +2910,22 @@ def import_cgw_from_excel(
                 return text_value
             return parsed.strftime('%Y-%m-%d')
 
+        def normalize_status(value: Optional[str]) -> str:
+            """
+            Excel has values like 'ACTIVE', 'INACTIVE', '3 INACTIVE', notes, etc.
+            Normalize to the UI-friendly values.
+            """
+            if not value:
+                return 'Active'
+            s = str(value).strip().lower()
+            if 'inactive' in s:
+                return 'Inactive'
+            if 'maint' in s:
+                return 'Maintenance'
+            if 'active' in s:
+                return 'Active'
+            return str(value).strip() or 'Active'
+
         max_inv_num = db.query(
             func.max(cast(func.substr(CGWFlowMetreModel.inventory_id, 4), Integer))
         ).scalar()
@@ -2970,7 +2986,7 @@ def import_cgw_from_excel(
                     'url_link': clean_cell(row.get('URL LINK')),
                     'user_id': clean_cell(row.get('USER ID')),
                     'password': clean_cell(row.get('PASSWORD')),
-                    'status': clean_cell(row.get('STATUS')) or 'Active',
+                    'status': normalize_status(clean_cell(row.get('STATUS'))),
                     'renewal_date': clean_date(row.get('RENEWAL DATE WILL BE')),
                     'review': clean_cell(row.get('REVIEW')),
                     'calibration_certificate': clean_cell(row.get('CALIBARATION CERTIFICATE')),
