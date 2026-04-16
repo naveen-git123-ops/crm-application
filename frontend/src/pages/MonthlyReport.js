@@ -259,7 +259,10 @@ export const MonthlyReport = () => {
           <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
             <div className="bg-blue-600 text-white px-4 sm:px-5 py-3">
               <h2 className="text-sm font-semibold">Attendance grid</h2>
-              <p className="text-blue-100 text-xs mt-0.5">Login = first punch-in · Logout = last punch-out · Effective hours = total for the day</p>
+              <p className="text-blue-100 text-xs mt-0.5">
+                Login = first punch-in · Logout = last punch-out · Effective hours = total for the day ·{' '}
+                <span className="text-yellow-100 font-medium">Yellow row = late login</span>
+              </p>
             </div>
             <div className="overflow-x-auto table-scroll p-0">
               <table className={gridTableClass}>
@@ -279,11 +282,18 @@ export const MonthlyReport = () => {
                 </thead>
                 <tbody>
                   {days.map((row) => {
-                    let trClass = 'bg-white hover:bg-gray-50/80 ';
-                    if (row.status === 'Leave') trClass += 'bg-blue-50/70';
-                    else if (row.is_tour_day && row.tour_approved) trClass += 'bg-pink-50/50';
-                    else if (row.is_tour_day && row.tour_pending_or_other) trClass += 'bg-red-50/40';
-                    else if (row.late_login) trClass += 'bg-amber-50/50';
+                    let trClass = '';
+                    if (row.status === 'Leave') {
+                      trClass = 'bg-blue-50 hover:bg-blue-100/80 ';
+                    } else if (row.late_login) {
+                      trClass = 'bg-yellow-100 hover:bg-yellow-200/70 ';
+                    } else if (row.is_tour_day && row.tour_approved) {
+                      trClass = 'bg-pink-50 hover:bg-pink-100/70 ';
+                    } else if (row.is_tour_day && row.tour_pending_or_other) {
+                      trClass = 'bg-red-50 hover:bg-red-100/60 ';
+                    } else {
+                      trClass = 'bg-white hover:bg-gray-50/80 ';
+                    }
                     const hrs = Number(row.total_work_hours || 0);
                     return (
                       <tr key={row.date} className={trClass}>
