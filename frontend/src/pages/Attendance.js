@@ -461,10 +461,28 @@ export const Attendance = () => {
     }
 
     // Work log exists or is punch_in or user is admin, proceed with punch
-    await executePunch(action, employeeId);
+    let lateReason = '';
+    if (!canManageAttendance) {
+      const now = currentTime || new Date();
+      const hour = now.getHours();
+      const minute = now.getMinutes();
+      const isLatePunchIn = action === 'punch_in' && (hour > 10 || (hour === 10 && minute > 30));
+      const isLatePunchOut = action === 'punch_out' && (hour > 19 || (hour === 19 && minute > 0));
+
+      if (isLatePunchIn || isLatePunchOut) {
+        const reasonText = isLatePunchIn ? 'late punch-in' : 'late punch-out';
+        lateReason = window.prompt(`You are marking a ${reasonText}. Please enter reason (required for admin approval):`, '') || '';
+        if (!lateReason.trim()) {
+          toast.error('Reason is required for late attendance approval');
+          return;
+        }
+      }
+    }
+
+    await executePunch(action, employeeId, lateReason.trim());
   };
 
-  const executePunch = async (action, employeeId) => {
+  const executePunch = async (action, employeeId, lateReason = '') => {
     let latitude = null;
     let longitude = null;
     if (!canManageAttendance) {
@@ -484,6 +502,7 @@ export const Attendance = () => {
       const payload = { employee_id: employeeId, action };
       if (latitude != null) payload.latitude = latitude;
       if (longitude != null) payload.longitude = longitude;
+      if (lateReason) payload.late_reason = lateReason;
       const res = await axios.post(`${API}/attendance/punch`, payload, { headers: authHeader() });
       const msg = res.data?.message || (action === 'punch_in' ? 'Punch In recorded' : 'Punch Out recorded');
       if (res.data?.is_tour) {
@@ -1231,6 +1250,7 @@ export const Attendance = () => {
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch In Time</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Minutes Late</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee Reason</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Requested</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
                   </tr>
@@ -1248,6 +1268,9 @@ export const Attendance = () => {
                         <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700">
                           {req.minutes_late !== null && req.minutes_late !== undefined ? req.minutes_late : '0'} min
                         </span>
+                      </td>
+                      <td className="py-3 px-4 text-gray-700 max-w-[320px]">
+                        <span className="text-sm break-words">{req.employee_reason || '—'}</span>
                       </td>
                       <td className="py-3 px-4 text-xs text-gray-500">
                         {new Date(req.requested_at).toLocaleString()}
@@ -1315,6 +1338,7 @@ export const Attendance = () => {
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch Out Time</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Minutes Late</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee Reason</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Requested</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
                   </tr>
@@ -1332,6 +1356,9 @@ export const Attendance = () => {
                         <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-orange-100 text-orange-700">
                           {req.minutes_late} min
                         </span>
+                      </td>
+                      <td className="py-3 px-4 text-gray-700 max-w-[320px]">
+                        <span className="text-sm break-words">{req.employee_reason || '—'}</span>
                       </td>
                       <td className="py-3 px-4 text-xs text-gray-500">
                         {new Date(req.requested_at).toLocaleString()}

@@ -7,10 +7,11 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2, Search, Mail, Phone } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Mail, Phone, Filter, X } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const EMPTY_EQUIPMENT_ROW = {
   equipment_name: '',
   flowmeter_details: '',
@@ -59,6 +60,27 @@ const FILTER_FIELDS = [
   'calibration_certificate',
   'remarks'
 ];
+const FILTER_LABELS = {
+  customer_name: 'Customer Name',
+  location: 'Location',
+  contact_person: 'Contact Person',
+  equipment_name: 'Equipment Name',
+  flowmeter_details: 'Flowmeter/Piezometer Details',
+  product_code: 'Product Code',
+  model_no: 'Model No',
+  system_mobile_number: 'System Mobile Number',
+  person_mobile_number: 'Person Mobile Number',
+  email_id: 'Email ID',
+  date_of_commissioning: 'Date of Commissioning',
+  url_link: 'URL Link',
+  user_id: 'User ID',
+  password: 'Password',
+  status: 'Status',
+  renewal_date: 'Renewal Date',
+  review: 'Review',
+  calibration_certificate: 'Calibration Certificate',
+  remarks: 'Remarks'
+};
 
 const CGWFlowMetre = () => {
   const { user } = useAuth();
@@ -72,6 +94,11 @@ const CGWFlowMetre = () => {
   const [equipmentRows, setEquipmentRows] = useState([EMPTY_EQUIPMENT_ROW]);
   const [inlineEditId, setInlineEditId] = useState(null);
   const [inlineEditData, setInlineEditData] = useState(EMPTY_FORM);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [showColumnFilter, setShowColumnFilter] = useState(false);
+  const [selectedFilterField, setSelectedFilterField] = useState('customer_name');
+  const [selectedFilterValue, setSelectedFilterValue] = useState('');
   const [columnFilters, setColumnFilters] = useState(
     FILTER_FIELDS.reduce((acc, key) => ({ ...acc, [key]: '' }), {})
   );
@@ -115,6 +142,25 @@ const CGWFlowMetre = () => {
     }
     return Array.from(map.values());
   }, [filteredItems]);
+
+  const totalGroups = groupedItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalGroups / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = (safeCurrentPage - 1) * pageSize;
+  const pagedGroups = useMemo(
+    () => groupedItems.slice(pageStartIndex, pageStartIndex + pageSize),
+    [groupedItems, pageStartIndex, pageSize]
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, columnFilters, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const fetchCustomers = async () => {
     try {
@@ -253,6 +299,19 @@ const CGWFlowMetre = () => {
 
   const canManage = ['Admin', 'HR'].includes(user?.role);
 
+  const handleApplyColumnFilter = () => {
+    setColumnFilters(
+      FILTER_FIELDS.reduce((acc, key) => ({ ...acc, [key]: key === selectedFilterField ? selectedFilterValue : '' }), {})
+    );
+    setShowColumnFilter(false);
+  };
+
+  const handleClearColumnFilter = () => {
+    setSelectedFilterValue('');
+    setColumnFilters(FILTER_FIELDS.reduce((acc, key) => ({ ...acc, [key]: '' }), {}));
+    setShowColumnFilter(false);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -263,7 +322,7 @@ const CGWFlowMetre = () => {
 
   return (
     <div className="space-y-3" data-testid="cgw-flow-metre-page">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 relative">
         <div className="flex-1">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -277,6 +336,16 @@ const CGWFlowMetre = () => {
         </div>
         {canManage && (
           <div className="flex gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-gray-300 text-gray-700 hover:bg-gray-50"
+              onClick={() => setShowColumnFilter((prev) => !prev)}
+              title="Filter specific column"
+            >
+              <Filter className="h-4 w-4 mr-2" />
+              Filter
+            </Button>
             <Dialog open={dialogOpen} onOpenChange={(open) => {
               setDialogOpen(open);
               if (!open) resetForm();
@@ -542,12 +611,55 @@ const CGWFlowMetre = () => {
           </Dialog>
           </div>
         )}
+        {showColumnFilter && (
+          <Card className="absolute right-0 top-11 z-30 w-80 p-3 border border-gray-200 shadow-lg bg-white">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-gray-800">Filter specific column</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 text-gray-600"
+                onClick={() => setShowColumnFilter(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="space-y-2">
+              <select
+                value={selectedFilterField}
+                onChange={(e) => setSelectedFilterField(e.target.value)}
+                className="w-full h-9 rounded border border-gray-300 px-2 text-sm bg-white"
+              >
+                {FILTER_FIELDS.map((field) => (
+                  <option key={field} value={field}>
+                    {FILTER_LABELS[field]}
+                  </option>
+                ))}
+              </select>
+              <Input
+                value={selectedFilterValue}
+                onChange={(e) => setSelectedFilterValue(e.target.value)}
+                placeholder="Type value to filter..."
+                className="h-9 text-sm"
+              />
+              <div className="flex justify-end gap-2 pt-1">
+                <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={handleClearColumnFilter}>
+                  Clear
+                </Button>
+                <Button type="button" size="sm" className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white" onClick={handleApplyColumnFilter}>
+                  Apply
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* Excel-like Grid */}
       {filteredItems.length > 0 ? (
         <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-          <div className="overflow-x-auto table-scroll">
+          <div className="overflow-auto table-scroll max-h-[calc(100vh-155px)] scrollbar-thin" style={{ scrollbarWidth: 'auto' }}>
             <table className="w-full text-xs min-w-[1900px]">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-100">
@@ -578,27 +690,9 @@ const CGWFlowMetre = () => {
                   <th className="text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap">PRODUCT CODE</th>
                   <th className="text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap">MODEL NO</th>
                 </tr>
-                <tr className="border-b border-gray-200 bg-white">
-                  <th className="p-1"></th>
-                  {[
-                    'customer_name','location','contact_person','equipment_name','flowmeter_details','product_code','model_no',
-                    'system_mobile_number','person_mobile_number','email_id','date_of_commissioning','url_link','user_id',
-                    'password','status','renewal_date','review','calibration_certificate','remarks'
-                  ].map((field) => (
-                    <th key={field} className="p-1">
-                      <Input
-                        value={columnFilters[field]}
-                        onChange={(e) => setColumnFilters(prev => ({ ...prev, [field]: e.target.value }))}
-                        placeholder="Filter"
-                        className="h-7 text-[11px] px-2"
-                      />
-                    </th>
-                  ))}
-                  {canManage && <th className="p-1"></th>}
-                </tr>
               </thead>
               <tbody>
-                {groupedItems.map((group, groupIndex) => {
+                {pagedGroups.map((group, groupIndex) => {
                   const groupEditActive = group.rows.some(r => r.id === inlineEditId);
                   const groupAnchor = group.rows[0];
 
@@ -606,7 +700,7 @@ const CGWFlowMetre = () => {
                     <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/50 align-top">
                       {rowIndex === 0 && (
                         <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-900 whitespace-nowrap">
-                          {groupIndex + 1}
+                          {pageStartIndex + groupIndex + 1}
                         </td>
                       )}
                       {rowIndex === 0 && (
@@ -784,6 +878,47 @@ const CGWFlowMetre = () => {
                 })}
               </tbody>
             </table>
+          </div>
+          <div className="border-t border-gray-200 bg-white px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+            <div className="text-gray-600">
+              Showing customer groups <span className="font-medium text-gray-900">{totalGroups === 0 ? 0 : pageStartIndex + 1}</span> to{' '}
+              <span className="font-medium text-gray-900">{Math.min(pageStartIndex + pageSize, totalGroups)}</span> of{' '}
+              <span className="font-medium text-gray-900">{totalGroups}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="h-8 rounded border border-gray-300 px-2 text-xs bg-white"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>{size} / page</option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-xs"
+                disabled={safeCurrentPage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              >
+                Prev
+              </Button>
+              <span className="text-gray-700 min-w-[84px] text-center">
+                Page {safeCurrentPage} / {totalPages}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-xs"
+                disabled={safeCurrentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
           </div>
         </Card>
       ) : (

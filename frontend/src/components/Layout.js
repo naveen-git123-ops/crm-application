@@ -198,7 +198,7 @@ export const Layout = ({ children }) => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Header - touch-friendly on mobile */}
-        <header className="h-14 sm:h-16 border-b border-gray-200 bg-white flex items-center px-4 sm:px-6 shadow-sm flex-shrink-0 pt-[env(safe-area-inset-top)]">
+        <header className="h-10 sm:h-11 border-b border-gray-200 bg-white flex items-center px-3 sm:px-4 shadow-sm flex-shrink-0 pt-[env(safe-area-inset-top)]">
           <Button
             variant="ghost"
             size="icon"
@@ -212,7 +212,7 @@ export const Layout = ({ children }) => {
           <Button
             variant="ghost"
             size="icon"
-            className="hidden lg:inline-flex mr-2 h-10 w-10 flex-shrink-0 border border-gray-300 text-gray-700 hover:bg-gray-100"
+            className="hidden lg:inline-flex mr-2 h-8 w-8 flex-shrink-0 border border-gray-300 text-gray-700 hover:bg-gray-100"
             onClick={() => setDesktopSidebarCollapsed(prev => !prev)}
             data-testid="desktop-sidebar-toggle"
             aria-label={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -220,7 +220,7 @@ export const Layout = ({ children }) => {
           >
             {desktopSidebarCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
           </Button>
-          <h2 className="text-base sm:text-lg font-semibold tracking-tight text-gray-900 truncate">
+          <h2 className="text-sm sm:text-base font-semibold tracking-tight text-gray-900 truncate">
             {filteredNavItems.find(item => currentPath === item.path)?.label || 'Dashboard'}
           </h2>
         </header>

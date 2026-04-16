@@ -215,6 +215,7 @@ class LatePunchInRequestModel(Base):
     punch_in_time = Column(String(8))  # HH:MM:SS
     minutes_late = Column(Integer)  # how many minutes after 10:30
     status = Column(String(50), default='Pending')  # 'Pending', 'Approved', 'Rejected'
+    employee_reason = Column(String(500), nullable=True)
     approver_id = Column(String(50), nullable=True)
     approver_name = Column(String(255), nullable=True)
     approval_reason = Column(String(500), nullable=True)
@@ -232,6 +233,7 @@ class LatePunchOutRequestModel(Base):
     punch_out_time = Column(String(8))  # HH:MM:SS
     minutes_late = Column(Integer)  # how many minutes after 7 PM (19:00)
     status = Column(String(50), default='Pending')  # 'Pending', 'Approved', 'Rejected'
+    employee_reason = Column(String(500), nullable=True)
     approver_id = Column(String(50), nullable=True)
     approver_name = Column(String(255), nullable=True)
     approval_reason = Column(String(500), nullable=True)
@@ -809,6 +811,25 @@ def migrate_attendance_new_columns():
             print(f"Migration error for attendance new columns: {e}")
 
 migrate_attendance_new_columns()
+
+def migrate_late_punch_reason_columns():
+    """Add employee_reason column to late punch request tables if missing."""
+    from sqlalchemy import text, inspect
+    with engine.connect() as conn:
+        try:
+            inspector = inspect(engine)
+            in_cols = [col['name'] for col in inspector.get_columns('late_punch_in_requests')]
+            out_cols = [col['name'] for col in inspector.get_columns('late_punch_out_requests')]
+
+            if 'employee_reason' not in in_cols:
+                conn.execute(text("ALTER TABLE late_punch_in_requests ADD COLUMN employee_reason VARCHAR(500) NULL"))
+            if 'employee_reason' not in out_cols:
+                conn.execute(text("ALTER TABLE late_punch_out_requests ADD COLUMN employee_reason VARCHAR(500) NULL"))
+            conn.commit()
+        except Exception:
+            pass
+
+migrate_late_punch_reason_columns()
 
 def migrate_leads_add_category_and_contacts():
     """Add category, sub_category, and contacts columns to leads if missing (for new Leads UI)."""
@@ -1408,6 +1429,7 @@ class LatePunchInRequest(BaseModel):
     punch_in_time: str
     minutes_late: int
     status: Literal['Pending', 'Approved', 'Rejected'] = 'Pending'
+    employee_reason: Optional[str] = None
     approver_id: Optional[str] = None
     approver_name: Optional[str] = None
     approval_reason: Optional[str] = None
@@ -1424,6 +1446,7 @@ class LatePunchOutRequest(BaseModel):
     punch_out_time: str
     minutes_late: int
     status: Literal['Pending', 'Approved', 'Rejected'] = 'Pending'
+    employee_reason: Optional[str] = None
     approver_id: Optional[str] = None
     approver_name: Optional[str] = None
     approval_reason: Optional[str] = None
@@ -1436,6 +1459,7 @@ class AttendancePunch(BaseModel):
     action: Literal['punch_in', 'punch_out']
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    late_reason: Optional[str] = None
 
 class AttendanceSummary(BaseModel):
     employee_id: str
@@ -3859,6 +3883,9 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             db.commit()
             db.refresh(existing)
             if is_late:
+                late_reason = (punch_data.late_reason or '').strip()
+                if current_user.role == 'Employee' and not late_reason:
+                    raise HTTPException(status_code=400, detail='Reason is required for late punch-in')
                 pending_in = db.query(LatePunchInRequestModel).filter(
                     LatePunchInRequestModel.attendance_id == existing.id,
                     LatePunchInRequestModel.status == 'Pending',
@@ -3870,6 +3897,7 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
                         employee_name=employee.name,
                         punch_in_time=current_time,
                         minutes_late=minutes_late,
+                        employee_reason=late_reason,
                         punch_in_date=today,
                         status='Pending'
                     )
@@ -3916,12 +3944,16 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         
         # If late punch-in, create approval request
         if is_late:
+            late_reason = (punch_data.late_reason or '').strip()
+            if current_user.role == 'Employee' and not late_reason:
+                raise HTTPException(status_code=400, detail='Reason is required for late punch-in')
             late_request = LatePunchInRequestModel(
                 attendance_id=new_attendance.id,
                 employee_id=punch_data.employee_id,
                 employee_name=employee.name,
                 punch_in_time=current_time,
                 minutes_late=minutes_late,
+                employee_reason=late_reason,
                 punch_in_date=today,
                 status='Pending'
             )
@@ -4027,12 +4059,16 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         
         # If late punch-out, create approval request
         if is_late_punch_out:
+            late_reason = (punch_data.late_reason or '').strip()
+            if current_user.role == 'Employee' and not late_reason:
+                raise HTTPException(status_code=400, detail='Reason is required for late punch-out')
             late_out_request = LatePunchOutRequestModel(
                 attendance_id=existing.id,
                 employee_id=punch_data.employee_id,
                 employee_name=employee.name,
                 punch_out_time=current_time,
                 minutes_late=minutes_late_out,
+                employee_reason=late_reason,
                 punch_out_date=today,
                 status='Pending'
             )
