@@ -451,8 +451,14 @@ const CGWFlowMetre = () => {
 
   const runDigestNow = async () => {
     try {
-      await axios.post(`${API}/settings/cgw-renewal-digest/run-now`, {}, { headers: authHeaders() });
-      toast.success('Digest job completed. Check the notification inbox and server logs.');
+      const res = await axios.post(`${API}/settings/cgw-renewal-digest/run-now`, {}, { headers: authHeaders() });
+      const d = res.data || {};
+      const msg = d.message || 'Digest finished.';
+      if (d.email_sent) {
+        toast.success(msg);
+      } else {
+        toast.error(msg);
+      }
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to run digest job');
     }

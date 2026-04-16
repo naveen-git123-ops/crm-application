@@ -13,7 +13,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
-from typing import List, Optional, Literal, Any, Dict
+from typing import List, Optional, Literal, Any, Dict, Tuple
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta, date
 from calendar import monthrange
@@ -2988,11 +2988,15 @@ def update_cgw_renewal_digest_settings(
 
 @api_router.post('/settings/cgw-renewal-digest/run-now')
 def run_cgw_renewal_digest_now(current_user: UserModel = Depends(get_current_user)):
-    """Manually trigger the same job as the morning digest (Admin/HR)."""
+    """Manually trigger the digest (Admin/HR).
+
+    Does not require "Enable daily digest" so you can test SMTP and recipient settings.
+    If there are no past-due rows, still sends a short verification email when SMTP is OK.
+    """
     if current_user.role not in ['Admin', 'HR']:
         raise HTTPException(status_code=403, detail='Not authorized')
-    run_cgw_renewal_digest_job()
-    return {'message': 'Digest job finished. If enabled and SMTP is configured, check the notification inbox and server logs.'}
+    result = run_cgw_renewal_digest_job(require_enabled=False, send_empty_digest=True)
+    return result
 
 
 @api_router.post('/cgw-flow-metres/{inventory_id}/upload-certificate')
@@ -6514,85 +6518,168 @@ def delete_lead_reminder(
 
 # ============= EMAIL HELPER FUNCTIONS =============
 
-def send_email(to_email: str, subject: str, body: str, is_html: bool = False) -> bool:
-    """Send an email using SMTP configuration from environment variables."""
+def smtp_env_status() -> Tuple[bool, List[str]]:
+    """Return (all_required_set, list_of_missing_env_names)."""
+    checks = [
+        ('SMTP_SERVER', os.environ.get('SMTP_SERVER', '').strip()),
+        ('SMTP_USERNAME', os.environ.get('SMTP_USERNAME', '').strip()),
+        ('SMTP_PASSWORD', os.environ.get('SMTP_PASSWORD', '').strip()),
+        ('SENDER_EMAIL', os.environ.get('SENDER_EMAIL', '').strip()),
+    ]
+    missing = [name for name, val in checks if not val]
+    return (len(missing) == 0, missing)
+
+
+def send_email(to_email: str, subject: str, body: str, is_html: bool = False) -> Tuple[bool, Optional[str]]:
+    """Send an email using SMTP configuration from environment variables.
+
+    Returns (success, error_message). On success error_message is None.
+    """
     try:
-        smtp_server = os.environ.get('SMTP_SERVER', '')
+        smtp_ready, missing = smtp_env_status()
+        if not smtp_ready:
+            error_msg = f'Missing or empty env: {", ".join(missing)}'
+            logging.warning('Email not sent — %s', error_msg)
+            return False, error_msg
+
+        smtp_server = os.environ.get('SMTP_SERVER', '').strip()
         smtp_port = int(os.environ.get('SMTP_PORT', 587))
-        smtp_username = os.environ.get('SMTP_USERNAME', '')
-        smtp_password = os.environ.get('SMTP_PASSWORD', '')
-        sender_email = os.environ.get('SENDER_EMAIL', '')
+        smtp_username = os.environ.get('SMTP_USERNAME', '').strip()
+        smtp_password = os.environ.get('SMTP_PASSWORD', '').strip()
+        sender_email = os.environ.get('SENDER_EMAIL', '').strip()
         sender_name = os.environ.get('SENDER_NAME', 'CRM Application')
-        
-        # Check if email configuration is properly set
-        if not all([smtp_server, smtp_username, smtp_password, sender_email]):
-            missing_configs = []
-            if not smtp_server:
-                missing_configs.append('SMTP_SERVER')
-            if not smtp_username:
-                missing_configs.append('SMTP_USERNAME')
-            if not smtp_password:
-                missing_configs.append('SMTP_PASSWORD')
-            if not sender_email:
-                missing_configs.append('SENDER_EMAIL')
-            error_msg = f'Email configuration not properly set. Missing: {", ".join(missing_configs)}'
-            logging.warning(error_msg)
-            return False
-        
+
         # Create message
         msg = MIMEMultipart('alternative')
         msg['From'] = f'{sender_name} <{sender_email}>'
         msg['To'] = to_email
         msg['Subject'] = subject
-        
+
         # Add body
         if is_html:
             part = MIMEText(body, 'html')
         else:
             part = MIMEText(body, 'plain')
         msg.attach(part)
-        
+
         # Send email
         with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls()
             server.login(smtp_username, smtp_password)
             server.send_message(msg)
-        
+
         logging.info(f'Email sent successfully to {to_email}')
-        return True
+        return True, None
     except smtplib.SMTPAuthenticationError as e:
-        logging.error(f'SMTP Authentication Failed: Check SMTP_USERNAME and SMTP_PASSWORD in .env file. Error: {str(e)}')
-        return False
+        err = f'SMTP authentication failed: {e}'
+        logging.error('SMTP Authentication Failed: %s', err)
+        return False, err
     except smtplib.SMTPException as e:
-        logging.error(f'SMTP Error while sending email to {to_email}: {str(e)}')
-        return False
+        err = f'SMTP error: {e}'
+        logging.error('SMTP error to %s: %s', to_email, err)
+        return False, err
     except Exception as e:
-        logging.error(f'Failed to send email to {to_email}: {str(e)}')
-        return False
+        err = f'{type(e).__name__}: {e}'
+        logging.error('Failed to send email to %s: %s', to_email, err)
+        return False, err
 
 
-def run_cgw_renewal_digest_job():
-    """Send one email listing all CGW flow metre rows whose renewal date is before today (attendance timezone)."""
+def run_cgw_renewal_digest_job(
+    require_enabled: bool = True,
+    send_empty_digest: bool = False,
+) -> Dict[str, Any]:
+    """Send one email listing CGW rows whose renewal date is before today (attendance timezone).
+
+    Scheduled job: require_enabled=True, send_empty_digest=False (no email if nothing past-due).
+    Manual "Send digest now": require_enabled=False, send_empty_digest=True (still need recipient;
+    sends a short note if there are zero past-due rows so you can verify SMTP).
+    """
+    out: Dict[str, Any] = {
+        'email_sent': False,
+        'past_due_count': 0,
+        'recipient': None,
+        'skipped_reason': None,
+        'smtp_ready': False,
+        'missing_smtp_env': [],
+        'send_error': None,
+        'message': '',
+    }
     db = SessionLocal()
     try:
+        smtp_ok, missing = smtp_env_status()
+        out['smtp_ready'] = smtp_ok
+        out['missing_smtp_env'] = missing
+        if not smtp_ok:
+            out['skipped_reason'] = 'smtp_not_configured'
+            out['message'] = (
+                'No email was sent because SMTP is not configured on the server. '
+                f'Set these in the backend .env: {", ".join(missing)}.'
+            )
+            logging.warning('CGW digest: %s', out['message'])
+            return out
+
         enabled_raw = (app_setting_get(db, SETTING_CGW_DIGEST_ENABLED) or '').strip().lower()
         enabled = enabled_raw in ('1', 'true', 'yes', 'on')
         to_email = (app_setting_get(db, SETTING_CGW_DIGEST_EMAIL) or '').strip()
-        if not enabled or not to_email:
-            logging.debug('CGW renewal digest skipped: disabled or no notification email configured')
-            return
+        out['recipient'] = to_email or None
+
+        if require_enabled and not enabled:
+            out['skipped_reason'] = 'digest_disabled'
+            out['message'] = (
+                'Daily digest is disabled in CGW settings, so the scheduled job will not send. '
+                'Turn on "Enable daily digest" or use "Send digest now" (which does not require that toggle).'
+            )
+            logging.info('CGW digest skipped: digest_disabled (cron)')
+            return out
+
+        if not to_email:
+            out['skipped_reason'] = 'no_recipient'
+            out['message'] = (
+                'No notification email is configured. Save a recipient address under '
+                '"Notification email (digest recipient)" on the CGW Flow Metre page.'
+            )
+            logging.info('CGW digest skipped: no_recipient')
+            return out
+
         today = attendance_local_now().date()
         rows = db.query(CGWFlowMetreModel).all()
-        past = []
+        past: List[CGWFlowMetreModel] = []
         for r in rows:
             if not r.renewal_date or not str(r.renewal_date).strip():
                 continue
             rd = parse_cgw_renewal_date(r.renewal_date)
             if rd and rd < today:
                 past.append(r)
+        out['past_due_count'] = len(past)
+
         if not past:
-            logging.info('CGW renewal digest: no past-due rows; email not sent')
-            return
+            if not send_empty_digest:
+                out['skipped_reason'] = 'no_past_due_rows'
+                out['message'] = (
+                    f'No past-due renewals as of {today.isoformat()} ({ATTENDANCE_TZ_NAME}), so no email was sent. '
+                    'Renewal must be strictly before today in that timezone.'
+                )
+                logging.info('CGW digest: no past-due rows')
+                return out
+            subject = f'[CRM] CGW renewal digest — no past-due rows — {today.isoformat()}'
+            body = (
+                f'There are no CGW flow metre rows with renewal date before {today.isoformat()} '
+                f'({ATTENDANCE_TZ_NAME}).\n\n'
+                f'This message was sent because you used "Send digest now" to verify email delivery.\n'
+            )
+            ok, err = send_email(to_email, subject, body, is_html=False)
+            out['email_sent'] = ok
+            out['send_error'] = err
+            out['message'] = (
+                f'Verification email sent to {to_email} (no past-due rows to list).'
+                if ok else (err or 'SMTP send failed')
+            )
+            if ok:
+                logging.info('CGW digest empty summary sent to %s', to_email)
+            else:
+                logging.warning('CGW digest empty send failed: %s', err)
+            return out
+
         past.sort(key=lambda x: (parse_cgw_renewal_date(x.renewal_date) or date.min, (x.customer_name or ''), (x.inventory_id or '')))
         body_lines = [
             f'CGW Flow Metre — past-due renewals ({len(past)} line(s))',
@@ -6617,13 +6704,23 @@ def run_cgw_renewal_digest_job():
             body_lines.append(f'Remarks: {r.remarks or "—"}')
         body = '\n'.join(body_lines)
         subject = f'[CRM] CGW past-due renewals ({len(past)}) — {today.isoformat()}'
-        ok = send_email(to_email, subject, body, is_html=False)
+        ok, err = send_email(to_email, subject, body, is_html=False)
+        out['email_sent'] = ok
+        out['send_error'] = err
+        out['message'] = (
+            f'Digest sent to {to_email} with {len(past)} past-due row(s).'
+            if ok else (err or 'SMTP send failed')
+        )
         if ok:
             logging.info('CGW renewal digest sent to %s (%d rows)', to_email, len(past))
         else:
-            logging.warning('CGW renewal digest could not be sent to %s (check SMTP .env)', to_email)
+            logging.warning('CGW renewal digest send failed to %s: %s', to_email, err)
+        return out
     except Exception as e:
         logging.exception('CGW renewal digest job failed: %s', e)
+        out['send_error'] = str(e)
+        out['message'] = f'Digest job error: {e}'
+        return out
     finally:
         db.close()
 
@@ -6671,21 +6768,20 @@ Best regards,
 CRM Application Team
 """
     
-    email_sent = send_email(request.recipient_email, test_subject, test_body, is_html=False)
-    
+    email_sent, send_err = send_email(request.recipient_email, test_subject, test_body, is_html=False)
+
     if email_sent:
         return {
             'status': 'success',
             'message': f'Test email sent successfully to {request.recipient_email}',
             'recipient': request.recipient_email
         }
-    else:
-        return {
-            'status': 'failed',
-            'message': f'Failed to send test email. Please check .env file configuration and server logs.',
-            'recipient': request.recipient_email,
-            'help': 'Make sure SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD, and SENDER_EMAIL are properly set in .env file'
-        }
+    return {
+        'status': 'failed',
+        'message': send_err or 'Failed to send test email. Check server logs.',
+        'recipient': request.recipient_email,
+        'help': 'Set SMTP_SERVER, SMTP_PORT (optional, default 587), SMTP_USERNAME, SMTP_PASSWORD, and SENDER_EMAIL in the backend .env',
+    }
 
 # ============= ORDER ROUTES =============
 
@@ -7069,8 +7165,8 @@ Sales Team
     
     # Send the email
     subject = f"Subscription Renewal Reminder - Order {order.order_id}"
-    email_sent = send_email(email, subject, email_body, is_html=False)
-    
+    email_sent, send_err = send_email(email, subject, email_body, is_html=False)
+
     if email_sent:
         return {
             'message': f'Subscription reminder email sent successfully to {email}',
@@ -7079,14 +7175,13 @@ Sales Team
             'email': email,
             'status': 'sent'
         }
-    else:
-        return {
-            'message': f'Failed to send subscription reminder email to {email}. Please check email configuration.',
-            'order_id': order_id,
-            'days_before': days_before,
-            'email': email,
-            'status': 'failed'
-        }
+    return {
+        'message': send_err or f'Failed to send subscription reminder email to {email}.',
+        'order_id': order_id,
+        'days_before': days_before,
+        'email': email,
+        'status': 'failed'
+    }
 
 
 # ============= PAYROLL ROUTES =============
