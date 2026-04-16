@@ -1389,7 +1389,7 @@ class AttendanceSummary(BaseModel):
     half_day_days: int
 
 class Leave(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     employee_id: str
     employee_name: str
@@ -2596,7 +2596,9 @@ def create_cgw_flow_metre(data: CGWFlowMetreCreate, current_user: UserModel = De
         contact_person=data.contact_person,
         equipment_name=data.equipment_name,
         flowmeter_details=data.flowmeter_details,
-        telemetric_system=data.telemetric_system,
+        # UI sends `product_code` + `model_no`; the DB does not have `telemetric_system`.
+        product_code=data.product_code,
+        model_no=data.model_no,
         system_mobile_number=data.system_mobile_number,
         person_mobile_number=data.person_mobile_number,
         email_id=data.email_id,
@@ -2731,7 +2733,8 @@ def import_cgw_from_excel(
             'CONTACT PERSON': 'contact_person',
             'NAME OF EQUIPMENT': 'equipment_name',
             'FLOWMETER/PIEZOMETER DETAILS': 'flowmeter_details',
-            'TELEMETRIC SYSTEM': 'telemetric_system',
+            # Template header maps to DB `product_code`
+            'TELEMETRIC SYSTEM': 'product_code',
             'SYSTEM MOBILE NUMBER': 'system_mobile_number',
             'PERSON MOBILE NUMBER': 'person_mobile_number',
             'EMAIL ID': 'email_id',
@@ -2788,7 +2791,8 @@ def import_cgw_from_excel(
                     'contact_person': str(row.get('CONTACT PERSON', '')).strip() or None,
                     'equipment_name': str(row.get('NAME OF EQUIPMENT', '')).strip() or None,
                     'flowmeter_details': str(row.get('FLOWMETER/PIEZOMETER DETAILS', '')).strip() or None,
-                    'telemetric_system': str(row.get('TELEMETRIC SYSTEM', '')).strip() or None,
+                    # Template column is 'TELEMETRIC SYSTEM' but the DB field is `product_code`.
+                    'product_code': str(row.get('TELEMETRIC SYSTEM', '')).strip() or None,
                     'system_mobile_number': str(row.get('SYSTEM MOBILE NUMBER', '')).strip() or None,
                     'person_mobile_number': str(row.get('PERSON MOBILE NUMBER', '')).strip() or None,
                     'email_id': str(row.get('EMAIL ID', '')).strip() or None,
