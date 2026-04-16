@@ -32,9 +32,20 @@ import pandas as pd
 from openpyxl import load_workbook
 
 app = FastAPI()
+
+# CORS
+# NOTE: Browsers do NOT allow `allow_origins=["*"]` together with `allow_credentials=True`.
+# We use Authorization headers (Bearer tokens), so we can safely allow credentials while
+# specifying explicit origins.
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://resoline.in",
+    "https://www.resoline.in",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1972,6 +1983,30 @@ class CGWFlowMetreCreate(BaseModel):
     review: Optional[str] = None
     remarks: Optional[str] = None
 
+class CGWFlowMetreEquipmentLine(BaseModel):
+    equipment_name: Optional[str] = None
+    flowmeter_details: Optional[str] = None
+    product_code: Optional[str] = None
+    model_no: Optional[str] = None
+
+class CGWFlowMetreBulkCreate(BaseModel):
+    customer_id: str
+    customer_name: str
+    location: Optional[str] = None
+    contact_person: Optional[str] = None
+    system_mobile_number: Optional[str] = None
+    person_mobile_number: Optional[str] = None
+    email_id: Optional[str] = None
+    date_of_commissioning: Optional[str] = None
+    url_link: Optional[str] = None
+    user_id: Optional[str] = None
+    password: Optional[str] = None
+    status: Literal['Active', 'Inactive', 'Maintenance'] = 'Active'
+    renewal_date: Optional[str] = None
+    review: Optional[str] = None
+    remarks: Optional[str] = None
+    equipments: List[CGWFlowMetreEquipmentLine] = Field(default_factory=list)
+
 class CGWFlowMetreUpdate(BaseModel):
     location: Optional[str] = None
     contact_person: Optional[str] = None
@@ -2618,6 +2653,62 @@ def delete_customer(customer_id: str, current_user: UserModel = Depends(get_curr
     return {'message': 'Customer deleted successfully'}
 
 # ============= CGW FLOW METRE INVENTORY =============
+
+@api_router.post('/cgw-flow-metres/bulk', response_model=List[CGWFlowMetre])
+def create_cgw_flow_metres_bulk(
+    data: CGWFlowMetreBulkCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+
+    if not data.equipments:
+        raise HTTPException(status_code=400, detail='At least one equipment row is required')
+
+    max_inv_num = db.query(
+        func.max(cast(func.substr(CGWFlowMetreModel.inventory_id, 4), Integer))
+    ).scalar()
+    next_inv_num = (max_inv_num or 0) + 1
+
+    new_items: List[CGWFlowMetreModel] = []
+    for eq in data.equipments:
+        inv_id = f'INV{str(next_inv_num).zfill(4)}'
+        next_inv_num += 1
+
+        new_items.append(CGWFlowMetreModel(
+            inventory_id=inv_id,
+            customer_id=data.customer_id,
+            customer_name=data.customer_name,
+            location=data.location,
+            contact_person=data.contact_person,
+            equipment_name=eq.equipment_name,
+            flowmeter_details=eq.flowmeter_details,
+            product_code=eq.product_code,
+            model_no=eq.model_no,
+            system_mobile_number=data.system_mobile_number,
+            person_mobile_number=data.person_mobile_number,
+            email_id=data.email_id,
+            date_of_commissioning=data.date_of_commissioning,
+            url_link=data.url_link,
+            user_id=data.user_id,
+            password=data.password,
+            status=data.status,
+            renewal_date=data.renewal_date,
+            review=data.review,
+            remarks=data.remarks
+        ))
+
+    db.add_all(new_items)
+    try:
+        db.commit()
+        for item in new_items:
+            db.refresh(item)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='One or more inventory items already exist')
+
+    return new_items
 
 @api_router.post('/cgw-flow-metres', response_model=CGWFlowMetre)
 def create_cgw_flow_metre(data: CGWFlowMetreCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):

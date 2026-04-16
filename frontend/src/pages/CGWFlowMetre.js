@@ -11,6 +11,12 @@ import { Plus, Edit, Trash2, Search, Mail, Phone } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
+const EMPTY_EQUIPMENT_ROW = {
+  equipment_name: '',
+  flowmeter_details: '',
+  product_code: '',
+  model_no: ''
+};
 const EMPTY_FORM = {
   customer_id: '',
   customer_name: '',
@@ -63,6 +69,7 @@ const CGWFlowMetre = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState(EMPTY_FORM);
+  const [equipmentRows, setEquipmentRows] = useState([EMPTY_EQUIPMENT_ROW]);
   const [inlineEditId, setInlineEditId] = useState(null);
   const [inlineEditData, setInlineEditData] = useState(EMPTY_FORM);
   const [columnFilters, setColumnFilters] = useState(
@@ -125,10 +132,28 @@ const CGWFlowMetre = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(`${API}/cgw-flow-metres`, formData, {
+      const { equipment_name, flowmeter_details, product_code, model_no, ...base } = formData;
+      const payload = {
+        ...base,
+        equipments: equipmentRows
+          .map(r => ({
+            equipment_name: (r.equipment_name || '').trim() || null,
+            flowmeter_details: (r.flowmeter_details || '').trim() || null,
+            product_code: (r.product_code || '').trim() || null,
+            model_no: (r.model_no || '').trim() || null
+          }))
+          .filter(r => r.equipment_name || r.flowmeter_details || r.product_code || r.model_no)
+      };
+
+      if (!payload.equipments.length) {
+        toast.error('Please add at least one equipment row');
+        return;
+      }
+
+      await axios.post(`${API}/cgw-flow-metres/bulk`, payload, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
-      toast.success('Inventory item added successfully');
+      toast.success('Inventory items added successfully');
       setDialogOpen(false);
       resetForm();
       fetchItems();
@@ -200,6 +225,7 @@ const CGWFlowMetre = () => {
 
   const resetForm = () => {
     setFormData(EMPTY_FORM);
+    setEquipmentRows([EMPTY_EQUIPMENT_ROW]);
   };
 
   const handleCustomerChange = (e) => {
@@ -299,15 +325,6 @@ const CGWFlowMetre = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="equipment_name" className="text-sm font-medium text-gray-700">Equipment Name</Label>
-                    <Input
-                      id="equipment_name"
-                      value={formData.equipment_name}
-                      onChange={(e) => setFormData({ ...formData, equipment_name: e.target.value })}
-                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
                     <Label htmlFor="system_mobile_number" className="text-sm font-medium text-gray-700">System Mobile</Label>
                     <Input
                       id="system_mobile_number"
@@ -401,37 +418,78 @@ const CGWFlowMetre = () => {
                   />
                 </div>
 
-                {/* Flowmeter Details */}
-                <div className="space-y-2">
-                  <Label htmlFor="flowmeter_details" className="text-sm font-medium text-gray-700">Flowmeter/Piezometer Details</Label>
-                  <textarea
-                    id="flowmeter_details"
-                    value={formData.flowmeter_details}
-                    onChange={(e) => setFormData({ ...formData, flowmeter_details: e.target.value })}
-                    rows="3"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  />
-                </div>
-
-                {/* Telemetric System */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="product_code" className="text-sm font-medium text-gray-700">Product Code</Label>
-                    <Input
-                      id="product_code"
-                      value={formData.product_code}
-                      onChange={(e) => setFormData({ ...formData, product_code: e.target.value })}
-                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
+                {/* Equipments (multiple rows) */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700">Equipments</Label>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Add multiple equipment lines under the same customer.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                      onClick={() => setEquipmentRows(prev => [...prev, { ...EMPTY_EQUIPMENT_ROW }])}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Row
+                    </Button>
                   </div>
+
                   <div className="space-y-2">
-                    <Label htmlFor="model_no" className="text-sm font-medium text-gray-700">Model No</Label>
-                    <Input
-                      id="model_no"
-                      value={formData.model_no}
-                      onChange={(e) => setFormData({ ...formData, model_no: e.target.value })}
-                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
+                    {equipmentRows.map((row, idx) => (
+                      <Card key={idx} className="p-4 border border-gray-200">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="grid grid-cols-2 gap-4 flex-1">
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-700">Equipment Name</Label>
+                              <Input
+                                value={row.equipment_name}
+                                onChange={(e) => setEquipmentRows(prev => prev.map((r, i) => i === idx ? ({ ...r, equipment_name: e.target.value }) : r))}
+                                className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-700">Flowmeter/Piezometer Details</Label>
+                              <Input
+                                value={row.flowmeter_details}
+                                onChange={(e) => setEquipmentRows(prev => prev.map((r, i) => i === idx ? ({ ...r, flowmeter_details: e.target.value }) : r))}
+                                className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-700">Product Code</Label>
+                              <Input
+                                value={row.product_code}
+                                onChange={(e) => setEquipmentRows(prev => prev.map((r, i) => i === idx ? ({ ...r, product_code: e.target.value }) : r))}
+                                className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm font-medium text-gray-700">Model No</Label>
+                              <Input
+                                value={row.model_no}
+                                onChange={(e) => setEquipmentRows(prev => prev.map((r, i) => i === idx ? ({ ...r, model_no: e.target.value }) : r))}
+                                className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                              />
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-9 px-3 border-gray-200 text-red-600 hover:bg-red-50 shrink-0"
+                            disabled={equipmentRows.length === 1}
+                            onClick={() => setEquipmentRows(prev => prev.filter((_, i) => i !== idx))}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Remove
+                          </Button>
+                        </div>
+                      </Card>
+                    ))}
                   </div>
                 </div>
 
