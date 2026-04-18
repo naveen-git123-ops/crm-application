@@ -8,6 +8,7 @@ from starlette.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, func, cast, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.exc import IntegrityError
 import os
 import logging
@@ -2202,13 +2203,23 @@ def get_db():
 
 def upload_to_s3(file_content: bytes, filename: str, folder: str = 'uploads') -> Optional[str]:
     """
-    Upload file to S3 bucket and return the public URL.
-    If S3 is not configured, falls back to local storage.
+    Upload file to S3 and return the public URL when credentials and bucket are set.
+    If S3 is not configured, save under UPLOAD_DIR and return a /uploads/... URL (same mount as StaticFiles).
     """
     if not USE_S3 or not s3_client:
-        # Fallback to local storage
-        return None
-    
+        try:
+            parts = [p for p in str(folder).replace('\\', '/').split('/') if p and p not in ('..', '.')]
+            safe_folder = '/'.join(parts) if parts else 'uploads'
+            dest_dir = UPLOAD_DIR / safe_folder.replace('/', os.sep)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_path = dest_dir / Path(filename).name
+            with open(dest_path, 'wb') as out:
+                out.write(file_content)
+            return f'/uploads/{safe_folder}/{Path(filename).name}'
+        except OSError as e:
+            logging.error('Local file upload error: %s', e)
+            return None
+
     try:
         # Create S3 key with folder prefix
         s3_key = f"{folder}/{uuid.uuid4()}/{filename}"
@@ -2651,7 +2662,18 @@ def is_within_office(db: Session, lat: float, lng: float) -> bool:
 
 def _customer_attachments_from_db(customer: CustomerModel) -> List[dict]:
     raw = getattr(customer, 'attachments_json', None)
-    if not raw:
+    if raw is None or raw == '':
+        return []
+    if isinstance(raw, list):
+        return raw if all(isinstance(x, dict) for x in raw) else []
+    if isinstance(raw, dict):
+        return [raw] if raw.get('id') and raw.get('url') else []
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            raw = raw.decode('utf-8')
+        except Exception:
+            return []
+    if not isinstance(raw, str):
         return []
     try:
         data = json.loads(raw)
@@ -2865,7 +2887,13 @@ def upload_customer_pdf_attachment(
     items.append({'id': att_id, 'file_name': safe_base, 'url': attachment_url})
     customer.attachments_json = json.dumps(items)
     customer.updated_at = datetime.now()
-    db.commit()
+    flag_modified(customer, 'attachments_json')
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logging.exception('Failed to persist customer NOC metadata for %s', customer_id)
+        raise HTTPException(status_code=500, detail='Could not save attachment to customer record') from e
     db.refresh(customer)
     return [CustomerAttachment.model_validate(x) for x in items]
 
@@ -2888,7 +2916,13 @@ def delete_customer_pdf_attachment(
     new_items = [x for x in items if x.get('id') != attachment_id]
     customer.attachments_json = json.dumps(new_items) if new_items else None
     customer.updated_at = datetime.now()
-    db.commit()
+    flag_modified(customer, 'attachments_json')
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logging.exception('Failed to persist customer NOC delete for %s', customer_id)
+        raise HTTPException(status_code=500, detail='Could not update customer attachments') from e
     db.refresh(customer)
     return [CustomerAttachment.model_validate(x) for x in new_items]
 
