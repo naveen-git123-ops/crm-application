@@ -1,25 +1,39 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, Building2, X } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, Building2, X, FileText, ExternalLink } from 'lucide-react';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
 
+const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
+
+/** Build absolute URL for uploaded PDFs or S3 links */
+const attachmentHref = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${BACKEND_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
+
 export const Customers = () => {
-  const { user } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [filteredCustomers, setFilteredCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
+  const fileInputRef = useRef(null);
+  const [uploadTargetCustomerId, setUploadTargetCustomerId] = useState(null);
+  const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
+  const [attachmentCustomer, setAttachmentCustomer] = useState(null);
+  const [selectedPdfUrl, setSelectedPdfUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+
   const [formData, setFormData] = useState({
     company_name: '',
     gst_number: '',
@@ -53,15 +67,83 @@ export const Customers = () => {
 
   const fetchCustomers = async () => {
     try {
-      const response = await axios.get(`${API}/customers`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
+      const response = await axios.get(`${API}/customers`, { headers: authHeader() });
       setCustomers(response.data);
       setFilteredCustomers(response.data);
     } catch (error) {
       toast.error('Failed to load customers');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openAttachmentDialog = (customer) => {
+    const list = customer.attachments || [];
+    setAttachmentCustomer(customer);
+    setSelectedPdfUrl(list.length ? attachmentHref(list[0].url) : '');
+    setAttachmentDialogOpen(true);
+  };
+
+  const triggerPdfUpload = (customerId) => {
+    setUploadTargetCustomerId(customerId);
+    fileInputRef.current?.click();
+  };
+
+  const handlePdfFilesSelected = async (e) => {
+    const files = e.target.files;
+    const targetId = uploadTargetCustomerId;
+    e.target.value = '';
+    setUploadTargetCustomerId(null);
+    if (!targetId || !files?.length) return;
+
+    const list = Array.from(files);
+    const nonPdf = list.filter((f) => !f.name.toLowerCase().endsWith('.pdf'));
+    if (nonPdf.length) {
+      toast.error('Only PDF files are allowed');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      for (const file of list) {
+        const fd = new FormData();
+        fd.append('file', file);
+        await axios.post(`${API}/customers/${targetId}/attachments`, fd, {
+          headers: authHeader(),
+        });
+      }
+      toast.success(list.length > 1 ? `${list.length} PDFs uploaded` : 'PDF uploaded');
+      await fetchCustomers();
+      if (attachmentCustomer?.id === targetId) {
+        const refreshed = (await axios.get(`${API}/customers`, { headers: authHeader() })).data.find((c) => c.id === targetId);
+        if (refreshed) {
+          setAttachmentCustomer(refreshed);
+          const atts = refreshed.attachments || [];
+          if (atts.length) setSelectedPdfUrl(attachmentHref(atts[atts.length - 1].url));
+        }
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const deleteCustomerAttachment = async (customerId, attachmentId) => {
+    if (!window.confirm('Remove this PDF attachment?')) return;
+    try {
+      await axios.delete(`${API}/customers/${customerId}/attachments/${attachmentId}`, { headers: authHeader() });
+      toast.success('Attachment removed');
+      await fetchCustomers();
+      if (attachmentCustomer?.id === customerId) {
+        const refreshed = (await axios.get(`${API}/customers`, { headers: authHeader() })).data.find((c) => c.id === customerId);
+        setAttachmentCustomer(refreshed || null);
+        const atts = refreshed?.attachments || [];
+        setSelectedPdfUrl(atts.length ? attachmentHref(atts[0].url) : '');
+        if (!atts.length) setAttachmentDialogOpen(false);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Delete failed');
     }
   };
 
@@ -98,14 +180,10 @@ export const Customers = () => {
       };
 
       if (editingCustomer) {
-        await axios.put(`${API}/customers/${editingCustomer.id}`, dataToSubmit, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        });
+        await axios.put(`${API}/customers/${editingCustomer.id}`, dataToSubmit, { headers: authHeader() });
         toast.success('Customer updated successfully');
       } else {
-        await axios.post(`${API}/customers`, dataToSubmit, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        });
+        await axios.post(`${API}/customers`, dataToSubmit, { headers: authHeader() });
         toast.success('Customer added successfully');
       }
       setDialogOpen(false);
@@ -123,9 +201,7 @@ export const Customers = () => {
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this customer?')) return;
     try {
-      await axios.delete(`${API}/customers/${id}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
+      await axios.delete(`${API}/customers/${id}`, { headers: authHeader() });
       toast.success('Customer deleted successfully');
       fetchCustomers();
     } catch (error) {
@@ -519,6 +595,7 @@ export const Customers = () => {
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Email</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">GST Number</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">City</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700 min-w-[200px]">Attachments</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
               </tr>
@@ -555,6 +632,36 @@ export const Customers = () => {
                   </td>
                   <td className="py-3 px-4 text-gray-600 font-mono">{customer.gst_number || '—'}</td>
                   <td className="py-3 px-4 text-gray-600">{customer.city || '—'}</td>
+                  <td className="py-3 px-4 align-top">
+                    <div className="flex flex-col gap-2 min-w-[180px]">
+                      <span className="text-xs text-gray-500">
+                        {(customer.attachments && customer.attachments.length) || 0} PDF{(customer.attachments?.length || 0) !== 1 ? 's' : ''}
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          disabled={!customer.attachments?.length}
+                          onClick={() => openAttachmentDialog(customer)}
+                        >
+                          <FileText className="h-3.5 w-3.5 mr-1" />
+                          Preview
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 text-xs bg-blue-600 text-white hover:bg-blue-700"
+                          disabled={uploading}
+                          onClick={() => triggerPdfUpload(customer.id)}
+                        >
+                          <Plus className="h-3.5 w-3.5 mr-1" />
+                          Add PDF
+                        </Button>
+                      </div>
+                    </div>
+                  </td>
                   <td className="py-3 px-4">
                     <span className={`inline-flex px-2.5 py-1 rounded-md text-xs font-medium ${
                       customer.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'
@@ -598,6 +705,88 @@ export const Customers = () => {
           <p className="text-gray-600">No customers found</p>
         </Card>
       )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,application/pdf"
+        multiple
+        className="hidden"
+        onChange={handlePdfFilesSelected}
+      />
+
+      <Dialog
+        open={attachmentDialogOpen}
+        onOpenChange={(open) => {
+          setAttachmentDialogOpen(open);
+          if (!open) {
+            setAttachmentCustomer(null);
+            setSelectedPdfUrl('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+          <div className="bg-slate-800 text-white p-4 shrink-0">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-semibold text-white flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                {attachmentCustomer ? `${attachmentCustomer.company_name} — PDF attachments` : 'Attachments'}
+              </DialogTitle>
+            </DialogHeader>
+          </div>
+          <div className="p-4 flex-1 min-h-0 flex flex-col md:flex-row gap-4 overflow-hidden">
+            <div className="md:w-56 shrink-0 border border-gray-200 rounded-lg overflow-y-auto max-h-[60vh]">
+              {(attachmentCustomer?.attachments || []).length === 0 ? (
+                <p className="p-3 text-sm text-gray-500">No PDFs yet. Use Add PDF on the customer row.</p>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {(attachmentCustomer?.attachments || []).map((att) => (
+                    <li key={att.id} className="p-2">
+                      <button
+                        type="button"
+                        className={`w-full text-left text-xs rounded px-2 py-1.5 truncate ${selectedPdfUrl === attachmentHref(att.url) ? 'bg-blue-100 text-blue-900 font-medium' : 'hover:bg-gray-50 text-gray-800'}`}
+                        title={att.file_name}
+                        onClick={() => setSelectedPdfUrl(attachmentHref(att.url))}
+                      >
+                        {att.file_name}
+                      </button>
+                      <div className="flex flex-wrap gap-1 mt-1 px-1">
+                        <a
+                          href={attachmentHref(att.url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-0.5 text-[11px] text-blue-600 hover:underline"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          New tab
+                        </a>
+                        <button
+                          type="button"
+                          className="text-[11px] text-red-600 hover:underline"
+                          onClick={() => deleteCustomerAttachment(attachmentCustomer.id, att.id)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+              {selectedPdfUrl ? (
+                <iframe
+                  title="PDF preview"
+                  src={selectedPdfUrl}
+                  className="w-full flex-1 min-h-[420px] bg-white"
+                />
+              ) : (
+                <p className="p-8 text-center text-sm text-gray-500">Select a file to preview</p>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

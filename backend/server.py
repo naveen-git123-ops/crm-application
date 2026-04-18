@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, func, cast, ForeignKey
+from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, func, cast, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import IntegrityError
@@ -347,6 +347,8 @@ class CustomerModel(Base):
     pincode = Column(String(20), nullable=True)
     country = Column(String(100), nullable=True, default='India')
     status = Column(String(50), default='Active')
+    # JSON array: [{"id": "...", "file_name": "...", "url": "/uploads/... or https://..."}]
+    attachments_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -982,6 +984,28 @@ def migrate_customers():
 
 migrate_customers()
 
+
+def migrate_customer_attachments_json():
+    """Add attachments_json (multiple PDF metadata) to customers if missing."""
+    from sqlalchemy import text, inspect
+    try:
+        inspector = inspect(engine)
+        existing_columns = [col['name'] for col in inspector.get_columns('customers')]
+        if 'attachments_json' not in existing_columns:
+            with engine.connect() as conn:
+                if DATABASE_URL.startswith('mysql'):
+                    conn.execute(text('ALTER TABLE customers ADD COLUMN attachments_json TEXT NULL'))
+                else:
+                    conn.execute(text('ALTER TABLE customers ADD COLUMN attachments_json TEXT NULL'))
+                conn.commit()
+                print('Added column attachments_json to customers table')
+    except Exception as e:
+        print(f'Migration error for customer attachments_json: {e}')
+
+
+migrate_customer_attachments_json()
+
+
 def migrate_vehicle_usage_is_claimed():
     """Add is_claimed column to vehicle_usage if missing."""
     from sqlalchemy import text, inspect
@@ -1293,6 +1317,14 @@ class CustomerAddressCreate(BaseModel):
     country: str = 'India'
     is_primary: Optional[int] = 0
 
+
+class CustomerAttachment(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str
+    file_name: str
+    url: str
+
+
 class Customer(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -1310,6 +1342,7 @@ class Customer(BaseModel):
     status: Literal['Active', 'Inactive'] = 'Active'
     contacts: Optional[List[CustomerContact]] = None
     addresses: Optional[List[CustomerAddress]] = None
+    attachments: Optional[List[CustomerAttachment]] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -2615,6 +2648,35 @@ def is_within_office(db: Session, lat: float, lng: float) -> bool:
 
 # ============= CUSTOMERS =============
 
+def _customer_attachments_from_db(customer: CustomerModel) -> List[dict]:
+    raw = getattr(customer, 'attachments_json', None)
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _customer_delete_attachment_files(items: List[dict]) -> None:
+    for item in items:
+        url = (item or {}).get('url') or ''
+        if url.startswith('/uploads/'):
+            rel = url.replace('/uploads/', '', 1)
+            fp = UPLOAD_DIR / rel
+            try:
+                if fp.is_file():
+                    fp.unlink()
+            except Exception as ex:
+                logging.warning('Could not delete local customer attachment %s: %s', fp, ex)
+        elif url and USE_S3:
+            try:
+                delete_from_s3(url)
+            except Exception:
+                pass
+
+
 @api_router.post('/customers', response_model=Customer)
 def create_customer(cust_data: CustomerCreateUpdate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     
@@ -2679,6 +2741,7 @@ def create_customer(cust_data: CustomerCreateUpdate, current_user: UserModel = D
     # Load relationships for response
     new_customer.contacts = db.query(CustomerContactModel).filter(CustomerContactModel.customer_id == new_customer.id).all()
     new_customer.addresses = db.query(CustomerAddressModel).filter(CustomerAddressModel.customer_id == new_customer.id).all()
+    new_customer.attachments = _customer_attachments_from_db(new_customer)
     
     return new_customer
 
@@ -2690,6 +2753,7 @@ def get_customers(current_user: UserModel = Depends(get_current_user), db: Sessi
     for customer in customers:
         customer.contacts = db.query(CustomerContactModel).filter(CustomerContactModel.customer_id == customer.id).all()
         customer.addresses = db.query(CustomerAddressModel).filter(CustomerAddressModel.customer_id == customer.id).all()
+        customer.attachments = _customer_attachments_from_db(customer)
     
     return customers
 
@@ -2702,6 +2766,7 @@ def get_customer(customer_id: str, current_user: UserModel = Depends(get_current
     # Attach contacts and addresses
     customer.contacts = db.query(CustomerContactModel).filter(CustomerContactModel.customer_id == customer.id).all()
     customer.addresses = db.query(CustomerAddressModel).filter(CustomerAddressModel.customer_id == customer.id).all()
+    customer.attachments = _customer_attachments_from_db(customer)
     
     return customer
 
@@ -2757,8 +2822,76 @@ def update_customer(customer_id: str, cust_data: CustomerCreateUpdate, current_u
     # Load relationships for response
     customer.contacts = db.query(CustomerContactModel).filter(CustomerContactModel.customer_id == customer.id).all()
     customer.addresses = db.query(CustomerAddressModel).filter(CustomerAddressModel.customer_id == customer.id).all()
-    
+    customer.attachments = _customer_attachments_from_db(customer)
+
     return customer
+
+
+@api_router.post('/customers/{customer_id}/attachments', response_model=List[CustomerAttachment])
+async def upload_customer_pdf_attachment(
+    customer_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload one PDF attachment for a customer (call multiple times for multiple files)."""
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    if not file.filename:
+        raise HTTPException(status_code=400, detail='No file provided')
+    fn_lower = file.filename.lower()
+    if not fn_lower.endswith('.pdf'):
+        raise HTTPException(status_code=400, detail='Only PDF files are allowed')
+
+    file_content = await file.read()
+    if len(file_content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail='PDF must be 25 MB or smaller')
+
+    safe_base = Path(file.filename).name.replace('..', '_').replace('/', '_') or 'document.pdf'
+    new_filename = f'cust_{customer_id[:8]}_{uuid.uuid4().hex}.pdf'
+
+    attachment_url = upload_to_s3(file_content, new_filename, folder='customers')
+    if not attachment_url:
+        upload_folder = UPLOAD_DIR / 'customers'
+        upload_folder.mkdir(parents=True, exist_ok=True)
+        file_path = upload_folder / new_filename
+        with open(file_path, 'wb') as f:
+            f.write(file_content)
+        attachment_url = f'/uploads/customers/{new_filename}'
+
+    items = _customer_attachments_from_db(customer)
+    att_id = str(uuid.uuid4())
+    items.append({'id': att_id, 'file_name': safe_base, 'url': attachment_url})
+    customer.attachments_json = json.dumps(items)
+    customer.updated_at = datetime.now()
+    db.commit()
+    db.refresh(customer)
+    return [CustomerAttachment.model_validate(x) for x in items]
+
+
+@api_router.delete('/customers/{customer_id}/attachments/{attachment_id}', response_model=List[CustomerAttachment])
+def delete_customer_pdf_attachment(
+    customer_id: str,
+    attachment_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    items = _customer_attachments_from_db(customer)
+    removed = [x for x in items if x.get('id') == attachment_id]
+    if not removed:
+        raise HTTPException(status_code=404, detail='Attachment not found')
+    _customer_delete_attachment_files(removed)
+    new_items = [x for x in items if x.get('id') != attachment_id]
+    customer.attachments_json = json.dumps(new_items) if new_items else None
+    customer.updated_at = datetime.now()
+    db.commit()
+    db.refresh(customer)
+    return [CustomerAttachment.model_validate(x) for x in new_items]
+
 
 @api_router.get('/customers/{customer_id}/contacts', response_model=List[CustomerContact])
 def get_customer_contacts(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -2775,6 +2908,7 @@ def delete_customer(customer_id: str, current_user: UserModel = Depends(get_curr
     customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail='Customer not found')
+    _customer_delete_attachment_files(_customer_attachments_from_db(customer))
     
     db.delete(customer)
     db.commit()
