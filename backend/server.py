@@ -350,6 +350,8 @@ class CustomerModel(Base):
     status = Column(String(50), default='Active')
     # JSON array: [{"id": "...", "file_name": "...", "url": "/uploads/... or https://..."}]
     attachments_json = Column(Text, nullable=True)
+    # CGW Flow Metre screen: shared documents per customer (PDF/images), not per inventory row.
+    cgw_customer_media_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -1013,6 +1015,27 @@ def migrate_customer_attachments_json():
 
 
 migrate_customer_attachments_json()
+
+
+def migrate_customer_cgw_media_json_column():
+    """Add cgw_customer_media_json for CGW Flow Metre attachments (one library per customer)."""
+    from sqlalchemy import text, inspect
+    try:
+        inspector = inspect(engine)
+        existing_columns = [col['name'] for col in inspector.get_columns('customers')]
+        if 'cgw_customer_media_json' not in existing_columns:
+            with engine.connect() as conn:
+                if DATABASE_URL.startswith('mysql'):
+                    conn.execute(text('ALTER TABLE customers ADD COLUMN cgw_customer_media_json LONGTEXT NULL'))
+                else:
+                    conn.execute(text('ALTER TABLE customers ADD COLUMN cgw_customer_media_json TEXT NULL'))
+                conn.commit()
+            print('Added column cgw_customer_media_json to customers table')
+    except Exception as e:
+        print(f'Migration error for customer cgw_customer_media_json: {e}')
+
+
+migrate_customer_cgw_media_json()
 
 
 def migrate_vehicle_usage_is_claimed():
@@ -2201,7 +2224,7 @@ class CGWFlowMetre(BaseModel):
     noc_application_no: Optional[str] = None
     noc_valid_from: Optional[str] = None
     noc_valid_upto: Optional[str] = None
-    cgw_attachments: Optional[Dict[str, List[CgwFileAttachment]]] = None
+    cgw_customer_media_attachments: Optional[List[CgwFileAttachment]] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 
@@ -2800,6 +2823,34 @@ def _customer_delete_attachment_files(items: List[dict]) -> None:
                 pass
 
 
+def _cgw_customer_media_from_db(customer: Optional[CustomerModel]) -> List[dict]:
+    if not customer:
+        return []
+    raw = getattr(customer, 'cgw_customer_media_json', None)
+    if raw is None or raw == '':
+        return []
+    if isinstance(raw, list):
+        return [x for x in raw if isinstance(x, dict) and x.get('id') and x.get('url')]
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            raw = raw.decode('utf-8')
+        except Exception:
+            return []
+    if not isinstance(raw, str):
+        return []
+    try:
+        data = json.loads(raw)
+        return [x for x in data if isinstance(x, dict) and x.get('id') and x.get('url')] if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _cgw_persist_customer_media_json(customer: CustomerModel, items: List[dict]) -> None:
+    clean = [x for x in items if x.get('id') and x.get('url')]
+    customer.cgw_customer_media_json = json.dumps(clean) if clean else None
+    flag_modified(customer, 'cgw_customer_media_json')
+
+
 @api_router.post('/customers', response_model=Customer)
 def create_customer(cust_data: CustomerCreateUpdate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     
@@ -3043,7 +3094,9 @@ def delete_customer(customer_id: str, current_user: UserModel = Depends(get_curr
     if not customer:
         raise HTTPException(status_code=404, detail='Customer not found')
     _customer_delete_attachment_files(_customer_attachments_from_db(customer))
-    
+    for x in _cgw_customer_media_from_db(customer):
+        _cgw_delete_stored_attachment_file((x or {}).get('url') or '')
+
     db.delete(customer)
     db.commit()
     
@@ -3052,50 +3105,6 @@ def delete_customer(customer_id: str, current_user: UserModel = Depends(get_curr
 # ============= CGW FLOW METRE INVENTORY =============
 
 _CGW_MEDIA_ALLOWED_EXT = frozenset({'.pdf', '.jpg', '.jpeg', '.png', '.webp', '.gif'})
-
-
-def _cgw_media_buckets_empty() -> Dict[str, List[dict]]:
-    return {k: [] for k in CGW_MEDIA_ATTACHMENT_KEYS}
-
-
-def _cgw_media_buckets_from_stored_json(item: CGWFlowMetreModel) -> Dict[str, List[dict]]:
-    buckets = _cgw_media_buckets_empty()
-    raw = getattr(item, 'cgw_attachments_json', None)
-    if not raw:
-        return buckets
-    try:
-        data = json.loads(raw) if isinstance(raw, str) else raw
-        if isinstance(data, dict):
-            for k in CGW_MEDIA_ATTACHMENT_KEYS:
-                v = data.get(k)
-                if isinstance(v, list):
-                    buckets[k] = [x for x in v if isinstance(x, dict) and x.get('id') and x.get('url')]
-    except Exception:
-        pass
-    return buckets
-
-
-def _cgw_media_buckets_for_api(item: CGWFlowMetreModel) -> Dict[str, List[dict]]:
-    """Stored JSON plus legacy single calibration_certificate URL for API display."""
-    buckets = _cgw_media_buckets_from_stored_json(item)
-    if not buckets['calibration_certificate']:
-        leg = (getattr(item, 'calibration_certificate', None) or '').strip()
-        if leg:
-            buckets['calibration_certificate'] = [
-                {'id': 'legacy-calibration', 'file_name': 'Legacy calibration file', 'url': leg}
-            ]
-    return buckets
-
-
-def _hydrate_cgw_flow_metre_attachments(item: CGWFlowMetreModel) -> None:
-    setattr(item, 'cgw_attachments', _cgw_media_buckets_for_api(item))
-
-
-def _cgw_persist_media_buckets(item: CGWFlowMetreModel, buckets: Dict[str, List[dict]]) -> None:
-    clean = {k: [x for x in buckets.get(k, []) if x.get('id') != 'legacy-calibration'] for k in CGW_MEDIA_ATTACHMENT_KEYS}
-    has_any = any(len(clean[k]) > 0 for k in CGW_MEDIA_ATTACHMENT_KEYS)
-    item.cgw_attachments_json = json.dumps(clean) if has_any else None
-    flag_modified(item, 'cgw_attachments_json')
 
 
 def _cgw_delete_stored_attachment_file(url: str) -> None:
@@ -3114,6 +3123,170 @@ def _cgw_delete_stored_attachment_file(url: str) -> None:
             delete_from_s3(url)
         except Exception:
             pass
+
+
+def migrate_legacy_cgw_row_attachments_into_customer_media() -> None:
+    """Merge legacy per-inventory cgw_attachments_json into customers.cgw_customer_media_json (idempotent)."""
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(CGWFlowMetreModel)
+            .filter(CGWFlowMetreModel.cgw_attachments_json != None, CGWFlowMetreModel.cgw_attachments_json != '')
+            .all()
+        )
+        if not rows:
+            return
+
+        def _flatten_row_attachments(raw) -> List[dict]:
+            out: List[dict] = []
+            if not raw:
+                return out
+            try:
+                data = json.loads(raw) if isinstance(raw, str) else raw
+                if not isinstance(data, dict):
+                    return out
+                for k in CGW_MEDIA_ATTACHMENT_KEYS:
+                    v = data.get(k)
+                    if not isinstance(v, list):
+                        continue
+                    for x in v:
+                        if isinstance(x, dict) and x.get('url'):
+                            out.append(
+                                {
+                                    'id': x.get('id') or str(uuid.uuid4()),
+                                    'file_name': x.get('file_name') or 'file',
+                                    'url': x['url'],
+                                }
+                            )
+            except Exception:
+                pass
+            return out
+
+        extras_by_customer: Dict[str, List[dict]] = defaultdict(list)
+        seen_url_per_cust: Dict[str, set] = defaultdict(set)
+
+        for row in rows:
+            cid = getattr(row, 'customer_id', None)
+            if not cid:
+                continue
+            for f in _flatten_row_attachments(row.cgw_attachments_json):
+                u = f.get('url')
+                if u and u not in seen_url_per_cust[cid]:
+                    seen_url_per_cust[cid].add(u)
+                    extras_by_customer[cid].append(f)
+
+        for cid, new_files in extras_by_customer.items():
+            cust = db.query(CustomerModel).filter(CustomerModel.id == cid).first()
+            if not cust:
+                continue
+            existing = _cgw_customer_media_from_db(cust)
+            seen = {x.get('url') for x in existing}
+            for f in new_files:
+                if f.get('url') and f['url'] not in seen:
+                    existing.append(f)
+                    seen.add(f['url'])
+            _cgw_persist_customer_media_json(cust, existing)
+
+        for row in rows:
+            row.cgw_attachments_json = None
+            flag_modified(row, 'cgw_attachments_json')
+        db.commit()
+        print('Merged legacy CGW per-row attachments into customers.cgw_customer_media_json')
+    except Exception as e:
+        db.rollback()
+        print(f'Migration error merging legacy CGW attachments: {e}')
+    finally:
+        db.close()
+
+
+migrate_legacy_cgw_row_attachments_into_customer_media()
+
+
+def _hydrate_cgw_customer_media_for_items(items: List[CGWFlowMetreModel], db: Session) -> None:
+    if not items:
+        return
+    cids = list({i.customer_id for i in items if getattr(i, 'customer_id', None)})
+    cust_map: Dict[str, CustomerModel] = {}
+    if cids:
+        for c in db.query(CustomerModel).filter(CustomerModel.id.in_(cids)).all():
+            cust_map[c.id] = c
+    for it in items:
+        c = cust_map.get(it.customer_id)
+        lst = _cgw_customer_media_from_db(c) if c else []
+        setattr(it, 'cgw_customer_media_attachments', lst)
+
+
+@api_router.post('/customers/{customer_id}/cgw-media-attachments', response_model=List[CgwFileAttachment])
+def upload_customer_cgw_media_attachment(
+    customer_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    if not file.filename:
+        raise HTTPException(status_code=400, detail='No file provided')
+    ext = Path(file.filename).suffix.lower()
+    if ext not in _CGW_MEDIA_ALLOWED_EXT:
+        raise HTTPException(status_code=400, detail='Allowed file types: PDF, JPG, JPEG, PNG, WEBP, GIF')
+    file_content = file.file.read()
+    if len(file_content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail='File must be 25 MB or smaller')
+    safe_base = Path(file.filename).name.replace('..', '_').replace('/', '_') or f'file{ext}'
+    new_filename = f'cgw_cust_{customer_id[:8]}_{uuid.uuid4().hex}_{safe_base}'
+    file_url = upload_to_s3(file_content, new_filename, folder='cgw_customer_media')
+    if not file_url:
+        raise HTTPException(
+            status_code=503,
+            detail='File upload service is temporarily unavailable. Please try again in a few moments.',
+        )
+    items = _cgw_customer_media_from_db(customer)
+    items.append({'id': str(uuid.uuid4()), 'file_name': safe_base, 'url': file_url})
+    _cgw_persist_customer_media_json(customer, items)
+    customer.updated_at = datetime.now()
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logging.exception('Failed to save CGW customer media for %s', customer_id)
+        raise HTTPException(status_code=500, detail='Could not save attachment metadata') from e
+    db.refresh(customer)
+    return [CgwFileAttachment.model_validate(x) for x in _cgw_customer_media_from_db(customer)]
+
+
+@api_router.delete('/customers/{customer_id}/cgw-media-attachments/{attachment_id}', response_model=List[CgwFileAttachment])
+def delete_customer_cgw_media_attachment(
+    customer_id: str,
+    attachment_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail='Customer not found')
+    items = _cgw_customer_media_from_db(customer)
+    removed = [x for x in items if x.get('id') == attachment_id]
+    if not removed:
+        raise HTTPException(status_code=404, detail='Attachment not found')
+    for x in removed:
+        _cgw_delete_stored_attachment_file((x or {}).get('url') or '')
+    new_items = [x for x in items if x.get('id') != attachment_id]
+    _cgw_persist_customer_media_json(customer, new_items)
+    customer.updated_at = datetime.now()
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logging.exception('Failed to delete CGW customer media for %s', customer_id)
+        raise HTTPException(status_code=500, detail='Could not update attachments') from e
+    db.refresh(customer)
+    return [CgwFileAttachment.model_validate(x) for x in _cgw_customer_media_from_db(customer)]
 
 
 @api_router.post('/cgw-flow-metres/bulk', response_model=List[CGWFlowMetre])
@@ -3170,8 +3343,7 @@ def create_cgw_flow_metres_bulk(
         db.rollback()
         raise HTTPException(status_code=409, detail='One or more inventory items already exist')
 
-    for it in new_items:
-        _hydrate_cgw_flow_metre_attachments(it)
+    _hydrate_cgw_customer_media_for_items(new_items, db)
     return new_items
 
 @api_router.post('/cgw-flow-metres', response_model=CGWFlowMetre)
@@ -3217,14 +3389,13 @@ def create_cgw_flow_metre(data: CGWFlowMetreCreate, current_user: UserModel = De
         db.rollback()
         raise HTTPException(status_code=409, detail='Inventory item already exists')
 
-    _hydrate_cgw_flow_metre_attachments(new_item)
+    _hydrate_cgw_customer_media_for_items([new_item], db)
     return new_item
 
 @api_router.get('/cgw-flow-metres', response_model=List[CGWFlowMetre])
 def get_cgw_flow_metres(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     items = db.query(CGWFlowMetreModel).all()
-    for it in items:
-        _hydrate_cgw_flow_metre_attachments(it)
+    _hydrate_cgw_customer_media_for_items(items, db)
     return items
 
 @api_router.get('/cgw-flow-metres/{inventory_id}', response_model=CGWFlowMetre)
@@ -3232,14 +3403,13 @@ def get_cgw_flow_metre(inventory_id: str, current_user: UserModel = Depends(get_
     item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
     if not item:
         raise HTTPException(status_code=404, detail='Inventory item not found')
-    _hydrate_cgw_flow_metre_attachments(item)
+    _hydrate_cgw_customer_media_for_items([item], db)
     return item
 
 @api_router.get('/cgw-flow-metres/customer/{customer_id}', response_model=List[CGWFlowMetre])
 def get_cgw_by_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     items = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.customer_id == customer_id).all()
-    for it in items:
-        _hydrate_cgw_flow_metre_attachments(it)
+    _hydrate_cgw_customer_media_for_items(items, db)
     return items
 
 @api_router.put('/cgw-flow-metres/{inventory_id}', response_model=CGWFlowMetre)
@@ -3257,123 +3427,7 @@ def update_cgw_flow_metre(inventory_id: str, data: CGWFlowMetreUpdate, current_u
     db.commit()
     db.refresh(item)
 
-    _hydrate_cgw_flow_metre_attachments(item)
-    return item
-
-
-@api_router.post('/cgw-flow-metres/{inventory_id}/media-attachments', response_model=CGWFlowMetre)
-def cgw_upload_media_attachment(
-    inventory_id: str,
-    category: str = Form(...),
-    file: UploadFile = File(...),
-    current_user: UserModel = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Append one photo/PDF to the given bucket (S3 when configured, else local /uploads/)."""
-    if current_user.role not in ['Admin', 'HR']:
-        raise HTTPException(status_code=403, detail='Not authorized')
-    if USE_S3 and not s3_client:
-        raise HTTPException(
-            status_code=503,
-            detail='S3 is enabled but not configured on the server (missing client or credentials).',
-        )
-    if category not in CGW_MEDIA_ATTACHMENT_KEYS:
-        raise HTTPException(
-            status_code=400,
-            detail=f'Invalid category. Use one of: {", ".join(CGW_MEDIA_ATTACHMENT_KEYS)}',
-        )
-
-    item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail='Inventory item not found')
-    if not file.filename:
-        raise HTTPException(status_code=400, detail='No file provided')
-
-    ext = Path(file.filename).suffix.lower()
-    if ext not in _CGW_MEDIA_ALLOWED_EXT:
-        raise HTTPException(
-            status_code=400,
-            detail='Allowed file types: PDF, JPG, JPEG, PNG, WEBP, GIF',
-        )
-
-    file_content = file.file.read()
-    if len(file_content) > 25 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail='File must be 25 MB or smaller')
-
-    safe_base = Path(file.filename).name.replace('..', '_').replace('/', '_') or f'file{ext}'
-    new_filename = f'{inventory_id}_{uuid.uuid4().hex}_{safe_base}'
-    file_url = upload_to_s3(file_content, new_filename, folder='cgw_media')
-    if not file_url:
-        raise HTTPException(
-            status_code=503,
-            detail='File upload service is temporarily unavailable. Please try again in a few moments.',
-        )
-
-    buckets = _cgw_media_buckets_from_stored_json(item)
-    if category == 'calibration_certificate' and (getattr(item, 'calibration_certificate', None) or '').strip():
-        item.calibration_certificate = None
-    buckets[category].append({'id': str(uuid.uuid4()), 'file_name': safe_base, 'url': file_url})
-    _cgw_persist_media_buckets(item, buckets)
-    item.updated_at = datetime.now(timezone.utc)
-    try:
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        logging.exception('Failed to save CGW media attachment for %s', inventory_id)
-        raise HTTPException(status_code=500, detail='Could not save attachment metadata') from e
-    db.refresh(item)
-    _hydrate_cgw_flow_metre_attachments(item)
-    return item
-
-
-@api_router.delete('/cgw-flow-metres/{inventory_id}/media-attachments/{category}/{attachment_id}', response_model=CGWFlowMetre)
-def cgw_delete_media_attachment(
-    inventory_id: str,
-    category: str,
-    attachment_id: str,
-    current_user: UserModel = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if current_user.role not in ['Admin', 'HR']:
-        raise HTTPException(status_code=403, detail='Not authorized')
-    if category not in CGW_MEDIA_ATTACHMENT_KEYS:
-        raise HTTPException(status_code=400, detail='Invalid category')
-
-    item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail='Inventory item not found')
-
-    if attachment_id == 'legacy-calibration':
-        item.calibration_certificate = None
-        item.updated_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(item)
-        _hydrate_cgw_flow_metre_attachments(item)
-        return item
-
-    buckets = _cgw_media_buckets_from_stored_json(item)
-    lst = buckets.get(category) or []
-    removed = None
-    kept = []
-    for x in lst:
-        if x.get('id') == attachment_id:
-            removed = x
-        else:
-            kept.append(x)
-    if not removed:
-        raise HTTPException(status_code=404, detail='Attachment not found')
-    buckets[category] = kept
-    _cgw_delete_stored_attachment_file((removed or {}).get('url') or '')
-    _cgw_persist_media_buckets(item, buckets)
-    item.updated_at = datetime.now(timezone.utc)
-    try:
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        logging.exception('Failed to delete CGW media attachment for %s', inventory_id)
-        raise HTTPException(status_code=500, detail='Could not update attachments') from e
-    db.refresh(item)
-    _hydrate_cgw_flow_metre_attachments(item)
+    _hydrate_cgw_customer_media_for_items([item], db)
     return item
 
 
@@ -3441,7 +3495,7 @@ def upload_or_update_cgw_noc(
         logging.exception('Failed to save CGW NOC for %s', inventory_id)
         raise HTTPException(status_code=500, detail='Could not save NOC data') from e
     db.refresh(item)
-    _hydrate_cgw_flow_metre_attachments(item)
+    _hydrate_cgw_customer_media_for_items([item], db)
     return item
 
 
