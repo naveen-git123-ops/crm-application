@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -142,33 +142,9 @@ function nocValidUrgency(isoDateRaw) {
   return renewalUrgency(isoDateRaw);
 }
 
-function RenewalDateCell({ groupEditActive, inlineEditData, groupAnchor, onChange, groupRows = [] }) {
+function RenewalDateCell({ groupEditActive, inlineEditData, groupAnchor, onChange }) {
   const rawForUrgency = groupEditActive ? inlineEditData.renewal_date : groupAnchor.renewal_date;
   const urgency = renewalUrgency(rawForUrgency);
-  const nocBlock = (groupRows || []).some((r) => r.noc_valid_upto) ? (
-    <div className="mt-1.5 pt-1 border-t border-gray-200/80 space-y-0.5">
-      <p className="text-[9px] font-semibold text-gray-500 uppercase tracking-wide">NOC valid up to</p>
-      {(groupRows || []).map((r) => {
-        const v = r.noc_valid_upto;
-        if (!v) return null;
-        const nu = nocValidUrgency(v);
-        const label = (r.equipment_name || r.inventory_id || 'Row').slice(0, 18);
-        return (
-          <div key={r.id} className="text-[10px] leading-tight">
-            <span className="text-gray-500">{label}:</span>{' '}
-            <span
-              className={`font-mono tabular-nums ${
-                nu === 'overdue' ? 'text-red-600 font-bold' : nu === 'dueSoon' ? 'text-amber-800 font-medium' : 'text-gray-800'
-              }`}
-            >
-              {v}
-            </span>
-            {nu === 'overdue' && <span className="ml-0.5 text-red-600 font-bold">(expired)</span>}
-          </div>
-        );
-      })}
-    </div>
-  ) : null;
 
   if (groupEditActive) {
     return (
@@ -185,7 +161,6 @@ function RenewalDateCell({ groupEditActive, inlineEditData, groupAnchor, onChang
         {urgency === 'dueSoon' && (
           <span className="text-[10px] font-medium text-amber-700 leading-tight">Due within 30 days</span>
         )}
-        {nocBlock}
       </div>
     );
   }
@@ -211,7 +186,46 @@ function RenewalDateCell({ groupEditActive, inlineEditData, groupAnchor, onChang
       {urgency === 'dueSoon' && (
         <span className="text-[10px] font-medium text-amber-700 leading-tight">Due in ≤30 days</span>
       )}
-      {nocBlock}
+    </div>
+  );
+}
+
+/** Stacked NOC validity dates per equipment row (same customer group). */
+function NocValidUptoColumnCell({ groupRows = [] }) {
+  return (
+    <div className="space-y-1.5 min-w-[112px]">
+      {(groupRows || []).map((r) => {
+        const v = r.noc_valid_upto;
+        const nu = v ? nocValidUrgency(v) : 'empty';
+        const label = (r.equipment_name || r.inventory_id || '—').slice(0, 22);
+        return (
+          <div key={r.id} className="rounded border border-gray-100 bg-gray-50/60 px-1.5 py-1">
+            <p className="text-[9px] text-gray-500 truncate mb-0.5" title={r.inventory_id}>
+              {label}
+            </p>
+            {v ? (
+              <p className="text-[11px] font-mono tabular-nums leading-tight">
+                <span
+                  className={
+                    nu === 'overdue'
+                      ? 'text-red-600 font-bold'
+                      : nu === 'dueSoon'
+                        ? 'text-amber-800 font-semibold'
+                        : 'text-gray-800 font-medium'
+                  }
+                >
+                  {v}
+                </span>
+                {nu === 'overdue' ? (
+                  <span className="ml-1 text-[10px] font-bold text-red-600 uppercase tracking-wide">Expired</span>
+                ) : null}
+              </p>
+            ) : (
+              <span className="text-[11px] text-gray-400">—</span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -253,6 +267,11 @@ const CGWFlowMetre = () => {
     valid_upto: '',
   });
   const [nocSaving, setNocSaving] = useState(false);
+  /** Managers: false when opened via Preview/View — right panel locked until NOC button or "Edit NOC details". */
+  const [nocSideFieldsEditable, setNocSideFieldsEditable] = useState(false);
+  const [nocRemotePreviewUrl, setNocRemotePreviewUrl] = useState('');
+  const [nocRemotePreviewLoading, setNocRemotePreviewLoading] = useState(false);
+  const nocRemoteBlobRef = useRef(null);
 
   const nocDocHref = (url) => {
     if (!url) return '';
@@ -267,7 +286,23 @@ const CGWFlowMetre = () => {
     });
   };
 
-  const openNocDialog = (item) => {
+  const revokeNocRemoteBlob = useCallback(() => {
+    if (nocRemoteBlobRef.current) {
+      URL.revokeObjectURL(nocRemoteBlobRef.current);
+      nocRemoteBlobRef.current = null;
+    }
+    setNocRemotePreviewUrl('');
+    setNocRemotePreviewLoading(false);
+  }, []);
+
+  /** S3 (or compatible) URLs: direct iframe hits wrong Content-Type / disposition → use authenticated stream + blob. */
+  const isNocStreamableRemoteUrl = (full) =>
+    !!full &&
+    /^https?:\/\//i.test(full) &&
+    (full.includes('.amazonaws.com') || full.includes('.digitaloceanspaces.com'));
+
+  const openNocDialog = (item, { startInPreviewMode = false } = {}) => {
+    revokeNocRemoteBlob();
     clearNocLocalPreview();
     setNocFile(null);
     setNocTargetItem(item);
@@ -278,13 +313,17 @@ const CGWFlowMetre = () => {
       valid_from: item.noc_valid_from || '',
       valid_upto: item.noc_valid_upto || '',
     });
+    const canEditNoc = ['Admin', 'HR'].includes(user?.role);
+    setNocSideFieldsEditable(canEditNoc && !startInPreviewMode);
     setNocDialogOpen(true);
   };
 
   const closeNocDialog = () => {
+    revokeNocRemoteBlob();
     clearNocLocalPreview();
     setNocFile(null);
     setNocTargetItem(null);
+    setNocSideFieldsEditable(false);
     setNocDialogOpen(false);
   };
 
@@ -340,6 +379,57 @@ const CGWFlowMetre = () => {
   }, []);
 
   const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
+
+  useEffect(() => {
+    if (!nocDialogOpen) {
+      revokeNocRemoteBlob();
+      return undefined;
+    }
+    if (nocLocalPreview || !nocTargetItem?.noc_document_url) {
+      revokeNocRemoteBlob();
+      return undefined;
+    }
+    const full = nocDocHref(nocTargetItem.noc_document_url);
+    if (!isNocStreamableRemoteUrl(full)) {
+      revokeNocRemoteBlob();
+      return undefined;
+    }
+
+    let cancelled = false;
+    revokeNocRemoteBlob();
+    setNocRemotePreviewLoading(true);
+
+    (async () => {
+      try {
+        const res = await axios.get(`${API}/files/stream`, {
+          params: { file_url: full },
+          headers: authHeaders(),
+          responseType: 'blob',
+        });
+        if (cancelled) return;
+        const blob = new Blob([res.data], { type: 'application/pdf' });
+        const u = URL.createObjectURL(blob);
+        nocRemoteBlobRef.current = u;
+        setNocRemotePreviewUrl(u);
+      } catch (err) {
+        if (!cancelled) {
+          toast.error(err.response?.data?.detail || 'Could not load NOC preview');
+        }
+      } finally {
+        if (!cancelled) setNocRemotePreviewLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (nocRemoteBlobRef.current) {
+        URL.revokeObjectURL(nocRemoteBlobRef.current);
+        nocRemoteBlobRef.current = null;
+      }
+      setNocRemotePreviewUrl('');
+      setNocRemotePreviewLoading(false);
+    };
+  }, [nocDialogOpen, nocTargetItem?.id, nocTargetItem?.noc_document_url, nocLocalPreview, revokeNocRemoteBlob]);
 
   useEffect(() => {
     if (!SHOW_CGW_DIGEST_EMAIL_SECTION) return undefined;
@@ -1103,7 +1193,7 @@ const CGWFlowMetre = () => {
       {filteredItems.length > 0 ? (
         <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="overflow-auto table-scroll max-h-[calc(100vh-155px)] scrollbar-thin" style={{ scrollbarWidth: 'auto' }}>
-            <table className="w-full text-xs min-w-[2180px]">
+            <table className="w-full text-xs min-w-[2300px]">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-100">
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">SL NO</th>
@@ -1133,6 +1223,13 @@ const CGWFlowMetre = () => {
                     <span className="block leading-snug">RENEWAL DATE WILL BE</span>
                     <span className="mt-1 block text-[10px] font-normal text-gray-500 leading-tight">
                       <span className="text-red-600 font-semibold">Red</span> = past due ·{' '}
+                      <span className="text-amber-700 font-semibold">Amber</span> = ≤30 days
+                    </span>
+                  </th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 align-top min-w-[120px] whitespace-normal">
+                    <span className="block leading-snug">NOC VALID UPTO</span>
+                    <span className="mt-1 block text-[10px] font-normal text-gray-500 leading-tight">
+                      <span className="text-red-600 font-semibold">Red</span> = expired ·{' '}
                       <span className="text-amber-700 font-semibold">Amber</span> = ≤30 days
                     </span>
                   </th>
@@ -1200,7 +1297,7 @@ const CGWFlowMetre = () => {
                                         variant="ghost"
                                         size="sm"
                                         className="h-6 px-1 text-[9px] text-blue-700"
-                                        onClick={() => openNocDialog(inv)}
+                                        onClick={() => openNocDialog(inv, { startInPreviewMode: true })}
                                       >
                                         <Eye className="h-3 w-3 mr-0.5" />
                                         Preview
@@ -1208,7 +1305,13 @@ const CGWFlowMetre = () => {
                                     ) : null}
                                   </div>
                                 ) : inv.noc_document_url ? (
-                                  <Button type="button" variant="ghost" size="sm" className="h-7 px-1 text-[9px]" onClick={() => openNocDialog(inv)}>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-1 text-[9px]"
+                                    onClick={() => openNocDialog(inv, { startInPreviewMode: true })}
+                                  >
                                     <Eye className="h-3 w-3 mr-0.5" />
                                     View
                                   </Button>
@@ -1355,8 +1458,12 @@ const CGWFlowMetre = () => {
                             inlineEditData={inlineEditData}
                             groupAnchor={groupAnchor}
                             onChange={handleInlineChange}
-                            groupRows={group.rows}
                           />
+                        </td>
+                      )}
+                      {rowIndex === 0 && (
+                        <td rowSpan={group.rows.length} className="py-1.5 px-2 align-top border-l border-gray-100 bg-white">
+                          <NocValidUptoColumnCell groupRows={group.rows} />
                         </td>
                       )}
                       {rowIndex === 0 && (
@@ -1497,22 +1604,69 @@ const CGWFlowMetre = () => {
           <div className="flex flex-1 min-h-0 flex-col lg:flex-row gap-0 overflow-hidden">
             <div className="relative flex-1 min-h-[40vh] lg:min-h-0 bg-neutral-900 border-b lg:border-b-0 lg:border-r border-gray-200">
               {(() => {
-                const pdfSrc =
-                  nocLocalPreview ||
-                  (nocTargetItem?.noc_document_url ? nocDocHref(nocTargetItem.noc_document_url) : '');
-                return pdfSrc ? (
-                  <iframe title="NOC PDF" src={pdfSrc} className="absolute inset-0 h-full w-full border-0 bg-white" />
-                ) : (
+                const rawUrl = nocTargetItem?.noc_document_url;
+                const fullHref = rawUrl ? nocDocHref(rawUrl) : '';
+                const useStream = isNocStreamableRemoteUrl(fullHref);
+                const directSrc =
+                  !nocLocalPreview && fullHref && !useStream ? fullHref : '';
+                const iframeSrc = nocLocalPreview || nocRemotePreviewUrl || directSrc;
+
+                if (iframeSrc) {
+                  return (
+                    <iframe title="NOC PDF" src={iframeSrc} className="absolute inset-0 h-full w-full border-0 bg-white" />
+                  );
+                }
+                if (useStream && nocRemotePreviewLoading) {
+                  return (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-100 p-6 text-center text-sm text-gray-600">
+                      <span>Loading PDF…</span>
+                    </div>
+                  );
+                }
+                if (useStream && fullHref && !nocRemotePreviewLoading && !nocRemotePreviewUrl) {
+                  return (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gray-100 p-6 text-center text-sm text-gray-600">
+                      <p>Preview could not be loaded. You can still open the file in a new tab.</p>
+                      <a
+                        href={fullHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 font-medium underline hover:text-blue-800"
+                      >
+                        Open NOC PDF
+                      </a>
+                    </div>
+                  );
+                }
+                return (
                   <div className="absolute inset-0 flex items-center justify-center bg-gray-100 p-6 text-center text-sm text-gray-500">
                     {nocReadOnly
                       ? 'No NOC document on file for this row.'
-                      : 'Select a PDF (right) to preview here, or open an existing NOC from the grid.'}
+                      : canManage && !nocSideFieldsEditable
+                        ? 'Preview only. Use Edit NOC details on the right to change the PDF or metadata.'
+                        : 'Select a PDF (right) to preview here, or open an existing NOC from the grid.'}
                   </div>
                 );
               })()}
             </div>
             <div className="w-full lg:w-[380px] shrink-0 overflow-y-auto p-4 space-y-3 bg-white">
-              {!nocReadOnly && (
+              {canManage && !nocSideFieldsEditable && (
+                <div className="rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2">
+                  <p className="text-[11px] text-amber-950 mb-2">
+                    Fields are locked in preview. Click below to upload a new PDF or edit metadata.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-full border-amber-300 text-amber-950 hover:bg-amber-100"
+                    onClick={() => setNocSideFieldsEditable(true)}
+                  >
+                    Edit NOC details
+                  </Button>
+                </div>
+              )}
+              {!nocReadOnly && nocSideFieldsEditable && (
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium text-gray-700">NOC PDF</Label>
                   <div className="flex items-center gap-2">
@@ -1532,7 +1686,7 @@ const CGWFlowMetre = () => {
                 <Input
                   value={nocForm.project_name}
                   onChange={(e) => setNocForm((p) => ({ ...p, project_name: e.target.value }))}
-                  disabled={nocReadOnly}
+                  disabled={nocReadOnly || !nocSideFieldsEditable}
                   className="h-9 text-sm"
                 />
               </div>
@@ -1541,7 +1695,7 @@ const CGWFlowMetre = () => {
                 <Input
                   value={nocForm.noc_no}
                   onChange={(e) => setNocForm((p) => ({ ...p, noc_no: e.target.value }))}
-                  disabled={nocReadOnly}
+                  disabled={nocReadOnly || !nocSideFieldsEditable}
                   className="h-9 text-sm"
                 />
               </div>
@@ -1550,7 +1704,7 @@ const CGWFlowMetre = () => {
                 <Input
                   value={nocForm.application_no}
                   onChange={(e) => setNocForm((p) => ({ ...p, application_no: e.target.value }))}
-                  disabled={nocReadOnly}
+                  disabled={nocReadOnly || !nocSideFieldsEditable}
                   className="h-9 text-sm"
                 />
               </div>
@@ -1560,7 +1714,7 @@ const CGWFlowMetre = () => {
                   type="date"
                   value={nocForm.valid_from}
                   onChange={(e) => setNocForm((p) => ({ ...p, valid_from: e.target.value }))}
-                  disabled={nocReadOnly}
+                  disabled={nocReadOnly || !nocSideFieldsEditable}
                   className="h-9 text-sm"
                 />
               </div>
@@ -1570,12 +1724,12 @@ const CGWFlowMetre = () => {
                   type="date"
                   value={nocForm.valid_upto}
                   onChange={(e) => setNocForm((p) => ({ ...p, valid_upto: e.target.value }))}
-                  disabled={nocReadOnly}
+                  disabled={nocReadOnly || !nocSideFieldsEditable}
                   className="h-9 text-sm"
                 />
               </div>
               <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
-                {!nocReadOnly && (
+                {!nocReadOnly && nocSideFieldsEditable && (
                   <Button
                     type="button"
                     className="bg-blue-600 text-white hover:bg-blue-700"

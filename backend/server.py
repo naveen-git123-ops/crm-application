@@ -2309,12 +2309,25 @@ def upload_to_s3(file_content: bytes, filename: str, folder: str = 'uploads') ->
         # Create S3 key with folder prefix
         s3_key = f"{folder}/{uuid.uuid4()}/{filename}"
         
+        ext = Path(filename).suffix.lower()
+        if ext == '.pdf':
+            content_type = 'application/pdf'
+        elif ext in ('.png',):
+            content_type = 'image/png'
+        elif ext in ('.jpg', '.jpeg'):
+            content_type = 'image/jpeg'
+        elif ext == '.gif':
+            content_type = 'image/gif'
+        elif ext == '.webp':
+            content_type = 'image/webp'
+        else:
+            content_type = 'application/octet-stream'
         # Upload to S3
         s3_client.put_object(
             Bucket=S3_BUCKET_NAME,
             Key=s3_key,
             Body=file_content,
-            ContentType='application/octet-stream'
+            ContentType=content_type,
         )
         
         # Generate public URL
@@ -6124,7 +6137,10 @@ def stream_file(file_url: str, current_user: UserModel = Depends(get_current_use
         # Determine content type from file extension or S3 metadata
         content_type = response.get('ContentType', 'application/octet-stream')
         filename = s3_key.split('/')[-1]
-        
+        # Legacy NOC/media uploads used application/octet-stream; PDFs need application/pdf for iframe preview
+        if filename.lower().endswith('.pdf'):
+            content_type = 'application/pdf'
+
         # Return with proper headers for inline display
         return Response(
             content=file_content,
