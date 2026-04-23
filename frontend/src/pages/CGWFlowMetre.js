@@ -94,6 +94,15 @@ const FILTER_LABELS = {
   remarks: 'Remarks'
 };
 
+/** S3 HTTP URLs: use /api/files/stream for preview (auth + inline Content-Type). */
+function isS3HttpObjectUrl(url) {
+  return (
+    !!url &&
+    /^https?:\/\//i.test(url) &&
+    (url.includes('.amazonaws.com') || url.includes('.digitaloceanspaces.com'))
+  );
+}
+
 /** Parse commissioning / renewal strings (YYYY-MM-DD, DD/MM/YYYY, or Date.parse). */
 function parseGridDate(raw) {
   if (raw == null || raw === '') return null;
@@ -295,12 +304,6 @@ const CGWFlowMetre = () => {
     setNocRemotePreviewLoading(false);
   }, []);
 
-  /** S3 (or compatible) URLs: direct iframe hits wrong Content-Type / disposition → use authenticated stream + blob. */
-  const isNocStreamableRemoteUrl = (full) =>
-    !!full &&
-    /^https?:\/\//i.test(full) &&
-    (full.includes('.amazonaws.com') || full.includes('.digitaloceanspaces.com'));
-
   const openNocDialog = (item, { startInPreviewMode = false } = {}) => {
     revokeNocRemoteBlob();
     clearNocLocalPreview();
@@ -390,7 +393,7 @@ const CGWFlowMetre = () => {
       return undefined;
     }
     const full = nocDocHref(nocTargetItem.noc_document_url);
-    if (!isNocStreamableRemoteUrl(full)) {
+    if (!isS3HttpObjectUrl(full)) {
       revokeNocRemoteBlob();
       return undefined;
     }
@@ -650,11 +653,26 @@ const CGWFlowMetre = () => {
   const [mediaActiveCategory, setMediaActiveCategory] = useState('flow_meter');
   const [mediaSelectedFileId, setMediaSelectedFileId] = useState(null);
   const [mediaUploading, setMediaUploading] = useState(false);
-  const mediaFileInputRef = useRef(null);
   const mediaPickCategoryRef = useRef(null);
+  /** Survives Radix dialog auto-close when OS file picker opens (outside pointer dismiss). */
+  const mediaUploadRowIdRef = useRef(null);
+  const mediaFileInputRef = useRef(null);
+  const mediaStreamBlobRef = useRef(null);
+  const [mediaStreamPreviewUrl, setMediaStreamPreviewUrl] = useState('');
+  const [mediaStreamPreviewLoading, setMediaStreamPreviewLoading] = useState(false);
+
+  const revokeMediaStreamBlob = useCallback(() => {
+    if (mediaStreamBlobRef.current) {
+      URL.revokeObjectURL(mediaStreamBlobRef.current);
+      mediaStreamBlobRef.current = null;
+    }
+    setMediaStreamPreviewUrl('');
+    setMediaStreamPreviewLoading(false);
+  }, []);
 
   useEffect(() => {
     if (!mediaDialogOpen || !mediaDialogItem) return;
+    mediaPickCategoryRef.current = mediaActiveCategory;
     const list = mediaDialogItem.cgw_attachments?.[mediaActiveCategory] || [];
     setMediaSelectedFileId((prev) => {
       if (prev && list.some((a) => a.id === prev)) return prev;
@@ -662,14 +680,28 @@ const CGWFlowMetre = () => {
     });
   }, [mediaDialogOpen, mediaDialogItem, mediaActiveCategory]);
 
-  const openMediaDialog = (item, category = 'flow_meter') => {
-    setMediaDialogItem(item);
-    setMediaActiveCategory(CGW_MEDIA_KEYS.includes(category) ? category : 'flow_meter');
+  const openMediaDialog = async (item, category = 'flow_meter') => {
+    const cat = CGW_MEDIA_KEYS.includes(category) ? category : 'flow_meter';
+    const rowSnapshotId = item.id;
+    mediaUploadRowIdRef.current = rowSnapshotId;
+    mediaPickCategoryRef.current = cat;
+    setMediaActiveCategory(cat);
     setMediaSelectedFileId(null);
+    setMediaDialogItem(item);
     setMediaDialogOpen(true);
+    try {
+      const res = await axios.get(`${API}/cgw-flow-metres/${rowSnapshotId}`, { headers: authHeaders() });
+      if (mediaUploadRowIdRef.current !== rowSnapshotId) return;
+      setMediaDialogItem(res.data);
+    } catch {
+      if (mediaUploadRowIdRef.current !== rowSnapshotId) return;
+      toast.error('Could not load this row from the server. Showing grid data.');
+    }
   };
 
   const closeMediaDialog = () => {
+    revokeMediaStreamBlob();
+    mediaUploadRowIdRef.current = null;
     setMediaDialogOpen(false);
     setMediaDialogItem(null);
     setMediaSelectedFileId(null);
@@ -677,57 +709,88 @@ const CGWFlowMetre = () => {
 
   const getAttachList = (item, cat) => item?.cgw_attachments?.[cat] || [];
 
-  const triggerMediaFilePick = (cat) => {
-    if (!canManage) return;
-    mediaPickCategoryRef.current = cat;
+  const triggerMediaFileChooser = () => {
+    if (!canManage || !mediaDialogItem?.id) return;
+    mediaPickCategoryRef.current = mediaActiveCategory;
+    mediaUploadRowIdRef.current = mediaDialogItem.id;
     mediaFileInputRef.current?.click();
   };
 
   const handleMediaFilesSelected = async (e) => {
     const files = e.target.files;
     e.target.value = '';
-    const cat = mediaPickCategoryRef.current;
-    mediaPickCategoryRef.current = null;
-    if (!files?.length || !cat || !mediaDialogItem || !canManage) return;
+    const cat = mediaPickCategoryRef.current || mediaActiveCategory;
+    const rowId = mediaDialogItem?.id || mediaUploadRowIdRef.current;
+    if (!canManage) {
+      return;
+    }
+    if (!files?.length) {
+      return;
+    }
+    if (!cat) {
+      toast.error('Pick a category tab first, then Choose files.');
+      return;
+    }
+    if (!rowId) {
+      toast.error('Lost row context. Close this dialog, open Attachments again, then upload.');
+      return;
+    }
     const list = Array.from(files);
+    const token = localStorage.getItem('token');
     setMediaUploading(true);
     try {
       for (const f of list) {
         const fd = new FormData();
-        fd.append('category', cat);
-        fd.append('file', f);
-        await axios.post(`${API}/cgw-flow-metres/${mediaDialogItem.id}/media-attachments`, fd, {
-          headers: authHeaders(),
-          timeout: 120000,
-          maxBodyLength: Infinity,
-          maxContentLength: Infinity,
+        fd.append('category', String(cat));
+        fd.append('file', f, f.name || 'upload');
+        const res = await fetch(`${API}/cgw-flow-metres/${rowId}/media-attachments`, {
+          method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: fd,
         });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const d = body?.detail;
+          const msg = Array.isArray(d) ? d.map((x) => (typeof x === 'string' ? x : x?.msg)).join('; ') : d || res.statusText || 'Upload failed';
+          throw new Error(msg);
+        }
       }
       toast.success(list.length > 1 ? `${list.length} files uploaded` : 'File uploaded');
-      const res = await axios.get(`${API}/cgw-flow-metres/${mediaDialogItem.id}`, { headers: authHeaders() });
+      const res = await axios.get(`${API}/cgw-flow-metres/${rowId}`, { headers: authHeaders() });
       setMediaDialogItem(res.data);
+      const uploadedList = res.data?.cgw_attachments?.[cat] || [];
+      if (uploadedList.length) {
+        setMediaSelectedFileId(uploadedList[uploadedList.length - 1].id);
+      }
       fetchItems();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Upload failed');
+      toast.error(err?.message || 'Upload failed');
     } finally {
       setMediaUploading(false);
     }
   };
 
   const handleDeleteMediaFile = async (cat, attId) => {
-    if (!mediaDialogItem || !canManage) return;
-    if (!window.confirm('Remove this file from the server and this inventory row?')) return;
+    if (!canManage) return;
+    const rowId = mediaDialogItem?.id || mediaUploadRowIdRef.current;
+    if (!rowId) {
+      toast.error('Missing row. Close and open attachments again.');
+      return;
+    }
+    if (!window.confirm('Delete this file from storage and remove it from this inventory row?')) return;
     try {
       await axios.delete(
-        `${API}/cgw-flow-metres/${mediaDialogItem.id}/media-attachments/${cat}/${encodeURIComponent(attId)}`,
+        `${API}/cgw-flow-metres/${rowId}/media-attachments/${cat}/${encodeURIComponent(attId)}`,
         { headers: authHeaders() }
       );
-      toast.success('Attachment removed');
-      const res = await axios.get(`${API}/cgw-flow-metres/${mediaDialogItem.id}`, { headers: authHeaders() });
+      toast.success('File deleted');
+      const res = await axios.get(`${API}/cgw-flow-metres/${rowId}`, { headers: authHeaders() });
       setMediaDialogItem(res.data);
       fetchItems();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Delete failed');
+      const d = err.response?.data?.detail;
+      const msg = Array.isArray(d) ? d.map((x) => x.msg || x).join('; ') : d || 'Delete failed';
+      toast.error(msg);
     }
   };
 
@@ -737,8 +800,60 @@ const CGWFlowMetre = () => {
     return `${BACKEND_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
   };
 
-  const mediaIsImage = (url) => /\.(jpg|jpeg|png|gif|webp)(\?|#|$)/i.test(url || '');
-  const mediaIsPdf = (url) => /\.pdf(\?|#|$)/i.test(url || '');
+  useEffect(() => {
+    if (!mediaDialogOpen || !mediaDialogItem) {
+      revokeMediaStreamBlob();
+      return undefined;
+    }
+    const list = mediaDialogItem.cgw_attachments?.[mediaActiveCategory] || [];
+    const sel = list.find((a) => a.id === mediaSelectedFileId) || list[0];
+    if (!sel?.url) {
+      revokeMediaStreamBlob();
+      return undefined;
+    }
+    const full = mediaPreviewHref(sel.url);
+    if (!isS3HttpObjectUrl(full)) {
+      revokeMediaStreamBlob();
+      return undefined;
+    }
+
+    let cancelled = false;
+    revokeMediaStreamBlob();
+    setMediaStreamPreviewLoading(true);
+
+    (async () => {
+      try {
+        const res = await axios.get(`${API}/files/stream`, {
+          params: { file_url: full },
+          headers: authHeaders(),
+          responseType: 'blob',
+        });
+        if (cancelled) return;
+        const hdr = res.headers['content-type'] || res.headers['Content-Type'] || '';
+        const ct = String(hdr).split(';')[0].trim() || 'application/octet-stream';
+        const blob = new Blob([res.data], { type: ct });
+        const u = URL.createObjectURL(blob);
+        mediaStreamBlobRef.current = u;
+        setMediaStreamPreviewUrl(u);
+      } catch (err) {
+        if (!cancelled) {
+          toast.error(err.response?.data?.detail || 'Could not load preview');
+        }
+      } finally {
+        if (!cancelled) setMediaStreamPreviewLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (mediaStreamBlobRef.current) {
+        URL.revokeObjectURL(mediaStreamBlobRef.current);
+        mediaStreamBlobRef.current = null;
+      }
+      setMediaStreamPreviewUrl('');
+      setMediaStreamPreviewLoading(false);
+    };
+  }, [mediaDialogOpen, mediaDialogItem, mediaActiveCategory, mediaSelectedFileId, revokeMediaStreamBlob]);
 
   const handleApplyColumnFilter = () => {
     setColumnFilters(
@@ -1203,8 +1318,8 @@ const CGWFlowMetre = () => {
                     <span className="mt-0.5 block text-[10px] font-normal text-gray-500 leading-tight">Per equipment row</span>
                   </th>
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap min-w-[120px] align-top">
-                    <span className="block leading-snug">PHOTOS / DOCS</span>
-                    <span className="mt-0.5 block text-[10px] font-normal text-gray-500 leading-tight">S3 · per row</span>
+                    <span className="block leading-snug">ATTACHMENTS</span>
+                    <span className="mt-0.5 block text-[10px] font-normal text-gray-500 leading-tight">5 categories · multi-file</span>
                   </th>
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">LOCATION</th>
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">CONTACT PERSON</th>
@@ -1336,7 +1451,7 @@ const CGWFlowMetre = () => {
                                   className="h-7 px-1 text-[9px] border-gray-200 w-full"
                                   onClick={() => openMediaDialog(inv, 'flow_meter')}
                                 >
-                                  Files (S3)
+                                  Attachments
                                 </Button>
                                 <div className="text-[8px] text-gray-500 mt-1 leading-tight space-y-0.5">
                                   {CGW_MEDIA_KEYS.map((k) => {
@@ -1606,7 +1721,7 @@ const CGWFlowMetre = () => {
               {(() => {
                 const rawUrl = nocTargetItem?.noc_document_url;
                 const fullHref = rawUrl ? nocDocHref(rawUrl) : '';
-                const useStream = isNocStreamableRemoteUrl(fullHref);
+                const useStream = isS3HttpObjectUrl(fullHref);
                 const directSrc =
                   !nocLocalPreview && fullHref && !useStream ? fullHref : '';
                 const iframeSrc = nocLocalPreview || nocRemotePreviewUrl || directSrc;
@@ -1748,15 +1863,6 @@ const CGWFlowMetre = () => {
         </DialogContent>
       </Dialog>
 
-      <input
-        ref={mediaFileInputRef}
-        type="file"
-        accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,image/*,application/pdf"
-        multiple
-        className="hidden"
-        onChange={handleMediaFilesSelected}
-      />
-
       <Dialog
         open={mediaDialogOpen}
         onOpenChange={(open) => {
@@ -1764,25 +1870,43 @@ const CGWFlowMetre = () => {
         }}
       >
         <DialogContent
+          key={mediaDialogItem?.id || 'cgw-media-dialog'}
           className={cn(
             'flex flex-col gap-0 p-0 overflow-hidden border-0 bg-white max-w-[96vw] w-[96vw]',
             'max-h-[90vh] h-[90vh] rounded-lg shadow-xl',
             'left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%]'
           )}
         >
+          <input
+            ref={mediaFileInputRef}
+            id={mediaDialogItem?.id ? `cgw-inv-upload-${mediaDialogItem.id}` : 'cgw-inv-upload-pending'}
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,image/*,application/pdf"
+            multiple
+            className="sr-only"
+            aria-label="Upload photos or PDFs for the selected category"
+            onChange={handleMediaFilesSelected}
+          />
           <div className="bg-slate-800 text-white px-4 py-3 pr-14 shrink-0 border-b border-slate-700">
             <DialogHeader className="space-y-0 text-left">
               <DialogTitle className="text-base font-semibold text-white m-0 flex items-center gap-2">
                 <FileText className="h-5 w-5 shrink-0" />
-                <span className="truncate">
-                  Photos & documents (S3) — {mediaDialogItem?.inventory_id} · {mediaDialogItem?.customer_name}
+                <span className="truncate" title={mediaDialogItem?.id || ''}>
+                  Equipment attachments — {mediaDialogItem?.inventory_id} · {mediaDialogItem?.customer_name}
+                  {mediaDialogItem?.equipment_name ? (
+                    <span className="block text-xs font-normal text-slate-300 mt-1 truncate">{mediaDialogItem.equipment_name}</span>
+                  ) : null}
                 </span>
               </DialogTitle>
             </DialogHeader>
           </div>
-          <p className="px-4 py-2 text-[11px] text-amber-900 bg-amber-50 border-b border-amber-100 shrink-0">
-            Uploads require S3 to be configured on the server. Preview opens here — no download needed for images/PDF.
-          </p>
+          <div className="px-4 py-2 text-[11px] text-slate-700 bg-slate-50 border-b border-slate-200 shrink-0 space-y-1">
+            <p>
+              <span className="font-semibold text-slate-900">Five categories</span>, each supports{' '}
+              <span className="font-medium">multiple files</span> (PDF, JPG, PNG, WEBP, GIF — max 25 MB each). Production
+              uses S3; without S3, files are stored under <span className="font-mono">/uploads/cgw_media</span>.
+            </p>
+          </div>
           <div className="flex flex-wrap gap-1 px-3 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
             {CGW_MEDIA_KEYS.map((k) => (
               <Button
@@ -1790,62 +1914,72 @@ const CGWFlowMetre = () => {
                 type="button"
                 size="sm"
                 variant={mediaActiveCategory === k ? 'default' : 'outline'}
-                className={`h-8 text-[10px] px-2 ${mediaActiveCategory === k ? 'bg-blue-600' : ''}`}
-                onClick={() => setMediaActiveCategory(k)}
+                className={`h-auto min-h-8 max-w-[200px] whitespace-normal text-left py-1.5 text-[10px] px-2 leading-snug ${mediaActiveCategory === k ? 'bg-blue-600' : ''}`}
+                onClick={() => {
+                  setMediaActiveCategory(k);
+                  mediaPickCategoryRef.current = k;
+                }}
               >
-                {CGW_MEDIA_LABELS[k]}
-                <span className="ml-1 opacity-80">({getAttachList(mediaDialogItem, k).length})</span>
+                <span className="block font-medium">{CGW_MEDIA_LABELS[k]}</span>
+                <span className="mt-0.5 block opacity-90 tabular-nums">{getAttachList(mediaDialogItem, k).length} file(s)</span>
               </Button>
             ))}
           </div>
           <div className="flex flex-1 min-h-0 flex-col md:flex-row overflow-hidden">
-            <div className="w-full md:w-72 shrink-0 border-b md:border-b-0 md:border-r border-gray-200 flex flex-col min-h-0 bg-white">
-              <div className="p-2 border-b border-gray-100 flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-gray-700">Files in tab</span>
-                {canManage && (
+            <div className="w-full md:w-80 shrink-0 border-b md:border-b-0 md:border-r border-gray-200 flex flex-col min-h-0 bg-white">
+              <div className="p-3 border-b border-gray-100 space-y-2">
+                <div>
+                  <p className="text-xs font-semibold text-gray-900">{CGW_MEDIA_LABELS[mediaActiveCategory]}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Upload adds to this category only. Select several files at once if needed.</p>
+                </div>
+                {canManage ? (
                   <Button
                     type="button"
-                    size="sm"
                     variant="outline"
-                    className="h-8 text-[10px]"
-                    disabled={mediaUploading}
-                    onClick={() => triggerMediaFilePick(mediaActiveCategory)}
+                    className="w-full h-auto min-h-10 border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100 text-xs font-medium"
+                    disabled={mediaUploading || !mediaDialogItem?.id}
+                    onClick={triggerMediaFileChooser}
                   >
-                    <Upload className="h-3 w-3 mr-1" />
-                    Add files
+                    <Upload className="h-4 w-4 shrink-0 mr-2" aria-hidden />
+                    {mediaUploading ? 'Uploading…' : 'Choose files (multi-select)'}
                   </Button>
+                ) : (
+                  <p className="text-[11px] text-gray-500">You can view files. Upload and delete require Admin or HR.</p>
                 )}
               </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              <div className="flex-1 overflow-y-auto p-2 space-y-1.5 min-h-[120px]">
                 {(getAttachList(mediaDialogItem, mediaActiveCategory).length ? (
                   getAttachList(mediaDialogItem, mediaActiveCategory).map((att) => (
                     <div
                       key={att.id}
-                      className={`flex items-start justify-between gap-1 rounded border px-2 py-1.5 text-[11px] ${
+                      className={`flex items-start justify-between gap-2 rounded-md border px-2.5 py-2 text-[11px] ${
                         mediaSelectedFileId === att.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
                       }`}
                     >
                       <button
                         type="button"
-                        className="text-left flex-1 min-w-0 truncate text-gray-800 hover:underline"
+                        className="text-left flex-1 min-w-0 break-words text-gray-800 hover:underline"
                         onClick={() => setMediaSelectedFileId(att.id)}
                         title={att.file_name}
                       >
                         {att.file_name}
                       </button>
                       {canManage && (
-                        <button
+                        <Button
                           type="button"
-                          className="text-red-600 shrink-0 text-[10px] hover:underline"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 shrink-0 px-2 text-[10px] text-red-600 hover:bg-red-50 hover:text-red-700"
                           onClick={() => handleDeleteMediaFile(mediaActiveCategory, att.id)}
                         >
-                          Remove
-                        </button>
+                          <Trash2 className="h-3.5 w-3.5 mr-0.5" />
+                          Delete
+                        </Button>
                       )}
                     </div>
                   ))
                 ) : (
-                  <p className="text-[11px] text-gray-500 p-2">No files in this category yet.</p>
+                  <p className="text-[11px] text-gray-500 p-2 text-center">No files yet — use Choose files above.</p>
                 ))}
               </div>
             </div>
@@ -1853,27 +1987,70 @@ const CGWFlowMetre = () => {
               {(() => {
                 const mList = getAttachList(mediaDialogItem, mediaActiveCategory);
                 const sel = mList.find((a) => a.id === mediaSelectedFileId) || mList[0];
-                const href = sel ? mediaPreviewHref(sel.url) : '';
-                if (!href) {
+                const directHref = sel?.url ? mediaPreviewHref(sel.url) : '';
+                const useS3Stream = !!(directHref && isS3HttpObjectUrl(directHref));
+                const previewSrc = useS3Stream ? mediaStreamPreviewUrl || '' : directHref;
+                const nameProbe = `${sel?.file_name || ''} ${sel?.url || ''}`;
+                const showPdf = /\.pdf(\?|#|$)/i.test(nameProbe);
+                const showImg = /\.(jpg|jpeg|png|gif|webp)(\?|#|$)/i.test(nameProbe);
+
+                if (!sel?.url) {
                   return (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm text-gray-500 p-6 text-center">
                       Select a file from the list to preview.
                     </div>
                   );
                 }
-                if (mediaIsPdf(href)) {
-                  return <iframe title="Preview" src={href} className="absolute inset-0 h-full w-full border-0 bg-white" />;
+                if (useS3Stream && mediaStreamPreviewLoading && !previewSrc) {
+                  return (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-100 text-sm text-gray-600 p-6 text-center">
+                      <span>Loading preview…</span>
+                    </div>
+                  );
                 }
-                if (mediaIsImage(href)) {
+                if (useS3Stream && !mediaStreamPreviewLoading && !previewSrc) {
+                  return (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gray-100 text-sm text-gray-600 p-6 text-center">
+                      <p>Preview could not be loaded.</p>
+                      <a
+                        href={directHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 font-medium underline hover:text-blue-800"
+                      >
+                        Open file in new tab
+                      </a>
+                    </div>
+                  );
+                }
+                if (!previewSrc) {
+                  return (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm text-gray-500 p-6 text-center">
+                      Select a file from the list to preview.
+                    </div>
+                  );
+                }
+                if (showPdf) {
+                  return <iframe title="Preview" src={previewSrc} className="absolute inset-0 h-full w-full border-0 bg-white" />;
+                }
+                if (showImg) {
                   return (
                     <div className="absolute inset-0 overflow-auto bg-gray-100 flex items-center justify-center p-2">
-                      <img src={href} alt="" className="max-h-full max-w-full object-contain" />
+                      <img src={previewSrc} alt="" className="max-h-full max-w-full object-contain" />
                     </div>
                   );
                 }
                 return (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm text-gray-600 p-4 text-center">
-                    Inline preview is not available for this file type. URL is stored on the row in S3.
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gray-100 text-sm text-gray-600 p-4 text-center">
+                    <p>Inline preview is not available for this file type.</p>
+                    <a
+                      href={directHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 font-medium underline hover:text-blue-800"
+                    >
+                      Open in new tab
+                    </a>
                   </div>
                 );
               })()}

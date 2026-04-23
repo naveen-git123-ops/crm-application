@@ -2341,30 +2341,32 @@ def upload_to_s3(file_content: bytes, filename: str, folder: str = 'uploads') ->
 def delete_from_s3(file_url: str) -> bool:
     """
     Delete file from S3 bucket.
-    Extracts the S3 key from the public URL.
+    Supports virtual-hosted URLs (bucket.s3.region.amazonaws.com/key) and path-style (s3.region.amazonaws.com/bucket/key).
     """
-    if not USE_S3 or not s3_client or not file_url:
+    from urllib.parse import urlparse
+
+    if not USE_S3 or not s3_client or not file_url or not S3_BUCKET_NAME:
         return False
-    
+    if S3_BUCKET_NAME not in file_url:
+        return False
     try:
-        # Extract S3 key from URL
-        if S3_BUCKET_NAME in file_url:
-            s3_key = file_url.split(f"{S3_BUCKET_NAME}.s3")[1]
-            if s3_key.startswith('.').replace('.s3.', '/').startswith('/'):
-                # Clean up the key
-                s3_key = s3_key.split('/')[-1]
-                s3_key = '/'.join(file_url.split('/')[-3:])
-            else:
-                s3_key = '/'.join(file_url.split('/')[-3:])
-            
-            s3_client.delete_object(
-                Bucket=S3_BUCKET_NAME,
-                Key=s3_key
-            )
-            return True
+        parsed = urlparse(file_url)
+        path = (parsed.path or '').lstrip('/')
+        if not path:
+            return False
+        # Path-style: first segment is bucket name
+        parts = path.split('/', 1)
+        if len(parts) == 2 and parts[0] == S3_BUCKET_NAME:
+            s3_key = parts[1]
+        else:
+            s3_key = path
+
+        s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
+        return True
     except ClientError as e:
-        logging.error(f"S3 delete error: {str(e)}")
-    
+        logging.error('S3 delete error: %s', e)
+    except Exception as e:
+        logging.error('S3 delete unexpected error: %s', e)
     return False
 
 # ============= HELPER FUNCTIONS =============
@@ -3267,13 +3269,13 @@ def cgw_upload_media_attachment(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Append one photo/PDF to the given attachment bucket (S3 required)."""
+    """Append one photo/PDF to the given bucket (S3 when configured, else local /uploads/)."""
     if current_user.role not in ['Admin', 'HR']:
         raise HTTPException(status_code=403, detail='Not authorized')
-    if not USE_S3 or not s3_client:
+    if USE_S3 and not s3_client:
         raise HTTPException(
             status_code=503,
-            detail='S3 must be configured to upload CGW flow metre attachments.',
+            detail='S3 is enabled but not configured on the server (missing client or credentials).',
         )
     if category not in CGW_MEDIA_ATTACHMENT_KEYS:
         raise HTTPException(
@@ -6137,9 +6139,18 @@ def stream_file(file_url: str, current_user: UserModel = Depends(get_current_use
         # Determine content type from file extension or S3 metadata
         content_type = response.get('ContentType', 'application/octet-stream')
         filename = s3_key.split('/')[-1]
-        # Legacy NOC/media uploads used application/octet-stream; PDFs need application/pdf for iframe preview
-        if filename.lower().endswith('.pdf'):
+        low = filename.lower()
+        # Legacy uploads used application/octet-stream; browsers need concrete types for iframe/img preview
+        if low.endswith('.pdf'):
             content_type = 'application/pdf'
+        elif low.endswith(('.jpg', '.jpeg')):
+            content_type = 'image/jpeg'
+        elif low.endswith('.png'):
+            content_type = 'image/png'
+        elif low.endswith('.gif'):
+            content_type = 'image/gif'
+        elif low.endswith('.webp'):
+            content_type = 'image/webp'
 
         # Return with proper headers for inline display
         return Response(
