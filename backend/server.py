@@ -7943,6 +7943,11 @@ def start_vehicle_usage(
     db: Session = Depends(get_db)
 ):
     """Employee starts using a vehicle or own vehicle - records start meter reading"""
+    # Always bind usage to the authenticated user to avoid ID mismatches that
+    # later prevent fetching/completing the same active journey.
+    effective_employee_id = current_user.employee_id or current_user.id
+    effective_employee_name = current_user.name
+
     # If using own vehicle, validate own_vehicle fields
     if not data.vehicle_id:
         if not data.own_vehicle_type or not data.own_vehicle_milage:
@@ -7961,8 +7966,8 @@ def start_vehicle_usage(
     
     usage = VehicleUsageModel(
         vehicle_id=data.vehicle_id,
-        employee_id=data.employee_id,
-        employee_name=data.employee_name,
+        employee_id=effective_employee_id,
+        employee_name=effective_employee_name,
         start_meter_reading=data.start_meter_reading,
         own_vehicle_type=data.own_vehicle_type,
         own_vehicle_milage=data.own_vehicle_milage,
@@ -7983,8 +7988,9 @@ def get_all_vehicle_usage(
     if current_user.role in ['Admin', 'Manager']:
         usages = db.query(VehicleUsageModel).filter(VehicleUsageModel.is_claimed == 0).order_by(VehicleUsageModel.start_date.desc()).all()
     else:
+        effective_employee_id = current_user.employee_id or current_user.id
         usages = db.query(VehicleUsageModel).filter(
-            VehicleUsageModel.employee_id == current_user.employee_id,
+            VehicleUsageModel.employee_id == effective_employee_id,
             VehicleUsageModel.is_claimed == 0
         ).order_by(VehicleUsageModel.start_date.desc()).all()
     return usages
