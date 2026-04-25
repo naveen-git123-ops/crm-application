@@ -225,8 +225,87 @@ export const Attendance = () => {
 
   const fetchAttendanceSummary = async (month) => {
     try {
-      const res = await axios.get(`${API}/attendance/summary`, { params: { month }, headers: authHeader() });
-      setAttendanceSummary(res.data);
+      const year = parseInt((month || '').split('-')[0], 10);
+      const [attRes, holidayRes] = await Promise.all([
+        axios.get(`${API}/attendance`, { params: { month }, headers: authHeader() }),
+        axios.get(`${API}/government-holidays`, { params: { year }, headers: authHeader() })
+      ]);
+
+      const records = Array.isArray(attRes.data) ? attRes.data : [];
+      const holidaySet = new Set((holidayRes.data || []).map((h) => h.date));
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const allDays = eachDayOfInterval({
+        start: new Date(`${month}-01`),
+        end: endOfMonth(new Date(`${month}-01`))
+      });
+
+      const byEmployee = {};
+      records.forEach((r) => {
+        if (!byEmployee[r.employee_id]) {
+          byEmployee[r.employee_id] = {
+            employee_id: r.employee_id,
+            employee_name:
+              r.employee_name ||
+              employees.find((e) => e.employee_id === r.employee_id)?.name ||
+              r.employee_id,
+            records: {}
+          };
+        }
+        byEmployee[r.employee_id].records[r.date] = r;
+      });
+
+      const lateThresholdMinutes = 10 * 60 + 30;
+      const rows = Object.values(byEmployee).map((emp) => {
+        let totalDays = 0;
+        let presentDays = 0;
+        let lateDays = 0;
+
+        allDays.forEach((day) => {
+          const dateStr = format(day, 'yyyy-MM-dd');
+          const isSunday = day.getDay() === 0;
+          const isHoliday = holidaySet.has(dateStr);
+          const dayDate = new Date(day);
+          dayDate.setHours(0, 0, 0, 0);
+          const isFutureDate = dayDate > today;
+
+          if (!isFutureDate && !isSunday && !isHoliday) {
+            totalDays += 1;
+            const rec = emp.records[dateStr];
+            const countsAsPresent =
+              (rec?.is_tour === 1 && rec?.tour_approval_status === 'approved') ||
+              rec?.status === 'Present';
+            if (countsAsPresent) presentDays += 1;
+          }
+        });
+
+        Object.values(emp.records).forEach((rec) => {
+          if (rec?.is_tour === 1) return;
+          const punchIn = rec?.punch_in;
+          if (!punchIn || typeof punchIn !== 'string') return;
+          const parts = punchIn.split(':');
+          const h = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10) || 0;
+          if (Number.isNaN(h)) return;
+          if (h * 60 + m > lateThresholdMinutes) lateDays += 1;
+        });
+
+        return {
+          employee_id: emp.employee_id,
+          employee_name: emp.employee_name,
+          present_days: presentDays,
+          late_days: lateDays,
+          half_day_days: 0,
+          absent_days: Math.max(totalDays - presentDays, 0),
+          total_days: totalDays
+        };
+      });
+
+      const visibleRows = canManageAttendance
+        ? rows
+        : rows.filter((r) => r.employee_id === user?.employee_id);
+      setAttendanceSummary(visibleRows);
     } catch {
       toast.error('Failed to load summary');
     }
