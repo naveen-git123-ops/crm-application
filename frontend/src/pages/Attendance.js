@@ -125,6 +125,10 @@ export const Attendance = () => {
   const [latePunchInLoading, setLatePunchInLoading] = useState(false);
   const [latePunchOutRequests, setLatePunchOutRequests] = useState([]);
   const [latePunchOutLoading, setLatePunchOutLoading] = useState(false);
+  const [latePunchInStatusFilter, setLatePunchInStatusFilter] = useState('Pending');
+  const [latePunchOutStatusFilter, setLatePunchOutStatusFilter] = useState('Pending');
+  const [latePunchInEmployeeFilter, setLatePunchInEmployeeFilter] = useState('');
+  const [latePunchOutEmployeeFilter, setLatePunchOutEmployeeFilter] = useState('');
   const [showPunchOutWorkLogDialog, setShowPunchOutWorkLogDialog] = useState(false);
   const [workLogSummary, setWorkLogSummary] = useState('');
   const [isSubmittingWorkLog, setIsSubmittingWorkLog] = useState(false);
@@ -365,11 +369,11 @@ export const Attendance = () => {
     }
   };
 
-  const fetchLatePunchInRequests = async () => {
+  const fetchLatePunchInRequests = async (status = latePunchInStatusFilter) => {
     if (!canManageAttendanceFull) return;
     setLatePunchInLoading(true);
     try {
-      const res = await axios.get(`${API}/attendance/late-punch-in-requests?status=Pending`, { headers: authHeader() });
+      const res = await axios.get(`${API}/attendance/late-punch-in-requests?status=${encodeURIComponent(status)}`, { headers: authHeader() });
       setLatePunchInRequests(res.data || []);
     } catch (err) {
       console.error('Failed to load late punch-in requests:', err);
@@ -387,18 +391,18 @@ export const Attendance = () => {
         { headers: authHeader() }
       );
       toast.success(res.data.message);
-      fetchLatePunchInRequests();
+      fetchLatePunchInRequests(latePunchInStatusFilter);
       fetchAttendance();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to process request');
     }
   };
 
-  const fetchLatePunchOutRequests = async () => {
+  const fetchLatePunchOutRequests = async (status = latePunchOutStatusFilter) => {
     if (!canManageAttendanceFull) return;
     setLatePunchOutLoading(true);
     try {
-      const res = await axios.get(`${API}/attendance/late-punch-out-requests?status=Pending`, { headers: authHeader() });
+      const res = await axios.get(`${API}/attendance/late-punch-out-requests?status=${encodeURIComponent(status)}`, { headers: authHeader() });
       setLatePunchOutRequests(res.data || []);
     } catch (err) {
       console.error('Failed to load late punch-out requests:', err);
@@ -416,10 +420,74 @@ export const Attendance = () => {
         { headers: authHeader() }
       );
       toast.success(res.data.message);
-      fetchLatePunchOutRequests();
+      fetchLatePunchOutRequests(latePunchOutStatusFilter);
       fetchAttendance();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to process request');
+    }
+  };
+
+  const handleApproveAllLatePunchIn = async () => {
+    const pendingRows = (latePunchInRequests || []).filter(
+      (req) =>
+        (req.status || req.request_status || latePunchInStatusFilter) === 'Pending' &&
+        (!latePunchInEmployeeFilter || req.employee_name === latePunchInEmployeeFilter)
+    );
+    if (!pendingRows.length) {
+      toast.error('No pending late punch-in requests to approve');
+      return;
+    }
+    if (!window.confirm(`Approve all ${pendingRows.length} pending late punch-in request(s)?`)) return;
+    setLatePunchInLoading(true);
+    try {
+      await Promise.all(
+        pendingRows.map((req) =>
+          axios.post(
+            `${API}/attendance/late-punch-in-approve`,
+            { request_id: req.id, status: 'Approved', reason: '' },
+            { headers: authHeader() }
+          )
+        )
+      );
+      toast.success(`Approved ${pendingRows.length} late punch-in request(s)`);
+      fetchLatePunchInRequests(latePunchInStatusFilter);
+      fetchAttendance();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to approve all late punch-in requests');
+    } finally {
+      setLatePunchInLoading(false);
+    }
+  };
+
+  const handleApproveAllLatePunchOut = async () => {
+    const pendingRows = (latePunchOutRequests || []).filter(
+      (req) =>
+        (req.status || req.request_status || latePunchOutStatusFilter) === 'Pending' &&
+        (!latePunchOutEmployeeFilter || req.employee_name === latePunchOutEmployeeFilter)
+    );
+    if (!pendingRows.length) {
+      toast.error('No pending late punch-out requests to approve');
+      return;
+    }
+    if (!window.confirm(`Approve all ${pendingRows.length} pending late punch-out request(s)?`)) return;
+    setLatePunchOutLoading(true);
+    try {
+      await Promise.all(
+        pendingRows.map((req) =>
+          axios.post(
+            `${API}/attendance/late-punch-out-approve`,
+            { request_id: req.id, status: 'Approved', reason: '' },
+            { headers: authHeader() }
+          )
+        )
+      );
+      toast.success(`Approved ${pendingRows.length} late punch-out request(s)`);
+      fetchLatePunchOutRequests(latePunchOutStatusFilter);
+      fetchAttendance();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to approve all late punch-out requests');
+    } finally {
+      setLatePunchOutLoading(false);
     }
   };
 
@@ -523,9 +591,9 @@ export const Attendance = () => {
 
   useEffect(() => {
     if (canApproveTour && activeTab === 'tour') fetchTourPending();
-    if (canManageAttendanceFull && activeTab === 'latepunchin') fetchLatePunchInRequests();
-    if (canManageAttendanceFull && activeTab === 'latepunchout') fetchLatePunchOutRequests();
-  }, [canApproveTour, canManageAttendanceFull, activeTab, user?.role]);
+    if (canManageAttendanceFull && activeTab === 'latepunchin') fetchLatePunchInRequests(latePunchInStatusFilter);
+    if (canManageAttendanceFull && activeTab === 'latepunchout') fetchLatePunchOutRequests(latePunchOutStatusFilter);
+  }, [canApproveTour, canManageAttendanceFull, activeTab, user?.role, latePunchInStatusFilter, latePunchOutStatusFilter]);
 
   useEffect(() => {
     if ((canManageAttendanceGrid || canViewOwnAttendanceGrid) && activeTab === 'grid') {
@@ -1373,19 +1441,59 @@ export const Attendance = () => {
             <Button 
               size="sm" 
               className="bg-blue-600 text-white hover:bg-blue-700"
-              onClick={fetchLatePunchInRequests}
+              onClick={() => fetchLatePunchInRequests(latePunchInStatusFilter)}
               disabled={latePunchInLoading}
             >
               {latePunchInLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
           </div>
 
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex gap-2">
+              {['Pending', 'Approved', 'Rejected'].map((status) => (
+                <Button
+                  key={status}
+                  size="sm"
+                  variant={latePunchInStatusFilter === status ? 'default' : 'outline'}
+                  className={latePunchInStatusFilter === status ? 'bg-blue-600 text-white' : 'border-gray-300'}
+                  onClick={() => setLatePunchInStatusFilter(status)}
+                >
+                  {status}
+                </Button>
+              ))}
+            </div>
+            <div className="sm:ml-auto">
+              <div className="flex items-center gap-2">
+                <select
+                  value={latePunchInEmployeeFilter}
+                  onChange={(e) => setLatePunchInEmployeeFilter(e.target.value)}
+                  className="h-9 rounded-lg border border-gray-300 px-3 text-sm text-gray-900 bg-white min-w-[220px]"
+                >
+                  <option value="">All employees</option>
+                  {Array.from(new Set((latePunchInRequests || []).map((r) => r.employee_name).filter(Boolean))).sort().map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+                {latePunchInStatusFilter === 'Pending' && (
+                  <Button
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                    onClick={handleApproveAllLatePunchIn}
+                    disabled={latePunchInLoading}
+                  >
+                    Approve All Pending
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
           {latePunchInLoading ? (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
             </div>
-          ) : latePunchInRequests.length === 0 ? (
-            <p className="text-center py-8 text-gray-500">No pending late punch-in requests.</p>
+          ) : latePunchInRequests.filter((req) => !latePunchInEmployeeFilter || req.employee_name === latePunchInEmployeeFilter).length === 0 ? (
+            <p className="text-center py-8 text-gray-500">No {latePunchInStatusFilter.toLowerCase()} late punch-in requests.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -1396,13 +1504,17 @@ export const Attendance = () => {
                     <th className="text-left py-3 px-4 font-semibold text-gray-700 min-w-[220px]">Employee reason</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch In Time</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Minutes Late</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Requested</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {latePunchInRequests.map((req) => {
+                  {latePunchInRequests
+                    .filter((req) => !latePunchInEmployeeFilter || req.employee_name === latePunchInEmployeeFilter)
+                    .map((req) => {
                     const employeeReason = (req.employee_reason || req.employeeReason || '').trim();
+                    const status = req.status || req.request_status || latePunchInStatusFilter;
                     return (
                     <tr key={req.id} className="border-b border-gray-100 hover:bg-gray-50/50">
                       <td className="py-3 px-4 font-mono text-gray-900">{req.punch_in_date}</td>
@@ -1421,29 +1533,44 @@ export const Attendance = () => {
                           {req.minutes_late !== null && req.minutes_late !== undefined ? req.minutes_late : '0'} min
                         </span>
                       </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                          status === 'Approved'
+                            ? 'bg-green-100 text-green-700'
+                            : status === 'Rejected'
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {status}
+                        </span>
+                      </td>
                       <td className="py-3 px-4 text-xs text-gray-500">
                         {new Date(req.requested_at).toLocaleString()}
                       </td>
                       <td className="py-3 px-4">
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700 text-white h-8"
-                            onClick={() => handleApproveLatePunchIn(req.id, 'Approved')}
-                          >
-                            <Check className="h-4 w-4 mr-1" />
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-red-300 text-red-700 hover:bg-red-50 h-8"
-                            onClick={() => handleApproveLatePunchIn(req.id, 'Rejected')}
-                          >
-                            <X className="h-4 w-4 mr-1" />
-                            Reject
-                          </Button>
-                        </div>
+                        {status === 'Pending' ? (
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white h-8"
+                              onClick={() => handleApproveLatePunchIn(req.id, 'Approved')}
+                            >
+                              <Check className="h-4 w-4 mr-1" />
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-red-300 text-red-700 hover:bg-red-50 h-8"
+                              onClick={() => handleApproveLatePunchIn(req.id, 'Rejected')}
+                            >
+                              <X className="h-4 w-4 mr-1" />
+                              Reject
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-500">Already processed</span>
+                        )}
                       </td>
                     </tr>
                     );
@@ -1468,19 +1595,59 @@ export const Attendance = () => {
             <Button 
               size="sm" 
               className="bg-blue-600 text-white hover:bg-blue-700"
-              onClick={fetchLatePunchOutRequests}
+              onClick={() => fetchLatePunchOutRequests(latePunchOutStatusFilter)}
               disabled={latePunchOutLoading}
             >
               {latePunchOutLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
           </div>
 
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex gap-2">
+              {['Pending', 'Approved', 'Rejected'].map((status) => (
+                <Button
+                  key={status}
+                  size="sm"
+                  variant={latePunchOutStatusFilter === status ? 'default' : 'outline'}
+                  className={latePunchOutStatusFilter === status ? 'bg-blue-600 text-white' : 'border-gray-300'}
+                  onClick={() => setLatePunchOutStatusFilter(status)}
+                >
+                  {status}
+                </Button>
+              ))}
+            </div>
+            <div className="sm:ml-auto">
+              <div className="flex items-center gap-2">
+                <select
+                  value={latePunchOutEmployeeFilter}
+                  onChange={(e) => setLatePunchOutEmployeeFilter(e.target.value)}
+                  className="h-9 rounded-lg border border-gray-300 px-3 text-sm text-gray-900 bg-white min-w-[220px]"
+                >
+                  <option value="">All employees</option>
+                  {Array.from(new Set((latePunchOutRequests || []).map((r) => r.employee_name).filter(Boolean))).sort().map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+                {latePunchOutStatusFilter === 'Pending' && (
+                  <Button
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                    onClick={handleApproveAllLatePunchOut}
+                    disabled={latePunchOutLoading}
+                  >
+                    Approve All Pending
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
           {latePunchOutLoading ? (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
             </div>
-          ) : latePunchOutRequests.length === 0 ? (
-            <p className="text-center py-8 text-gray-500">No pending late punch-out requests.</p>
+          ) : latePunchOutRequests.filter((req) => !latePunchOutEmployeeFilter || req.employee_name === latePunchOutEmployeeFilter).length === 0 ? (
+            <p className="text-center py-8 text-gray-500">No {latePunchOutStatusFilter.toLowerCase()} late punch-out requests.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -1491,13 +1658,17 @@ export const Attendance = () => {
                     <th className="text-left py-3 px-4 font-semibold text-gray-700 min-w-[220px]">Employee reason</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch Out Time</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Minutes Late</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Requested</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {latePunchOutRequests.map((req) => {
+                  {latePunchOutRequests
+                    .filter((req) => !latePunchOutEmployeeFilter || req.employee_name === latePunchOutEmployeeFilter)
+                    .map((req) => {
                     const employeeReason = (req.employee_reason || req.employeeReason || '').trim();
+                    const status = req.status || req.request_status || latePunchOutStatusFilter;
                     return (
                     <tr key={req.id} className="border-b border-gray-100 hover:bg-gray-50/50">
                       <td className="py-3 px-4 font-mono text-gray-900">{req.punch_out_date}</td>
@@ -1516,29 +1687,44 @@ export const Attendance = () => {
                           {req.minutes_late} min
                         </span>
                       </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                          status === 'Approved'
+                            ? 'bg-green-100 text-green-700'
+                            : status === 'Rejected'
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {status}
+                        </span>
+                      </td>
                       <td className="py-3 px-4 text-xs text-gray-500">
                         {new Date(req.requested_at).toLocaleString()}
                       </td>
                       <td className="py-3 px-4">
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700 text-white h-8"
-                            onClick={() => handleApproveLatePunchOut(req.id, 'Approved')}
-                          >
-                            <Check className="h-4 w-4 mr-1" />
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-red-300 text-red-700 hover:bg-red-50 h-8"
-                            onClick={() => handleApproveLatePunchOut(req.id, 'Rejected')}
-                          >
-                            <X className="h-4 w-4 mr-1" />
-                            Reject
-                          </Button>
-                        </div>
+                        {status === 'Pending' ? (
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white h-8"
+                              onClick={() => handleApproveLatePunchOut(req.id, 'Approved')}
+                            >
+                              <Check className="h-4 w-4 mr-1" />
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-red-300 text-red-700 hover:bg-red-50 h-8"
+                              onClick={() => handleApproveLatePunchOut(req.id, 'Rejected')}
+                            >
+                              <X className="h-4 w-4 mr-1" />
+                              Reject
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-500">Already processed</span>
+                        )}
                       </td>
                     </tr>
                     );
