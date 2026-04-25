@@ -92,6 +92,79 @@ const Vehicles = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const MAX_METER_IMAGE_BYTES = 900 * 1024; // keep below common proxy 1MB limits
+
+  const fileToDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const compressImageFile = async (file, maxBytes = MAX_METER_IMAGE_BYTES) => {
+    // Non-image files are not expected here, but keep a guard anyway.
+    if (!file?.type?.startsWith('image/')) return file;
+    if (file.size <= maxBytes) return file;
+
+    const dataUrl = await fileToDataUrl(file);
+    const img = await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = dataUrl;
+    });
+
+    // Resize very large photos first to reduce payload drastically.
+    const maxDim = 1600;
+    const ratio = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const width = Math.max(1, Math.round(img.width * ratio));
+    const height = Math.max(1, Math.round(img.height * ratio));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(img, 0, 0, width, height);
+
+    // Iterate quality until below target.
+    let quality = 0.9;
+    let blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+    while (blob && blob.size > maxBytes && quality > 0.4) {
+      quality -= 0.1;
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+    }
+
+    if (!blob) return file;
+    return new File([blob], `${Date.now()}_meter.jpg`, { type: 'image/jpeg' });
+  };
+
+  const uploadMeterPhotoWithRetry = async (usageId, file, phase = 'end') => {
+    const upload = async (f) => {
+      const formData = new FormData();
+      formData.append('file', f);
+      const endpoint =
+        phase === 'start'
+          ? `${API}/vehicle-usage/${usageId}/upload-start-photo`
+          : `${API}/vehicle-usage/${usageId}/upload-end-photo`;
+      return axios.post(endpoint, formData, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+    };
+
+    try {
+      return await upload(file);
+    } catch (error) {
+      // If payload is still too large, aggressively recompress and retry once.
+      if (error?.response?.status === 413) {
+        const tiny = await compressImageFile(file, 450 * 1024);
+        return upload(tiny);
+      }
+      throw error;
+    }
+  };
+
   // LOAD DATA
   useEffect(() => {
     fetchVehicles();
@@ -275,29 +348,39 @@ const Vehicles = () => {
     }
   };
 
-  const handlePhotoCapture = (e) => {
+  const handlePhotoCapture = async (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setStartPhotoFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setStartPhotoPreview(reader.result);
-      };
-      reader.readAsDataURL(file);
-      toast.success('Photo captured successfully');
+    if (!file) return;
+    try {
+      const normalized = await compressImageFile(file);
+      setStartPhotoFile(normalized);
+      const preview = await fileToDataUrl(normalized);
+      setStartPhotoPreview(preview);
+      if (normalized.size < file.size) {
+        toast.success('Photo optimized for upload');
+      } else {
+        toast.success('Photo captured successfully');
+      }
+    } catch {
+      toast.error('Could not process image. Please try again.');
     }
   };
 
-  const handleEndPhotoCapture = (e) => {
+  const handleEndPhotoCapture = async (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setEndPhotoFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEndPhotoPreview(reader.result);
-      };
-      reader.readAsDataURL(file);
-      toast.success('Photo captured successfully');
+    if (!file) return;
+    try {
+      const normalized = await compressImageFile(file);
+      setEndPhotoFile(normalized);
+      const preview = await fileToDataUrl(normalized);
+      setEndPhotoPreview(preview);
+      if (normalized.size < file.size) {
+        toast.success('Photo optimized for upload');
+      } else {
+        toast.success('Photo captured successfully');
+      }
+    } catch {
+      toast.error('Could not process image. Please try again.');
     }
   };
 
@@ -357,11 +440,7 @@ const Vehicles = () => {
       );
 
       // Upload photo
-      const formData = new FormData();
-      formData.append('file', startPhotoFile);
-      await axios.post(`${API}/vehicle-usage/${response.data.id}/upload-start-photo`, formData, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
+      await uploadMeterPhotoWithRetry(response.data.id, startPhotoFile, 'start');
 
       toast.success('Journey started with photo');
       setStartUsageDialogOpen(false);
@@ -408,11 +487,7 @@ const Vehicles = () => {
       );
 
       // Upload end photo
-      const formData = new FormData();
-      formData.append('file', endPhotoFile);
-      await axios.post(`${API}/vehicle-usage/${activeUsage.id}/upload-end-photo`, formData, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
+      await uploadMeterPhotoWithRetry(activeUsage.id, endPhotoFile, 'end');
 
       toast.success('Journey completed with photo');
       setCompleteUsageDialogOpen(false);
@@ -426,7 +501,11 @@ const Vehicles = () => {
         fetchSummaryData();
       }
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to complete usage');
+      if (error?.response?.status === 413) {
+        toast.error('Photo is still too large after optimization. Please retake from slightly farther distance.');
+      } else {
+        toast.error(error.response?.data?.detail || 'Failed to complete usage');
+      }
     } finally {
       setIsSubmitting(false);
     }
