@@ -856,7 +856,6 @@ export const Attendance = () => {
               { id: 'latepunchin', label: 'Late Punch-In Approvals', show: canManageAttendanceFull },
               { id: 'latepunchout', label: 'Late Punch-Out Approvals', show: canManageAttendanceFull },
               { id: 'report', label: 'Report (Date Range)', show: canManageAttendanceFull },
-              { id: 'late', label: 'Late Logins', show: canManageAttendanceFull },
               { id: 'summary', label: 'Monthly Summary', show: true },
             ].filter((t) => t.show).map((tab) => (
               <Button
@@ -1959,65 +1958,6 @@ export const Attendance = () => {
           </div>
           {report.length === 0 && !reportLoading && (
             <p className="text-center py-8 text-gray-500">Select date range and click Load Report.</p>
-          )}
-        </Card>
-      )}
-
-      {/* Late logins - Admin/HR */}
-      {canManageAttendanceFull && activeTab === 'late' && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <TrendingDown className="h-5 w-5 text-amber-600" />
-            Late Login Details
-          </h3>
-          <div className="flex flex-wrap gap-3 mb-4">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Start</label>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900" />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">End</label>
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900" />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Employee</label>
-              <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900 bg-white min-w-[180px]">
-                <option value="">All employees</option>
-                {employees.map((emp) => (
-                  <option key={emp.employee_id} value={emp.employee_id}>{emp.name} ({emp.employee_id})</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-end">
-              <Button onClick={fetchLateDetails} disabled={lateLoading} className="bg-blue-600 text-white hover:bg-blue-700">
-                {lateLoading ? 'Loading…' : 'Load Late Logins'}
-              </Button>
-            </div>
-          </div>
-          <div className="overflow-x-auto border border-gray-200 rounded-lg">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="text-left p-3 font-medium text-gray-700">Date</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Employee</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Punch In (IST)</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Minutes Late</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lateDetails.map((row) => (
-                  <tr key={row.id} className="border-b border-gray-100 hover:bg-amber-50/50">
-                    <td className="p-3 font-mono text-gray-900">{row.date}</td>
-                    <td className="p-3 text-gray-900">{row.employee_name}</td>
-                    <td className="p-3 font-mono text-amber-700">{formatPunchTime(row.punch_in)}</td>
-                    <td className="p-3 font-medium text-amber-700">{row.minutes_late} min</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {lateDetails.length === 0 && !lateLoading && (
-            <p className="text-center py-8 text-gray-500">No late logins in this range. Select dates and click Load Late Logins.</p>
           )}
         </Card>
       )}

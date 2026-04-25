@@ -5307,11 +5307,13 @@ def regularize_attendance(
             existing.punch_out = '18:00:00'
             existing.status = 'Present'
             existing.work_hours = 8.0
+            existing.total_work_hours = 8.0
         else:
             existing.punch_in = None
             existing.punch_out = None
             existing.status = 'Absent'
             existing.work_hours = 0.0
+            existing.total_work_hours = 0.0
         existing.is_active_session = 0
         existing.is_tour = 0
         existing.tour_approval_status = None
@@ -5325,11 +5327,13 @@ def regularize_attendance(
             punch_out = '18:00:00'
             status = 'Present'
             work_hours = 8.0
+            total_work_hours = 8.0
         else:
             punch_in = None
             punch_out = None
             status = 'Absent'
             work_hours = 0.0
+            total_work_hours = 0.0
         new_record = AttendanceModel(
             id=str(uuid.uuid4()),
             employee_id=employee_id,
@@ -5339,6 +5343,7 @@ def regularize_attendance(
             punch_out=punch_out,
             status=status,
             work_hours=work_hours,
+            total_work_hours=total_work_hours,
             is_active_session=0,
             is_tour=0
         )
@@ -5583,9 +5588,20 @@ def get_attendance_monthly_report(
             )
         tour_pending_or_other = bool(has_tour and not tour_approved)
 
-        tw = float(record.total_work_hours or 0.0)
-        if tw > 0:
-            total_work_sum += tw
+        tw_raw = float(record.total_work_hours or 0.0)
+        wh = float(record.work_hours or 0.0)
+        # Keep worked_days aligned with Attendance Grid / Summary "present-day" logic:
+        counts_as_worked_day = (record.status == 'Present') or (has_tour and tour_approved)
+        # Regularized Present rows historically could have work_hours set but total_work_hours still 0.
+        if tw_raw > 0:
+            hours_for_day = tw_raw
+        elif counts_as_worked_day:
+            hours_for_day = wh
+        else:
+            hours_for_day = tw_raw
+        total_work_sum += hours_for_day
+
+        if counts_as_worked_day:
             worked_days += 1
 
         if late_login:
@@ -5611,7 +5627,7 @@ def get_attendance_monthly_report(
                 'date': record.date,
                 'first_punch_in': first_punch_in,
                 'last_punch_out': last_punch_out,
-                'total_work_hours': tw,
+                'total_work_hours': hours_for_day,
                 'status': record.status,
                 'is_tour_day': has_tour,
                 'tour_approved': tour_approved,
