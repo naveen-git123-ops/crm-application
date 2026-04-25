@@ -4896,16 +4896,25 @@ def set_office_location_api(
 
 @api_router.get('/attendance/tour-pending')
 def get_tour_pending(
+    status: str = 'pending',
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List attendance records marked as tour that are pending approval. Admin and Manager only."""
+    """List attendance tour requests by approval status. Admin and Manager only."""
     if current_user.role not in ['Admin', 'Manager']:
         raise HTTPException(status_code=403, detail='Only Admin and Manager can view tour requests')
-    records = db.query(AttendanceModel).filter(
-        AttendanceModel.is_tour == 1,
-        AttendanceModel.tour_approval_status == 'pending',
-    ).order_by(AttendanceModel.date.desc(), AttendanceModel.punch_in.desc()).all()
+    normalized = (status or 'pending').strip().lower()
+    if normalized == 'all':
+        records = db.query(AttendanceModel).filter(
+            AttendanceModel.is_tour == 1,
+        ).order_by(AttendanceModel.date.desc(), AttendanceModel.punch_in.desc()).all()
+    else:
+        if normalized not in {'pending', 'approved', 'rejected'}:
+            raise HTTPException(status_code=400, detail='Invalid status. Use Pending, Approved, Rejected, or All')
+        records = db.query(AttendanceModel).filter(
+            AttendanceModel.is_tour == 1,
+            AttendanceModel.tour_approval_status == normalized,
+        ).order_by(AttendanceModel.date.desc(), AttendanceModel.punch_in.desc()).all()
     return [
         {
             'id': r.id,
@@ -4916,6 +4925,7 @@ def get_tour_pending(
             'punch_out': r.punch_out,
             'work_hours': r.work_hours,
             'status': r.status,
+            'tour_approval_status': r.tour_approval_status,
             'punch_in_lat': getattr(r, 'punch_in_lat', None),
             'punch_in_lng': getattr(r, 'punch_in_lng', None),
         }
@@ -4937,6 +4947,7 @@ class LatePunchInApproveAction(BaseModel):
 class RegularizeAttendanceRequest(BaseModel):
     employee_id: str
     date: str
+    action: Literal['present', 'absent'] = 'present'
 
 
 @api_router.post('/attendance/tour-approve')
@@ -5272,9 +5283,12 @@ def regularize_attendance(
     
     employee_id = body.employee_id
     date = body.date
+    action = (body.action or 'present').lower()
     
     if not employee_id or not date:
         raise HTTPException(status_code=400, detail='Employee ID and date are required')
+    if action not in ['present', 'absent']:
+        raise HTTPException(status_code=400, detail='Invalid action. Use present or absent')
     
     employee = db.query(EmployeeModel).filter(EmployeeModel.employee_id == employee_id).first()
     if not employee:
@@ -5288,31 +5302,49 @@ def regularize_attendance(
     
     if existing:
         # Update existing record
-        existing.punch_in = '10:00:00'
-        existing.punch_out = '18:00:00'
-        existing.status = 'Present'
-        existing.work_hours = 8.0
+        if action == 'present':
+            existing.punch_in = '10:00:00'
+            existing.punch_out = '18:00:00'
+            existing.status = 'Present'
+            existing.work_hours = 8.0
+        else:
+            existing.punch_in = None
+            existing.punch_out = None
+            existing.status = 'Absent'
+            existing.work_hours = 0.0
         existing.is_active_session = 0
+        existing.is_tour = 0
+        existing.tour_approval_status = None
         existing.employee_name = employee.name
         db.commit()
-        return {'message': 'Attendance regularized successfully', 'attendance_id': existing.id}
+        return {'message': f'Attendance marked {action} successfully', 'attendance_id': existing.id}
     else:
         # Create new record
+        if action == 'present':
+            punch_in = '10:00:00'
+            punch_out = '18:00:00'
+            status = 'Present'
+            work_hours = 8.0
+        else:
+            punch_in = None
+            punch_out = None
+            status = 'Absent'
+            work_hours = 0.0
         new_record = AttendanceModel(
             id=str(uuid.uuid4()),
             employee_id=employee_id,
             employee_name=employee.name,
             date=date,
-            punch_in='10:00:00',
-            punch_out='18:00:00',
-            status='Present',
-            work_hours=8.0,
+            punch_in=punch_in,
+            punch_out=punch_out,
+            status=status,
+            work_hours=work_hours,
             is_active_session=0,
             is_tour=0
         )
         db.add(new_record)
         db.commit()
-        return {'message': 'Attendance regularized successfully', 'attendance_id': new_record.id}
+        return {'message': f'Attendance marked {action} successfully', 'attendance_id': new_record.id}
 
 
 @api_router.get('/attendance', response_model=List[Attendance])

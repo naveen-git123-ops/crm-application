@@ -114,14 +114,16 @@ export const Attendance = () => {
   const [latePunchInRequests, setLatePunchInRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-mm-dd'));
+  const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [activeTab, setActiveTab] = useState('punch'); // punch | report | late | summary | tour | grid | latepunchin
   const [reportLoading, setReportLoading] = useState(false);
   const [lateLoading, setLateLoading] = useState(false);
   const [punchLoading, setPunchLoading] = useState(false);
   const [tourPending, setTourPending] = useState([]);
   const [tourLoading, setTourLoading] = useState(false);
+  const [tourStatusFilter, setTourStatusFilter] = useState('Pending');
+  const [tourEmployeeFilter, setTourEmployeeFilter] = useState('');
   const [latePunchInLoading, setLatePunchInLoading] = useState(false);
   const [latePunchOutRequests, setLatePunchOutRequests] = useState([]);
   const [latePunchOutLoading, setLatePunchOutLoading] = useState(false);
@@ -147,6 +149,7 @@ export const Attendance = () => {
   // Regularize states
   const [regularizeEmployee, setRegularizeEmployee] = useState('');
   const [regularizeDate, setRegularizeDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [regularizeAction, setRegularizeAction] = useState('present');
   const [regularizeLoading, setRegularizeLoading] = useState(false);
   
   // Holidays
@@ -356,11 +359,14 @@ export const Attendance = () => {
     }
   };
 
-  const fetchTourPending = async () => {
+  const fetchTourPending = async (status = tourStatusFilter) => {
     if (!canApproveTour) return;
     setTourLoading(true);
     try {
-      const res = await axios.get(`${API}/attendance/tour-pending`, { headers: authHeader() });
+      const res = await axios.get(`${API}/attendance/tour-pending`, {
+        params: { status: (status || 'Pending').toLowerCase() },
+        headers: authHeader()
+      });
       setTourPending(res.data);
     } catch {
       toast.error('Failed to load tour requests');
@@ -573,15 +579,14 @@ export const Attendance = () => {
       const payload = {
         employee_id: regularizeEmployee,
         date: regularizeDate,
-        punch_in: '10:00:00',
-        punch_out: '18:00:00',
-        status: 'Present'
+        action: regularizeAction
       };
       const res = await axios.post(`${API}/attendance/regularize`, payload, { headers: authHeader() });
       toast.success(res.data?.message || 'Attendance regularized successfully');
       fetchMonthlyAttendanceGrid(gridMonth);
       setRegularizeEmployee('');
       setRegularizeDate(format(new Date(), 'yyyy-MM-dd'));
+      setRegularizeAction('present');
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to regularize attendance');
     } finally {
@@ -590,10 +595,17 @@ export const Attendance = () => {
   };
 
   useEffect(() => {
-    if (canApproveTour && activeTab === 'tour') fetchTourPending();
+    if (canApproveTour && activeTab === 'tour') fetchTourPending(tourStatusFilter);
     if (canManageAttendanceFull && activeTab === 'latepunchin') fetchLatePunchInRequests(latePunchInStatusFilter);
     if (canManageAttendanceFull && activeTab === 'latepunchout') fetchLatePunchOutRequests(latePunchOutStatusFilter);
-  }, [canApproveTour, canManageAttendanceFull, activeTab, user?.role, latePunchInStatusFilter, latePunchOutStatusFilter]);
+  }, [canApproveTour, canManageAttendanceFull, activeTab, user?.role, latePunchInStatusFilter, latePunchOutStatusFilter, tourStatusFilter]);
+
+  // Auto-load report on tab open and whenever report filters change.
+  useEffect(() => {
+    if (canManageAttendanceFull && activeTab === 'report') {
+      fetchReport();
+    }
+  }, [canManageAttendanceFull, activeTab, startDate, endDate, selectedEmployee]);
 
   useEffect(() => {
     if ((canManageAttendanceGrid || canViewOwnAttendanceGrid) && activeTab === 'grid') {
@@ -770,10 +782,42 @@ export const Attendance = () => {
         { headers: authHeader() }
       );
       toast.success(status === 'approved' ? 'Tour approved' : 'Tour rejected');
-      fetchTourPending();
+      fetchTourPending(tourStatusFilter);
       fetchAttendance();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Action failed');
+    }
+  };
+
+  const handleApproveAllTours = async () => {
+    const pendingRows = (tourPending || []).filter(
+      (row) =>
+        (row.tour_approval_status || 'pending') === 'pending' &&
+        (!tourEmployeeFilter || row.employee_name === tourEmployeeFilter)
+    );
+    if (!pendingRows.length) {
+      toast.error('No pending tour requests to approve');
+      return;
+    }
+    if (!window.confirm(`Approve all ${pendingRows.length} pending tour request(s)?`)) return;
+    setTourLoading(true);
+    try {
+      await Promise.all(
+        pendingRows.map((row) =>
+          axios.post(
+            `${API}/attendance/tour-approve`,
+            { attendance_id: row.id, status: 'approved' },
+            { headers: authHeader() }
+          )
+        )
+      );
+      toast.success(`Approved ${pendingRows.length} tour request(s)`);
+      fetchTourPending(tourStatusFilter);
+      fetchAttendance();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to approve all tour requests');
+    } finally {
+      setTourLoading(false);
     }
   };
 
@@ -1186,19 +1230,40 @@ export const Attendance = () => {
               />
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Action*</label>
+              <select
+                value={regularizeAction}
+                onChange={(e) => setRegularizeAction(e.target.value)}
+                className="flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+              >
+                <option value="present">Mark Present</option>
+                <option value="absent">Mark Absent</option>
+              </select>
+            </div>
+
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
               <p className="text-blue-900">
-                <strong>Note:</strong> Regularization will mark attendance as <strong>Present</strong> with:
+                <strong>Note:</strong>{' '}
+                {regularizeAction === 'present'
+                  ? 'Mark Present sets standard office timings:'
+                  : 'Mark Absent clears punch-in/out and sets work hours to 0.'}
               </p>
-              <ul className="text-blue-800 mt-2 list-disc list-inside space-y-1">
-                <li>Punch In: 10:00 AM</li>
-                <li>Punch Out: 6:00 PM</li>
-              </ul>
+              {regularizeAction === 'present' && (
+                <ul className="text-blue-800 mt-2 list-disc list-inside space-y-1">
+                  <li>Punch In: 10:00 AM</li>
+                  <li>Punch Out: 6:00 PM</li>
+                </ul>
+              )}
             </div>
 
             <Button
               size="lg"
-              className="w-full h-12 bg-blue-600 text-white font-semibold hover:bg-blue-700 min-h-[48px]"
+              className={`w-full h-12 text-white font-semibold min-h-[48px] ${
+                regularizeAction === 'present'
+                  ? 'bg-blue-600 hover:bg-blue-700'
+                  : 'bg-red-600 hover:bg-red-700'
+              }`}
               onClick={handleRegularizeAttendance}
               disabled={!regularizeEmployee || !regularizeDate || regularizeLoading}
             >
@@ -1208,7 +1273,7 @@ export const Attendance = () => {
                   Regularizing...
                 </span>
               ) : (
-                'Regularize Attendance'
+                regularizeAction === 'present' ? 'Mark Present' : 'Mark Absent'
               )}
             </Button>
           </div>
@@ -1361,19 +1426,70 @@ export const Attendance = () => {
       {/* Tour Requests - Admin/Manager */}
       {canApproveTour && activeTab === 'tour' && (
         <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Briefcase className="h-5 w-5 text-amber-600" />
-            Tour Requests (Punch outside office)
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Employees who punched in/out outside 50 m of office. Approve to count as present.
-          </p>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Briefcase className="h-5 w-5 text-amber-600" />
+                Tour Requests (Punch outside office)
+              </h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Employees who punched in/out outside 50 m of office. View pending/approved/rejected history.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="bg-blue-600 text-white hover:bg-blue-700"
+              onClick={() => fetchTourPending(tourStatusFilter)}
+              disabled={tourLoading}
+            >
+              {tourLoading ? 'Refreshing...' : 'Refresh'}
+            </Button>
+          </div>
+
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex gap-2">
+              {['Pending', 'Approved', 'Rejected'].map((status) => (
+                <Button
+                  key={status}
+                  size="sm"
+                  variant={tourStatusFilter === status ? 'default' : 'outline'}
+                  className={tourStatusFilter === status ? 'bg-blue-600 text-white' : 'border-gray-300'}
+                  onClick={() => setTourStatusFilter(status)}
+                >
+                  {status}
+                </Button>
+              ))}
+            </div>
+            <div className="sm:ml-auto flex items-center gap-2">
+              <select
+                value={tourEmployeeFilter}
+                onChange={(e) => setTourEmployeeFilter(e.target.value)}
+                className="h-9 rounded-lg border border-gray-300 px-3 text-sm text-gray-900 bg-white min-w-[220px]"
+              >
+                <option value="">All employees</option>
+                {Array.from(new Set((tourPending || []).map((r) => r.employee_name).filter(Boolean))).sort().map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              {tourStatusFilter === 'Pending' && (
+                <Button
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  onClick={handleApproveAllTours}
+                  disabled={tourLoading}
+                >
+                  Approve All Pending
+                </Button>
+              )}
+            </div>
+          </div>
+
           {tourLoading ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent" />
             </div>
-          ) : tourPending.length === 0 ? (
-            <p className="text-center py-8 text-gray-500">No pending tour requests.</p>
+          ) : tourPending.filter((row) => !tourEmployeeFilter || row.employee_name === tourEmployeeFilter).length === 0 ? (
+            <p className="text-center py-8 text-gray-500">No {tourStatusFilter.toLowerCase()} tour requests.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -1384,11 +1500,17 @@ export const Attendance = () => {
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch In (IST)</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch Out (IST)</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Hours</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Approval Status</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {tourPending.map((row) => (
+                  {tourPending
+                    .filter((row) => !tourEmployeeFilter || row.employee_name === tourEmployeeFilter)
+                    .map((row) => (
+                    (() => {
+                      const effectiveTourStatus = (row.tour_approval_status || tourStatusFilter || 'Pending').toLowerCase();
+                      return (
                     <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/50">
                       <td className="py-3 px-4 font-medium text-gray-900">{row.date}</td>
                       <td className="py-3 px-4">
@@ -1399,27 +1521,46 @@ export const Attendance = () => {
                       <td className="py-3 px-4 font-mono text-gray-700">{formatPunchTime(row.punch_out)}</td>
                       <td className="py-3 px-4 font-mono text-gray-700">{row.work_hours?.toFixed(2) ?? '–'} hrs</td>
                       <td className="py-3 px-4">
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700 text-white h-8"
-                            onClick={() => handleTourApprove(row.id, 'approved')}
-                          >
-                            <Check className="h-4 w-4 mr-1" />
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-red-300 text-red-700 hover:bg-red-50 h-8"
-                            onClick={() => handleTourApprove(row.id, 'rejected')}
-                          >
-                            <X className="h-4 w-4 mr-1" />
-                            Reject
-                          </Button>
-                        </div>
+                        <span
+                          className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                            effectiveTourStatus === 'approved'
+                              ? 'bg-green-100 text-green-700'
+                              : effectiveTourStatus === 'rejected'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-yellow-100 text-yellow-700'
+                          }`}
+                        >
+                          {effectiveTourStatus.charAt(0).toUpperCase() + effectiveTourStatus.slice(1)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        {effectiveTourStatus === 'pending' ? (
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white h-8"
+                              onClick={() => handleTourApprove(row.id, 'approved')}
+                            >
+                              <Check className="h-4 w-4 mr-1" />
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-red-300 text-red-700 hover:bg-red-50 h-8"
+                              onClick={() => handleTourApprove(row.id, 'rejected')}
+                            >
+                              <X className="h-4 w-4 mr-1" />
+                              Reject
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-500">Already processed</span>
+                        )}
                       </td>
                     </tr>
+                      );
+                    })()
                   ))}
                 </tbody>
               </table>
