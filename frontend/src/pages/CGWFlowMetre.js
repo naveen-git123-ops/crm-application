@@ -488,6 +488,14 @@ const CGWFlowMetre = () => {
     return Array.from(map.values());
   }, [filteredItems]);
 
+  const customerCodeById = useMemo(() => {
+    const map = new Map();
+    for (const customer of customers) {
+      map.set(customer.id, customer.customer_id);
+    }
+    return map;
+  }, [customers]);
+
   const totalGroups = groupedItems.length;
   const totalPages = Math.max(1, Math.ceil(totalGroups / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -1196,14 +1204,14 @@ const CGWFlowMetre = () => {
             <table className="w-full text-xs min-w-[2300px]">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-100">
-                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">SL NO</th>
+                  <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">CUSTOMER ID</th>
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">CUSTOMER NAME</th>
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap min-w-[108px] align-top">
                     <span className="block leading-snug">NOC</span>
                     <span className="mt-0.5 block text-[10px] font-normal text-gray-500 leading-tight">Per equipment row</span>
                   </th>
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap min-w-[120px] align-top">
-                    <span className="block leading-snug">PHOTOS / DOCS</span>
+                    <span className="block leading-snug">CGWA DATA</span>
                     <span className="mt-0.5 block text-[10px] font-normal text-gray-500 leading-tight">S3 · per row</span>
                   </th>
                   <th rowSpan="2" className="text-left py-2 px-2 font-semibold text-gray-700 whitespace-nowrap">LOCATION</th>
@@ -1248,6 +1256,10 @@ const CGWFlowMetre = () => {
                 {pagedGroups.map((group, groupIndex) => {
                   const groupEditActive = group.rows.some(r => r.id === inlineEditId);
                   const groupAnchor = group.rows[0];
+                  const baseCustomerCode =
+                    customerCodeById.get(groupAnchor.customer_id) ||
+                    groupAnchor.customer_id ||
+                    '—';
                   const rawRenewal = groupEditActive ? inlineEditData.renewal_date : groupAnchor.renewal_date;
                   const renewalU = renewalUrgency(rawRenewal);
                   const rowRenewalClass =
@@ -1259,11 +1271,13 @@ const CGWFlowMetre = () => {
 
                   return group.rows.map((item, rowIndex) => (
                     <tr key={item.id} className={`${rowRenewalClass} align-top`}>
-                      {rowIndex === 0 && (
-                        <td rowSpan={group.rows.length} className="py-1.5 px-2 text-gray-900 whitespace-nowrap">
-                          {pageStartIndex + groupIndex + 1}
-                        </td>
-                      )}
+                      <td className="py-1.5 px-2 text-gray-900 whitespace-nowrap font-mono">
+                        {baseCustomerCode === '—'
+                          ? '—'
+                          : rowIndex === 0
+                            ? baseCustomerCode
+                            : `${baseCustomerCode}-${rowIndex}`}
+                      </td>
                       {rowIndex === 0 && (
                         <td rowSpan={group.rows.length} className="py-1.5 px-2 font-medium text-gray-900 whitespace-nowrap">
                           {groupEditActive ? (

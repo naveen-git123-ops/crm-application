@@ -2514,6 +2514,14 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
     user = db.query(UserModel).filter(UserModel.email == credentials.email).first()
     if not user or not verify_password(credentials.password, user.password):
         raise HTTPException(status_code=401, detail='Invalid credentials')
+
+    # Block login for users linked to an inactive employee profile.
+    if user.employee_id:
+        employee = db.query(EmployeeModel).filter(
+            EmployeeModel.employee_id == user.employee_id
+        ).first()
+        if employee and employee.status == 'Inactive':
+            raise HTTPException(status_code=403, detail='Your employee account is inactive. Please contact HR/Admin.')
     
     token = create_access_token(user.id, user.email, user.role)
     
