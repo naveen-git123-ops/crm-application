@@ -6178,11 +6178,14 @@ def download_document(document_id: str, current_user: UserModel = Depends(get_cu
             obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
             file_content = obj['Body'].read()
             content_type = obj.get('ContentType', 'application/octet-stream')
+            filename_for_type = str(document.file_name or '').lower()
+            if filename_for_type.endswith('.pdf'):
+                content_type = 'application/pdf'
             return Response(
                 content=file_content,
                 media_type=content_type,
                 headers={
-                    'Content-Disposition': f'attachment; filename="{document.file_name or "document"}"',
+                    'Content-Disposition': f'inline; filename="{document.file_name or "document"}"',
                     'Cache-Control': 'no-store',
                     'Access-Control-Allow-Origin': '*',
                 },

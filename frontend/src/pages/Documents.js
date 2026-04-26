@@ -64,6 +64,13 @@ export const Documents = () => {
   const isPdfFile = (doc) => extOf(doc?.file_name) === 'pdf';
   const isTextLikeFile = (doc) => PREVIEWABLE_TEXT_EXTENSIONS.includes(extOf(doc?.file_name));
   const isHttpUrl = (v) => /^https?:\/\//i.test(String(v || ''));
+  const inferredMimeType = (doc, fallback = '') => {
+    const ext = extOf(doc?.file_name);
+    if (ext === 'pdf') return 'application/pdf';
+    if (IMAGE_EXTENSIONS.includes(ext)) return `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+    if (PREVIEWABLE_TEXT_EXTENSIONS.includes(ext)) return 'text/plain';
+    return fallback || 'application/octet-stream';
+  };
 
   useEffect(() => {
     return () => {
@@ -214,8 +221,11 @@ export const Documents = () => {
         return;
       }
 
-      const blob = response.data;
-      const mime = String(blob?.type || '').toLowerCase();
+      const rawBlob = response.data;
+      const mimeFromHeader = String(response.headers?.['content-type'] || '').toLowerCase();
+      const normalizedMime = inferredMimeType(doc, mimeFromHeader || rawBlob?.type || '').toLowerCase();
+      const blob = new Blob([rawBlob], { type: normalizedMime });
+      const mime = normalizedMime;
       setPreviewMimeType(mime);
       setPreviewBlobUrl(URL.createObjectURL(blob));
       if (isTextLikeFile(doc) || mime.startsWith('text/') || mime.includes('json') || mime.includes('xml')) {
@@ -602,23 +612,12 @@ export const Documents = () => {
                     </div>
                   )}
                   {!previewLoading && !previewError && previewBlobUrl && (isPdfFile(previewDocument) || previewMimeType.includes('pdf')) && (
-                    <div className="rounded border bg-gray-50 p-6 text-center">
-                      <p className="text-gray-700 text-sm mb-4">
-                        PDF preview is opened safely in a new tab to avoid browser runtime crashes.
-                      </p>
-                      <div className="flex justify-center gap-2">
-                        <Button
-                          onClick={() => window.open(previewBlobUrl, '_blank', 'noopener,noreferrer')}
-                          className="bg-blue-600 hover:bg-blue-700"
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          Open PDF
-                        </Button>
-                        <Button variant="outline" onClick={() => handleDownload(previewDocument.id, previewDocument.file_name)}>
-                          <Download className="h-4 w-4 mr-2" />
-                          Download
-                        </Button>
-                      </div>
+                    <div className="rounded border bg-white overflow-hidden">
+                      <iframe
+                        title="Document PDF Preview"
+                        src={previewBlobUrl}
+                        className="h-[70vh] w-full border-0"
+                      />
                     </div>
                   )}
                   {!previewLoading && !previewError && previewBlobUrl && (isTextLikeFile(previewDocument) || previewMimeType.startsWith('text/') || previewMimeType.includes('json') || previewMimeType.includes('xml')) && (

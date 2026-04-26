@@ -642,10 +642,41 @@ const CGWFlowMetre = () => {
   const handleCustomerChange = (e) => {
     const selectedCustomer = customers.find(c => c.id === e.target.value);
     if (selectedCustomer) {
-      setFormData({
-        ...formData,
-        customer_id: selectedCustomer.id,
-        customer_name: selectedCustomer.company_name
+      const primaryContact =
+        (selectedCustomer.contacts || []).find((c) => Number(c.is_primary) === 1) ||
+        (selectedCustomer.contacts || [])[0] ||
+        null;
+      const primaryAddress =
+        (selectedCustomer.addresses || []).find((a) => Number(a.is_primary) === 1) ||
+        (selectedCustomer.addresses || [])[0] ||
+        null;
+
+      const locationParts = [
+        primaryAddress?.address_line || selectedCustomer.address_line || '',
+        primaryAddress?.city || selectedCustomer.city || '',
+        primaryAddress?.state || selectedCustomer.state || '',
+        primaryAddress?.pincode || selectedCustomer.pincode || '',
+      ].filter(Boolean);
+      const autoLocation = locationParts.join(', ');
+      const autoContactPerson =
+        primaryContact?.contact_person_name ||
+        selectedCustomer.contact_person_name ||
+        '';
+      const autoPhone = primaryContact?.phone || selectedCustomer.phone || '';
+      const autoEmail = primaryContact?.email || selectedCustomer.email || '';
+
+      setFormData((prev) => {
+        const pickIfBlank = (existing, incoming) => (String(existing || '').trim() ? existing : (incoming || ''));
+        return {
+          ...prev,
+          customer_id: selectedCustomer.id,
+          customer_name: selectedCustomer.company_name,
+          location: pickIfBlank(prev.location, autoLocation),
+          contact_person: pickIfBlank(prev.contact_person, autoContactPerson),
+          person_mobile_number: pickIfBlank(prev.person_mobile_number, autoPhone),
+          system_mobile_number: pickIfBlank(prev.system_mobile_number, autoPhone),
+          email_id: pickIfBlank(prev.email_id, autoEmail),
+        };
       });
     }
   };
