@@ -19,34 +19,32 @@ import PiezometerAddWizardStep, {
 const API = API_ENDPOINT;
 
 const CGW_MEDIA_KEYS = [
-  'flow_meter',
-  'telemetry',
   'bw_geo_flowmeter',
-  'service_report',
   'calibration_certificate',
-  'tax_invoice',
-  'telemetry_excel_prior',
-  'telemetry_service_prior',
+  'service_report',
   'piezometer_bw',
   'piezometer_calibration',
-  'piezometer_telemetry',
-  'piezometer_excel_prior',
-  'piezometer_service_report',
+  'water_quality_certificate',
+  'cte',
+  'cto',
+  'rwss_watco_phed_noc',
+  'approval_letter',
+  'rain_water_harvesting_data',
+  'additional_doc',
 ];
 const CGW_MEDIA_LABELS = {
-  flow_meter: 'Flow meter (photo)',
-  telemetry: 'Telemetry (photo)',
   bw_geo_flowmeter: 'BW / flowmeter GEO photos',
-  service_report: 'Service report (photo)',
   calibration_certificate: 'Calibration certificate (photo)',
-  tax_invoice: 'Tax invoice (photo)',
-  telemetry_excel_prior: 'Telemetry prior-year (Excel)',
-  telemetry_service_prior: 'Telemetry prior-year service report',
+  service_report: 'Service report (photo)',
   piezometer_bw: 'Piezometer BW photos',
   piezometer_calibration: 'Piezometer calibration',
-  piezometer_telemetry: 'Piezometer telemetry photos',
-  piezometer_excel_prior: 'Piezometer prior-year (Excel)',
-  piezometer_service_report: 'Piezometer service report',
+  water_quality_certificate: 'Water quality certificate',
+  cte: 'CTE',
+  cto: 'CTO',
+  rwss_watco_phed_noc: 'RWSS/WATCO/PHED NOC',
+  approval_letter: 'Approval letter',
+  rain_water_harvesting_data: 'Rain water harvesting data',
+  additional_doc: 'Additional document',
 };
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 /** When true, shows the “Daily past-due renewal email” admin card (CGW inventory). */
@@ -83,6 +81,7 @@ const EMPTY_EQUIPMENT_ROW = {
   telemetry_previous_data_available: '',
   telemetry_previous_data_from: '',
   telemetry_previous_data_to: '',
+  additional_document_type: '',
 };
 
 /** Map UI equipment row to API payload (drops UI-only pick/free serial fields). */
@@ -132,6 +131,7 @@ function equipmentRowIncludeInBulk(r, bundle = {}) {
   if ((r.flow_meter_size || '').trim()) return true;
   if ((r.calibration_valid_from || '').trim() || (r.calibration_valid_to || '').trim()) return true;
   if (b.calibration_cert) return true;
+  if (b.water_quality_certificate || b.cte || b.cto || b.rwss_watco_phed_noc || b.approval_letter || b.rain_water_harvesting_data || b.additional_doc) return true;
   if ((b.bwGeoPhotos || []).length > 0) return true;
   if ((b.telemetryPhotoFiles || []).length > 0) return true;
   if (b.telemetry_excel || b.telemetry_service) return true;
@@ -147,6 +147,7 @@ function equipmentRowIncludeInBulk(r, bundle = {}) {
   ) {
     return true;
   }
+  if ((r.additional_document_type || '').trim()) return true;
   if (
     (r.telemetry_uploaded_previous_year || '').trim() ||
     (r.telemetry_previous_data_available || '').trim() ||
@@ -210,6 +211,13 @@ const EMPTY_EQUIPMENT_FLOW_FILES = () => ({
   bwGeoPhotos: [],
   telemetryPhotoFiles: [],
   service_report: undefined,
+  water_quality_certificate: undefined,
+  cte: undefined,
+  cto: undefined,
+  rwss_watco_phed_noc: undefined,
+  approval_letter: undefined,
+  rain_water_harvesting_data: undefined,
+  additional_doc: undefined,
 });
 
 const EMPTY_NOC_FORM = {
@@ -462,6 +470,23 @@ function cgwFirstAttachmentCategory(item) {
   return '';
 }
 
+function AttachmentPreviewCell({ item, category, onPreview }) {
+  const count = (item?.cgw_attachments?.[category] || []).length;
+  if (!count) return <span className="text-xs text-gray-400">—</span>;
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className="h-7 px-2 text-[10px] text-blue-700"
+      onClick={() => onPreview(item, category)}
+    >
+      <Eye className="h-3 w-3 mr-1" />
+      Preview ({count})
+    </Button>
+  );
+}
+
 const CGWFlowMetre = () => {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
@@ -470,6 +495,8 @@ const CGWFlowMetre = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editingItemId, setEditingItemId] = useState(null);
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [equipmentRows, setEquipmentRows] = useState([EMPTY_EQUIPMENT_ROW]);
   /** Per equipment row index: optional files uploaded after inventory row exists (S3). */
@@ -696,7 +723,7 @@ const CGWFlowMetre = () => {
     return !Number.isNaN(n) && n > 0 ? n : 1;
   }, [needsPiezometerWizardStep, addNocForm.piezometer_count]);
 
-  const addWizardFinalStep = needsPiezometerWizardStep ? 4 : 3;
+  const addWizardFinalStep = needsPiezometerWizardStep ? 5 : 4;
 
   const addWizardStepDefs = useMemo(() => {
     const s = [
@@ -705,11 +732,12 @@ const CGWFlowMetre = () => {
       { n: 3, title: 'Flow metre details' },
     ];
     if (needsPiezometerWizardStep) s.push({ n: 4, title: 'Piezometer' });
+    s.push({ n: needsPiezometerWizardStep ? 5 : 4, title: 'Additional attachment' });
     return s;
   }, [needsPiezometerWizardStep]);
 
   useEffect(() => {
-    if (!needsPiezometerWizardStep && addStep === 4) setAddStep(3);
+    if (!needsPiezometerWizardStep && addStep > 4) setAddStep(4);
   }, [needsPiezometerWizardStep, addStep]);
 
   useEffect(() => {
@@ -1009,6 +1037,141 @@ const CGWFlowMetre = () => {
     if (addWizardSubmitting) return;
     setAddWizardSubmitting(true);
     try {
+      if (editMode && editingItemId) {
+        const row = equipmentRows[0] || { ...EMPTY_EQUIPMENT_ROW };
+        const apiRow = equipmentRowToApiPayload(row);
+        const piezometerDetailsPayload =
+          needsPiezometerWizardStep
+            ? JSON.stringify({
+                schema_version: 2,
+                noc_piezometer_count: piezometerWizardCount || null,
+                piezometers: piezometerRows.map((r) => piezoRowToPersist(r)),
+              })
+            : null;
+        await axios.put(`${API}/cgw-flow-metres/${editingItemId}`, {
+          customer_id: formData.customer_id || null,
+          customer_name: formData.customer_name || '',
+          location: formData.location || '',
+          contact_person: formData.contact_person || '',
+          flow_meter_make: (apiRow.flow_meter_make || '').trim() || null,
+          flow_meter_size: (apiRow.flow_meter_size || '').trim() || null,
+          flow_meter_serial: (apiRow.flow_meter_serial || '').trim() || null,
+          calibration_valid_from: apiRow.calibration_valid_from || null,
+          calibration_valid_to: apiRow.calibration_valid_to || null,
+          telemetry_applicable: apiRow.telemetry_applicable || null,
+          telemetry_company: apiRow.telemetry_company || null,
+          telemetry_company_other: (apiRow.telemetry_company_other || '').trim() || null,
+          telemetry_communication_via: apiRow.telemetry_communication_via || null,
+          telemetry_sim_provider: apiRow.telemetry_sim_provider || null,
+          telemetry_sim_provider_other: (apiRow.telemetry_sim_provider_other || '').trim() || null,
+          telemetry_sim_number: (apiRow.telemetry_sim_number || '').trim() || null,
+          telemetry_sim_valid_from: apiRow.telemetry_sim_valid_from || null,
+          telemetry_sim_valid_to: apiRow.telemetry_sim_valid_to || null,
+          telemetry_product_code: (apiRow.telemetry_product_code || '').trim() || null,
+          telemetry_serial_number: (apiRow.telemetry_serial_number || '').trim() || null,
+          telemetry_portal_url: (apiRow.telemetry_portal_url || '').trim() || null,
+          telemetry_username: (apiRow.telemetry_username || '').trim() || null,
+          telemetry_password: (apiRow.telemetry_password || '').trim() || null,
+          telemetry_valid_from: apiRow.telemetry_valid_from || null,
+          telemetry_valid_to: apiRow.telemetry_valid_to || null,
+          telemetry_uploaded_previous_year: apiRow.telemetry_uploaded_previous_year || null,
+          telemetry_previous_serial: (apiRow.telemetry_previous_serial || '').trim() || null,
+          telemetry_previous_data_available: apiRow.telemetry_previous_data_available || null,
+          telemetry_previous_data_from: apiRow.telemetry_previous_data_from || null,
+          telemetry_previous_data_to: apiRow.telemetry_previous_data_to || null,
+          piezometer_details_json: piezometerDetailsPayload,
+          system_mobile_number: formData.system_mobile_number || '',
+          person_mobile_number: formData.person_mobile_number || '',
+          email_id: formData.email_id || '',
+          date_of_commissioning: formData.date_of_commissioning || null,
+        }, { headers: authHeaders() });
+
+        const bundle = equipmentFlowFiles[0] || {};
+        if (bundle.calibration_cert) await uploadCgwRowAttachment(editingItemId, 'calibration_certificate', bundle.calibration_cert);
+        if (bundle.service_report) await uploadCgwRowAttachment(editingItemId, 'service_report', bundle.service_report);
+        if (bundle.water_quality_certificate) await uploadCgwRowAttachment(editingItemId, 'water_quality_certificate', bundle.water_quality_certificate);
+        if (bundle.cte) await uploadCgwRowAttachment(editingItemId, 'cte', bundle.cte);
+        if (bundle.cto) await uploadCgwRowAttachment(editingItemId, 'cto', bundle.cto);
+        if (bundle.rwss_watco_phed_noc) await uploadCgwRowAttachment(editingItemId, 'rwss_watco_phed_noc', bundle.rwss_watco_phed_noc);
+        if (bundle.approval_letter) await uploadCgwRowAttachment(editingItemId, 'approval_letter', bundle.approval_letter);
+        if (bundle.rain_water_harvesting_data) await uploadCgwRowAttachment(editingItemId, 'rain_water_harvesting_data', bundle.rain_water_harvesting_data);
+        if (bundle.additional_doc) {
+          const typed = (row.additional_document_type || '').trim();
+          const f = typed
+            ? new File([bundle.additional_doc], `${typed}_${bundle.additional_doc.name}`, { type: bundle.additional_doc.type || 'application/octet-stream' })
+            : bundle.additional_doc;
+          await uploadCgwRowAttachment(editingItemId, 'additional_doc', f);
+        }
+        if (bundle.telemetry_excel) await uploadCgwRowAttachment(editingItemId, 'telemetry_excel_prior', bundle.telemetry_excel);
+        if (bundle.telemetry_service) await uploadCgwRowAttachment(editingItemId, 'telemetry_service_prior', bundle.telemetry_service);
+        for (const f of bundle.bwGeoPhotos || []) await uploadCgwRowAttachment(editingItemId, 'bw_geo_flowmeter', f);
+        for (const f of bundle.telemetryPhotoFiles || []) await uploadCgwRowAttachment(editingItemId, 'telemetry', f);
+        for (const pb of piezometerFiles || []) {
+          for (const f of pb.bwPhotos || []) await uploadCgwRowAttachment(editingItemId, 'piezometer_bw', f);
+          if (pb.calibrationCert) await uploadCgwRowAttachment(editingItemId, 'piezometer_calibration', pb.calibrationCert);
+          for (const f of pb.telemetryPhotos || []) await uploadCgwRowAttachment(editingItemId, 'piezometer_telemetry', f);
+          if (pb.telemetryExcel) await uploadCgwRowAttachment(editingItemId, 'piezometer_excel_prior', pb.telemetryExcel);
+          if (pb.priorTelemetryService) await uploadCgwRowAttachment(editingItemId, 'piezometer_service_report', pb.priorTelemetryService);
+        }
+
+        if (addNocFile) {
+          const fd = new FormData();
+          fd.append('file', addNocFile);
+          fd.append('project_name', addNocForm.project_name || '');
+          fd.append('project_address', addNocForm.project_address || '');
+          fd.append('communication_address', addNocForm.communication_address || '');
+          fd.append('noc_no', addNocForm.noc_no || '');
+          fd.append('application_no', addNocForm.application_no || '');
+          fd.append('project_status', addNocForm.project_status || '');
+          fd.append('noc_type', addNocForm.noc_type || '');
+          fd.append('valid_from', addNocForm.valid_from || '');
+          fd.append('valid_upto', addNocForm.valid_upto || '');
+          fd.append('permitted_m3_per_day', addNocForm.permitted_m3_per_day || '');
+          fd.append('permitted_m3_per_year', addNocForm.permitted_m3_per_year || '');
+          fd.append('existing_bw_count', addNocForm.existing_bw_count || '');
+          fd.append('total_proposed_bw_count', addNocForm.total_proposed_bw_count || '');
+          fd.append('flowmeter_applicable', addNocForm.flowmeter_applicable || '');
+          fd.append('flowmeter_count', addNocForm.flowmeter_count || '');
+          fd.append('piezometer_applicable', addNocForm.piezometer_applicable || '');
+          fd.append('piezometer_count', addNocForm.piezometer_applicable === 'yes' ? String(piezometerWizardCount || addNocForm.piezometer_count || '') : '');
+          fd.append('bhuneer_user_id', addNocForm.bhuneer_user_id || '');
+          fd.append('bhuneer_password', addNocForm.bhuneer_password || '');
+          fd.append('nocap_user_id', addNocForm.nocap_user_id || '');
+          fd.append('nocap_password', addNocForm.nocap_password || '');
+          await axios.post(`${API}/cgw-flow-metres/${editingItemId}/noc`, fd, { headers: authHeaders() });
+        } else {
+          await axios.put(`${API}/cgw-flow-metres/${editingItemId}`, {
+            noc_bhuneer_user_id: addNocForm.bhuneer_user_id || null,
+            noc_bhuneer_password: addNocForm.bhuneer_password || null,
+            noc_nocap_user_id: (addNocForm.nocap_user_id || '').trim().toLowerCase() || null,
+            noc_nocap_password: addNocForm.nocap_password || null,
+            noc_project_name: addNocForm.project_name || '',
+            noc_project_address: addNocForm.project_address || '',
+            noc_communication_address: addNocForm.communication_address || '',
+            noc_no: addNocForm.noc_no || '',
+            noc_application_no: addNocForm.application_no || '',
+            noc_project_status: addNocForm.project_status || '',
+            noc_type: addNocForm.noc_type || '',
+            noc_valid_from: addNocForm.valid_from || '',
+            noc_valid_upto: addNocForm.valid_upto || '',
+            noc_permitted_m3_per_day: addNocForm.permitted_m3_per_day || '',
+            noc_permitted_m3_per_year: addNocForm.permitted_m3_per_year || '',
+            noc_existing_bw_count: addNocForm.existing_bw_count || '',
+            noc_total_proposed_bw_count: addNocForm.total_proposed_bw_count || '',
+            noc_flowmeter_applicable: addNocForm.flowmeter_applicable || '',
+            noc_flowmeter_count: addNocForm.flowmeter_applicable === 'yes' ? (addNocForm.flowmeter_count || '') : '',
+            noc_piezometer_applicable: addNocForm.piezometer_applicable || '',
+            noc_piezometer_count: addNocForm.piezometer_applicable === 'yes' ? String(piezometerWizardCount || addNocForm.piezometer_count || '') : '',
+          }, { headers: authHeaders() });
+        }
+
+        toast.success('Inventory item updated successfully');
+        setDialogOpen(false);
+        resetForm();
+        fetchItems();
+        return;
+      }
+
       const piezometerDetailsPayload =
         needsPiezometerWizardStep
           ? JSON.stringify({
@@ -1099,15 +1262,47 @@ const CGWFlowMetre = () => {
         });
       }
 
+      if (!rowsForSubmit.length) {
+        rowsForSubmit.push({
+          row: {
+            location: base.location || '',
+            contact_person: base.contact_person || '',
+            flow_meter_make: null,
+            flow_meter_size: null,
+            flow_meter_serial: null,
+            calibration_valid_from: null,
+            calibration_valid_to: null,
+            telemetry_applicable: null,
+            telemetry_company: null,
+            telemetry_company_other: null,
+            telemetry_communication_via: null,
+            telemetry_sim_provider: null,
+            telemetry_sim_provider_other: null,
+            telemetry_sim_number: null,
+            telemetry_sim_valid_from: null,
+            telemetry_sim_valid_to: null,
+            telemetry_product_code: null,
+            telemetry_serial_number: null,
+            telemetry_portal_url: null,
+            telemetry_username: null,
+            telemetry_password: null,
+            telemetry_valid_from: null,
+            telemetry_valid_to: null,
+            telemetry_uploaded_previous_year: null,
+            telemetry_previous_serial: null,
+            telemetry_previous_data_available: null,
+            telemetry_previous_data_from: null,
+            telemetry_previous_data_to: null,
+            piezometer_details_json: piezometerDetailsPayload,
+          },
+          files: equipmentFlowFiles[0] || {},
+        });
+      }
+
       const payload = {
         ...base,
         equipments: rowsForSubmit.map((x) => x.row),
       };
-
-      if (!payload.equipments.length) {
-        toast.error('Please add at least one equipment row');
-        return;
-      }
 
       const createdRes = await axios.post(`${API}/cgw-flow-metres/bulk`, payload, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -1125,6 +1320,31 @@ const CGWFlowMetre = () => {
           }
           if (bundle.service_report) {
             await uploadCgwRowAttachment(inv.id, 'service_report', bundle.service_report);
+          }
+          if (bundle.water_quality_certificate) {
+            await uploadCgwRowAttachment(inv.id, 'water_quality_certificate', bundle.water_quality_certificate);
+          }
+          if (bundle.cte) {
+            await uploadCgwRowAttachment(inv.id, 'cte', bundle.cte);
+          }
+          if (bundle.cto) {
+            await uploadCgwRowAttachment(inv.id, 'cto', bundle.cto);
+          }
+          if (bundle.rwss_watco_phed_noc) {
+            await uploadCgwRowAttachment(inv.id, 'rwss_watco_phed_noc', bundle.rwss_watco_phed_noc);
+          }
+          if (bundle.approval_letter) {
+            await uploadCgwRowAttachment(inv.id, 'approval_letter', bundle.approval_letter);
+          }
+          if (bundle.rain_water_harvesting_data) {
+            await uploadCgwRowAttachment(inv.id, 'rain_water_harvesting_data', bundle.rain_water_harvesting_data);
+          }
+          if (bundle.additional_doc) {
+            const typed = (equipmentRows[i]?.additional_document_type || '').trim();
+            const f = typed
+              ? new File([bundle.additional_doc], `${typed}_${bundle.additional_doc.name}`, { type: bundle.additional_doc.type || 'application/octet-stream' })
+              : bundle.additional_doc;
+            await uploadCgwRowAttachment(inv.id, 'additional_doc', f);
           }
           if (bundle.telemetry_excel) {
             await uploadCgwRowAttachment(inv.id, 'telemetry_excel_prior', bundle.telemetry_excel);
@@ -1296,16 +1516,21 @@ const CGWFlowMetre = () => {
   };
 
   const handleEdit = (item) => {
-    setInlineEditId(item.id);
-    setInlineEditData({
-      customer_id: item.customer_id,
-      customer_name: item.customer_name,
+    setEditMode(true);
+    setEditingItemId(item.id);
+    setFormData((prev) => ({
+      ...prev,
+      customer_id: item.customer_id || '',
+      customer_name: item.customer_name || '',
       location: item.location || '',
       contact_person: item.contact_person || '',
-      equipment_name: item.equipment_name || '',
-      flowmeter_details: item.flowmeter_details || '',
-      product_code: item.product_code || '',
-      model_no: item.model_no || '',
+      system_mobile_number: item.system_mobile_number || '',
+      person_mobile_number: item.person_mobile_number || '',
+      email_id: item.email_id || '',
+      date_of_commissioning: item.date_of_commissioning || '',
+    }));
+    setEquipmentRows([{
+      ...EMPTY_EQUIPMENT_ROW,
       flow_meter_make: item.flow_meter_make || 'UPC',
       flow_meter_size: item.flow_meter_size || '',
       flow_meter_serial: item.flow_meter_serial || '',
@@ -1328,23 +1553,47 @@ const CGWFlowMetre = () => {
       telemetry_valid_from: item.telemetry_valid_from || '',
       telemetry_valid_to: item.telemetry_valid_to || '',
       telemetry_uploaded_previous_year: item.telemetry_uploaded_previous_year || '',
-      telemetry_previous_serial: item.telemetry_previous_serial || '',
+      telemetry_previous_serial_pick: item.telemetry_previous_serial || '',
       telemetry_previous_data_available: item.telemetry_previous_data_available || '',
       telemetry_previous_data_from: item.telemetry_previous_data_from || '',
       telemetry_previous_data_to: item.telemetry_previous_data_to || '',
-      piezometer_details_json: item.piezometer_details_json || '',
-      system_mobile_number: item.system_mobile_number || '',
-      person_mobile_number: item.person_mobile_number || '',
-      email_id: item.email_id || '',
-      date_of_commissioning: item.date_of_commissioning || '',
-      url_link: item.url_link || '',
-      user_id: item.user_id || '',
-      password: item.password || '',
-      status: item.status,
-      renewal_date: item.renewal_date || '',
-      review: item.review || '',
-      remarks: item.remarks || ''
+      additional_document_type: item.additional_document_type || '',
+    }]);
+    setEquipmentFlowFiles([EMPTY_EQUIPMENT_FLOW_FILES()]);
+    setAddNocForm({
+      bhuneer_user_id: item.noc_bhuneer_user_id || '',
+      bhuneer_password: item.noc_bhuneer_password || '',
+      nocap_user_id: item.noc_nocap_user_id || '',
+      nocap_password: item.noc_nocap_password || '',
+      project_name: item.noc_project_name || '',
+      project_address: item.noc_project_address || '',
+      communication_address: item.noc_communication_address || '',
+      noc_no: item.noc_no || '',
+      application_no: item.noc_application_no || '',
+      project_status: item.noc_project_status || '',
+      noc_type: item.noc_type || '',
+      valid_from: item.noc_valid_from || '',
+      valid_upto: item.noc_valid_upto || '',
+      permitted_m3_per_day: item.noc_permitted_m3_per_day || '',
+      permitted_m3_per_year: item.noc_permitted_m3_per_year || '',
+      existing_bw_count: item.noc_existing_bw_count || '',
+      total_proposed_bw_count: item.noc_total_proposed_bw_count || '',
+      flowmeter_applicable: item.noc_flowmeter_applicable || '',
+      flowmeter_count: item.noc_flowmeter_count || '',
+      piezometer_applicable: item.noc_piezometer_applicable || '',
+      piezometer_count: item.noc_piezometer_count || '',
     });
+    try {
+      const parsed = typeof item.piezometer_details_json === 'string' ? JSON.parse(item.piezometer_details_json) : item.piezometer_details_json;
+      const pz = Array.isArray(parsed?.piezometers) ? parsed.piezometers : [];
+      setPiezometerRows(pz.map((r) => ({ ...EMPTY_PIEZO_ROW, ...r })));
+      setPiezometerFiles(Array.from({ length: pz.length }, () => EMPTY_PIEZO_FILES()));
+    } catch (_e) {
+      setPiezometerRows([]);
+      setPiezometerFiles([]);
+    }
+    setAddStep(1);
+    setDialogOpen(true);
   };
 
   const handleInlineChange = (field, value) => {
@@ -1385,6 +1634,8 @@ const CGWFlowMetre = () => {
     setPiezometerFiles([]);
     setAddStep(1);
     setAddWizardSubmitting(false);
+    setEditMode(false);
+    setEditingItemId(null);
   };
 
   const handleAddNocWizardFilePicked = (e) => {
@@ -1448,28 +1699,11 @@ const CGWFlowMetre = () => {
       const bundle = equipmentFlowFiles[i] || {};
       if (equipmentRowIncludeInBulk(r, bundle)) includedIdx.push(i);
     }
-    if (!includedIdx.length) {
-      toast.error(
-        'Add at least one flow metre line: enter serial or size, set calibration dates, attach GEO/calibration/telemetry files, or complete the telemetry section.'
-      );
-      return false;
-    }
-    const missingServiceReport = includedIdx.filter((i) => !equipmentFlowFiles[i]?.service_report);
-    if (missingServiceReport.length) {
-      toast.error(
-        `Service report is required for each flow metre line. Add a file for line(s): ${missingServiceReport.map((n) => n + 1).join(', ')}.`
-      );
-      return false;
-    }
     return true;
   };
 
   const goAddNextStep = () => {
     if (addStep === 1) {
-      if (!formData.customer_id) {
-        toast.error('Please select customer first');
-        return;
-      }
       setAddStep(2);
       return;
     }
@@ -1488,6 +1722,11 @@ const CGWFlowMetre = () => {
         setAddStep(4);
         return;
       }
+      setAddStep(4);
+      return;
+    }
+    if (addStep === 4 && needsPiezometerWizardStep) {
+      setAddStep(5);
       return;
     }
   };
@@ -1541,7 +1780,7 @@ const CGWFlowMetre = () => {
 
   const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
   const [mediaDialogItem, setMediaDialogItem] = useState(null);
-  const [mediaActiveCategory, setMediaActiveCategory] = useState('flow_meter');
+  const [mediaActiveCategory, setMediaActiveCategory] = useState('bw_geo_flowmeter');
   const [mediaSelectedFileId, setMediaSelectedFileId] = useState(null);
   const [mediaUploading, setMediaUploading] = useState(false);
   const [mediaPreviewObjectUrl, setMediaPreviewObjectUrl] = useState('');
@@ -1560,9 +1799,9 @@ const CGWFlowMetre = () => {
     });
   }, [mediaDialogOpen, mediaDialogItem, mediaActiveCategory]);
 
-  const openMediaDialog = (item, category = 'flow_meter') => {
+  const openMediaDialog = (item, category = 'bw_geo_flowmeter') => {
     setMediaDialogItem(item);
-    setMediaActiveCategory(CGW_MEDIA_KEYS.includes(category) ? category : 'flow_meter');
+    setMediaActiveCategory(CGW_MEDIA_KEYS.includes(category) ? category : 'bw_geo_flowmeter');
     setMediaSelectedFileId(null);
     setMediaDialogOpen(true);
   };
@@ -1850,9 +2089,9 @@ const CGWFlowMetre = () => {
             <DialogContent className="flex h-[min(96vh,100dvh)] max-h-[min(96vh,100dvh)] w-[min(1600px,98vw)] max-w-[min(1600px,98vw)] flex-col overflow-hidden bg-white rounded-lg border border-gray-200 shadow-xl p-0">
               <div className="bg-blue-600 text-white p-6 rounded-t-lg shrink-0">
                 <DialogHeader>
-                  <DialogTitle className="text-xl font-bold text-white">Add New Flow Metre</DialogTitle>
+                  <DialogTitle className="text-xl font-bold text-white">{editMode ? 'Edit Flow Metre' : 'Add New Flow Metre'}</DialogTitle>
                   <p className="text-blue-100 text-sm mt-1">
-                    Create a new inventory item
+                    {editMode ? 'Update existing inventory item' : 'Create a new inventory item'}
                   </p>
                 </DialogHeader>
               </div>
@@ -1883,12 +2122,11 @@ const CGWFlowMetre = () => {
                 {addStep === 1 && (
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="customer_id" className="text-sm font-medium text-gray-700">Select Customer *</Label>
+                      <Label htmlFor="customer_id" className="text-sm font-medium text-gray-700">Select Customer</Label>
                       <select
                         id="customer_id"
                         value={formData.customer_id}
                         onChange={handleCustomerChange}
-                        required
                         className="w-full border border-gray-300 rounded-lg px-3 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                       >
                         <option value="">Choose a customer...</option>
@@ -2316,9 +2554,7 @@ const CGWFlowMetre = () => {
 
                                   <div className="rounded-lg border border-gray-200 p-3 space-y-2">
                                     <p className="text-sm font-semibold text-gray-800">Service report</p>
-                                    <Label className="text-sm font-medium text-gray-700">
-                                      Upload service report <span className="text-red-600">*</span>
-                                    </Label>
+                                      <Label className="text-sm font-medium text-gray-700">Upload service report</Label>
                                     <Input
                                       type="file"
                                       accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
@@ -2332,7 +2568,7 @@ const CGWFlowMetre = () => {
                                     {flowFiles.service_report ? (
                                       <p className="text-xs text-gray-600">Selected: {flowFiles.service_report.name}</p>
                                     ) : (
-                                      <p className="text-xs text-gray-500">Required for every flow metre line included in this save.</p>
+                                      <p className="text-xs text-gray-400">Optional; uploads after save (S3).</p>
                                     )}
                                   </div>
 
@@ -2712,9 +2948,42 @@ const CGWFlowMetre = () => {
                       setPiezometerFiles={setPiezometerFiles}
                       telemetrySerialOptions={telemetrySerialOptions}
                       countLabel={`${piezometerWizardCount} piezometer${piezometerWizardCount !== 1 ? 's' : ''} (NOC count ${String(addNocForm.piezometer_count || '').trim() || '—'})`}
-                      onSubmit={handleSubmit}
-                      submitting={addWizardSubmitting}
                     />
+                  </div>
+                ) : null}
+
+                {addStep === (needsPiezometerWizardStep ? 5 : 4) ? (
+                  <div className="space-y-3">
+                    <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                      <p className="text-sm font-semibold text-gray-800">Additional attachment</p>
+                      {equipmentRows.map((row, idx) => {
+                        const flowFiles = equipmentFlowFiles[idx] || {};
+                        const setFlowFile = (key, file) =>
+                          setEquipmentFlowFiles((prev) =>
+                            prev.map((b, i) => (i === idx ? { ...b, [key]: file || undefined } : b))
+                          );
+                        const patchRow = (patch) =>
+                          setEquipmentRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+                        return (
+                          <div key={`add-attach-${idx}`} className="rounded-md border border-gray-200 bg-gray-50/60 p-3 space-y-3">
+                            <p className="text-xs font-semibold text-gray-700">Flow metre line {idx + 1}</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">Water quality certificate</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('water_quality_certificate', f); }} className="h-11 text-sm" />{flowFiles.water_quality_certificate ? <p className="text-xs text-gray-600">Selected: {flowFiles.water_quality_certificate.name}</p> : null}</div>
+                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">CTE</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('cte', f); }} className="h-11 text-sm" />{flowFiles.cte ? <p className="text-xs text-gray-600">Selected: {flowFiles.cte.name}</p> : null}</div>
+                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">CTO</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('cto', f); }} className="h-11 text-sm" />{flowFiles.cto ? <p className="text-xs text-gray-600">Selected: {flowFiles.cto.name}</p> : null}</div>
+                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">RWSS/WATCO/PHED NOC</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('rwss_watco_phed_noc', f); }} className="h-11 text-sm" />{flowFiles.rwss_watco_phed_noc ? <p className="text-xs text-gray-600">Selected: {flowFiles.rwss_watco_phed_noc.name}</p> : null}</div>
+                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">Approval letter</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('approval_letter', f); }} className="h-11 text-sm" />{flowFiles.approval_letter ? <p className="text-xs text-gray-600">Selected: {flowFiles.approval_letter.name}</p> : null}</div>
+                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">Rain water harvesting data</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('rain_water_harvesting_data', f); }} className="h-11 text-sm" />{flowFiles.rain_water_harvesting_data ? <p className="text-xs text-gray-600">Selected: {flowFiles.rain_water_harvesting_data.name}</p> : null}</div>
+                            </div>
+                            <div className="rounded-md border border-gray-200 bg-white p-3 space-y-3">
+                              <p className="text-sm font-semibold text-gray-800">Additional doc</p>
+                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">Document type</Label><Input value={row.additional_document_type} onChange={(e) => patchRow({ additional_document_type: e.target.value })} className="h-11" /></div>
+                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">Doc</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.xlsx,.xls,.csv,application/pdf,image/*,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('additional_doc', f); }} className="h-11 text-sm" />{flowFiles.additional_doc ? <p className="text-xs text-gray-600">Selected: {flowFiles.additional_doc.name}</p> : <p className="text-xs text-gray-400">Optional.</p>}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 ) : null}
 
@@ -2734,14 +3003,14 @@ const CGWFlowMetre = () => {
                       <Button type="button" className="bg-blue-600 text-white hover:bg-blue-700" onClick={goAddNextStep}>
                         Next
                       </Button>
-                    ) : addStep === 4 && needsPiezometerWizardStep ? null : (
+                    ) : (
                       <Button
                         type="button"
                         disabled={addWizardSubmitting}
                         className="bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
                         onClick={handleSubmit}
                       >
-                        {addWizardSubmitting ? 'Saving…' : 'Add Item'}
+                        {addWizardSubmitting ? 'Saving…' : editMode ? 'Update Item' : 'Add Item'}
                       </Button>
                     )}
                   </div>
@@ -2827,14 +3096,15 @@ const CGWFlowMetre = () => {
       {filteredItems.length > 0 ? (
         <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="overflow-auto table-scroll max-h-[calc(100vh-220px)] scrollbar-thin" style={{ scrollbarWidth: 'auto' }}>
-            <table className="w-full text-sm min-w-[2300px]">
+            <table className="w-full text-sm min-w-[4100px]">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
-                  <th colSpan="5" className="text-center py-2.5 px-3 font-semibold text-sky-900 bg-sky-100/80 border-r border-sky-200">Customer & NOC</th>
+                  <th colSpan="4" className="text-center py-2.5 px-3 font-semibold text-sky-900 bg-sky-100/80 border-r border-sky-200">Customer & NOC</th>
                   <th colSpan="5" className="text-center py-2.5 px-3 font-semibold text-indigo-900 bg-indigo-100/80 border-r border-indigo-200">Flow Metre Details</th>
-                  <th colSpan="3" className="text-center py-2.5 px-3 font-semibold text-violet-900 bg-violet-100/80 border-r border-violet-200">Telemetry & Piezometer</th>
-                  <th colSpan="4" className="text-center py-2.5 px-3 font-semibold text-emerald-900 bg-emerald-100/80 border-r border-emerald-200">Contact</th>
-                  <th colSpan="1" className="text-center py-2.5 px-3 font-semibold text-amber-900 bg-amber-100/80">Lifecycle</th>
+                  <th colSpan="1" className="text-center py-2.5 px-3 font-semibold text-violet-900 bg-violet-100/80 border-r border-violet-200">Piezometer</th>
+                  <th colSpan="3" className="text-center py-2.5 px-3 font-semibold text-emerald-900 bg-emerald-100/80 border-r border-emerald-200">Contact</th>
+                  <th colSpan="1" className="text-center py-2.5 px-3 font-semibold text-amber-900 bg-amber-100/80 border-r border-amber-200">Lifecycle</th>
+                  <th colSpan="11" className="text-center py-2.5 px-3 font-semibold text-fuchsia-900 bg-fuchsia-100/80">File Upload Previews</th>
                   {canManage && (
                     <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap border-l border-gray-200">ACTIONS</th>
                   )}
@@ -2845,10 +3115,6 @@ const CGWFlowMetre = () => {
                     <span className="block leading-snug">NOC</span>
                     <span className="mt-0.5 block text-[10px] font-normal text-gray-500 leading-tight">Per equipment row</span>
                   </th>
-                  <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap min-w-[120px] align-top">
-                    <span className="block leading-snug">CGWA DATA</span>
-                    <span className="mt-0.5 block text-[10px] font-normal text-gray-500 leading-tight">S3 · per row</span>
-                  </th>
                   <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">LOCATION</th>
                   <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">CONTACT PERSON</th>
                   <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">FLOW METER MAKE</th>
@@ -2856,13 +3122,10 @@ const CGWFlowMetre = () => {
                   <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">FLOW METER SERIAL</th>
                   <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">CALIBRATION FROM</th>
                   <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">CALIBRATION TO</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-violet-900 bg-violet-50 whitespace-nowrap">TELEMETRY COMPANY</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-violet-900 bg-violet-50 whitespace-nowrap">TELEMETRY SERIAL</th>
                   <th className="text-left py-2.5 px-4 font-semibold text-violet-900 bg-violet-50 whitespace-nowrap">PIEZOMETER DETAILS (NOC | ENTERED)</th>
                   <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-emerald-900 bg-emerald-50 whitespace-nowrap">SYSTEM MOBILE NUMBER</th>
                   <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-emerald-900 bg-emerald-50 whitespace-nowrap">PERSON MOBILE NUMBER</th>
                   <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-emerald-900 bg-emerald-50 whitespace-nowrap">EMAIL ID</th>
-                  <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-emerald-900 bg-emerald-50 whitespace-nowrap">DATE OF COMMISSONING</th>
                   <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-amber-900 bg-amber-50 align-top min-w-[120px] whitespace-normal">
                     <span className="block leading-snug">NOC VALID UPTO</span>
                     <span className="mt-1 block text-[10px] font-normal text-gray-500 leading-tight">
@@ -2870,16 +3133,23 @@ const CGWFlowMetre = () => {
                       <span className="text-amber-700 font-semibold">Amber</span> = ≤30 days
                     </span>
                   </th>
+                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">FLOW BW GEO</th>
+                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">FLOW CALIBRATION</th>
+                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">FLOW SERVICE</th>
+                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">TELEMETRY PHOTOS</th>
+                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">TELEMETRY EXCEL</th>
+                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">TELEMETRY SERVICE</th>
+                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">PIEZO BW</th>
+                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">PIEZO CALIBRATION</th>
+                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">PIEZO TELEMETRY</th>
+                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">PIEZO EXCEL</th>
+                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">PIEZO SERVICE</th>
                 </tr>
               </thead>
               <tbody>
                 {pagedGroups.map((group, groupIndex) => {
                   const groupEditActive = group.rows.some(r => r.id === inlineEditId);
                   const groupAnchor = group.rows[0];
-                  const baseCustomerCode =
-                    customerCodeById.get(groupAnchor.customer_id) ||
-                    groupAnchor.customer_id ||
-                    '—';
                   const rawRenewal = groupEditActive ? inlineEditData.renewal_date : groupAnchor.renewal_date;
                   const renewalU = renewalUrgency(rawRenewal);
                   const rowRenewalClass =
@@ -2951,51 +3221,6 @@ const CGWFlowMetre = () => {
                         </td>
                       )}
                       {rowIndex === 0 && (
-                        <td rowSpan={group.rows.length} className="py-3 px-4 align-top min-w-[120px] border-r border-sky-100 bg-sky-50/40">
-                          <div className="space-y-2">
-                            {group.rows.map((inv) => (
-                              <div key={inv.id} className="rounded border border-gray-200 bg-gray-50/80 p-1.5">
-                                <p className="text-[9px] font-mono text-gray-500 mb-1 truncate">{inv.inventory_id}</p>
-                                <div className="flex flex-col gap-1">
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7 px-1 text-[9px] border-gray-200 w-full"
-                                    onClick={() => openMediaDialog(inv, 'flow_meter')}
-                                  >
-                                    Files (S3)
-                                  </Button>
-                                  {cgwFirstAttachmentCategory(inv) ? (
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-6 px-1 text-[9px] text-blue-700"
-                                      onClick={() => openMediaDialog(inv, cgwFirstAttachmentCategory(inv))}
-                                    >
-                                      <Eye className="h-3 w-3 mr-0.5" />
-                                      Preview
-                                    </Button>
-                                  ) : null}
-                                </div>
-                                <div className="text-[8px] text-gray-500 mt-1 leading-tight space-y-0.5">
-                                  {CGW_MEDIA_KEYS.map((k) => {
-                                    const n = (inv.cgw_attachments?.[k] || []).length;
-                                    if (!n) return null;
-                                    return (
-                                      <div key={`${inv.id}-${k}`}>
-                                        {CGW_MEDIA_LABELS[k].split('(')[0].trim().slice(0, 10)}: {n}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-                      )}
-                      {rowIndex === 0 && (
                         <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-sky-50/40">
                           {groupEditActive ? <Input value={inlineEditData.location} onChange={(e) => handleInlineChange('location', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.location || '—')}
                         </td>
@@ -3021,12 +3246,6 @@ const CGWFlowMetre = () => {
                       </td>
                       <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
                         {inlineEditId === item.id ? <Input type="date" value={inlineEditData.calibration_valid_to} onChange={(e) => handleInlineChange('calibration_valid_to', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.calibration_valid_to || '—')}
-                      </td>
-                      <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-violet-50/35">
-                        {inlineEditId === item.id ? <Input value={inlineEditData.telemetry_company} onChange={(e) => handleInlineChange('telemetry_company', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.telemetry_company || '—')}
-                      </td>
-                      <td className="py-3 px-4 text-gray-600 whitespace-nowrap font-mono bg-violet-50/35">
-                        {inlineEditId === item.id ? <Input value={inlineEditData.telemetry_serial_number} onChange={(e) => handleInlineChange('telemetry_serial_number', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.telemetry_serial_number || '—')}
                       </td>
                       <td className="py-3 px-4 text-gray-600 min-w-[220px] bg-violet-50/35">
                         {piezometerSummaryCellText(item)}
@@ -3062,15 +3281,43 @@ const CGWFlowMetre = () => {
                         </td>
                       )}
                       {rowIndex === 0 && (
-                        <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-emerald-50/35">
-                          {groupEditActive ? <Input type="date" value={inlineEditData.date_of_commissioning} onChange={(e) => handleInlineChange('date_of_commissioning', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.date_of_commissioning || '—')}
-                        </td>
-                      )}
-                      {rowIndex === 0 && (
                         <td rowSpan={group.rows.length} className="py-3 px-4 align-top border-l border-amber-100 bg-amber-50/35">
                           <NocValidUptoColumnCell groupRows={group.rows} />
                         </td>
                       )}
+                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                        <AttachmentPreviewCell item={item} category="bw_geo_flowmeter" onPreview={openMediaDialog} />
+                      </td>
+                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                        <AttachmentPreviewCell item={item} category="calibration_certificate" onPreview={openMediaDialog} />
+                      </td>
+                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                        <AttachmentPreviewCell item={item} category="service_report" onPreview={openMediaDialog} />
+                      </td>
+                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                        <AttachmentPreviewCell item={item} category="telemetry" onPreview={openMediaDialog} />
+                      </td>
+                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                        <AttachmentPreviewCell item={item} category="telemetry_excel_prior" onPreview={openMediaDialog} />
+                      </td>
+                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                        <AttachmentPreviewCell item={item} category="telemetry_service_prior" onPreview={openMediaDialog} />
+                      </td>
+                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                        <AttachmentPreviewCell item={item} category="piezometer_bw" onPreview={openMediaDialog} />
+                      </td>
+                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                        <AttachmentPreviewCell item={item} category="piezometer_calibration" onPreview={openMediaDialog} />
+                      </td>
+                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                        <AttachmentPreviewCell item={item} category="piezometer_telemetry" onPreview={openMediaDialog} />
+                      </td>
+                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                        <AttachmentPreviewCell item={item} category="piezometer_excel_prior" onPreview={openMediaDialog} />
+                      </td>
+                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                        <AttachmentPreviewCell item={item} category="piezometer_service_report" onPreview={openMediaDialog} />
+                      </td>
 
                       {canManage && (
                         <td className="py-3 px-4">

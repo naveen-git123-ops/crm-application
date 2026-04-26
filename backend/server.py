@@ -2344,6 +2344,13 @@ CGW_MEDIA_ATTACHMENT_KEYS = (
     'piezometer_telemetry',
     'piezometer_excel_prior',
     'piezometer_service_report',
+    'water_quality_certificate',
+    'cte',
+    'cto',
+    'rwss_watco_phed_noc',
+    'approval_letter',
+    'rain_water_harvesting_data',
+    'additional_doc',
 )
 
 
@@ -3381,6 +3388,8 @@ _CGW_MEDIA_EXCEL_EXT = frozenset({'.xlsx', '.xls', '.csv'})
 def _cgw_media_allowed_extensions_for_category(category: str) -> frozenset:
     if category in ('telemetry_excel_prior', 'piezometer_excel_prior'):
         return _CGW_MEDIA_EXCEL_EXT
+    if category == 'additional_doc':
+        return _CGW_MEDIA_ALLOWED_EXT | _CGW_MEDIA_EXCEL_EXT
     return _CGW_MEDIA_ALLOWED_EXT
 
 
