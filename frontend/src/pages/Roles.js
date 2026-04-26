@@ -42,6 +42,7 @@ export const Roles = () => {
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
+  const [savingEmailId, setSavingEmailId] = useState(null);
   const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [editingRole, setEditingRole] = useState(null);
   const [roleForm, setRoleForm] = useState({ name: '', permissions: [] });
@@ -119,6 +120,10 @@ export const Roles = () => {
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
   };
 
+  const handleEmailChange = (userId, newEmail) => {
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, email: newEmail } : u));
+  };
+
   const saveRole = async (userId) => {
     const target = users.find(u => u.id === userId);
     if (!target) return;
@@ -131,6 +136,27 @@ export const Roles = () => {
       fetchUsers();
     } finally {
       setSavingId(null);
+    }
+  };
+
+  const saveEmail = async (userId) => {
+    const target = users.find(u => u.id === userId);
+    if (!target) return;
+    const email = (target.email || '').trim().toLowerCase();
+    if (!email) {
+      toast.error('Email is required');
+      return;
+    }
+    setSavingEmailId(userId);
+    try {
+      await axios.put(`${API}/users/${userId}/email`, { email }, authHeaders());
+      toast.success(`Email updated to ${email}`);
+      fetchUsers();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to update email');
+      fetchUsers();
+    } finally {
+      setSavingEmailId(null);
     }
   };
 
@@ -301,7 +327,13 @@ export const Roles = () => {
               {users.map((u) => (
                 <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50/50">
                   <td className="py-3 px-4 font-medium text-gray-900">{u.name}</td>
-                  <td className="py-3 px-4 text-gray-600">{u.email}</td>
+                  <td className="py-3 px-4 text-gray-600 min-w-[240px]">
+                    <Input
+                      value={u.email || ''}
+                      onChange={(e) => handleEmailChange(u.id, e.target.value)}
+                      className="h-9"
+                    />
+                  </td>
                   <td className="py-3 px-4 text-gray-600">{u.employee_id || '—'}</td>
                   <td className="py-3 px-4 text-gray-600">{u.department || '—'}</td>
                   <td className="py-3 px-4">
@@ -336,6 +368,22 @@ export const Roles = () => {
                           )}
                         </Button>
                       )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-9"
+                        onClick={() => saveEmail(u.id)}
+                        disabled={savingEmailId === u.id}
+                      >
+                        {savingEmailId === u.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Save className="h-4 w-4 mr-1" />
+                            Save Email
+                          </>
+                        )}
+                      </Button>
                       {u.id === user?.id && (
                         <span className="text-xs text-gray-500">(You)</span>
                       )}

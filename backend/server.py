@@ -1790,6 +1790,10 @@ class UserRoleUpdate(BaseModel):
     role: str  # must exist in roles table
 
 
+class UserEmailUpdate(BaseModel):
+    email: EmailStr
+
+
 class AdminPasswordResetRequest(BaseModel):
     # Admin can set a new password for any user (no email verification flow).
     new_password: str = Field(min_length=6, max_length=255)
@@ -6550,6 +6554,76 @@ def update_user_role(
                 'address': emp.address,
                 'emergency_contact': emp.emergency_contact
             })
+    return user_data
+
+
+@api_router.put('/users/{user_id}/email', response_model=UserDetails)
+def update_user_email(
+    user_id: str,
+    payload: UserEmailUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can change user email')
+
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail='User not found')
+
+    new_email = str(payload.email).strip().lower()
+    if not new_email:
+        raise HTTPException(status_code=400, detail='Email is required')
+
+    existing = db.query(UserModel).filter(func.lower(UserModel.email) == new_email).first()
+    if existing and existing.id != user.id:
+        raise HTTPException(status_code=400, detail='Email already registered')
+
+    user.email = new_email
+    if user.employee_id:
+        emp = db.query(EmployeeModel).filter(EmployeeModel.employee_id == user.employee_id).first()
+        if emp:
+            emp.email = new_email
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Email already exists')
+
+    db.refresh(user)
+    user_data = {
+        'id': user.id,
+        'email': user.email,
+        'name': user.name,
+        'role': user.role,
+        'employee_id': user.employee_id,
+        'created_at': user.created_at,
+        'phone': None,
+        'department': None,
+        'job_role': None,
+        'joining_date': None,
+        'salary': None,
+        'status': None,
+        'profile_photo': None,
+        'address': None,
+        'emergency_contact': None
+    }
+    if user.employee_id:
+        emp = db.query(EmployeeModel).filter(EmployeeModel.employee_id == user.employee_id).first()
+        if emp:
+            user_data.update({
+                'phone': emp.phone,
+                'department': emp.department,
+                'job_role': emp.job_role,
+                'joining_date': emp.joining_date,
+                'salary': emp.salary,
+                'status': emp.status,
+                'profile_photo': emp.profile_photo,
+                'address': emp.address,
+                'emergency_contact': emp.emergency_contact
+            })
+    user_data['permissions'] = get_permissions_for_role(db, user.role)
     return user_data
 
 

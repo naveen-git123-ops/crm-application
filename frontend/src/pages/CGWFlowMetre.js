@@ -658,8 +658,12 @@ const CGWFlowMetre = () => {
   const [mediaActiveCategory, setMediaActiveCategory] = useState('flow_meter');
   const [mediaSelectedFileId, setMediaSelectedFileId] = useState(null);
   const [mediaUploading, setMediaUploading] = useState(false);
+  const [mediaPreviewObjectUrl, setMediaPreviewObjectUrl] = useState('');
+  const [mediaPreviewLoading, setMediaPreviewLoading] = useState(false);
+  const [mediaPreviewError, setMediaPreviewError] = useState('');
   const mediaFileInputRef = useRef(null);
   const mediaPickCategoryRef = useRef(null);
+  const mediaPreviewBlobRef = useRef(null);
 
   useEffect(() => {
     if (!mediaDialogOpen || !mediaDialogItem) return;
@@ -678,9 +682,16 @@ const CGWFlowMetre = () => {
   };
 
   const closeMediaDialog = () => {
+    if (mediaPreviewBlobRef.current) {
+      URL.revokeObjectURL(mediaPreviewBlobRef.current);
+      mediaPreviewBlobRef.current = null;
+    }
     setMediaDialogOpen(false);
     setMediaDialogItem(null);
     setMediaSelectedFileId(null);
+    setMediaPreviewObjectUrl('');
+    setMediaPreviewLoading(false);
+    setMediaPreviewError('');
   };
 
   const getAttachList = (item, cat) => item?.cgw_attachments?.[cat] || [];
@@ -747,6 +758,71 @@ const CGWFlowMetre = () => {
 
   const mediaIsImage = (url) => /\.(jpg|jpeg|png|gif|webp)(\?|#|$)/i.test(url || '');
   const mediaIsPdf = (url) => /\.pdf(\?|#|$)/i.test(url || '');
+
+  const mediaIsStreamableRemoteUrl = (full) =>
+    !!full &&
+    /^https?:\/\//i.test(full) &&
+    (full.includes('.amazonaws.com') || full.includes('.digitaloceanspaces.com'));
+
+  useEffect(() => {
+    if (!mediaDialogOpen || !mediaDialogItem) {
+      if (mediaPreviewBlobRef.current) {
+        URL.revokeObjectURL(mediaPreviewBlobRef.current);
+        mediaPreviewBlobRef.current = null;
+      }
+      setMediaPreviewObjectUrl('');
+      setMediaPreviewLoading(false);
+      setMediaPreviewError('');
+      return undefined;
+    }
+
+    const mList = getAttachList(mediaDialogItem, mediaActiveCategory);
+    const sel = mList.find((a) => a.id === mediaSelectedFileId) || mList[0] || null;
+    const rawHref = sel?.url || '';
+    const fullHref = mediaPreviewHref(rawHref);
+    const shouldStream = mediaIsStreamableRemoteUrl(fullHref);
+
+    if (mediaPreviewBlobRef.current) {
+      URL.revokeObjectURL(mediaPreviewBlobRef.current);
+      mediaPreviewBlobRef.current = null;
+    }
+    setMediaPreviewObjectUrl('');
+    setMediaPreviewError('');
+
+    if (!sel || !fullHref || !shouldStream) {
+      setMediaPreviewLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setMediaPreviewLoading(true);
+
+    (async () => {
+      try {
+        const res = await axios.get(`${API}/files/stream`, {
+          params: { file_url: fullHref },
+          headers: authHeaders(),
+          responseType: 'blob',
+        });
+        if (cancelled) return;
+        const contentType = res.headers?.['content-type'] || sel?.mime_type || 'application/octet-stream';
+        const blob = new Blob([res.data], { type: contentType });
+        const u = URL.createObjectURL(blob);
+        mediaPreviewBlobRef.current = u;
+        setMediaPreviewObjectUrl(u);
+      } catch (err) {
+        if (!cancelled) {
+          setMediaPreviewError(err.response?.data?.detail || 'Could not load file preview');
+        }
+      } finally {
+        if (!cancelled) setMediaPreviewLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mediaDialogOpen, mediaDialogItem, mediaActiveCategory, mediaSelectedFileId]);
 
   const handleApplyColumnFilter = () => {
     setColumnFilters(
@@ -1868,6 +1944,10 @@ const CGWFlowMetre = () => {
                 const mList = getAttachList(mediaDialogItem, mediaActiveCategory);
                 const sel = mList.find((a) => a.id === mediaSelectedFileId) || mList[0];
                 const href = sel ? mediaPreviewHref(sel.url) : '';
+                const shouldStream = mediaIsStreamableRemoteUrl(href);
+                const previewSrc = shouldStream ? mediaPreviewObjectUrl : href;
+                const effectivePdf = shouldStream ? mediaIsPdf(sel?.file_name || href) : mediaIsPdf(href);
+                const effectiveImage = shouldStream ? mediaIsImage(sel?.file_name || href) : mediaIsImage(href);
                 if (!href) {
                   return (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm text-gray-500 p-6 text-center">
@@ -1875,13 +1955,27 @@ const CGWFlowMetre = () => {
                     </div>
                   );
                 }
-                if (mediaIsPdf(href)) {
-                  return <iframe title="Preview" src={href} className="absolute inset-0 h-full w-full border-0 bg-white" />;
+                if (shouldStream && mediaPreviewLoading) {
+                  return (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm text-gray-600 p-6 text-center">
+                      Loading file preview...
+                    </div>
+                  );
                 }
-                if (mediaIsImage(href)) {
+                if (shouldStream && mediaPreviewError) {
+                  return (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm text-gray-600 p-6 text-center">
+                      {mediaPreviewError}
+                    </div>
+                  );
+                }
+                if (effectivePdf && previewSrc) {
+                  return <iframe title="Preview" src={previewSrc} className="absolute inset-0 h-full w-full border-0 bg-white" />;
+                }
+                if (effectiveImage && previewSrc) {
                   return (
                     <div className="absolute inset-0 overflow-auto bg-gray-100 flex items-center justify-center p-2">
-                      <img src={href} alt="" className="max-h-full max-w-full object-contain" />
+                      <img src={previewSrc} alt="" className="max-h-full max-w-full object-contain" />
                     </div>
                   );
                 }
