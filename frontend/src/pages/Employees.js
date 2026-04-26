@@ -29,6 +29,7 @@ export const Employees = () => {
     job_role: '',
     joining_date: '',
     salary: '',
+    status: 'Active',
     address: '',
     emergency_contact: ''
   });
@@ -98,6 +99,7 @@ export const Employees = () => {
       job_role: employee.job_role,
       joining_date: employee.joining_date,
       salary: employee.salary,
+      status: employee.status || 'Active',
       address: employee.address || '',
       emergency_contact: employee.emergency_contact || ''
     });
@@ -113,6 +115,7 @@ export const Employees = () => {
       job_role: '',
       joining_date: '',
       salary: '',
+      status: 'Active',
       address: '',
       emergency_contact: ''
     });
@@ -249,6 +252,20 @@ export const Employees = () => {
                       onChange={(e) => setFormData({ ...formData, emergency_contact: e.target.value })}
                       className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="status" className="text-sm font-medium text-gray-700">Status *</Label>
+                    <select
+                      id="status"
+                      data-testid="employee-status-input"
+                      value={formData.status}
+                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                      required
+                      className="w-full border border-gray-300 h-11 rounded-md px-3 text-sm text-gray-900 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
                   </div>
                 </div>
                 <div className="space-y-2">

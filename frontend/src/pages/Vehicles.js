@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Loader,Pen, Trash2, Camera, Fuel, Gauge, TrendingUp, DollarSign, Clock, CheckCircle, LogOut, AlertCircle, X } from 'lucide-react';
+import { Plus, Loader,Pen, Trash2, Camera, Fuel, Gauge, TrendingUp, DollarSign, Clock, CheckCircle, LogOut, AlertCircle, X, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -88,6 +88,11 @@ const Vehicles = () => {
   const [fuelPrice, setFuelPrice] = useState('');
   const [editingFuelPrice, setEditingFuelPrice] = useState(false);
   const [fuelPriceLoading, setFuelPriceLoading] = useState(false);
+  const [usageStatusFilter, setUsageStatusFilter] = useState('All');
+  const [usageEmployeeFilter, setUsageEmployeeFilter] = useState('All');
+  const [usageSearch, setUsageSearch] = useState('');
+  const [claimStatusFilter, setClaimStatusFilter] = useState('All');
+  const [claimSearch, setClaimSearch] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -474,6 +479,12 @@ const Vehicles = () => {
       toast.error('Photo of meter reading is required for verification');
       return;
     }
+    const startReading = Number(activeUsage?.start_meter_reading || 0);
+    const endReading = Number(completeUsageData.end_meter_reading || 0);
+    if (Number.isFinite(startReading) && Number.isFinite(endReading) && endReading < startReading) {
+      toast.error('Ending meter reading cannot be less than starting reading');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -619,10 +630,41 @@ const Vehicles = () => {
   };
 
   // HELPERS
+  const normalize = (value) => String(value || '').toLowerCase();
   const getVehicleName = (vehicleId) => {
     const vehicle = vehicles.find(v => v.id === vehicleId);
     return vehicle?.vehicle_name || 'Unknown Vehicle';
   };
+
+  const uniqueUsageEmployees = Array.from(
+    new Set(usageRecords.map((u) => u.employee_name).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
+
+  const filteredUsageRecords = usageRecords.filter((usage) => {
+    if (usageStatusFilter !== 'All' && usage.status !== usageStatusFilter) return false;
+    if (usageEmployeeFilter !== 'All' && usage.employee_name !== usageEmployeeFilter) return false;
+    if (usageSearch.trim()) {
+      const q = normalize(usageSearch.trim());
+      const vehicleName = usage.own_vehicle_type ? `own ${usage.own_vehicle_type}` : getVehicleName(usage.vehicle_id);
+      const hay = `${vehicleName} ${usage.employee_name} ${usage.status} ${usage.start_meter_reading} ${usage.end_meter_reading || ''}`;
+      if (!normalize(hay).includes(q)) return false;
+    }
+    return true;
+  });
+
+  const usageDistanceTotal = filteredUsageRecords.reduce((sum, u) => sum + Number(u.km_driven || 0), 0);
+  const usageFuelTotal = filteredUsageRecords.reduce((sum, u) => sum + Number(u.fuel_consumed || 0), 0);
+
+  const filteredClaims = fuelClaims.filter((claim) => {
+    if (claimEmployeeFilter && claim.employee_name !== claimEmployeeFilter) return false;
+    if (claimStatusFilter !== 'All' && claim.claim_status !== claimStatusFilter) return false;
+    if (claimSearch.trim()) {
+      const q = normalize(claimSearch.trim());
+      const hay = `${claim.employee_name} ${claim.vehicle_name} ${claim.claim_status} ${claim.claim_type} ${claim.claimed_amount}`;
+      if (!normalize(hay).includes(q)) return false;
+    }
+    return true;
+  });
 
   const getClaimStatusBadge = (status) => {
     const styles = {
@@ -1038,6 +1080,12 @@ const Vehicles = () => {
                         placeholder="e.g., 45050"
                         className="h-11 border border-gray-300 rounded-lg px-4"
                       />
+                    {activeUsage?.start_meter_reading && completeUsageData.end_meter_reading && (
+                      <p className={`text-xs ${Number(completeUsageData.end_meter_reading) >= Number(activeUsage.start_meter_reading) ? 'text-green-700' : 'text-red-700'}`}>
+                        Estimated distance:{' '}
+                        {Math.max(0, Number(completeUsageData.end_meter_reading || 0) - Number(activeUsage.start_meter_reading || 0)).toFixed(1)} km
+                      </p>
+                    )}
                     </div>
                     <div className="space-y-3">
                       <Label className="text-sm font-semibold text-gray-700">Notes</Label>
@@ -1117,6 +1165,43 @@ const Vehicles = () => {
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900">Journey History</h3>
+            <Card className="p-4 border border-gray-200 bg-white">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="relative md:col-span-2">
+                  <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    value={usageSearch}
+                    onChange={(e) => setUsageSearch(e.target.value)}
+                    placeholder="Search by vehicle, employee, status, reading..."
+                    className="pl-9"
+                  />
+                </div>
+                <select
+                  value={usageStatusFilter}
+                  onChange={(e) => setUsageStatusFilter(e.target.value)}
+                  className="h-10 rounded-md border border-gray-300 px-3 text-sm bg-white text-gray-900"
+                >
+                  <option value="All">All status</option>
+                  <option value="Active">Active</option>
+                  <option value="Completed">Completed</option>
+                </select>
+                <select
+                  value={usageEmployeeFilter}
+                  onChange={(e) => setUsageEmployeeFilter(e.target.value)}
+                  className="h-10 rounded-md border border-gray-300 px-3 text-sm bg-white text-gray-900"
+                >
+                  <option value="All">All employees</option>
+                  {uniqueUsageEmployees.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-600">
+                <span>Rows: <strong className="text-gray-900">{filteredUsageRecords.length}</strong></span>
+                <span>Total distance: <strong className="text-gray-900">{usageDistanceTotal.toFixed(1)} km</strong></span>
+                <span>Total fuel: <strong className="text-gray-900">{usageFuelTotal.toFixed(2)} L</strong></span>
+              </div>
+            </Card>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -1132,7 +1217,7 @@ const Vehicles = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {usageRecords.map(usage => (
+                  {filteredUsageRecords.map(usage => (
                     <tr key={usage.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
                       <td className="px-4 py-3 font-medium text-gray-900">{usage.own_vehicle_type ? `Own ${usage.own_vehicle_type}` : getVehicleName(usage.vehicle_id)}</td>
                       <td className="px-4 py-3 text-gray-700">{usage.employee_name}</td>
@@ -1151,7 +1236,7 @@ const Vehicles = () => {
                 </tbody>
               </table>
             </div>
-            {usageRecords.length === 0 && <p className="text-center text-gray-500 py-8">No journeys yet</p>}
+            {filteredUsageRecords.length === 0 && <p className="text-center text-gray-500 py-8">No journeys found for selected filters</p>}
           </div>
         </div>
       )}
@@ -1233,6 +1318,33 @@ const Vehicles = () => {
               </select>
             </div>
           )}
+          <Card className="p-4 border border-gray-200 bg-white">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="relative">
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Input
+                  value={claimSearch}
+                  onChange={(e) => setClaimSearch(e.target.value)}
+                  placeholder="Search employee, vehicle, type..."
+                  className="pl-9"
+                />
+              </div>
+              <select
+                value={claimStatusFilter}
+                onChange={(e) => setClaimStatusFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:border-blue-500"
+              >
+                <option value="All">All status</option>
+                <option value="Pending">Pending</option>
+                <option value="Approved">Approved</option>
+                <option value="Partially-Approved">Partially-Approved</option>
+                <option value="Rejected">Rejected</option>
+              </select>
+              <div className="flex items-center text-sm text-gray-600">
+                Showing <span className="mx-1 font-semibold text-gray-900">{filteredClaims.length}</span> claims
+              </div>
+            </div>
+          </Card>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -1252,9 +1364,7 @@ const Vehicles = () => {
                 </tr>
               </thead>
               <tbody>
-                {fuelClaims
-                  .filter(claim => !claimEmployeeFilter || claim.employee_name === claimEmployeeFilter)
-                  .map(claim => (
+                {filteredClaims.map(claim => (
                   <tr 
                     key={claim.id} 
                     className="border-b border-gray-100 hover:bg-gray-50 transition cursor-pointer"
@@ -1313,7 +1423,7 @@ const Vehicles = () => {
               </tbody>
             </table>
           </div>
-          {fuelClaims.length === 0 && <p className="text-center text-gray-500 py-8">No claims yet</p>}
+          {filteredClaims.length === 0 && <p className="text-center text-gray-500 py-8">No claims found for selected filters</p>}
         </div>
       )}
 

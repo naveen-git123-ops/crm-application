@@ -11,7 +11,7 @@ created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 conn.execute("""
 INSERT INTO users (id, email, password, name, role, employee_id, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
-""", (admin_id, 'admin@gmail.com', hashed_pw, 'Admin User', 'Admin', None, created_at))
+""", (admin_id, 'admin@resoline.in', hashed_pw, 'Admin User', 'Admin', None, created_at))
 conn.commit()
 conn.close()
 print("Admin user inserted.")

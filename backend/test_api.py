@@ -3,7 +3,7 @@ import json
 
 # Login first to get a token
 login_response = requests.post('http://localhost:8000/api/auth/login', json={
-    'email': 'admin@gmail.com',
+    'email': 'admin@resoline.in',
     'password': 'admin123'
 })
 
