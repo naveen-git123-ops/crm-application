@@ -682,10 +682,19 @@ class CGWFlowMetreModel(Base):
     remarks = Column(String(1000), nullable=True)
     noc_document_url = Column(String(1000), nullable=True)
     noc_project_name = Column(String(500), nullable=True)
+    noc_project_address = Column(String(1000), nullable=True)
+    noc_communication_address = Column(String(1000), nullable=True)
     noc_no = Column(String(200), nullable=True)
     noc_application_no = Column(String(200), nullable=True)
+    noc_project_status = Column(String(100), nullable=True)  # existing_ground_water | new_ground_water
+    noc_type = Column(String(50), nullable=True)  # new | renewal
     noc_valid_from = Column(String(10), nullable=True)  # YYYY-MM-DD
     noc_valid_upto = Column(String(10), nullable=True)  # YYYY-MM-DD
+    noc_permitted_m3_per_day = Column(String(100), nullable=True)
+    noc_permitted_m3_per_year = Column(String(100), nullable=True)
+    noc_existing_bw_count = Column(String(100), nullable=True)
+    noc_total_proposed_bw_count = Column(String(100), nullable=True)
+    noc_piezometer_applicable = Column(String(10), nullable=True)  # yes | no
     # JSON: {"flow_meter":[{id,file_name,url}], "telemetry":[...], ...}
     cgw_attachments_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
@@ -1150,10 +1159,19 @@ def migrate_cgw_flow_metres_noc_columns():
         specs = [
             ('noc_document_url', 'VARCHAR(1000) NULL'),
             ('noc_project_name', 'VARCHAR(500) NULL'),
+            ('noc_project_address', 'VARCHAR(1000) NULL'),
+            ('noc_communication_address', 'VARCHAR(1000) NULL'),
             ('noc_no', 'VARCHAR(200) NULL'),
             ('noc_application_no', 'VARCHAR(200) NULL'),
+            ('noc_project_status', 'VARCHAR(100) NULL'),
+            ('noc_type', 'VARCHAR(50) NULL'),
             ('noc_valid_from', 'VARCHAR(10) NULL'),
             ('noc_valid_upto', 'VARCHAR(10) NULL'),
+            ('noc_permitted_m3_per_day', 'VARCHAR(100) NULL'),
+            ('noc_permitted_m3_per_year', 'VARCHAR(100) NULL'),
+            ('noc_existing_bw_count', 'VARCHAR(100) NULL'),
+            ('noc_total_proposed_bw_count', 'VARCHAR(100) NULL'),
+            ('noc_piezometer_applicable', 'VARCHAR(10) NULL'),
         ]
         for col_name, ddl in specs:
             if col_name in existing:
@@ -2201,10 +2219,19 @@ class CGWFlowMetre(BaseModel):
     remarks: Optional[str] = None
     noc_document_url: Optional[str] = None
     noc_project_name: Optional[str] = None
+    noc_project_address: Optional[str] = None
+    noc_communication_address: Optional[str] = None
     noc_no: Optional[str] = None
     noc_application_no: Optional[str] = None
+    noc_project_status: Optional[str] = None
+    noc_type: Optional[str] = None
     noc_valid_from: Optional[str] = None
     noc_valid_upto: Optional[str] = None
+    noc_permitted_m3_per_day: Optional[str] = None
+    noc_permitted_m3_per_year: Optional[str] = None
+    noc_existing_bw_count: Optional[str] = None
+    noc_total_proposed_bw_count: Optional[str] = None
+    noc_piezometer_applicable: Optional[str] = None
     cgw_attachments: Optional[Dict[str, List[CgwFileAttachment]]] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
@@ -2274,10 +2301,19 @@ class CGWFlowMetreUpdate(BaseModel):
     remarks: Optional[str] = None
     noc_document_url: Optional[str] = None
     noc_project_name: Optional[str] = None
+    noc_project_address: Optional[str] = None
+    noc_communication_address: Optional[str] = None
     noc_no: Optional[str] = None
     noc_application_no: Optional[str] = None
+    noc_project_status: Optional[str] = None
+    noc_type: Optional[str] = None
     noc_valid_from: Optional[str] = None
     noc_valid_upto: Optional[str] = None
+    noc_permitted_m3_per_day: Optional[str] = None
+    noc_permitted_m3_per_year: Optional[str] = None
+    noc_existing_bw_count: Optional[str] = None
+    noc_total_proposed_bw_count: Optional[str] = None
+    noc_piezometer_applicable: Optional[str] = None
 
 # ============= DEPENDENCY =============
 
@@ -3400,10 +3436,19 @@ def upload_or_update_cgw_noc(
     inventory_id: str,
     file: Optional[UploadFile] = File(None),
     project_name: Optional[str] = Form(None),
+    project_address: Optional[str] = Form(None),
+    communication_address: Optional[str] = Form(None),
     noc_no: Optional[str] = Form(None),
     application_no: Optional[str] = Form(None),
+    project_status: Optional[str] = Form(None),
+    noc_type: Optional[str] = Form(None),
     valid_from: Optional[str] = Form(None),
     valid_upto: Optional[str] = Form(None),
+    permitted_m3_per_day: Optional[str] = Form(None),
+    permitted_m3_per_year: Optional[str] = Form(None),
+    existing_bw_count: Optional[str] = Form(None),
+    total_proposed_bw_count: Optional[str] = Form(None),
+    piezometer_applicable: Optional[str] = Form(None),
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -3438,11 +3483,27 @@ def upload_or_update_cgw_noc(
         raise HTTPException(status_code=400, detail='Upload a NOC PDF first, or use an existing row that already has a NOC document.')
 
     item.noc_project_name = _cgw_norm_form_str(project_name)
+    item.noc_project_address = _cgw_norm_form_str(project_address)
+    item.noc_communication_address = _cgw_norm_form_str(communication_address)
     item.noc_no = _cgw_norm_form_str(noc_no)
     item.noc_application_no = _cgw_norm_form_str(application_no)
+    item.noc_project_status = _cgw_norm_form_str(project_status)
+    item.noc_type = _cgw_norm_form_str(noc_type)
     item.noc_valid_from = _cgw_norm_form_str(valid_from)
     item.noc_valid_upto = _cgw_norm_form_str(valid_upto)
-    for attr in ('noc_project_name', 'noc_no', 'noc_application_no', 'noc_valid_from', 'noc_valid_upto'):
+    item.noc_permitted_m3_per_day = _cgw_norm_form_str(permitted_m3_per_day)
+    item.noc_permitted_m3_per_year = _cgw_norm_form_str(permitted_m3_per_year)
+    item.noc_existing_bw_count = _cgw_norm_form_str(existing_bw_count)
+    item.noc_total_proposed_bw_count = _cgw_norm_form_str(total_proposed_bw_count)
+    item.noc_piezometer_applicable = _cgw_norm_form_str(piezometer_applicable)
+    for attr in (
+        'noc_project_name', 'noc_project_address', 'noc_communication_address',
+        'noc_no', 'noc_application_no', 'noc_project_status', 'noc_type',
+        'noc_valid_from', 'noc_valid_upto',
+        'noc_permitted_m3_per_day', 'noc_permitted_m3_per_year',
+        'noc_existing_bw_count', 'noc_total_proposed_bw_count',
+        'noc_piezometer_applicable',
+    ):
         flag_modified(item, attr)
     item.updated_at = datetime.now(timezone.utc)
     try:

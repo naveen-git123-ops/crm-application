@@ -51,6 +51,22 @@ const EMPTY_FORM = {
   review: '',
   remarks: ''
 };
+const EMPTY_NOC_FORM = {
+  project_name: '',
+  project_address: '',
+  communication_address: '',
+  noc_no: '',
+  application_no: '',
+  project_status: '',
+  noc_type: '',
+  valid_from: '',
+  valid_upto: '',
+  permitted_m3_per_day: '',
+  permitted_m3_per_year: '',
+  existing_bw_count: '',
+  total_proposed_bw_count: '',
+  piezometer_applicable: '',
+};
 const FILTER_FIELDS = [
   'customer_name',
   'location',
@@ -240,6 +256,9 @@ const CGWFlowMetre = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [equipmentRows, setEquipmentRows] = useState([EMPTY_EQUIPMENT_ROW]);
+  const [addStep, setAddStep] = useState(1);
+  const [addNocForm, setAddNocForm] = useState(EMPTY_NOC_FORM);
+  const [addNocFile, setAddNocFile] = useState(null);
   const [inlineEditId, setInlineEditId] = useState(null);
   const [inlineEditData, setInlineEditData] = useState(EMPTY_FORM);
   const [currentPage, setCurrentPage] = useState(1);
@@ -561,9 +580,74 @@ const CGWFlowMetre = () => {
         return;
       }
 
-      await axios.post(`${API}/cgw-flow-metres/bulk`, payload, {
+      const createdRes = await axios.post(`${API}/cgw-flow-metres/bulk`, payload, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
+
+      const createdRows = Array.isArray(createdRes.data) ? createdRes.data : [];
+      const hasNocMeta = !!(
+        addNocForm.project_name ||
+        addNocForm.project_address ||
+        addNocForm.communication_address ||
+        addNocForm.noc_no ||
+        addNocForm.application_no ||
+        addNocForm.project_status ||
+        addNocForm.noc_type ||
+        addNocForm.valid_from ||
+        addNocForm.valid_upto ||
+        addNocForm.permitted_m3_per_day ||
+        addNocForm.permitted_m3_per_year ||
+        addNocForm.existing_bw_count ||
+        addNocForm.total_proposed_bw_count ||
+        addNocForm.piezometer_applicable
+      );
+
+      if (createdRows.length && (addNocFile || hasNocMeta)) {
+        for (const row of createdRows) {
+          if (addNocFile) {
+            const fd = new FormData();
+            fd.append('file', addNocFile);
+            fd.append('project_name', addNocForm.project_name || '');
+            fd.append('project_address', addNocForm.project_address || '');
+            fd.append('communication_address', addNocForm.communication_address || '');
+            fd.append('noc_no', addNocForm.noc_no || '');
+            fd.append('application_no', addNocForm.application_no || '');
+            fd.append('project_status', addNocForm.project_status || '');
+            fd.append('noc_type', addNocForm.noc_type || '');
+            fd.append('valid_from', addNocForm.valid_from || '');
+            fd.append('valid_upto', addNocForm.valid_upto || '');
+            fd.append('permitted_m3_per_day', addNocForm.permitted_m3_per_day || '');
+            fd.append('permitted_m3_per_year', addNocForm.permitted_m3_per_year || '');
+            fd.append('existing_bw_count', addNocForm.existing_bw_count || '');
+            fd.append('total_proposed_bw_count', addNocForm.total_proposed_bw_count || '');
+            fd.append('piezometer_applicable', addNocForm.piezometer_applicable || '');
+            await axios.post(`${API}/cgw-flow-metres/${row.id}/noc`, fd, {
+              headers: authHeaders(),
+              timeout: 120000,
+              maxBodyLength: Infinity,
+              maxContentLength: Infinity,
+            });
+          } else {
+            await axios.put(`${API}/cgw-flow-metres/${row.id}`, {
+              noc_project_name: addNocForm.project_name || '',
+              noc_project_address: addNocForm.project_address || '',
+              noc_communication_address: addNocForm.communication_address || '',
+              noc_no: addNocForm.noc_no || '',
+              noc_application_no: addNocForm.application_no || '',
+              noc_project_status: addNocForm.project_status || '',
+              noc_type: addNocForm.noc_type || '',
+              noc_valid_from: addNocForm.valid_from || '',
+              noc_valid_upto: addNocForm.valid_upto || '',
+              noc_permitted_m3_per_day: addNocForm.permitted_m3_per_day || '',
+              noc_permitted_m3_per_year: addNocForm.permitted_m3_per_year || '',
+              noc_existing_bw_count: addNocForm.existing_bw_count || '',
+              noc_total_proposed_bw_count: addNocForm.total_proposed_bw_count || '',
+              noc_piezometer_applicable: addNocForm.piezometer_applicable || '',
+            }, { headers: authHeaders() });
+          }
+        }
+      }
+
       toast.success('Inventory items added successfully');
       setDialogOpen(false);
       resetForm();
@@ -637,7 +721,20 @@ const CGWFlowMetre = () => {
   const resetForm = () => {
     setFormData(EMPTY_FORM);
     setEquipmentRows([EMPTY_EQUIPMENT_ROW]);
+    setAddNocForm(EMPTY_NOC_FORM);
+    setAddNocFile(null);
+    setAddStep(1);
   };
+
+  const goAddNextStep = () => {
+    if (addStep === 1 && !formData.customer_id) {
+      toast.error('Please select customer first');
+      return;
+    }
+    setAddStep((s) => Math.min(3, s + 1));
+  };
+
+  const goAddPrevStep = () => setAddStep((s) => Math.max(1, s - 1));
 
   const handleCustomerChange = (e) => {
     const selectedCustomer = customers.find(c => c.id === e.target.value);
@@ -956,245 +1053,297 @@ const CGWFlowMetre = () => {
                 </DialogHeader>
               </div>
               <form onSubmit={handleSubmit} className="space-y-6 p-6">
-                {/* Customer Selection */}
-                <div className="space-y-2">
-                  <Label htmlFor="customer_id" className="text-sm font-medium text-gray-700">Select Customer *</Label>
-                  <select
-                    id="customer_id"
-                    value={formData.customer_id}
-                    onChange={handleCustomerChange}
-                    required
-                    className="w-full border border-gray-300 rounded-lg px-3 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  >
-                    <option value="">Choose a customer...</option>
-                    {customers.map(customer => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.company_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Two Column Layout */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="location" className="text-sm font-medium text-gray-700">Location</Label>
-                    <Input
-                      id="location"
-                      value={formData.location}
-                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="contact_person" className="text-sm font-medium text-gray-700">Contact Person</Label>
-                    <Input
-                      id="contact_person"
-                      value={formData.contact_person}
-                      onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
-                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="system_mobile_number" className="text-sm font-medium text-gray-700">System Mobile</Label>
-                    <Input
-                      id="system_mobile_number"
-                      value={formData.system_mobile_number}
-                      onChange={(e) => setFormData({ ...formData, system_mobile_number: e.target.value })}
-                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="person_mobile_number" className="text-sm font-medium text-gray-700">Person Mobile</Label>
-                    <Input
-                      id="person_mobile_number"
-                      value={formData.person_mobile_number}
-                      onChange={(e) => setFormData({ ...formData, person_mobile_number: e.target.value })}
-                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email_id" className="text-sm font-medium text-gray-700">Email</Label>
-                    <Input
-                      id="email_id"
-                      type="email"
-                      value={formData.email_id}
-                      onChange={(e) => setFormData({ ...formData, email_id: e.target.value })}
-                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="date_of_commissioning" className="text-sm font-medium text-gray-700">Date of Commissioning</Label>
-                    <Input
-                      id="date_of_commissioning"
-                      type="date"
-                      value={formData.date_of_commissioning}
-                      onChange={(e) => setFormData({ ...formData, date_of_commissioning: e.target.value })}
-                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="renewal_date" className="text-sm font-medium text-gray-700">Renewal Date</Label>
-                    <Input
-                      id="renewal_date"
-                      type="date"
-                      value={formData.renewal_date}
-                      onChange={(e) => setFormData({ ...formData, renewal_date: e.target.value })}
-                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="user_id" className="text-sm font-medium text-gray-700">User ID</Label>
-                    <Input
-                      id="user_id"
-                      value={formData.user_id}
-                      onChange={(e) => setFormData({ ...formData, user_id: e.target.value })}
-                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="password" className="text-sm font-medium text-gray-700">Password</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="status" className="text-sm font-medium text-gray-700">Status</Label>
-                    <select
-                      id="status"
-                      value={formData.status}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    >
-                      <option value="Active">Active</option>
-                      <option value="Inactive">Inactive</option>
-                      <option value="Maintenance">Maintenance</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* URL Link */}
-                <div className="space-y-2">
-                  <Label htmlFor="url_link" className="text-sm font-medium text-gray-700">URL Link</Label>
-                  <Input
-                    id="url_link"
-                    type="url"
-                    value={formData.url_link}
-                    onChange={(e) => setFormData({ ...formData, url_link: e.target.value })}
-                    className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  />
-                </div>
-
-                {/* Equipments (multiple rows) */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label className="text-sm font-medium text-gray-700">Equipments</Label>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        Add multiple equipment lines under the same customer.
-                      </p>
+                <div className="flex items-center justify-between gap-2">
+                  {[
+                    { n: 1, title: 'Customer' },
+                    { n: 2, title: 'NOC' },
+                    { n: 3, title: 'Flow Metre Details' },
+                  ].map((step) => (
+                    <div key={step.n} className="flex items-center gap-2 flex-1">
+                      <div
+                        className={`h-7 w-7 rounded-full text-xs font-semibold flex items-center justify-center ${
+                          addStep >= step.n ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
+                        }`}
+                      >
+                        {step.n}
+                      </div>
+                      <span className={`text-xs font-medium ${addStep >= step.n ? 'text-blue-700' : 'text-gray-500'}`}>
+                        {step.title}
+                      </span>
+                      {step.n < 3 && <div className={`h-px flex-1 ${addStep > step.n ? 'bg-blue-500' : 'bg-gray-200'}`} />}
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="border-gray-300 text-gray-700 hover:bg-gray-50"
-                      onClick={() => setEquipmentRows(prev => [...prev, { ...EMPTY_EQUIPMENT_ROW }])}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Row
-                    </Button>
-                  </div>
+                  ))}
+                </div>
 
-                  <div className="space-y-2">
-                    {equipmentRows.map((row, idx) => (
-                      <Card key={idx} className="p-4 border border-gray-200">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="grid grid-cols-2 gap-4 flex-1">
-                            <div className="space-y-2">
-                              <Label className="text-sm font-medium text-gray-700">Equipment Name</Label>
-                              <Input
-                                value={row.equipment_name}
-                                onChange={(e) => setEquipmentRows(prev => prev.map((r, i) => i === idx ? ({ ...r, equipment_name: e.target.value }) : r))}
-                                className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-sm font-medium text-gray-700">Flowmeter/Piezometer Details</Label>
-                              <Input
-                                value={row.flowmeter_details}
-                                onChange={(e) => setEquipmentRows(prev => prev.map((r, i) => i === idx ? ({ ...r, flowmeter_details: e.target.value }) : r))}
-                                className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-sm font-medium text-gray-700">Product Code</Label>
-                              <Input
-                                value={row.product_code}
-                                onChange={(e) => setEquipmentRows(prev => prev.map((r, i) => i === idx ? ({ ...r, product_code: e.target.value }) : r))}
-                                className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-sm font-medium text-gray-700">Model No</Label>
-                              <Input
-                                value={row.model_no}
-                                onChange={(e) => setEquipmentRows(prev => prev.map((r, i) => i === idx ? ({ ...r, model_no: e.target.value }) : r))}
-                                className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                              />
-                            </div>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-9 px-3 border-gray-200 text-red-600 hover:bg-red-50 shrink-0"
-                            disabled={equipmentRows.length === 1}
-                            onClick={() => setEquipmentRows(prev => prev.filter((_, i) => i !== idx))}
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Remove
-                          </Button>
+                {addStep === 1 && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="customer_id" className="text-sm font-medium text-gray-700">Select Customer *</Label>
+                      <select
+                        id="customer_id"
+                        value={formData.customer_id}
+                        onChange={handleCustomerChange}
+                        required
+                        className="w-full border border-gray-300 rounded-lg px-3 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                      >
+                        <option value="">Choose a customer...</option>
+                        {customers.map(customer => (
+                          <option key={customer.id} value={customer.id}>
+                            {customer.company_name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Location</Label>
+                        <Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className="border border-gray-300 h-11" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Contact Person</Label>
+                        <Input value={formData.contact_person} onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })} className="border border-gray-300 h-11" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">System Mobile</Label>
+                        <Input value={formData.system_mobile_number} onChange={(e) => setFormData({ ...formData, system_mobile_number: e.target.value })} className="border border-gray-300 h-11" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Person Mobile</Label>
+                        <Input value={formData.person_mobile_number} onChange={(e) => setFormData({ ...formData, person_mobile_number: e.target.value })} className="border border-gray-300 h-11" />
+                      </div>
+                      <div className="space-y-2 col-span-2">
+                        <Label className="text-sm font-medium text-gray-700">Email</Label>
+                        <Input type="email" value={formData.email_id} onChange={(e) => setFormData({ ...formData, email_id: e.target.value })} className="border border-gray-300 h-11" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {addStep === 2 && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-gray-700">NOC PDF (optional)</Label>
+                      <Input
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        onChange={(e) => setAddNocFile(e.target.files?.[0] || null)}
+                        className="h-11"
+                      />
+                      <p className="text-[11px] text-gray-500">If selected, same NOC PDF will be attached to all created equipment rows.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Project name</Label>
+                        <Input value={addNocForm.project_name} onChange={(e) => setAddNocForm((p) => ({ ...p, project_name: e.target.value }))} className="h-11" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Project address</Label>
+                        <Input value={addNocForm.project_address} onChange={(e) => setAddNocForm((p) => ({ ...p, project_address: e.target.value }))} className="h-11" />
+                      </div>
+                      <div className="space-y-2 col-span-2">
+                        <Label className="text-sm font-medium text-gray-700">Communication address</Label>
+                        <Input value={addNocForm.communication_address} onChange={(e) => setAddNocForm((p) => ({ ...p, communication_address: e.target.value }))} className="h-11" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">NOC number</Label>
+                        <Input value={addNocForm.noc_no} onChange={(e) => setAddNocForm((p) => ({ ...p, noc_no: e.target.value }))} className="h-11" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Application number</Label>
+                        <Input value={addNocForm.application_no} onChange={(e) => setAddNocForm((p) => ({ ...p, application_no: e.target.value }))} className="h-11" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Project status</Label>
+                        <select
+                          value={addNocForm.project_status}
+                          onChange={(e) => setAddNocForm((p) => ({ ...p, project_status: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                        >
+                          <option value="">Select status</option>
+                          <option value="existing_ground_water">Existing ground water</option>
+                          <option value="new_ground_water">New ground water</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">NOC type</Label>
+                        <select
+                          value={addNocForm.noc_type}
+                          onChange={(e) => setAddNocForm((p) => ({ ...p, noc_type: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                        >
+                          <option value="">Select type</option>
+                          <option value="new">New</option>
+                          <option value="renewal">Renewal</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Valid from</Label>
+                        <Input type="date" value={addNocForm.valid_from} onChange={(e) => setAddNocForm((p) => ({ ...p, valid_from: e.target.value }))} className="h-11" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Valid up to</Label>
+                        <Input type="date" value={addNocForm.valid_upto} onChange={(e) => setAddNocForm((p) => ({ ...p, valid_upto: e.target.value }))} className="h-11" />
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 p-3">
+                      <p className="text-sm font-semibold text-gray-800 mb-3">Ground water abstraction permitted</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">M3 per day</Label>
+                          <Input value={addNocForm.permitted_m3_per_day} onChange={(e) => setAddNocForm((p) => ({ ...p, permitted_m3_per_day: e.target.value }))} className="h-11" />
                         </div>
-                      </Card>
-                    ))}
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">M3 per year</Label>
+                          <Input value={addNocForm.permitted_m3_per_year} onChange={(e) => setAddNocForm((p) => ({ ...p, permitted_m3_per_year: e.target.value }))} className="h-11" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 p-3">
+                      <p className="text-sm font-semibold text-gray-800 mb-3">Detail of ground water abstraction / dewatering structure</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">Existing BW count</Label>
+                          <Input value={addNocForm.existing_bw_count} onChange={(e) => setAddNocForm((p) => ({ ...p, existing_bw_count: e.target.value }))} className="h-11" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">Total proposed BW count</Label>
+                          <Input value={addNocForm.total_proposed_bw_count} onChange={(e) => setAddNocForm((p) => ({ ...p, total_proposed_bw_count: e.target.value }))} className="h-11" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium text-gray-700">Piezometer applicable or not</Label>
+                          <select
+                            value={addNocForm.piezometer_applicable}
+                            onChange={(e) => setAddNocForm((p) => ({ ...p, piezometer_applicable: e.target.value }))}
+                            className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                          >
+                            <option value="">Select</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
 
-                {/* Review & Remarks */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="review" className="text-sm font-medium text-gray-700">Review</Label>
-                    <textarea
-                      id="review"
-                      value={formData.review}
-                      onChange={(e) => setFormData({ ...formData, review: e.target.value })}
-                      rows="2"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="remarks" className="text-sm font-medium text-gray-700">Remarks</Label>
-                    <textarea
-                      id="remarks"
-                      value={formData.remarks}
-                      onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                      rows="2"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                  </div>
-                </div>
+                {addStep === 3 && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Date of Commissioning</Label>
+                        <Input type="date" value={formData.date_of_commissioning} onChange={(e) => setFormData({ ...formData, date_of_commissioning: e.target.value })} className="h-11" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Renewal Date</Label>
+                        <Input type="date" value={formData.renewal_date} onChange={(e) => setFormData({ ...formData, renewal_date: e.target.value })} className="h-11" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">User ID</Label>
+                        <Input value={formData.user_id} onChange={(e) => setFormData({ ...formData, user_id: e.target.value })} className="h-11" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Password</Label>
+                        <Input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} className="h-11" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Status</Label>
+                        <select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 h-11">
+                          <option value="Active">Active</option>
+                          <option value="Inactive">Inactive</option>
+                          <option value="Maintenance">Maintenance</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">URL Link</Label>
+                        <Input type="url" value={formData.url_link} onChange={(e) => setFormData({ ...formData, url_link: e.target.value })} className="h-11" />
+                      </div>
+                    </div>
 
-                <div className="flex justify-end gap-3 pt-2">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-300 text-gray-700 hover:bg-gray-50">
-                    Cancel
-                  </Button>
-                  <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700">
-                    Add Item
-                  </Button>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label className="text-sm font-medium text-gray-700">Flow metre / Piezometer rows</Label>
+                          <p className="text-xs text-gray-500 mt-0.5">Add multiple equipment lines under same customer.</p>
+                        </div>
+                        <Button type="button" variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-50" onClick={() => setEquipmentRows(prev => [...prev, { ...EMPTY_EQUIPMENT_ROW }])}>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Row
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        {equipmentRows.map((row, idx) => (
+                          <Card key={idx} className="p-4 border border-gray-200">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="grid grid-cols-2 gap-4 flex-1">
+                                <div className="space-y-2">
+                                  <Label className="text-sm font-medium text-gray-700">Equipment Name</Label>
+                                  <Input value={row.equipment_name} onChange={(e) => setEquipmentRows(prev => prev.map((r, i) => i === idx ? ({ ...r, equipment_name: e.target.value }) : r))} className="border border-gray-300 h-11" />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-sm font-medium text-gray-700">Flowmeter/Piezometer Details</Label>
+                                  <Input value={row.flowmeter_details} onChange={(e) => setEquipmentRows(prev => prev.map((r, i) => i === idx ? ({ ...r, flowmeter_details: e.target.value }) : r))} className="border border-gray-300 h-11" />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-sm font-medium text-gray-700">Product Code</Label>
+                                  <Input value={row.product_code} onChange={(e) => setEquipmentRows(prev => prev.map((r, i) => i === idx ? ({ ...r, product_code: e.target.value }) : r))} className="border border-gray-300 h-11" />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-sm font-medium text-gray-700">Model No</Label>
+                                  <Input value={row.model_no} onChange={(e) => setEquipmentRows(prev => prev.map((r, i) => i === idx ? ({ ...r, model_no: e.target.value }) : r))} className="border border-gray-300 h-11" />
+                                </div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-9 px-3 border-gray-200 text-red-600 hover:bg-red-50 shrink-0"
+                                disabled={equipmentRows.length === 1}
+                                onClick={() => setEquipmentRows(prev => prev.filter((_, i) => i !== idx))}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Remove
+                              </Button>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Review</Label>
+                        <textarea value={formData.review} onChange={(e) => setFormData({ ...formData, review: e.target.value })} rows="2" className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Remarks</Label>
+                        <textarea value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} rows="2" className="w-full border border-gray-300 rounded-lg px-3 py-2" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between gap-3 pt-2">
+                  <div>
+                    {addStep > 1 && (
+                      <Button type="button" variant="outline" onClick={goAddPrevStep} className="border-gray-300 text-gray-700 hover:bg-gray-50">
+                        Back
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex gap-3">
+                    <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-300 text-gray-700 hover:bg-gray-50">
+                      Cancel
+                    </Button>
+                    {addStep < 3 ? (
+                      <Button type="button" className="bg-blue-600 text-white hover:bg-blue-700" onClick={goAddNextStep}>
+                        Next
+                      </Button>
+                    ) : (
+                      <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700">
+                        Add Item
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </form>
             </DialogContent>
