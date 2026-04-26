@@ -63,6 +63,7 @@ export const Documents = () => {
   const isImageFile = (doc) => IMAGE_EXTENSIONS.includes(extOf(doc?.file_name));
   const isPdfFile = (doc) => extOf(doc?.file_name) === 'pdf';
   const isTextLikeFile = (doc) => PREVIEWABLE_TEXT_EXTENSIONS.includes(extOf(doc?.file_name));
+  const isHttpUrl = (v) => /^https?:\/\//i.test(String(v || ''));
 
   useEffect(() => {
     return () => {
@@ -161,8 +162,13 @@ export const Documents = () => {
     try {
       const response = await axios.get(`${API}/documents/${documentId}/download`, {
         ...authHeaders(),
-        responseType: 'blob'
+        responseType: 'blob',
+        validateStatus: () => true,
       });
+      if (response.status >= 400) {
+        toast.error(response.status === 404 ? 'File not found on server' : 'Download failed');
+        return;
+      }
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -187,10 +193,27 @@ export const Documents = () => {
     setPreviewDocument(doc);
     setPreviewOpen(true);
     try {
-      const response = await axios.get(`${API}/documents/${doc.id}/download`, {
+      let response = await axios.get(`${API}/documents/${doc.id}/download`, {
         ...authHeaders(),
-        responseType: 'blob'
+        responseType: 'blob',
+        validateStatus: () => true,
       });
+
+      // Fallback: for S3-backed records, preview via stream endpoint when download route returns 404/4xx.
+      if (response.status >= 400 && isHttpUrl(doc?.file_path)) {
+        response = await axios.get(`${API}/files/stream`, {
+          ...authHeaders(),
+          params: { file_url: doc.file_path },
+          responseType: 'blob',
+          validateStatus: () => true,
+        });
+      }
+
+      if (response.status >= 400) {
+        setPreviewError(response.status === 404 ? 'File not found on server.' : 'Could not load preview. You can still download the file.');
+        return;
+      }
+
       const blob = response.data;
       const mime = String(blob?.type || '').toLowerCase();
       setPreviewMimeType(mime);

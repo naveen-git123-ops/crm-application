@@ -6150,13 +6150,49 @@ def get_documents(employee_id: Optional[str] = None, current_user: UserModel = D
 
 @api_router.get('/documents/{document_id}/download')
 def download_document(document_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    from urllib.parse import urlparse
+    from fastapi.responses import Response
+
     document = db.query(DocumentModel).filter(DocumentModel.id == document_id).first()
     if not document:
         raise HTTPException(status_code=404, detail='Document not found')
     can_view_all = current_user.role in ['Admin', 'HR', 'Manager']
     if not can_view_all and str(document.employee_id) != str(current_user.employee_id or ''):
         raise HTTPException(status_code=403, detail='Not authorized to download this document')
-    file_path = Path(document.file_path)
+
+    raw_path = str(document.file_path or '').strip()
+    if not raw_path:
+        raise HTTPException(status_code=404, detail='File not found')
+
+    # New uploads are stored in S3 URL form; older rows may still point to local filesystem.
+    if raw_path.startswith('http://') or raw_path.startswith('https://'):
+        if not s3_client or not USE_S3:
+            raise HTTPException(status_code=503, detail='File service is unavailable')
+        if not S3_BUCKET_NAME or S3_BUCKET_NAME not in raw_path:
+            raise HTTPException(status_code=400, detail='Invalid file URL')
+        try:
+            parsed_url = urlparse(raw_path)
+            s3_key = parsed_url.path.lstrip('/')
+            if not s3_key:
+                raise HTTPException(status_code=404, detail='File not found')
+            obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
+            file_content = obj['Body'].read()
+            content_type = obj.get('ContentType', 'application/octet-stream')
+            return Response(
+                content=file_content,
+                media_type=content_type,
+                headers={
+                    'Content-Disposition': f'attachment; filename="{document.file_name or "document"}"',
+                    'Cache-Control': 'no-store',
+                    'Access-Control-Allow-Origin': '*',
+                },
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=404, detail='File not found')
+
+    file_path = Path(raw_path)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail='File not found')
     return FileResponse(file_path, filename=document.file_name)
