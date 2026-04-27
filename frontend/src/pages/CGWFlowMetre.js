@@ -489,6 +489,7 @@ function AttachmentPreviewCell({ item, category, onPreview }) {
 
 const CGWFlowMetre = () => {
   const { user } = useAuth();
+  const hasCgwAccess = user?.role === 'Admin' || (Array.isArray(user?.permissions) && user.permissions.includes('cgw-flow-metre'));
   const [items, setItems] = useState([]);
   const [filteredItems, setFilteredItems] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -617,7 +618,7 @@ const CGWFlowMetre = () => {
       piezometer_applicable: item.noc_piezometer_applicable || '',
       piezometer_count: item.noc_piezometer_count || '',
     });
-    const canEditNoc = ['Admin', 'HR'].includes(user?.role);
+    const canEditNoc = hasCgwAccess;
     setNocSideFieldsEditable(canEditNoc && !startInPreviewMode);
     setNocDialogOpen(true);
   };
@@ -831,7 +832,7 @@ const CGWFlowMetre = () => {
 
   useEffect(() => {
     if (!SHOW_CGW_DIGEST_EMAIL_SECTION) return undefined;
-    if (!['Admin', 'HR'].includes(user?.role)) return undefined;
+    if (!hasCgwAccess) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -849,7 +850,7 @@ const CGWFlowMetre = () => {
     return () => {
       cancelled = true;
     };
-  }, [user?.role]);
+  }, [hasCgwAccess]);
 
   useEffect(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -1775,7 +1776,7 @@ const CGWFlowMetre = () => {
     }
   };
 
-  const canManage = ['Admin', 'HR'].includes(user?.role);
+  const canManage = hasCgwAccess;
   const nocReadOnly = !canManage;
 
   const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
