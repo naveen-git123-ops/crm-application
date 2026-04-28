@@ -2746,6 +2746,14 @@ def require_permission(permission: str):
     return verify_permission
 
 
+def can_manage_cgw(current_user: UserModel, db: Session) -> bool:
+    """Allow Admin and any role with cgw-flow-metre permission."""
+    if current_user.role == 'Admin':
+        return True
+    perms = get_permissions_for_role(db, current_user.role)
+    return 'cgw-flow-metre' in perms
+
+
 
 # ============= HEALTH CHECK ROUTES =============
 
@@ -3461,7 +3469,7 @@ def create_cgw_flow_metres_bulk(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    if current_user.role not in ['Admin', 'HR']:
+    if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
 
     if not data.equipments:
@@ -3542,7 +3550,7 @@ def create_cgw_flow_metres_bulk(
 
 @api_router.post('/cgw-flow-metres', response_model=CGWFlowMetre)
 def create_cgw_flow_metre(data: CGWFlowMetreCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.role not in ['Admin', 'HR']:
+    if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
     
     # Generate inventory_id
@@ -3655,7 +3663,7 @@ def cgw_telemetry_serial_options(
 
 @api_router.put('/cgw-flow-metres/{inventory_id}', response_model=CGWFlowMetre)
 def update_cgw_flow_metre(inventory_id: str, data: CGWFlowMetreUpdate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.role not in ['Admin', 'HR']:
+    if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
     
     item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
@@ -3681,7 +3689,7 @@ def cgw_upload_media_attachment(
     db: Session = Depends(get_db),
 ):
     """Append one photo/PDF to the given attachment bucket (S3 required)."""
-    if current_user.role not in ['Admin', 'HR']:
+    if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
     if not USE_S3 or not s3_client:
         raise HTTPException(
@@ -3747,7 +3755,7 @@ def cgw_delete_media_attachment(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role not in ['Admin', 'HR']:
+    if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
     if category not in CGW_MEDIA_ATTACHMENT_KEYS:
         raise HTTPException(status_code=400, detail='Invalid category')
@@ -3826,7 +3834,7 @@ def upload_or_update_cgw_noc(
     db: Session = Depends(get_db),
 ):
     """Upload or replace NOC PDF and/or save NOC metadata for one CGW inventory row (multipart, same pattern as documents/upload)."""
-    if current_user.role not in ['Admin', 'HR']:
+    if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
 
     item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
@@ -3904,7 +3912,7 @@ def upload_or_update_cgw_noc(
 
 @api_router.delete('/cgw-flow-metres/{inventory_id}')
 def delete_cgw_flow_metre(inventory_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.role not in ['Admin', 'HR']:
+    if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
     
     item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
@@ -3933,7 +3941,7 @@ def get_cgw_renewal_digest_settings(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role not in ['Admin', 'HR']:
+    if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
     email = (app_setting_get(db, SETTING_CGW_DIGEST_EMAIL) or '').strip() or None
     en = (app_setting_get(db, SETTING_CGW_DIGEST_ENABLED) or '0').strip().lower()
@@ -3951,7 +3959,7 @@ def update_cgw_renewal_digest_settings(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role not in ['Admin', 'HR']:
+    if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
     payload = data.model_dump(exclude_unset=True)
     if 'notification_email' in payload:
@@ -3977,7 +3985,7 @@ def run_cgw_renewal_digest_now(current_user: UserModel = Depends(get_current_use
     Does not require "Enable daily digest" so you can test SMTP and recipient settings.
     If there are no past-due rows, still sends a short verification email when SMTP is OK.
     """
-    if current_user.role not in ['Admin', 'HR']:
+    if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
     result = run_cgw_renewal_digest_job(require_enabled=False, send_empty_digest=True)
     return result
@@ -3990,7 +3998,7 @@ def upload_calibration_certificate(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    if current_user.role not in ['Admin', 'HR']:
+    if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
     
     item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
@@ -4032,7 +4040,7 @@ def import_cgw_from_excel(
     db: Session = Depends(get_db)
 ):
     """Import CGW Flow Metre items from Excel file"""
-    if current_user.role not in ['Admin', 'HR']:
+    if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
     
     try:

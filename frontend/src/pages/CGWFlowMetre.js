@@ -2082,7 +2082,11 @@ const CGWFlowMetre = () => {
               if (!open) resetForm();
             }}>
               <DialogTrigger asChild>
-                <Button className="bg-blue-600 text-white hover:bg-blue-700 h-10" data-testid="add-item-button">
+                <Button
+                  className="bg-blue-600 text-white hover:bg-blue-700 h-10"
+                  data-testid="add-item-button"
+                  onClick={resetForm}
+                >
                   <Plus className="h-4 w-4 mr-2" />
                   Add Flow Metre
                 </Button>
