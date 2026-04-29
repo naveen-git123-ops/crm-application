@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History } from 'lucide-react';
+import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History } from 'lucide-react';
 import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 import { cn } from '@/lib/utils';
 import PiezometerAddWizardStep, {
@@ -18,12 +18,19 @@ import PiezometerAddWizardStep, {
 
 const API = API_ENDPOINT;
 
+/** Categories persisted in cgw_attachments_json (aligned with server CGW_MEDIA_ATTACHMENT_KEYS). */
 const CGW_MEDIA_KEYS = [
   'bw_geo_flowmeter',
   'calibration_certificate',
   'service_report',
+  'telemetry',
+  'telemetry_excel_prior',
+  'telemetry_service_prior',
   'piezometer_bw',
   'piezometer_calibration',
+  'piezometer_telemetry',
+  'piezometer_excel_prior',
+  'piezometer_service_report',
   'water_quality_certificate',
   'cte',
   'cto',
@@ -36,8 +43,14 @@ const CGW_MEDIA_LABELS = {
   bw_geo_flowmeter: 'BW / flowmeter GEO photos',
   calibration_certificate: 'Calibration certificate (photo)',
   service_report: 'Service report (photo)',
+  telemetry: 'Telemetry device photos',
+  telemetry_excel_prior: 'Telemetry Excel (prior year)',
+  telemetry_service_prior: 'Telemetry service (prior year)',
   piezometer_bw: 'Piezometer BW photos',
   piezometer_calibration: 'Piezometer calibration',
+  piezometer_telemetry: 'Piezometer telemetry photos',
+  piezometer_excel_prior: 'Piezometer Excel (prior)',
+  piezometer_service_report: 'Piezometer service report',
   water_quality_certificate: 'Water quality certificate',
   cte: 'CTE',
   cto: 'CTO',
@@ -45,6 +58,17 @@ const CGW_MEDIA_LABELS = {
   approval_letter: 'Approval letter',
   rain_water_harvesting_data: 'Rain water harvesting data',
   additional_doc: 'Additional document',
+};
+
+/** Wizard-aligned grid sections: colspan when expanded vs collapsed (single summary column). */
+const CGW_GRID_SECTION_COLSPANS = {
+  /** Includes leading CUSTOMER ID (business code from customers list). */
+  customer: { open: 7, collapsed: 1 },
+  noc: { open: 8, collapsed: 1 },
+  flowMetre: { open: 23, collapsed: 1 },
+  piezometer: { open: 6, collapsed: 1 },
+  /** Wizard step 5 only (no lifecycle fields — those are not on the create form). */
+  lifecycleAdditional: { open: 7, collapsed: 1 },
 };
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 /** When true, shows the “Daily past-due renewal email” admin card (CGW inventory). */
@@ -408,13 +432,17 @@ function RenewalDateCell({ groupEditActive, inlineEditData, groupAnchor, onChang
 }
 
 /** Stacked NOC validity dates per equipment row (same customer group). */
-function NocValidUptoColumnCell({ groupRows = [] }) {
+function NocValidUptoColumnCell({ groupRows = [], customerLineIdBase = '' }) {
+  const base = String(customerLineIdBase || '').trim();
   return (
     <div className="space-y-1.5 min-w-[112px]">
-      {(groupRows || []).map((r) => {
+      {(groupRows || []).map((r, i) => {
         const v = r.noc_valid_upto;
         const nu = v ? nocValidUrgency(v) : 'empty';
-        const label = (r.equipment_name || r.inventory_id || '—').slice(0, 22);
+        const label =
+          base && base !== '—'
+            ? `${base}-${i + 1}`
+            : (r.equipment_name || r.inventory_id || '—').slice(0, 22);
         return (
           <div key={r.id} className="rounded border border-gray-100 bg-gray-50/60 px-1.5 py-1">
             <p className="text-[9px] text-gray-500 truncate mb-0.5" title={r.inventory_id}>
@@ -487,6 +515,61 @@ function AttachmentPreviewCell({ item, category, onPreview }) {
   );
 }
 
+function CgwGridSectionHeader({ title, isOpen, onToggle }) {
+  return (
+    <div className="flex items-center justify-center gap-1.5 px-1">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 p-0 shrink-0 text-current hover:bg-white/50"
+        title={isOpen ? 'Collapse section' : 'Expand section'}
+        onClick={(e) => {
+          e.preventDefault();
+          onToggle();
+        }}
+      >
+        {isOpen ? <Minus className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+      </Button>
+      <span className="text-center text-xs font-semibold leading-tight">{title}</span>
+    </div>
+  );
+}
+
+function formatTelemetryCompanyDisplay(item) {
+  const c = (item?.telemetry_company || '').trim();
+  const o = (item?.telemetry_company_other || '').trim();
+  if (c === 'other' && o) return o;
+  if (c) return c;
+  return '—';
+}
+
+function formatTelemetrySimLine(item) {
+  const p = (item?.telemetry_sim_provider || '').trim();
+  const po = (item?.telemetry_sim_provider_other || '').trim();
+  const prov = p === 'other' && po ? po : p || '';
+  const num = (item?.telemetry_sim_number || '').trim();
+  const vf = item?.telemetry_sim_valid_from || '';
+  const vt = item?.telemetry_sim_valid_to || '';
+  const bits = [prov, num].filter(Boolean);
+  if (vf || vt) bits.push(`${vf || '—'}→${vt || '—'}`);
+  return bits.length ? bits.join(' · ') : '—';
+}
+
+function formatTelemetryPriorLine(item) {
+  const y = (item?.telemetry_uploaded_previous_year || '').trim();
+  if (!y) return '—';
+  const serial = (item?.telemetry_previous_serial || '').trim();
+  const da = (item?.telemetry_previous_data_available || '').trim();
+  const df = item?.telemetry_previous_data_from || '';
+  const dt = item?.telemetry_previous_data_to || '';
+  const bits = [y === 'yes' ? 'Prior yr: yes' : y === 'no' ? 'Prior yr: no' : y];
+  if (serial) bits.push(`Ser: ${serial}`);
+  if (da) bits.push(`Data: ${da}`);
+  if (df || dt) bits.push(`${df || '—'}→${dt || '—'}`);
+  return bits.join(' · ');
+}
+
 const CGWFlowMetre = () => {
   const { user } = useAuth();
   const hasCgwAccess = user?.role === 'Admin' || (Array.isArray(user?.permissions) && user.permissions.includes('cgw-flow-metre'));
@@ -523,6 +606,16 @@ const CGWFlowMetre = () => {
   const [columnFilters, setColumnFilters] = useState(
     FILTER_FIELDS.reduce((acc, key) => ({ ...acc, [key]: '' }), {})
   );
+  /** Inventory table: wizard-aligned column groups; collapsed groups show one summary column each. */
+  const [cgwGridSectionsOpen, setCgwGridSectionsOpen] = useState({
+    customer: true,
+    noc: true,
+    flowMetre: true,
+    piezometer: true,
+    lifecycleAdditional: true,
+  });
+  const toggleCgwGridSection = (key) =>
+    setCgwGridSectionsOpen((prev) => ({ ...prev, [key]: !prev[key] }));
   const [digestNotificationEmail, setDigestNotificationEmail] = useState('');
   const [digestEnabled, setDigestEnabled] = useState(false);
   const [digestScheduleTz, setDigestScheduleTz] = useState('');
@@ -861,29 +954,6 @@ const CGWFlowMetre = () => {
     };
   }, [hasCgwAccess]);
 
-  useEffect(() => {
-    const term = searchTerm.trim().toLowerCase();
-    const filtered = items.filter(item => {
-      const matchesGlobal =
-        !term ||
-        item.customer_name?.toLowerCase().includes(term) ||
-        item.equipment_name?.toLowerCase().includes(term) ||
-        item.location?.toLowerCase().includes(term) ||
-        item.inventory_id?.toLowerCase().includes(term) ||
-        item.product_code?.toLowerCase().includes(term) ||
-        item.model_no?.toLowerCase().includes(term);
-
-      const matchesColumns = Object.entries(columnFilters).every(([key, value]) => {
-        const filterValue = value.trim().toLowerCase();
-        if (!filterValue) return true;
-        return String(item[key] ?? '').toLowerCase().includes(filterValue);
-      });
-
-      return matchesGlobal && matchesColumns;
-    });
-    setFilteredItems(filtered);
-  }, [searchTerm, columnFilters, items]);
-
   const groupedItems = useMemo(() => {
     const map = new Map();
     for (const item of filteredItems) {
@@ -903,6 +973,32 @@ const CGWFlowMetre = () => {
     }
     return map;
   }, [customers]);
+
+  useEffect(() => {
+    const term = searchTerm.trim().toLowerCase();
+    const filtered = items.filter((item) => {
+      const customerBizId = (customerCodeById.get(item.customer_id) || '').toString().toLowerCase();
+      const matchesGlobal =
+        !term ||
+        customerBizId.includes(term) ||
+        item.customer_id?.toLowerCase().includes(term) ||
+        item.customer_name?.toLowerCase().includes(term) ||
+        item.equipment_name?.toLowerCase().includes(term) ||
+        item.location?.toLowerCase().includes(term) ||
+        item.inventory_id?.toLowerCase().includes(term) ||
+        item.product_code?.toLowerCase().includes(term) ||
+        item.model_no?.toLowerCase().includes(term);
+
+      const matchesColumns = Object.entries(columnFilters).every(([key, value]) => {
+        const filterValue = value.trim().toLowerCase();
+        if (!filterValue) return true;
+        return String(item[key] ?? '').toLowerCase().includes(filterValue);
+      });
+
+      return matchesGlobal && matchesColumns;
+    });
+    setFilteredItems(filtered);
+  }, [searchTerm, columnFilters, items, customerCodeById]);
 
   const totalGroups = groupedItems.length;
   const totalPages = Math.max(1, Math.ceil(totalGroups / pageSize));
@@ -3140,54 +3236,143 @@ const CGWFlowMetre = () => {
       {filteredItems.length > 0 ? (
         <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="overflow-auto table-scroll max-h-[calc(100vh-220px)] scrollbar-thin" style={{ scrollbarWidth: 'auto' }}>
-            <table className="w-full text-sm min-w-[4100px]">
+            <table className="w-full text-sm min-w-[8400px]">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
-                  <th colSpan="4" className="text-center py-2.5 px-3 font-semibold text-sky-900 bg-sky-100/80 border-r border-sky-200">Customer & NOC</th>
-                  <th colSpan="5" className="text-center py-2.5 px-3 font-semibold text-indigo-900 bg-indigo-100/80 border-r border-indigo-200">Flow Metre Details</th>
-                  <th colSpan="1" className="text-center py-2.5 px-3 font-semibold text-violet-900 bg-violet-100/80 border-r border-violet-200">Piezometer</th>
-                  <th colSpan="3" className="text-center py-2.5 px-3 font-semibold text-emerald-900 bg-emerald-100/80 border-r border-emerald-200">Contact</th>
-                  <th colSpan="1" className="text-center py-2.5 px-3 font-semibold text-amber-900 bg-amber-100/80 border-r border-amber-200">Lifecycle</th>
-                  <th colSpan="11" className="text-center py-2.5 px-3 font-semibold text-fuchsia-900 bg-fuchsia-100/80">File Upload Previews</th>
+                  {cgwGridSectionsOpen.customer ? (
+                    <th
+                      colSpan={CGW_GRID_SECTION_COLSPANS.customer.open}
+                      className="text-center py-2.5 px-2 font-semibold text-sky-900 bg-sky-100/80 border-r border-sky-200"
+                    >
+                      <CgwGridSectionHeader title="1 · Customer" isOpen={cgwGridSectionsOpen.customer} onToggle={() => toggleCgwGridSection('customer')} />
+                    </th>
+                  ) : (
+                    <th rowSpan={2} className="align-middle text-center py-2 px-2 font-semibold text-sky-900 bg-sky-100/80 border-r border-sky-200 min-w-[100px]">
+                      <CgwGridSectionHeader title="1 · Customer" isOpen={cgwGridSectionsOpen.customer} onToggle={() => toggleCgwGridSection('customer')} />
+                    </th>
+                  )}
+                  {cgwGridSectionsOpen.noc ? (
+                    <th colSpan={CGW_GRID_SECTION_COLSPANS.noc.open} className="text-center py-2.5 px-2 font-semibold text-cyan-900 bg-cyan-100/80 border-r border-cyan-200">
+                      <CgwGridSectionHeader title="2 · NOC" isOpen={cgwGridSectionsOpen.noc} onToggle={() => toggleCgwGridSection('noc')} />
+                    </th>
+                  ) : (
+                    <th rowSpan={2} className="align-middle text-center py-2 px-2 font-semibold text-cyan-900 bg-cyan-100/80 border-r border-cyan-200 min-w-[100px]">
+                      <CgwGridSectionHeader title="2 · NOC" isOpen={cgwGridSectionsOpen.noc} onToggle={() => toggleCgwGridSection('noc')} />
+                    </th>
+                  )}
+                  {cgwGridSectionsOpen.flowMetre ? (
+                    <th colSpan={CGW_GRID_SECTION_COLSPANS.flowMetre.open} className="text-center py-2.5 px-2 font-semibold text-indigo-900 bg-indigo-100/80 border-r border-indigo-200">
+                      <CgwGridSectionHeader title="3 · Flow metre details" isOpen={cgwGridSectionsOpen.flowMetre} onToggle={() => toggleCgwGridSection('flowMetre')} />
+                    </th>
+                  ) : (
+                    <th rowSpan={2} className="align-middle text-center py-2 px-2 font-semibold text-indigo-900 bg-indigo-100/80 border-r border-indigo-200 min-w-[120px]">
+                      <CgwGridSectionHeader title="3 · Flow metre details" isOpen={cgwGridSectionsOpen.flowMetre} onToggle={() => toggleCgwGridSection('flowMetre')} />
+                    </th>
+                  )}
+                  {cgwGridSectionsOpen.piezometer ? (
+                    <th colSpan={CGW_GRID_SECTION_COLSPANS.piezometer.open} className="text-center py-2.5 px-2 font-semibold text-violet-900 bg-violet-100/80 border-r border-violet-200">
+                      <CgwGridSectionHeader title="4 · Piezometer" isOpen={cgwGridSectionsOpen.piezometer} onToggle={() => toggleCgwGridSection('piezometer')} />
+                    </th>
+                  ) : (
+                    <th rowSpan={2} className="align-middle text-center py-2 px-2 font-semibold text-violet-900 bg-violet-100/80 border-r border-violet-200 min-w-[100px]">
+                      <CgwGridSectionHeader title="4 · Piezometer" isOpen={cgwGridSectionsOpen.piezometer} onToggle={() => toggleCgwGridSection('piezometer')} />
+                    </th>
+                  )}
+                  {cgwGridSectionsOpen.lifecycleAdditional ? (
+                    <th colSpan={CGW_GRID_SECTION_COLSPANS.lifecycleAdditional.open} className="text-center py-2.5 px-2 font-semibold text-amber-900 bg-amber-100/80 border-r border-amber-200">
+                      <CgwGridSectionHeader title="5 · Additional attachment" isOpen={cgwGridSectionsOpen.lifecycleAdditional} onToggle={() => toggleCgwGridSection('lifecycleAdditional')} />
+                    </th>
+                  ) : (
+                    <th rowSpan={2} className="align-middle text-center py-2 px-2 font-semibold text-amber-900 bg-amber-100/80 border-r border-amber-200 min-w-[120px]">
+                      <CgwGridSectionHeader title="5 · Additional attachment" isOpen={cgwGridSectionsOpen.lifecycleAdditional} onToggle={() => toggleCgwGridSection('lifecycleAdditional')} />
+                    </th>
+                  )}
                   {canManage && (
-                    <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap border-l border-gray-200">ACTIONS</th>
+                    <th rowSpan={2} className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap border-l border-gray-200 align-middle bg-gray-50">
+                      ACTIONS
+                    </th>
                   )}
                 </tr>
                 <tr className="border-b border-gray-200 bg-gray-50/90">
-                  <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">CUSTOMER NAME</th>
-                  <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap min-w-[108px] align-top">
-                    <span className="block leading-snug">NOC</span>
-                    <span className="mt-0.5 block text-[10px] font-normal text-gray-500 leading-tight">Per equipment row</span>
-                  </th>
-                  <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">LOCATION</th>
-                  <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">CONTACT PERSON</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">FLOW METER MAKE</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">FLOW METER SIZE</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">FLOW METER SERIAL</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">CALIBRATION FROM</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">CALIBRATION TO</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-violet-900 bg-violet-50 whitespace-nowrap">PIEZOMETER DETAILS (NOC | ENTERED)</th>
-                  <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-emerald-900 bg-emerald-50 whitespace-nowrap">SYSTEM MOBILE NUMBER</th>
-                  <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-emerald-900 bg-emerald-50 whitespace-nowrap">PERSON MOBILE NUMBER</th>
-                  <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-emerald-900 bg-emerald-50 whitespace-nowrap">EMAIL ID</th>
-                  <th rowSpan="1" className="text-left py-3 px-4 font-semibold text-amber-900 bg-amber-50 align-top min-w-[120px] whitespace-normal">
-                    <span className="block leading-snug">NOC VALID UPTO</span>
-                    <span className="mt-1 block text-[10px] font-normal text-gray-500 leading-tight">
-                      <span className="text-red-600 font-semibold">Red</span> = expired ·{' '}
-                      <span className="text-amber-700 font-semibold">Amber</span> = ≤30 days
-                    </span>
-                  </th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">FLOW BW GEO</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">FLOW CALIBRATION</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">FLOW SERVICE</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">TELEMETRY PHOTOS</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">TELEMETRY EXCEL</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">TELEMETRY SERVICE</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">PIEZO BW</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">PIEZO CALIBRATION</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">PIEZO TELEMETRY</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">PIEZO EXCEL</th>
-                  <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50 whitespace-nowrap">PIEZO SERVICE</th>
+                  {cgwGridSectionsOpen.customer ? (
+                    <>
+                      <th className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">CUSTOMER ID</th>
+                      <th className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">CUSTOMER NAME</th>
+                      <th className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">LOCATION</th>
+                      <th className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">CONTACT PERSON</th>
+                      <th className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">SYSTEM MOBILE</th>
+                      <th className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">PERSON MOBILE</th>
+                      <th className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">EMAIL ID</th>
+                    </>
+                  ) : null}
+                  {cgwGridSectionsOpen.noc ? (
+                    <>
+                      <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 whitespace-nowrap min-w-[108px] align-top">
+                        <span className="block leading-snug">NOC</span>
+                        <span className="mt-0.5 block text-[10px] font-normal text-gray-500 leading-tight">Per equipment row</span>
+                      </th>
+                      <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 whitespace-nowrap">PROJECT NAME</th>
+                      <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 whitespace-nowrap">NOC NUMBER</th>
+                      <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 whitespace-nowrap">APPLICATION NO</th>
+                      <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 whitespace-nowrap">NOC VALID FROM</th>
+                      <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 align-top min-w-[120px] whitespace-normal">
+                        <span className="block leading-snug">NOC VALID UPTO</span>
+                        <span className="mt-1 block text-[10px] font-normal text-gray-500 leading-tight">
+                          <span className="text-red-600 font-semibold">Red</span> = expired · <span className="text-amber-700 font-semibold">Amber</span> = ≤30 days
+                        </span>
+                      </th>
+                      <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 whitespace-nowrap">NOC TYPE</th>
+                      <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 whitespace-nowrap">PROJECT STATUS</th>
+                    </>
+                  ) : null}
+                  {cgwGridSectionsOpen.flowMetre ? (
+                    <>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">FLOW METER MAKE</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">FLOW METER SIZE</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">FLOW METER SERIAL</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">CALIBRATION FROM</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">CALIBRATION TO</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">TELEMETRY APPLICABLE</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">TELEMETRY COMPANY</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">COMM VIA</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">SIM / VALIDITY</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">TELEM PRODUCT CODE</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">TELEM SERIAL</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">TELEM PORTAL URL</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">TELEM USER</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">TELEM PASSWORD</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">TELEM VALID FROM</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">TELEM VALID TO</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">PRIOR TELEMETRY</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50/90 whitespace-nowrap">FLOW BW GEO</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50/90 whitespace-nowrap">FLOW CALIBRATION</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50/90 whitespace-nowrap">FLOW SERVICE</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50/90 whitespace-nowrap">TELEMETRY PHOTOS</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50/90 whitespace-nowrap">TELEMETRY EXCEL</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-fuchsia-900 bg-fuchsia-50/90 whitespace-nowrap">TELEMETRY SERVICE</th>
+                    </>
+                  ) : null}
+                  {cgwGridSectionsOpen.piezometer ? (
+                    <>
+                      <th className="text-left py-2.5 px-4 font-semibold text-violet-900 bg-violet-50 whitespace-nowrap">PIEZOMETER (NOC | ENTERED)</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-violet-900 bg-violet-50 whitespace-nowrap">PIEZO BW</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-violet-900 bg-violet-50 whitespace-nowrap">PIEZO CALIBRATION</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-violet-900 bg-violet-50 whitespace-nowrap">PIEZO TELEMETRY</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-violet-900 bg-violet-50 whitespace-nowrap">PIEZO EXCEL</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-violet-900 bg-violet-50 whitespace-nowrap">PIEZO SERVICE</th>
+                    </>
+                  ) : null}
+                  {cgwGridSectionsOpen.lifecycleAdditional ? (
+                    <>
+                      <th className="text-left py-2.5 px-4 font-semibold text-amber-900 bg-amber-50/90 whitespace-nowrap">WATER QUALITY</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-amber-900 bg-amber-50/90 whitespace-nowrap">CTE</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-amber-900 bg-amber-50/90 whitespace-nowrap">CTO</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-amber-900 bg-amber-50/90 whitespace-nowrap">RWSS/WATCO/PHED</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-amber-900 bg-amber-50/90 whitespace-nowrap">APPROVAL LETTER</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-amber-900 bg-amber-50/90 whitespace-nowrap">RAIN WATER</th>
+                      <th className="text-left py-2.5 px-4 font-semibold text-amber-900 bg-amber-50/90 whitespace-nowrap">ADDITIONAL DOC</th>
+                    </>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -3203,165 +3388,332 @@ const CGWFlowMetre = () => {
                         ? 'border-b border-amber-100 hover:bg-amber-50/35 bg-amber-50/12'
                         : 'border-b border-gray-100 hover:bg-gray-50/50';
 
+                  const customerLineIdBase = String(
+                    customerCodeById.get(groupAnchor.customer_id) || groupAnchor.customer_id || ''
+                  ).trim();
+
                   return group.rows.map((item, rowIndex) => (
                     <tr key={item.id} className={`${rowRenewalClass} align-top`}>
-                      {rowIndex === 0 && (
-                        <td rowSpan={group.rows.length} className="py-3 px-4 font-medium text-gray-900 whitespace-nowrap bg-sky-50/40">
-                          {groupEditActive ? (
-                            <Input value={inlineEditData.customer_name} onChange={(e) => handleInlineChange('customer_name', e.target.value)} className="h-7 text-[11px] px-2" />
-                          ) : (groupAnchor.customer_name || '—')}
+                      {cgwGridSectionsOpen.customer ? (
+                        <>
+                          {/* Customer ID on every sub-row (no rowspan) so line 2+ still shows id + CUST…-n */}
+                          <td className="py-3 px-4 text-gray-800 whitespace-nowrap bg-sky-50/40 font-mono text-[11px] align-top">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-semibold">
+                                {customerCodeById.get(groupAnchor.customer_id) || groupAnchor.customer_id || '—'}
+                              </span>
+                              {group.rows.length > 1 ? (
+                                <span
+                                  className="text-[9px] font-medium text-sky-950/80 tabular-nums"
+                                  title="Sub-line within this customer"
+                                >
+                                  {customerLineIdBase && customerLineIdBase !== '—'
+                                    ? `${customerLineIdBase}-${rowIndex + 1}`
+                                    : `Line ${rowIndex + 1}`}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 font-medium text-gray-900 whitespace-nowrap bg-sky-50/40">
+                              {groupEditActive ? (
+                                <Input value={inlineEditData.customer_name} onChange={(e) => handleInlineChange('customer_name', e.target.value)} className="h-7 text-[11px] px-2" />
+                              ) : (groupAnchor.customer_name || '—')}
+                            </td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-sky-50/40">
+                              {groupEditActive ? <Input value={inlineEditData.location} onChange={(e) => handleInlineChange('location', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.location || '—')}
+                            </td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-sky-50/40">
+                              {groupEditActive ? <Input value={inlineEditData.contact_person} onChange={(e) => handleInlineChange('contact_person', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.contact_person || '—')}
+                            </td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-sky-50/40">
+                              {groupEditActive ? <Input value={inlineEditData.system_mobile_number} onChange={(e) => handleInlineChange('system_mobile_number', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.system_mobile_number || '—')}
+                            </td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-sky-50/40">
+                              {groupEditActive ? (
+                                <Input value={inlineEditData.person_mobile_number} onChange={(e) => handleInlineChange('person_mobile_number', e.target.value)} className="h-7 text-[11px] px-2" />
+                              ) : groupAnchor.person_mobile_number ? (
+                                <span className="flex items-center gap-1">
+                                  <Phone className="h-3 w-3 text-gray-400 shrink-0" />
+                                  {groupAnchor.person_mobile_number}
+                                </span>
+                              ) : '—'}
+                            </td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 min-w-[180px] bg-sky-50/40">
+                              {groupEditActive ? (
+                                <Input value={inlineEditData.email_id} onChange={(e) => handleInlineChange('email_id', e.target.value)} className="h-7 text-[11px] px-2" />
+                              ) : groupAnchor.email_id ? (
+                                <span className="flex items-center gap-1">
+                                  <Mail className="h-3 w-3 text-gray-400 shrink-0" />
+                                  <span>{groupAnchor.email_id}</span>
+                                </span>
+                              ) : '—'}
+                            </td>
+                          )}
+                        </>
+                      ) : rowIndex === 0 ? (
+                        <td rowSpan={group.rows.length} className="py-3 px-3 text-gray-800 bg-sky-50/40 align-top max-w-[200px]">
+                          <p className="text-[11px] font-mono font-semibold text-gray-900 truncate" title={String(customerCodeById.get(groupAnchor.customer_id) || groupAnchor.customer_id || '')}>
+                            {customerCodeById.get(groupAnchor.customer_id) || groupAnchor.customer_id || '—'}
+                          </p>
+                          {group.rows.length > 1 ? (
+                            <p className="text-[9px] font-mono text-sky-900/90 mt-1 leading-snug">
+                              {customerLineIdBase && customerLineIdBase !== '—'
+                                ? group.rows.map((_, i) => `${customerLineIdBase}-${i + 1}`).join(' · ')
+                                : `${group.rows.length} lines`}
+                            </p>
+                          ) : null}
+                          <p className="text-xs font-medium text-gray-900 truncate mt-1" title={groupAnchor.customer_name || ''}>
+                            {groupAnchor.customer_name || '—'}
+                          </p>
+                          <p className="text-[10px] text-gray-500 mt-1 leading-snug line-clamp-3" title={groupAnchor.location || ''}>
+                            {groupAnchor.location || '—'}
+                          </p>
                         </td>
-                      )}
-                      {rowIndex === 0 && (
-                        <td rowSpan={group.rows.length} className="py-3 px-4 align-top min-w-[108px] border-r border-sky-100 bg-sky-50/40">
-                          <div className="space-y-2">
-                            {group.rows.map((inv) => (
-                              <div key={inv.id} className="rounded border border-gray-200 bg-gray-50/80 p-1.5">
-                                <p className="text-[9px] font-mono text-gray-500 mb-1 truncate" title={inv.inventory_id}>
-                                  {inv.inventory_id}
-                                </p>
-                                {canManage ? (
-                                  <div className="flex flex-col gap-1">
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7 px-1 text-[9px] border-gray-200"
-                                      onClick={() => openNocDialog(inv)}
-                                    >
-                                      <FileText className="h-3 w-3 mr-0.5 shrink-0" />
-                                      NOC
-                                    </Button>
-                                    {inv.noc_document_url ? (
+                      ) : null}
+
+                      {cgwGridSectionsOpen.noc ? (
+                        <>
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 align-top min-w-[108px] border-r border-cyan-100 bg-cyan-50/35">
+                              <div className="space-y-2">
+                                {group.rows.map((inv, invIdx) => {
+                                  const subLineId =
+                                    customerLineIdBase && customerLineIdBase !== '—'
+                                      ? `${customerLineIdBase}-${invIdx + 1}`
+                                      : inv.inventory_id || `—`;
+                                  return (
+                                  <div key={inv.id} className="rounded border border-gray-200 bg-gray-50/80 p-1.5">
+                                    <p className="text-[9px] font-mono font-semibold text-gray-800 mb-0.5 truncate" title={subLineId}>
+                                      {subLineId}
+                                    </p>
+                                    {customerLineIdBase && inv.inventory_id ? (
+                                      <p className="text-[8px] font-mono text-gray-400 mb-1 truncate" title={inv.inventory_id}>
+                                        {inv.inventory_id}
+                                      </p>
+                                    ) : null}
+                                    {canManage ? (
+                                      <div className="flex flex-col gap-1">
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 px-1 text-[9px] border-gray-200"
+                                          onClick={() => openNocDialog(inv)}
+                                        >
+                                          <FileText className="h-3 w-3 mr-0.5 shrink-0" />
+                                          NOC
+                                        </Button>
+                                        {inv.noc_document_url ? (
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 px-1 text-[9px] text-blue-700"
+                                            onClick={() => openNocDialog(inv, { startInPreviewMode: true })}
+                                          >
+                                            <Eye className="h-3 w-3 mr-0.5" />
+                                            Preview
+                                          </Button>
+                                        ) : null}
+                                      </div>
+                                    ) : inv.noc_document_url ? (
                                       <Button
                                         type="button"
                                         variant="ghost"
                                         size="sm"
-                                        className="h-6 px-1 text-[9px] text-blue-700"
+                                        className="h-7 px-1 text-[9px]"
                                         onClick={() => openNocDialog(inv, { startInPreviewMode: true })}
                                       >
                                         <Eye className="h-3 w-3 mr-0.5" />
-                                        Preview
+                                        View
                                       </Button>
-                                    ) : null}
-                                  </div>
-                                ) : inv.noc_document_url ? (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 px-1 text-[9px]"
-                                    onClick={() => openNocDialog(inv, { startInPreviewMode: true })}
-                                  >
-                                    <Eye className="h-3 w-3 mr-0.5" />
-                                    View
-                                  </Button>
                                 ) : (
                                   <span className="text-[10px] text-gray-400">—</span>
                                 )}
                               </div>
-                            ))}
-                          </div>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 text-xs bg-cyan-50/35 max-w-[200px]">
+                              <span className="line-clamp-4" title={groupAnchor.noc_project_name || ''}>{groupAnchor.noc_project_name || '—'}</span>
+                            </td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-cyan-50/35">{groupAnchor.noc_no || '—'}</td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-cyan-50/35">{groupAnchor.noc_application_no || '—'}</td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap font-mono text-[11px] bg-cyan-50/35">{groupAnchor.noc_valid_from || '—'}</td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 align-top bg-cyan-50/35">
+                              <NocValidUptoColumnCell groupRows={group.rows} customerLineIdBase={customerLineIdBase} />
+                            </td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 text-xs bg-cyan-50/35">{groupAnchor.noc_type || '—'}</td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 text-xs bg-cyan-50/35">{groupAnchor.noc_project_status || '—'}</td>
+                          )}
+                        </>
+                      ) : rowIndex === 0 ? (
+                        <td rowSpan={group.rows.length} className="py-3 px-3 text-gray-800 bg-cyan-50/35 align-top text-xs">
+                          <p className="font-mono font-medium">{groupAnchor.noc_no || groupAnchor.noc_application_no || '—'}</p>
+                          <p className="text-[10px] text-gray-500 mt-1 line-clamp-2" title={groupAnchor.noc_project_name || ''}>
+                            {groupAnchor.noc_project_name || ''}
+                          </p>
                         </td>
-                      )}
-                      {rowIndex === 0 && (
-                        <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-sky-50/40">
-                          {groupEditActive ? <Input value={inlineEditData.location} onChange={(e) => handleInlineChange('location', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.location || '—')}
-                        </td>
-                      )}
-                      {rowIndex === 0 && (
-                        <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-sky-50/40">
-                          {groupEditActive ? <Input value={inlineEditData.contact_person} onChange={(e) => handleInlineChange('contact_person', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.contact_person || '—')}
+                      ) : null}
+
+                      {cgwGridSectionsOpen.flowMetre ? (
+                        <>
+                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
+                            {inlineEditId === item.id ? <Input value={inlineEditData.flow_meter_make} onChange={(e) => handleInlineChange('flow_meter_make', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.flow_meter_make || '—')}
+                          </td>
+                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
+                            {inlineEditId === item.id ? <Input value={inlineEditData.flow_meter_size} onChange={(e) => handleInlineChange('flow_meter_size', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.flow_meter_size || '—')}
+                          </td>
+                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap font-mono bg-indigo-50/35">
+                            {inlineEditId === item.id ? <Input value={inlineEditData.flow_meter_serial} onChange={(e) => handleInlineChange('flow_meter_serial', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.flow_meter_serial || '—')}
+                          </td>
+                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
+                            {inlineEditId === item.id ? <Input type="date" value={inlineEditData.calibration_valid_from} onChange={(e) => handleInlineChange('calibration_valid_from', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.calibration_valid_from || '—')}
+                          </td>
+                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
+                            {inlineEditId === item.id ? <Input type="date" value={inlineEditData.calibration_valid_to} onChange={(e) => handleInlineChange('calibration_valid_to', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.calibration_valid_to || '—')}
+                          </td>
+                          <td className="py-3 px-4 text-gray-600 text-xs bg-indigo-50/35">{item.telemetry_applicable || '—'}</td>
+                          <td className="py-3 px-4 text-gray-600 text-xs bg-indigo-50/35 max-w-[140px]">
+                            <span className="line-clamp-3" title={formatTelemetryCompanyDisplay(item)}>{formatTelemetryCompanyDisplay(item)}</span>
+                          </td>
+                          <td className="py-3 px-4 text-gray-600 text-xs bg-indigo-50/35">{item.telemetry_communication_via || '—'}</td>
+                          <td className="py-3 px-4 text-gray-600 text-[11px] bg-indigo-50/35 max-w-[200px]">
+                            <span className="line-clamp-3" title={formatTelemetrySimLine(item)}>{formatTelemetrySimLine(item)}</span>
+                          </td>
+                          <td className="py-3 px-4 text-gray-600 text-xs font-mono bg-indigo-50/35">{item.telemetry_product_code || '—'}</td>
+                          <td className="py-3 px-4 text-gray-600 text-xs font-mono bg-indigo-50/35">{item.telemetry_serial_number || '—'}</td>
+                          <td className="py-3 px-4 text-gray-600 text-[11px] bg-indigo-50/35 max-w-[200px]">
+                            {item.telemetry_portal_url ? (
+                              <a href={item.telemetry_portal_url} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline break-all line-clamp-2">
+                                {item.telemetry_portal_url}
+                              </a>
+                            ) : '—'}
+                          </td>
+                          <td className="py-3 px-4 text-gray-600 text-xs bg-indigo-50/35">{item.telemetry_username || '—'}</td>
+                          <td className="py-3 px-4 text-gray-600 text-xs bg-indigo-50/35">{item.telemetry_password ? '••••••' : '—'}</td>
+                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap font-mono text-[11px] bg-indigo-50/35">{item.telemetry_valid_from || '—'}</td>
+                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap font-mono text-[11px] bg-indigo-50/35">{item.telemetry_valid_to || '—'}</td>
+                          <td className="py-3 px-4 text-gray-600 text-[10px] bg-indigo-50/35 max-w-[220px]">
+                            <span className="line-clamp-4 whitespace-normal" title={formatTelemetryPriorLine(item)}>{formatTelemetryPriorLine(item)}</span>
+                          </td>
+                          <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="bw_geo_flowmeter" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="calibration_certificate" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="service_report" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="telemetry" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="telemetry_excel_prior" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="telemetry_service_prior" onPreview={openMediaDialog} />
+                          </td>
+                        </>
+                      ) : (
+                        <td className="py-3 px-3 text-gray-800 bg-indigo-50/35 text-xs align-top">
+                          <p className="font-mono font-medium">{item.flow_meter_serial || item.inventory_id || '—'}</p>
+                          <p className="text-[10px] text-gray-500 mt-0.5">{formatTelemetryCompanyDisplay(item)}</p>
                         </td>
                       )}
 
-                      {/* equipment-specific columns */}
-                      <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
-                        {inlineEditId === item.id ? <Input value={inlineEditData.flow_meter_make} onChange={(e) => handleInlineChange('flow_meter_make', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.flow_meter_make || '—')}
-                      </td>
-                      <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
-                        {inlineEditId === item.id ? <Input value={inlineEditData.flow_meter_size} onChange={(e) => handleInlineChange('flow_meter_size', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.flow_meter_size || '—')}
-                      </td>
-                      <td className="py-3 px-4 text-gray-600 whitespace-nowrap font-mono bg-indigo-50/35">
-                        {inlineEditId === item.id ? <Input value={inlineEditData.flow_meter_serial} onChange={(e) => handleInlineChange('flow_meter_serial', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.flow_meter_serial || '—')}
-                      </td>
-                      <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
-                        {inlineEditId === item.id ? <Input type="date" value={inlineEditData.calibration_valid_from} onChange={(e) => handleInlineChange('calibration_valid_from', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.calibration_valid_from || '—')}
-                      </td>
-                      <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
-                        {inlineEditId === item.id ? <Input type="date" value={inlineEditData.calibration_valid_to} onChange={(e) => handleInlineChange('calibration_valid_to', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.calibration_valid_to || '—')}
-                      </td>
-                      <td className="py-3 px-4 text-gray-600 min-w-[220px] bg-violet-50/35">
-                        {piezometerSummaryCellText(item)}
-                      </td>
+                      {cgwGridSectionsOpen.piezometer ? (
+                        <>
+                          <td className="py-3 px-4 text-gray-600 min-w-[220px] bg-violet-50/35 text-xs">
+                            {piezometerSummaryCellText(item)}
+                          </td>
+                          <td className="py-3 px-4 bg-violet-50/20 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="piezometer_bw" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-violet-50/20 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="piezometer_calibration" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-violet-50/20 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="piezometer_telemetry" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-violet-50/20 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="piezometer_excel_prior" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-violet-50/20 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="piezometer_service_report" onPreview={openMediaDialog} />
+                          </td>
+                        </>
+                      ) : (
+                        <td className="py-3 px-3 text-gray-800 bg-violet-50/35 text-[11px] align-top max-w-[200px]">
+                          <span className="line-clamp-4" title={piezometerSummaryCellText(item)}>{piezometerSummaryCellText(item)}</span>
+                        </td>
+                      )}
 
-                      {rowIndex === 0 && (
-                        <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-emerald-50/35">
-                          {groupEditActive ? <Input value={inlineEditData.system_mobile_number} onChange={(e) => handleInlineChange('system_mobile_number', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.system_mobile_number || '—')}
+                      {cgwGridSectionsOpen.lifecycleAdditional ? (
+                        <>
+                          <td className="py-3 px-4 bg-amber-50/25 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="water_quality_certificate" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-amber-50/25 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="cte" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-amber-50/25 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="cto" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-amber-50/25 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="rwss_watco_phed_noc" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-amber-50/25 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="approval_letter" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-amber-50/25 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="rain_water_harvesting_data" onPreview={openMediaDialog} />
+                          </td>
+                          <td className="py-3 px-4 bg-amber-50/25 whitespace-nowrap">
+                            <AttachmentPreviewCell item={item} category="additional_doc" onPreview={openMediaDialog} />
+                          </td>
+                        </>
+                      ) : (
+                        <td className="py-3 px-3 text-gray-800 bg-amber-50/30 text-xs align-top">
+                          {(() => {
+                            const cats = ['water_quality_certificate', 'cte', 'cto', 'rwss_watco_phed_noc', 'approval_letter', 'rain_water_harvesting_data', 'additional_doc'];
+                            const n = cats.reduce((acc, k) => acc + (item?.cgw_attachments?.[k]?.length || 0), 0);
+                            return (
+                              <>
+                                <p className="font-medium text-gray-900">Step 5 files</p>
+                                <p className="text-[10px] text-gray-500 mt-0.5">{n ? `${n} file(s)` : 'None'}</p>
+                              </>
+                            );
+                          })()}
                         </td>
                       )}
-                      {rowIndex === 0 && (
-                        <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-emerald-50/35">
-                          {groupEditActive ? (
-                            <Input value={inlineEditData.person_mobile_number} onChange={(e) => handleInlineChange('person_mobile_number', e.target.value)} className="h-7 text-[11px] px-2" />
-                          ) : groupAnchor.person_mobile_number ? (
-                            <span className="flex items-center gap-1">
-                              <Phone className="h-3 w-3 text-gray-400 shrink-0" />
-                              {groupAnchor.person_mobile_number}
-                            </span>
-                          ) : '—'}
-                        </td>
-                      )}
-                      {rowIndex === 0 && (
-                        <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 min-w-[180px] bg-emerald-50/35">
-                          {groupEditActive ? (
-                            <Input value={inlineEditData.email_id} onChange={(e) => handleInlineChange('email_id', e.target.value)} className="h-7 text-[11px] px-2" />
-                          ) : groupAnchor.email_id ? (
-                            <span className="flex items-center gap-1">
-                              <Mail className="h-3 w-3 text-gray-400 shrink-0" />
-                              <span>{groupAnchor.email_id}</span>
-                            </span>
-                          ) : '—'}
-                        </td>
-                      )}
-                      {rowIndex === 0 && (
-                        <td rowSpan={group.rows.length} className="py-3 px-4 align-top border-l border-amber-100 bg-amber-50/35">
-                          <NocValidUptoColumnCell groupRows={group.rows} />
-                        </td>
-                      )}
-                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
-                        <AttachmentPreviewCell item={item} category="bw_geo_flowmeter" onPreview={openMediaDialog} />
-                      </td>
-                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
-                        <AttachmentPreviewCell item={item} category="calibration_certificate" onPreview={openMediaDialog} />
-                      </td>
-                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
-                        <AttachmentPreviewCell item={item} category="service_report" onPreview={openMediaDialog} />
-                      </td>
-                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
-                        <AttachmentPreviewCell item={item} category="telemetry" onPreview={openMediaDialog} />
-                      </td>
-                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
-                        <AttachmentPreviewCell item={item} category="telemetry_excel_prior" onPreview={openMediaDialog} />
-                      </td>
-                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
-                        <AttachmentPreviewCell item={item} category="telemetry_service_prior" onPreview={openMediaDialog} />
-                      </td>
-                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
-                        <AttachmentPreviewCell item={item} category="piezometer_bw" onPreview={openMediaDialog} />
-                      </td>
-                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
-                        <AttachmentPreviewCell item={item} category="piezometer_calibration" onPreview={openMediaDialog} />
-                      </td>
-                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
-                        <AttachmentPreviewCell item={item} category="piezometer_telemetry" onPreview={openMediaDialog} />
-                      </td>
-                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
-                        <AttachmentPreviewCell item={item} category="piezometer_excel_prior" onPreview={openMediaDialog} />
-                      </td>
-                      <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
-                        <AttachmentPreviewCell item={item} category="piezometer_service_report" onPreview={openMediaDialog} />
-                      </td>
 
                       {canManage && (
                         <td className="py-3 px-4">
