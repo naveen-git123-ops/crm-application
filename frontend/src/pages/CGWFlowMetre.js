@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download } from 'lucide-react';
 import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 import { cn } from '@/lib/utils';
 import PiezometerAddWizardStep, {
@@ -1513,6 +1513,31 @@ const CGWFlowMetre = () => {
       fetchItems();
     } catch (error) {
       toast.error('Failed to delete item');
+    }
+  };
+
+  const handleDownloadAttachmentsZip = async (item) => {
+    try {
+      const response = await axios.get(
+        `${API}/cgw-flow-metres/${item.id}/attachments/download-zip`,
+        {
+          headers: authHeaders(),
+          responseType: 'blob',
+        },
+      );
+      const customerStem = String(item?.customer_name || 'record').replace(/[^A-Za-z0-9_-]+/g, '') || 'record';
+      const blobUrl = window.URL.createObjectURL(response.data);
+      const anchor = document.createElement('a');
+      anchor.href = blobUrl;
+      anchor.download = `${customerStem}documents.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      toast.success('Attachments ZIP downloaded');
+    } catch (error) {
+      const msg = error?.response?.data?.detail || 'Failed to download attachments ZIP';
+      toast.error(typeof msg === 'string' ? msg : 'Failed to download attachments ZIP');
     }
   };
 
@@ -3351,20 +3376,29 @@ const CGWFlowMetre = () => {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="h-7 px-2 border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
+                                  className="h-7 w-7 p-0 border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
+                                  title="Edit"
                                   onClick={() => handleEdit(item)}
                                 >
-                                  <Edit className="h-3 w-3 mr-1" />
-                                  Edit
+                                  <Edit className="h-3 w-3" />
                                 </Button>
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="h-7 px-2 border-gray-200 text-xs text-red-600 hover:bg-red-50"
+                                  className="h-7 w-7 p-0 border-gray-200 text-xs text-blue-700 hover:bg-blue-50"
+                                  title="Download attachments ZIP"
+                                  onClick={() => handleDownloadAttachmentsZip(item)}
+                                >
+                                  <Download className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 border-gray-200 text-xs text-red-600 hover:bg-red-50"
+                                  title="Delete"
                                   onClick={() => handleDelete(item.id)}
                                 >
-                                  <Trash2 className="h-3 w-3 mr-1" />
-                                  Delete
+                                  <Trash2 className="h-3 w-3" />
                                 </Button>
                               </>
                             )}

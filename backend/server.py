@@ -33,6 +33,8 @@ import boto3
 from botocore.exceptions import ClientError
 import pandas as pd
 from openpyxl import load_workbook
+import zipfile
+from urllib.parse import urlparse
 
 app = FastAPI()
 
@@ -3463,6 +3465,62 @@ def _cgw_delete_stored_attachment_file(url: str) -> None:
             pass
 
 
+def _cgw_zip_safe_stem(value: str) -> str:
+    raw = (value or '').strip()
+    if not raw:
+        return 'record'
+    return re.sub(r'[^A-Za-z0-9_-]+', '', raw) or 'record'
+
+
+def _cgw_attachment_suffix_for_category(category: str) -> str:
+    mapping = {
+        'bw_geo_flowmeter': 'FLOW_BW_GEO',
+        'calibration_certificate': 'CALIBRATION_CERTIFICATE',
+        'service_report': 'SERVICE_REPORT',
+        'piezometer_bw': 'PIEZOMETER_BW',
+        'piezometer_calibration': 'PIEZOMETER_CALIBRATION',
+        'telemetry_photo': 'TELEMETRY_PHOTO',
+        'telemetry_excel_prior': 'TELEMETRY_EXCEL_PRIOR',
+        'telemetry_service_report': 'TELEMETRY_SERVICE_REPORT',
+        'piezometer_telemetry': 'PIEZOMETER_TELEMETRY',
+        'piezometer_excel_prior': 'PIEZOMETER_EXCEL_PRIOR',
+        'piezometer_service_report': 'PIEZOMETER_SERVICE_REPORT',
+        'water_quality_certificate': 'WATER_QUALITY_CERTIFICATE',
+        'cte': 'CTE',
+        'cto': 'CTO',
+        'rwss_watco_phed_noc': 'RWSS_WATCO_PHED_NOC',
+        'approval_letter': 'APPROVAL_LETTER',
+        'rain_water_harvesting_data': 'RAIN_WATER_HARVESTING_DATA',
+        'additional_doc': 'ADDITIONAL_DOC',
+    }
+    return mapping.get(category, category.upper())
+
+
+def _cgw_read_attachment_bytes(url: str) -> bytes:
+    if not url:
+        raise HTTPException(status_code=404, detail='File URL is empty')
+    # S3 URL
+    if url.startswith('http://') or url.startswith('https://'):
+        if not S3_BUCKET_NAME or S3_BUCKET_NAME not in url:
+            raise HTTPException(status_code=400, detail='Invalid file URL')
+        if not s3_client or not USE_S3:
+            raise HTTPException(status_code=503, detail='File service is unavailable')
+        parsed_url = urlparse(url)
+        s3_key = parsed_url.path.lstrip('/')
+        if not s3_key:
+            raise HTTPException(status_code=404, detail='File not found')
+        obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
+        return obj['Body'].read()
+    # Local uploads fallback
+    if url.startswith('/uploads/'):
+        rel = url.replace('/uploads/', '', 1)
+        fp = UPLOAD_DIR / rel
+        if not fp.is_file():
+            raise HTTPException(status_code=404, detail='File not found')
+        return fp.read_bytes()
+    raise HTTPException(status_code=400, detail='Unsupported file URL')
+
+
 @api_router.post('/cgw-flow-metres/bulk', response_model=List[CGWFlowMetre])
 def create_cgw_flow_metres_bulk(
     data: CGWFlowMetreBulkCreate,
@@ -3908,6 +3966,72 @@ def upload_or_update_cgw_noc(
     db.refresh(item)
     _hydrate_cgw_flow_metre_attachments(item)
     return item
+
+
+@api_router.get('/cgw-flow-metres/{inventory_id}/attachments/download-zip')
+def download_cgw_attachments_zip(
+    inventory_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not can_manage_cgw(current_user, db):
+        raise HTTPException(status_code=403, detail='Not authorized')
+
+    item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail='Inventory item not found')
+
+    customer_stem = _cgw_zip_safe_stem((getattr(item, 'customer_name', None) or 'record'))
+    zip_name = f'{customer_stem}documents.zip'
+
+    entries: List[Tuple[str, str, str]] = []
+    noc_url = (getattr(item, 'noc_document_url', None) or '').strip()
+    if noc_url:
+        entries.append((noc_url, f'{customer_stem}-noc', 'noc.pdf'))
+
+    buckets = _cgw_media_buckets_for_api(item)
+    for category, files in buckets.items():
+        suffix = _cgw_attachment_suffix_for_category(category)
+        for idx, att in enumerate(files or [], start=1):
+            file_name = (att.get('file_name') or '').strip()
+            ext = Path(file_name).suffix or Path(urlparse(att.get('url') or '').path).suffix or '.bin'
+            base = f'{customer_stem}-{suffix}'
+            if idx > 1:
+                base = f'{base}_{idx}'
+            entries.append((att.get('url') or '', base, file_name or f'{base}{ext}'))
+
+    if not entries:
+        raise HTTPException(status_code=400, detail='No attachments found for this record')
+
+    used_names: set = set()
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+        for file_url, preferred_base, fallback_name in entries:
+            if not file_url:
+                continue
+            try:
+                file_bytes = _cgw_read_attachment_bytes(file_url)
+            except Exception:
+                continue
+            ext = Path(fallback_name).suffix or Path(urlparse(file_url).path).suffix or '.bin'
+            zip_entry = f'{preferred_base}{ext}'
+            name_try = zip_entry
+            dup = 2
+            while name_try in used_names:
+                name_try = f'{preferred_base}_{dup}{ext}'
+                dup += 1
+            used_names.add(name_try)
+            zf.writestr(name_try, file_bytes)
+
+    if not used_names:
+        raise HTTPException(status_code=400, detail='No downloadable attachments found')
+
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type='application/zip',
+        headers={'Content-Disposition': f'attachment; filename="{zip_name}"'},
+    )
 
 
 @api_router.delete('/cgw-flow-metres/{inventory_id}')
