@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -6,8 +6,26 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Clock, Calendar, LogIn, LogOut, AlertCircle, User, TrendingDown, MapPin, Briefcase, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, subMonths, addMonths, eachDayOfInterval, getDate, isToday as isTodayDate, isWeekend } from 'date-fns';
+import {
+  Clock,
+  Calendar,
+  LogIn,
+  LogOut,
+  AlertCircle,
+  User,
+  TrendingDown,
+  MapPin,
+  Briefcase,
+  Check,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  LayoutGrid,
+  UserCheck,
+  Search,
+  Filter
+} from 'lucide-react';
+import { format, startOfMonth, endOfMonth, subMonths, addMonths, eachDayOfInterval, getDate, isToday as isTodayDate, isWeekend, subDays } from 'date-fns';
 import { formatISTDate, formatISTDateTime } from '@/utils/date';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
@@ -98,6 +116,87 @@ const formatCurrentDateIST = (date) => {
   }).format(date);
 };
 
+const GRID_PAGE_SIZE = 15;
+
+const nameInitials = (name) => {
+  if (!name || typeof name !== 'string') return '?';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  return name.trim().slice(0, 2).toUpperCase();
+};
+
+/** Visual cell for month grid: letter + colors (tooltips / logic unchanged from prior statuses). */
+const deriveDayCellModel = (record, isFutureDate, isSunday, isHoliday) => {
+  let statusText = '';
+  let letter = '–';
+  let circleClass = 'bg-slate-100 text-slate-400';
+
+  if (isSunday || isHoliday) {
+    statusText = isSunday ? 'Sunday' : 'Holiday';
+    letter = '–';
+    circleClass = 'bg-sky-100 text-sky-600 ring-1 ring-sky-200/80';
+    return { letter, circleClass, statusText };
+  }
+  if (isFutureDate) {
+    statusText = 'No Data';
+    letter = '–';
+    circleClass = 'bg-slate-50 text-slate-300';
+    return { letter, circleClass, statusText };
+  }
+  if (!record) {
+    statusText = 'Absent';
+    letter = 'X';
+    circleClass = 'bg-rose-500 text-white shadow-sm';
+    return { letter, circleClass, statusText };
+  }
+  if (record.is_tour === 1) {
+    if (record.tour_approval_status === 'approved') {
+      statusText = 'Tour (Approved)';
+      letter = 'T';
+      circleClass = 'bg-fuchsia-400 text-white shadow-sm';
+    } else {
+      statusText = 'Tour (Pending)';
+      letter = 'T';
+      circleClass = 'bg-rose-500 text-white shadow-sm';
+    }
+    return { letter, circleClass, statusText };
+  }
+  if (record.status === 'Leave') {
+    statusText = 'Leave';
+    letter = 'L';
+    circleClass = 'bg-sky-500 text-white shadow-sm';
+    return { letter, circleClass, statusText };
+  }
+  if (record.status === 'Present') {
+    statusText = 'Present';
+    letter = 'P';
+    circleClass = 'bg-emerald-500 text-white shadow-sm';
+    return { letter, circleClass, statusText };
+  }
+  if (record.status === 'Late') {
+    statusText = 'Late (approval pending)';
+    letter = 'O';
+    circleClass = 'bg-amber-500 text-white shadow-sm';
+    return { letter, circleClass, statusText };
+  }
+  if (record.status === 'Incomplete') {
+    statusText = 'Checked in (no punch-out yet)';
+    letter = 'O';
+    circleClass = 'bg-orange-400 text-white shadow-sm';
+    return { letter, circleClass, statusText };
+  }
+  if (record.status === 'Pending Approval') {
+    statusText = 'Pending approval';
+    letter = '!';
+    circleClass = 'bg-violet-500 text-white shadow-sm';
+    return { letter, circleClass, statusText };
+  }
+  statusText = record.status || 'Absent';
+  letter = 'X';
+  circleClass = 'bg-rose-500 text-white shadow-sm';
+  return { letter, circleClass, statusText };
+};
+
 export const Attendance = () => {
   const { user, checkTodayWorkLog } = useAuth();
   const [attendance, setAttendance] = useState([]);
@@ -145,7 +244,10 @@ export const Attendance = () => {
   const [lateLogins, setLateLogins] = useState({});  // {empId: {count: X}}
   const [gridLoading, setGridLoading] = useState(false);
   const [gridViewMode, setGridViewMode] = useState('month'); // 'today' or 'month'
-  
+  const [gridSearch, setGridSearch] = useState('');
+  const [gridDepartmentFilter, setGridDepartmentFilter] = useState('');
+  const [gridPage, setGridPage] = useState(1);
+
   // Regularize states
   const [regularizeEmployee, setRegularizeEmployee] = useState('');
   const [regularizeDate, setRegularizeDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -821,6 +923,67 @@ export const Attendance = () => {
     }
   };
 
+  const gridRowsSorted = useMemo(() => {
+    const rows = Object.values(gridData);
+    return rows.sort((a, b) => (a.employee_name || '').localeCompare(b.employee_name || ''));
+  }, [gridData]);
+
+  const departmentOptions = useMemo(() => {
+    const set = new Set();
+    (employees || []).forEach((e) => {
+      const d = (e.department || '').trim();
+      if (d) set.add(d);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [employees]);
+
+  const getDeptForGridRow = (empId) =>
+    (employees || []).find((e) => e.employee_id === empId)?.department?.trim() || '—';
+
+  const filteredGridRowsForTable = useMemo(() => {
+    let rows = gridRowsSorted;
+    const q = gridSearch.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter(
+        (r) =>
+          (r.employee_name || '').toLowerCase().includes(q) ||
+          String(r.employee_id || '')
+            .toLowerCase()
+            .includes(q)
+      );
+    }
+    if (gridDepartmentFilter) {
+      rows = rows.filter((r) => getDeptForGridRow(r.employee_id) === gridDepartmentFilter);
+    }
+    return rows;
+  }, [gridRowsSorted, gridSearch, gridDepartmentFilter, employees]);
+
+  const gridPageCount = Math.max(1, Math.ceil(filteredGridRowsForTable.length / GRID_PAGE_SIZE));
+
+  const daysInGridMonth = useMemo(() => {
+    const parts = String(gridMonth || '').split('-');
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (!y || !m) return 31;
+    return eachDayOfInterval({
+      start: new Date(y, m - 1, 1),
+      end: endOfMonth(new Date(y, m - 1, 1))
+    }).length;
+  }, [gridMonth]);
+
+  const pagedGridRows = useMemo(() => {
+    const start = (gridPage - 1) * GRID_PAGE_SIZE;
+    return filteredGridRowsForTable.slice(start, start + GRID_PAGE_SIZE);
+  }, [filteredGridRowsForTable, gridPage]);
+
+  useEffect(() => {
+    setGridPage(1);
+  }, [gridSearch, gridDepartmentFilter, gridMonth, gridViewMode, activeTab]);
+
+  useEffect(() => {
+    if (gridPage > gridPageCount) setGridPage(gridPageCount);
+  }, [gridPage, gridPageCount]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -830,14 +993,19 @@ export const Attendance = () => {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6" data-testid="attendance-page">
+    <div
+      className="space-y-5 sm:space-y-6 text-slate-800 antialiased [font-family:ui-sans-serif,system-ui,-apple-system,Segoe_UI,Roboto,Inter,sans-serif]"
+      data-testid="attendance-page"
+    >
       {/* Location notice for employees */}
       {!canManageAttendance && (
-        <Card className="p-4 rounded-lg border border-amber-200 bg-amber-50 flex items-center gap-3">
-          <MapPin className="h-6 w-6 text-amber-600 shrink-0" />
+        <Card className="p-4 sm:p-5 rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-white shadow-[0_2px_12px_rgba(0,0,0,0.04)] flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+            <MapPin className="h-5 w-5" />
+          </div>
           <div>
-            <p className="font-semibold text-amber-900">Location required</p>
-            <p className="text-sm text-amber-800">
+            <p className="font-semibold text-amber-950">Location required</p>
+            <p className="text-sm text-amber-900/90 mt-1 leading-relaxed">
               Punch in/out uses your device location. Within <strong>50 m of office</strong> = regular attendance. Outside = recorded as <strong>Tour</strong> (official travel) and requires approval from Admin/Manager.
             </p>
           </div>
@@ -846,170 +1014,317 @@ export const Attendance = () => {
 
       {/* Tabs: admin/HR/accountant full set; employees get punch + personal grid + summary */}
       {showAttendanceTabs && (
-        <Card className="p-2 rounded-lg border border-gray-200 bg-white shadow-sm">
-          <div className="flex gap-2 flex-wrap [&_button]:min-h-[44px]">
+        <Card className="p-2 sm:p-2.5 rounded-2xl border-0 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
+          <div className="flex gap-1 flex-wrap items-center [&_button]:min-h-[44px]">
             {[
-              { id: 'punch', label: 'Mark Attendance', show: true },
-              { id: 'grid', label: canViewOwnAttendanceGrid ? 'My Attendance Grid' : 'Attendance Grid', show: canManageAttendanceGrid || canViewOwnAttendanceGrid },
-              { id: 'regularize', label: 'Regularize', show: canManageAttendanceFull },
-              { id: 'tour', label: 'Tour Requests', show: canApproveTour },
-              { id: 'latepunchin', label: 'Late Punch-In Approvals', show: canManageAttendanceFull },
-              { id: 'latepunchout', label: 'Late Punch-Out Approvals', show: canManageAttendanceFull },
-              { id: 'report', label: 'Report (Date Range)', show: canManageAttendanceFull },
-              { id: 'summary', label: 'Monthly Summary', show: true },
-            ].filter((t) => t.show).map((tab) => (
-              <Button
-                key={tab.id}
-                variant={activeTab === tab.id ? 'default' : 'ghost'}
-                size="sm"
-                className={activeTab === tab.id ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                {tab.label}
-              </Button>
-            ))}
+              { id: 'punch', label: 'Mark Attendance', icon: Clock, show: true },
+              {
+                id: 'grid',
+                label: canViewOwnAttendanceGrid ? 'My grid' : 'Grid view',
+                icon: LayoutGrid,
+                show: canManageAttendanceGrid || canViewOwnAttendanceGrid
+              },
+              { id: 'regularize', label: 'Regularize', icon: UserCheck, show: canManageAttendanceFull },
+              { id: 'tour', label: 'Tour requests', icon: Briefcase, show: canApproveTour },
+              { id: 'latepunchin', label: 'Late punch-in', icon: LogIn, show: canManageAttendanceFull },
+              { id: 'latepunchout', label: 'Late punch-out', icon: LogOut, show: canManageAttendanceFull },
+              { id: 'report', label: 'Reports', icon: Calendar, show: canManageAttendanceFull },
+              { id: 'summary', label: 'Monthly summary', icon: TrendingDown, show: true }
+            ]
+              .filter((t) => t.show)
+              .map((tab) => {
+                const Icon = tab.icon;
+                const on = activeTab === tab.id;
+                return (
+                  <Button
+                    key={tab.id}
+                    variant="ghost"
+                    size="sm"
+                    className={`rounded-xl gap-2 px-3.5 sm:px-4 transition-colors ${
+                      on
+                        ? 'bg-sky-50 text-sky-800 shadow-sm ring-1 ring-sky-100'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                    onClick={() => setActiveTab(tab.id)}
+                  >
+                    <Icon className={`h-4 w-4 shrink-0 ${on ? 'text-sky-600' : 'text-slate-400'}`} />
+                    <span className="font-medium">{tab.label}</span>
+                  </Button>
+                );
+              })}
           </div>
         </Card>
       )}
 
       {/* Attendance Grid: all staff (admin) or personal rows only (employee) */}
       {(canManageAttendanceGrid || canViewOwnAttendanceGrid) && activeTab === 'grid' && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-x-auto">
-          <div className="mb-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {canViewOwnAttendanceGrid ? 'My Attendance Grid' : 'Attendance Grid'}
-                </h3>
-                <p className="text-sm text-gray-600">
-                  {canViewOwnAttendanceGrid
-                    ? 'Your month at a glance: present, late logins, tours, leave, and pending approvals.'
-                    : "View all employees' attendance for the month at a glance"}
-                </p>
-              </div>
-              <div className="flex gap-2">
+        <Card className="overflow-hidden rounded-2xl border-0 bg-white p-5 sm:p-7 shadow-[0_4px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/60">
+          {/* <div className="mb-4">
+            <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+              {canViewOwnAttendanceGrid ? 'My attendance grid' : 'Attendance grid dashboard'}
+            </h3>
+          </div> */}
+
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-2xl border border-slate-100 bg-slate-50/80 px-3 py-2.5 text-xs text-slate-600 sm:gap-2 sm:px-3 sm:py-2 sm:text-sm">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">
+                P
+              </span>
+              Present
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">
+                X
+              </span>
+              Absent
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-500 text-[10px] font-bold text-white">
+                L
+              </span>
+              Leave
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white">
+                O
+              </span>
+              Late / incomplete
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-fuchsia-400 text-[10px] font-bold text-white">
+                T
+              </span>
+              Tour
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-500 text-[10px] font-bold text-white">
+                !
+              </span>
+              Pending
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-100 text-[10px] font-bold text-sky-700 ring-1 ring-sky-200">
+                –
+              </span>
+              Sun / holiday
+            </span>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:ml-auto">
+              <div className="inline-flex rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200/80">
                 <Button
+                  type="button"
                   size="sm"
-                  variant={gridViewMode === 'today' ? 'default' : 'outline'}
+                  variant="ghost"
                   onClick={() => setGridViewMode('today')}
-                  className={gridViewMode === 'today' ? 'bg-blue-600 text-white' : 'border-gray-300'}
+                  className={`h-8 rounded-lg px-3 text-xs font-semibold sm:h-9 sm:px-4 sm:text-sm ${
+                    gridViewMode === 'today'
+                      ? 'bg-white text-sky-800 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
                 >
                   Today
                 </Button>
                 <Button
+                  type="button"
                   size="sm"
-                  variant={gridViewMode === 'month' ? 'default' : 'outline'}
+                  variant="ghost"
                   onClick={() => setGridViewMode('month')}
-                  className={gridViewMode === 'month' ? 'bg-blue-600 text-white' : 'border-gray-300'}
+                  className={`h-8 rounded-lg px-3 text-xs font-semibold sm:h-9 sm:px-4 sm:text-sm ${
+                    gridViewMode === 'month'
+                      ? 'bg-white text-sky-800 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  This Month
+                  Month
                 </Button>
               </div>
-            </div>
-
-            {/* Month Navigation */}
-            {gridViewMode === 'month' && (
-              <div className="flex items-center justify-between gap-4 mb-4">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setGridMonth(format(subMonths(new Date(gridMonth + '-01'), 1), 'yyyy-MM'))}
-                  className="border-gray-300"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">Month:</label>
-                  <input
-                    type="month"
-                    value={gridMonth}
-                    onChange={(e) => setGridMonth(e.target.value)}
-                    className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900"
-                  />
+              {gridViewMode === 'month' && (
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="hidden h-4 w-4 shrink-0 text-sky-600 sm:block" aria-hidden />
+                  <div className="flex items-center gap-0.5 rounded-xl border border-sky-200 bg-white p-0.5 shadow-sm ring-1 ring-sky-100">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0 text-sky-800 hover:bg-sky-50"
+                      onClick={() => setGridMonth(format(subMonths(new Date(`${gridMonth}-01`), 1), 'yyyy-MM'))}
+                      aria-label="Previous month"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <input
+                      type="month"
+                      value={gridMonth}
+                      onChange={(e) => setGridMonth(e.target.value)}
+                      className="h-8 min-w-[9.5rem] cursor-pointer border-0 bg-transparent px-1 text-center text-xs font-bold text-sky-900 outline-none sm:min-w-[11rem] sm:text-sm"
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0 text-sky-800 hover:bg-sky-50"
+                      onClick={() => setGridMonth(format(addMonths(new Date(`${gridMonth}-01`), 1), 'yyyy-MM'))}
+                      aria-label="Next month"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setGridMonth(format(addMonths(new Date(gridMonth + '-01'), 1), 'yyyy-MM'))}
-                  className="border-gray-300"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
-
-            {/* Color Legend */}
-            <div className="flex flex-wrap gap-4 text-sm mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-green-500 rounded"></div>
-                <span className="text-gray-700">Present</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-yellow-500 rounded"></div>
-                <span className="text-gray-700">Late Login</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-pink-400 rounded"></div>
-                <span className="text-gray-700">Approved Tour</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-red-500 rounded"></div>
-                <span className="text-gray-700">Absent</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-blue-400 rounded"></div>
-                <span className="text-gray-700">On Leave</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-blue-300 rounded"></div>
-                <span className="text-gray-700">Sunday / Holiday</span>
-              </div>
+              )}
+              {gridViewMode === 'today' && (
+                <div className="rounded-xl bg-white px-3 py-1.5 text-center text-xs font-semibold text-slate-700 ring-1 ring-slate-200 sm:text-sm">
+                  {format(new Date(), 'MMM d, yyyy')}
+                </div>
+              )}
             </div>
           </div>
+
+          {gridViewMode === 'month' && (
+            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={gridSearch}
+                  onChange={(e) => setGridSearch(e.target.value)}
+                  placeholder="Search by name or employee ID…"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-900 shadow-sm outline-none ring-sky-500/30 placeholder:text-slate-400 focus:border-sky-300 focus:ring-2"
+                />
+              </div>
+              {canManageAttendanceGrid && departmentOptions.length > 0 && (
+                <div className="relative sm:w-56">
+                  <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <select
+                    value={gridDepartmentFilter}
+                    onChange={(e) => setGridDepartmentFilter(e.target.value)}
+                    className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-10 pr-8 text-sm font-medium text-slate-800 shadow-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20"
+                  >
+                    <option value="">All departments</option>
+                    {departmentOptions.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
 
           {gridLoading ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent" />
             </div>
           ) : gridViewMode === 'today' ? (
-            // Today's attendance view
-            <div className="space-y-3">
+            <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
               {(canManageAttendanceGrid ? employees : user?.employee_id ? [{ employee_id: user.employee_id, name: user.name }] : []).length === 0 ? (
-                <p className="text-center py-8 text-gray-500">No employee data available.</p>
+                <p className="col-span-full py-12 text-center text-sm text-slate-500">No employee data available.</p>
               ) : (
                 (canManageAttendanceGrid ? employees : [{ employee_id: user.employee_id, name: user.name }]).map((emp) => {
                   const todayStr = format(new Date(), 'yyyy-MM-dd');
                   const todayRecord = gridData[emp.employee_id]?.records[todayStr];
-                  let bgColor = 'bg-red-500';
-                  if (todayRecord) {
-                    if (todayRecord.is_tour === 1 && todayRecord.tour_approval_status === 'approved') {
-                      bgColor = 'bg-pink-400';
-                    } else if (todayRecord.status === 'Present') {
-                      bgColor = 'bg-green-500';
-                    } else if (todayRecord.status === 'Late') {
-                      bgColor = 'bg-yellow-500';
-                    } else if (todayRecord.status === 'Incomplete') {
-                      bgColor = 'bg-orange-400';
-                    } else if (todayRecord.status === 'Pending Approval') {
-                      bgColor = 'bg-purple-500';
-                    } else if (todayRecord.status === 'Leave') {
-                      bgColor = 'bg-blue-400';
-                    } else if (todayRecord.is_tour === 1) {
-                      // Non-approved or rejected tour
-                      bgColor = 'bg-red-500';
-                    } else {
-                      bgColor = 'bg-red-500';
-                    }
-                  }
-                  const textColor = ['bg-yellow-500', 'bg-orange-400'].includes(bgColor) ? 'text-gray-800' : 'text-white';
+                  const dayDate = new Date(todayStr);
+                  const isSunday = dayDate.getDay() === 0;
+                  const isHoliday = holidays.includes(todayStr);
+                  const isFutureDate = false;
+                  const record = todayRecord;
+                  const { letter, circleClass, statusText } = deriveDayCellModel(
+                    record,
+                    isFutureDate,
+                    isSunday,
+                    isHoliday
+                  );
+                  const displayStatus =
+                    todayRecord?.is_tour === 1
+                      ? todayRecord?.tour_approval_status === 'approved'
+                        ? 'Tour (approved)'
+                        : 'Tour (pending)'
+                      : todayRecord?.status || 'Absent';
+                  let stripClass = 'from-rose-500 to-red-600';
+                  if (letter === 'P') stripClass = 'from-emerald-500 to-teal-600';
+                  else if (letter === 'L') stripClass = 'from-sky-500 to-blue-600';
+                  else if (letter === '–') stripClass = 'from-slate-400 to-slate-500';
+                  else if (letter === 'O' || letter === '!') stripClass = 'from-amber-500 to-orange-600';
+                  else if (letter === 'T')
+                    stripClass =
+                      todayRecord?.tour_approval_status === 'approved'
+                        ? 'from-fuchsia-500 to-pink-600'
+                        : 'from-rose-500 to-red-600';
+                  const dept =
+                    (employees || []).find((e) => e.employee_id === emp.employee_id)?.department?.trim() ||
+                    emp.department ||
+                    '—';
+                  const last7 = eachDayOfInterval({ start: subDays(new Date(), 6), end: new Date() });
+                  const todayCutoff = new Date();
+                  todayCutoff.setHours(0, 0, 0, 0);
                   return (
-                    <div key={emp.employee_id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex-shrink-0 w-48">
-                        <p className="text-sm font-medium text-gray-900">{emp.name}</p>
-                        <p className="text-xs text-gray-500">{emp.employee_id}</p>
+                    <div
+                      key={emp.employee_id}
+                      className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]"
+                    >
+                      <div
+                        className={`bg-gradient-to-r px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-white ${stripClass}`}
+                      >
+                        Today: {displayStatus}
                       </div>
-                      <div className={`flex-1 h-10 rounded flex items-center justify-center font-semibold ${bgColor} ${textColor} text-sm`}>
-                        {todayRecord?.is_tour === 1 ? (todayRecord?.tour_approval_status === 'approved' ? 'Tour (Approved)' : 'Tour (Pending)') : (todayRecord?.status || 'Absent')}
+                      <div className="space-y-4 p-4 sm:p-5">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600 ring-2 ring-white shadow-sm">
+                            {nameInitials(emp.name)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-semibold text-slate-900">{emp.name}</p>
+                            <p className="text-xs text-slate-500">
+                              {emp.employee_id}
+                              <span className="text-slate-300"> · </span>
+                              {dept}
+                            </p>
+                          </div>
+                          <div
+                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${circleClass}`}
+                            title={statusText}
+                          >
+                            {letter}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Last 7 days
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {last7.map((d) => {
+                              const ds = format(d, 'yyyy-MM-dd');
+                              const d0 = new Date(d);
+                              d0.setHours(0, 0, 0, 0);
+                              const isFut = d0 > todayCutoff;
+                              const sun = d.getDay() === 0;
+                              const hol = holidays.includes(ds);
+                              const rec = gridData[emp.employee_id]?.records[ds];
+                              const m = deriveDayCellModel(rec, isFut, sun, hol);
+                              return (
+                                <div
+                                  key={ds}
+                                  title={`${format(d, 'EEE d MMM')}: ${m.statusText}`}
+                                  className={`flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-bold ${m.circleClass}`}
+                                >
+                                  {m.letter}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        {showAttendanceTabs && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-11 w-full rounded-xl border-slate-200 font-semibold text-slate-800 hover:bg-slate-50"
+                            onClick={() => setActiveTab('punch')}
+                          >
+                            Mark today&apos;s status
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );
@@ -1017,12 +1332,14 @@ export const Attendance = () => {
               )}
             </div>
           ) : (
-            // Month grid view
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs sm:text-sm border-collapse">
+            <>
+            <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-slate-50/40 shadow-inner">
+              <table className="w-full border-collapse text-xs sm:text-sm">
                 <thead>
-                  <tr>
-                    <th className="sticky left-0 z-10 bg-gray-100 p-2 text-left font-semibold text-gray-700 border border-gray-200 min-w-[150px]">Employee</th>
+                  <tr className="border-b border-slate-200/80">
+                    <th className="sticky left-0 z-20 min-w-[200px] border-b border-r border-slate-200 bg-slate-100/95 p-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-600 backdrop-blur-sm sm:min-w-[220px]">
+                      Employee
+                    </th>
                     {(() => {
                       const year = parseInt(gridMonth.split('-')[0]);
                       const month = parseInt(gridMonth.split('-')[1]);
@@ -1036,40 +1353,64 @@ export const Attendance = () => {
                         return (
                           <th
                             key={dateStr}
-                            className={`p-1 sm:p-2 text-center font-medium border border-gray-200 min-w-[40px] ${
-                              isSunday || isHoliday ? 'bg-blue-200 text-blue-700' :
-                              isWeekend(day) ? 'bg-gray-100 text-gray-500' : 'bg-white text-gray-700'
+                            className={`min-w-[42px] border-b border-l border-slate-200 p-1.5 text-center font-semibold sm:min-w-[48px] sm:p-2 ${
+                              isSunday || isHoliday
+                                ? 'bg-sky-100 text-sky-800'
+                                : isWeekend(day)
+                                  ? 'bg-slate-100 text-slate-500'
+                                  : 'bg-white text-slate-700'
                             }`}
                             title={format(day, 'EEEE, MMM dd')}
                           >
-                            <div className="text-xs">{getDate(day)}</div>
+                            <div className="text-[10px] font-bold leading-none opacity-80">{format(day, 'EEE')}</div>
+                            <div className="mt-1 text-xs tabular-nums">{getDate(day)}</div>
                           </th>
                         );
                       });
                     })()}
-                    <th className="bg-gray-100 p-2 text-center font-semibold text-gray-700 border border-gray-200 min-w-[120px]">
-                      Present / Days
+                    <th className="min-w-[100px] border-b border-l border-slate-200 bg-slate-100 p-2 text-center text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                      Present / days
                     </th>
-                    <th className="bg-gray-100 p-2 text-center font-semibold text-gray-700 border border-gray-200 min-w-[100px]">
+                    <th className="min-w-[72px] border-b border-l border-slate-200 bg-slate-100 p-2 text-center text-[11px] font-bold uppercase tracking-wide text-slate-600">
                       Tours
                     </th>
-                    <th className="bg-gray-100 p-2 text-center font-semibold text-gray-700 border border-gray-200 min-w-[140px]">
-                      Late Logins
+                    <th className="min-w-[88px] border-b border-l border-slate-200 bg-slate-100 p-2 text-center text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                      Late logins
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.values(gridData).length === 0 ? (
+                  {gridRowsSorted.length === 0 ? (
                     <tr>
-                      <td colSpan="40" className="p-4 text-center text-gray-500">
+                      <td colSpan={daysInGridMonth + 4} className="p-10 text-center text-sm text-slate-500">
                         No attendance data yet for this month.
                       </td>
                     </tr>
+                  ) : filteredGridRowsForTable.length === 0 ? (
+                    <tr>
+                      <td colSpan={daysInGridMonth + 4} className="p-10 text-center text-sm text-slate-500">
+                        No employees match your search or department filter.
+                      </td>
+                    </tr>
                   ) : (
-                    Object.values(gridData).map((empData) => (
-                      <tr key={empData.employee_id}>
-                        <td className="sticky left-0 z-10 bg-gray-50 p-3 text-left font-medium text-gray-900 border border-gray-200 min-w-[150px]">
-                          <div>{empData.employee_name}</div>
+                    pagedGridRows.map((empData, rowIdx) => (
+                      <tr
+                        key={empData.employee_id}
+                        className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'}
+                      >
+                        <td className="sticky left-0 z-10 min-w-[200px] border-b border-r border-slate-100 bg-inherit p-3 text-left sm:min-w-[220px]">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200/90 text-xs font-bold text-slate-700 ring-2 ring-white shadow-sm">
+                              {nameInitials(empData.employee_name)}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="truncate font-semibold text-slate-900">{empData.employee_name}</div>
+                              <div className="text-[11px] font-medium text-slate-500">{empData.employee_id}</div>
+                              <div className="truncate text-[11px] text-slate-400">
+                                {getDeptForGridRow(empData.employee_id)}
+                              </div>
+                            </div>
+                          </div>
                         </td>
                         {(() => {
                           const year = parseInt(gridMonth.split('-')[0]);
@@ -1080,7 +1421,7 @@ export const Attendance = () => {
                           let totalWorkingDays = 0;
                           let presentDays = 0;
                           let tourCount = 0;
-                          let lateLoginCount = 0;
+                          const lateLoginCount = lateLogins[empData.employee_id]?.count || 0;
 
                           const cells = days.map((day) => {
                             const dateStr = format(day, 'yyyy-MM-dd');
@@ -1092,51 +1433,16 @@ export const Attendance = () => {
                             const isSunday = day.getDay() === 0;
                             const isHoliday = holidays.includes(dateStr);
                             const record = empData.records[dateStr];
-                            
-                            let bgColor = 'bg-gray-300';
-                            let statusText = '';
-                            
-                            // Check for Sunday or Holiday first
-                            if (isSunday || isHoliday) {
-                              bgColor = 'bg-blue-300';
-                              statusText = isSunday ? 'Sunday' : 'Holiday';
-                            } else if (record) {
-                              // Check for tour status
-                              if (record.is_tour === 1) {
-                                if (record.tour_approval_status === 'approved') {
-                                  statusText = 'Tour (Approved)';
-                                  bgColor = 'bg-pink-400';
-                                } else {
-                                  // Non-approved or rejected tour
-                                  statusText = 'Tour (Pending)';
-                                  bgColor = 'bg-red-500';
-                                }
-                              } else if (record.status === 'Leave') {
-                                statusText = 'Leave';
-                                bgColor = 'bg-blue-400';
-                              } else if (record.status === 'Present') {
-                                statusText = 'Present';
-                                bgColor = 'bg-green-500';
-                              } else if (record.status === 'Late') {
-                                statusText = 'Late (approval pending)';
-                                bgColor = 'bg-yellow-500';
-                              } else if (record.status === 'Incomplete') {
-                                statusText = 'Checked in (no punch-out yet)';
-                                bgColor = 'bg-orange-400';
-                              } else if (record.status === 'Pending Approval') {
-                                statusText = 'Pending approval';
-                                bgColor = 'bg-purple-500';
-                              } else {
-                                statusText = record.status;
-                                bgColor = 'bg-red-500';
-                              }
-                            } else if (isFutureDate) {
-                              statusText = 'No Data';
-                              bgColor = 'bg-gray-300';
-                            } else {
-                              statusText = 'Absent';
-                              bgColor = 'bg-red-500';
-                            }
+                            const { letter, circleClass, statusText } = deriveDayCellModel(
+                              record,
+                              isFutureDate,
+                              isSunday,
+                              isHoliday
+                            );
+                            const punchHint =
+                              record?.punch_in && typeof record.punch_in === 'string'
+                                ? ` · Check-in: ${record.punch_in.slice(0, 5)}`
+                                : '';
 
                             // Summary calculation:
                             // Count working days as non-future, non-sunday, non-holiday days.
@@ -1152,19 +1458,20 @@ export const Attendance = () => {
                                 tourCount += 1;
                               }
                             }
-                          
-                          // Get late login count for this employee for this month
-                          lateLoginCount = lateLogins[empData.employee_id]?.count || 0;
-                            
+
                             return (
                               <td
                                 key={dateStr}
-                                className={`p-2 border border-gray-200 text-center cursor-default hover:opacity-80 transition-opacity ${
-                                  isWeekend(day) ? 'bg-gray-50' : 'bg-white'
+                                className={`cursor-default border-b border-l border-slate-100 p-1.5 text-center transition-colors hover:bg-slate-100/80 sm:p-2 ${
+                                  isWeekend(day) ? 'bg-slate-50/50' : 'bg-white/80'
                                 }`}
-                                title={`${empData.employee_name} - ${format(day, 'EEEE, MMM dd')}: ${statusText}`}
+                                title={`${empData.employee_name} — ${format(day, 'EEEE, MMM dd')}: ${statusText}${punchHint}`}
                               >
-                                <div className={`w-8 h-8 rounded mx-auto ${bgColor}`}></div>
+                                <div
+                                  className={`mx-auto flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold leading-none ${circleClass}`}
+                                >
+                                  {letter}
+                                </div>
                               </td>
                             );
                           });
@@ -1172,13 +1479,13 @@ export const Attendance = () => {
                           return (
                             <>
                               {cells}
-                              <td className="p-2 border border-gray-200 text-center bg-gray-50 font-semibold text-gray-900 whitespace-nowrap">
+                              <td className="border-b border-l border-slate-100 bg-slate-50/90 p-2 text-center text-sm font-bold tabular-nums text-slate-800 whitespace-nowrap">
                                 {presentDays} / {totalWorkingDays}
                               </td>
-                              <td className="p-2 border border-gray-200 text-center bg-gray-50 font-semibold text-pink-600 whitespace-nowrap">
+                              <td className="border-b border-l border-slate-100 bg-slate-50/90 p-2 text-center text-sm font-bold tabular-nums text-fuchsia-600 whitespace-nowrap">
                                 {tourCount}
                               </td>
-                              <td className="p-2 border border-gray-200 text-center bg-gray-50 font-semibold text-green-600 whitespace-nowrap">
+                              <td className="border-b border-l border-slate-100 bg-slate-50/90 p-2 text-center text-sm font-bold tabular-nums text-emerald-600 whitespace-nowrap">
                                 {lateLoginCount}
                               </td>
                             </>
@@ -1190,6 +1497,41 @@ export const Attendance = () => {
                 </tbody>
               </table>
             </div>
+            {filteredGridRowsForTable.length > GRID_PAGE_SIZE && (
+              <div className="mt-5 flex flex-col items-stretch justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center">
+                <p className="text-center text-xs text-slate-600 sm:text-left">
+                  Page <span className="font-bold text-slate-900">{gridPage}</span> of{' '}
+                  <span className="font-bold text-slate-900">{gridPageCount}</span>
+                  <span className="text-slate-400"> · </span>
+                  {filteredGridRowsForTable.length} employees
+                </p>
+                <div className="flex justify-center gap-2 sm:justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9 rounded-xl border-slate-200"
+                    onClick={() => setGridPage((p) => Math.max(1, p - 1))}
+                    disabled={gridPage <= 1}
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9 rounded-xl border-slate-200"
+                    onClick={() => setGridPage((p) => Math.min(gridPageCount, p + 1))}
+                    disabled={gridPage >= gridPageCount}
+                    aria-label="Next page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </Card>
       )}
