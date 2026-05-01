@@ -8492,6 +8492,205 @@ Sales Team
 
 # ============= PAYROLL ROUTES =============
 
+@api_router.get('/salary/overview')
+def get_salary_overview(
+    month: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Admin/Accountant salary dashboard payload from employee + attendance + expense + fuel tables."""
+    if current_user.role not in ['Admin', 'Accountant']:
+        raise HTTPException(status_code=403, detail='Only Admin or Accountant can access salary overview')
+
+    today = attendance_local_now().date()
+    if month:
+        parts = month.split('-')
+        if len(parts) != 2:
+            raise HTTPException(status_code=400, detail='Month must be in YYYY-MM format')
+        try:
+            year = int(parts[0])
+            month_num = int(parts[1])
+        except ValueError:
+            raise HTTPException(status_code=400, detail='Month must be in YYYY-MM format')
+        if month_num < 1 or month_num > 12:
+            raise HTTPException(status_code=400, detail='Month must be in YYYY-MM format')
+    else:
+        year = today.year
+        month_num = today.month
+
+    month_str = f'{year}-{month_num:02d}'
+
+    employees = db.query(EmployeeModel).filter(
+        (EmployeeModel.status == 'Active') | (EmployeeModel.status.is_(None))
+    ).all()
+
+    employee_ids = [emp.employee_id for emp in employees if emp.employee_id]
+    employee_id_set = set(employee_ids)
+
+    attendance_records = []
+    if employee_ids:
+        attendance_records = db.query(AttendanceModel).filter(
+            AttendanceModel.employee_id.in_(employee_ids),
+            AttendanceModel.date.like(f'{month_str}%')
+        ).all()
+
+    month_start = f'{year}-{month_num:02d}-01'
+    month_end = f'{year}-{month_num:02d}-{monthrange(year, month_num)[1]:02d}'
+    holiday_dates = set(
+        row.date for row in db.query(GovernmentHolidayModel).filter(
+            GovernmentHolidayModel.date >= month_start,
+            GovernmentHolidayModel.date <= month_end
+        ).all()
+    )
+
+    records_by_employee: Dict[str, Dict[str, AttendanceModel]] = {}
+    for rec in attendance_records:
+        if not rec.employee_id:
+            continue
+        if rec.employee_id not in records_by_employee:
+            records_by_employee[rec.employee_id] = {}
+        records_by_employee[rec.employee_id][rec.date] = rec
+
+    attendance_by_employee: Dict[str, Dict[str, Any]] = {}
+    for emp in employees:
+        emp_id = emp.employee_id
+        if not emp_id:
+            continue
+        per_date = records_by_employee.get(emp_id, {})
+        present_days = 0
+        total_working_days = 0
+        tour_days = 0
+        late_days = 0
+
+        for day in range(1, monthrange(year, month_num)[1] + 1):
+            dt = date(year, month_num, day)
+            date_str = dt.isoformat()
+            is_future = dt > today
+            is_sunday = dt.weekday() == 6
+            is_holiday = date_str in holiday_dates
+
+            if not is_future and not is_sunday and not is_holiday:
+                total_working_days += 1
+                rec = per_date.get(date_str)
+                counts_as_present = (
+                    (getattr(rec, 'is_tour', 0) == 1 and getattr(rec, 'tour_approval_status', None) == 'approved')
+                    or getattr(rec, 'status', None) == 'Present'
+                )
+                if counts_as_present:
+                    present_days += 1
+                if getattr(rec, 'is_tour', 0) == 1 and getattr(rec, 'tour_approval_status', None) == 'approved':
+                    tour_days += 1
+
+        for rec in per_date.values():
+            if getattr(rec, 'is_tour', 0) == 1:
+                continue
+            punch_in = getattr(rec, 'punch_in', None)
+            if not punch_in or not isinstance(punch_in, str):
+                continue
+            parts = punch_in.split(':')
+            try:
+                h = int(parts[0])
+                mm = int(parts[1]) if len(parts) > 1 else 0
+            except (ValueError, TypeError):
+                continue
+            if h * 60 + mm > (10 * 60 + 30):
+                late_days += 1
+
+        attendance_by_employee[emp_id] = {
+            'employee_id': emp_id,
+            'employee_name': emp.name,
+            'present_days': present_days,
+            'absent_days': max(total_working_days - present_days, 0),
+            'working_days': total_working_days,
+            'late_days': late_days,
+            'half_day_days': 0,
+            'tour_days': tour_days
+        }
+
+    def expense_in_month(exp: ExpenseModel) -> bool:
+        if not getattr(exp, 'created_at', None):
+            return True
+        d = exp.created_at
+        return d.year == year and d.month == month_num
+
+    expense_by_employee: Dict[str, Dict[str, Any]] = {}
+    all_expenses = db.query(ExpenseModel).all()
+    for exp in all_expenses:
+        eid = exp.employee_id
+        if not eid or eid not in employee_id_set:
+            continue
+        if not expense_in_month(exp):
+            continue
+        if eid not in expense_by_employee:
+            expense_by_employee[eid] = {
+                'employee_id': eid,
+                'employee_name': exp.employee_name or eid,
+                'total_approved': 0.0,
+                'total_rejected': 0.0,
+                'total_pending': 0.0
+            }
+        amt = float(exp.amount or 0)
+        if exp.status == 'Approved':
+            expense_by_employee[eid]['total_approved'] += amt
+        elif exp.status == 'Partially-Approved':
+            partial_amt = float(exp.accountant_approved_amount or 0)
+            expense_by_employee[eid]['total_approved'] += partial_amt
+            expense_by_employee[eid]['total_rejected'] += (amt - partial_amt)
+        elif exp.status == 'Rejected':
+            expense_by_employee[eid]['total_rejected'] += amt
+        else:
+            expense_by_employee[eid]['total_pending'] += amt
+
+    vehicle_claims = []
+    all_claims = db.query(FuelExpenseClaimModel).all()
+    for claim in all_claims:
+        eid = claim.employee_id
+        if not eid or eid not in employee_id_set:
+            continue
+        if claim.claim_status not in ['Approved', 'Partially-Approved']:
+            continue
+        created_at = getattr(claim, 'created_at', None)
+        if created_at and (created_at.year != year or created_at.month != month_num):
+            continue
+        vehicle_claims.append({
+            'id': claim.id,
+            'employee_id': claim.employee_id,
+            'employee_name': claim.employee_name,
+            'vehicle_name': claim.vehicle_name,
+            'vehicle_id': claim.vehicle_id,
+            'km_driven': claim.km_driven,
+            'claimed_amount': claim.claimed_amount,
+            'approved_amount': claim.approved_amount if claim.approved_amount is not None else (claim.claimed_amount or 0),
+            'claim_status': claim.claim_status,
+            'created_at': created_at.isoformat() if created_at else None
+        })
+
+    payload_employees = [
+        {
+            'id': emp.id,
+            'employee_id': emp.employee_id,
+            'name': emp.name,
+            'department': emp.department,
+            'job_role': emp.job_role,
+            'salary': float(emp.salary or 0),
+            'status': emp.status
+        }
+        for emp in employees
+        if emp.employee_id
+    ]
+
+    payload_employees.sort(key=lambda x: ((x.get('name') or '').lower(), x.get('employee_id') or ''))
+    vehicle_claims.sort(key=lambda x: ((x.get('employee_name') or '').lower(), x.get('employee_id') or ''))
+
+    return {
+        'month': month_str,
+        'year': year,
+        'employees': payload_employees,
+        'attendance_by_employee': attendance_by_employee,
+        'expense_by_employee': expense_by_employee,
+        'vehicle_claims': vehicle_claims
+    }
+
 @api_router.get('/payroll/payslip/{employee_id}')
 def generate_payslip(
     employee_id: str,

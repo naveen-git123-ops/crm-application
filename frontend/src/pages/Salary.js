@@ -16,7 +16,6 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { buildSalaryAttendanceMetrics } from '@/utils/attendanceGridMetrics';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
@@ -68,35 +67,16 @@ export const Salary = () => {
     if (!canAccess) return;
     setLoading(true);
     try {
-      const [empRes, attRes, holRes, sumRes, fuelRes] = await Promise.all([
-        axios.get(`${API}/employees`, { headers: authHeader() }),
-        axios.get(`${API}/attendance`, { params: { month }, headers: authHeader() }),
-        axios.get(`${API}/government-holidays`, { params: { year }, headers: authHeader() }),
-        axios.get(`${API}/expenses/summary-by-employee`, {
-          params: { month: monthNum, year },
-          headers: authHeader()
-        }),
-        axios.get(`${API}/fuel-expense-claims`, {
-          params: { month: monthNum, year },
-          headers: authHeader()
-        })
-      ]);
-
-      const emps = (empRes.data || []).filter((e) => (e.status || 'Active') === 'Active');
-      setEmployees(emps);
-
-      /** Same present / working-day rules as Attendance grid (not `/attendance/summary`). */
-      setAttendanceById(
-        buildSalaryAttendanceMetrics(emps, attRes.data || [], holRes.data || [], month)
-      );
-
-      const expMap = {};
-      (sumRes.data?.employees || []).forEach((row) => {
-        expMap[row.employee_id] = row;
+      const { data } = await axios.get(`${API}/salary/overview`, {
+        params: { month },
+        headers: authHeader()
       });
-      setExpenseById(expMap);
 
-      setVehicleClaims(Array.isArray(fuelRes.data) ? fuelRes.data : []);
+      const emps = Array.isArray(data?.employees) ? data.employees : [];
+      setEmployees(emps);
+      setAttendanceById(data?.attendance_by_employee || {});
+      setExpenseById(data?.expense_by_employee || {});
+      setVehicleClaims(Array.isArray(data?.vehicle_claims) ? data.vehicle_claims : []);
     } catch (err) {
       console.error(err);
       toast.error(err.response?.data?.detail || 'Failed to load salary data');
@@ -107,7 +87,7 @@ export const Salary = () => {
     } finally {
       setLoading(false);
     }
-  }, [canAccess, month, monthNum, year]);
+  }, [canAccess, month]);
 
   useEffect(() => {
     load();
