@@ -8766,12 +8766,15 @@ def generate_payslip(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    employee = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
+    # Accept both internal UUID (`employees.id`) and business code (`employees.employee_id`)
+    employee = db.query(EmployeeModel).filter(
+        (EmployeeModel.id == employee_id) | (EmployeeModel.employee_id == employee_id)
+    ).first()
     if not employee:
         raise HTTPException(status_code=404, detail='Employee not found')
     
     attendance_records = db.query(AttendanceModel).filter(
-        AttendanceModel.employee_id == employee_id,
+        AttendanceModel.employee_id == employee.employee_id,
         AttendanceModel.date.like(f'{month}%')
     ).all()
     
@@ -8818,10 +8821,11 @@ def generate_payslip(
     p.save()
     
     buffer.seek(0)
-    return FileResponse(
+    filename = f'payslip_{employee.employee_id}_{month}.pdf'
+    return StreamingResponse(
         io.BytesIO(buffer.getvalue()),
         media_type='application/pdf',
-        filename=f'payslip_{employee.employee_id}_{month}.pdf'
+        headers={'Content-Disposition': f'attachment; filename=\"{filename}\"'}
     )
 
 # ============= VEHICLE TRACKING ROUTES =============
