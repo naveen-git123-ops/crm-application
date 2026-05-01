@@ -384,7 +384,8 @@ export const Attendance = () => {
             const rec = emp.records[dateStr];
             const countsAsPresent =
               (rec?.is_tour === 1 && rec?.tour_approval_status === 'approved') ||
-              rec?.status === 'Present';
+              rec?.status === 'Present' ||
+              rec?.status === 'Leave';
             if (countsAsPresent) presentDays += 1;
           }
         });
@@ -1450,7 +1451,8 @@ export const Attendance = () => {
                               totalWorkingDays += 1;
                               const countsAsPresent =
                                 (record?.is_tour === 1 && record?.tour_approval_status === 'approved') ||
-                                record?.status === 'Present';
+                                record?.status === 'Present' ||
+                                record?.status === 'Leave';
                               if (countsAsPresent) presentDays += 1;
                               
                               // Count tours

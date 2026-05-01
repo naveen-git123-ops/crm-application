@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.orm.attributes import flag_modified
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 import os
 import logging
 from pathlib import Path
@@ -3707,7 +3707,29 @@ def create_cgw_flow_metre(data: CGWFlowMetreCreate, current_user: UserModel = De
 
 @api_router.get('/cgw-flow-metres', response_model=List[CGWFlowMetre])
 def get_cgw_flow_metres(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    items = db.query(CGWFlowMetreModel).all()
+    try:
+        items = db.query(CGWFlowMetreModel).all()
+    except OperationalError as ex:
+        # Production-safe fallback: if DB is missing newly-added CGW columns,
+        # rerun migrations and retry once before returning an explicit schema error.
+        logging.exception('CGW fetch failed due to DB schema mismatch; attempting migrations')
+        db.rollback()
+        migrate_cgw_flow_metres_product_columns()
+        migrate_cgw_flow_metres_noc_columns()
+        migrate_cgw_flow_metres_attachments_json()
+        migrate_cgw_flow_metres_flow_metre_details_columns()
+        migrate_cgw_flow_metres_piezometer_details_json()
+        migrate_cgw_flow_metres_telemetry_portal_columns()
+        migrate_cgw_flow_metres_audit_columns()
+        try:
+            items = db.query(CGWFlowMetreModel).all()
+        except OperationalError:
+            db.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail='CGW table schema is out of date. Please run backend migrations and retry.',
+            ) from ex
+
     for it in items:
         _hydrate_cgw_flow_metre_attachments(it)
     return items
@@ -6348,6 +6370,9 @@ def get_attendance_summary(month: str, current_user: UserModel = Depends(get_cur
         # Only fully approved / completed days count as present
         if st == 'Present':
             data['present_days'] += 1
+        elif st == 'Leave':
+            # Approved leave is treated as a worked day for monthly totals
+            data['present_days'] += 1
         elif st == 'Late':
             # Late punch-in pending admin approval — not counted as present until approved
             data['late_days'] += 1
@@ -8574,7 +8599,7 @@ def get_salary_overview(
                 rec = per_date.get(date_str)
                 counts_as_present = (
                     (getattr(rec, 'is_tour', 0) == 1 and getattr(rec, 'tour_approval_status', None) == 'approved')
-                    or getattr(rec, 'status', None) == 'Present'
+                    or getattr(rec, 'status', None) in ['Present', 'Leave']
                 )
                 if counts_as_present:
                     present_days += 1

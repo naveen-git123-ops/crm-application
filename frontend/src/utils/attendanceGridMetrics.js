@@ -62,7 +62,8 @@ export function computePresentWorkingAbsentForMonth(recordsByDate, monthStr, hol
       totalWorkingDays += 1;
       const countsAsPresent =
         (record?.is_tour === 1 && record?.tour_approval_status === 'approved') ||
-        record?.status === 'Present';
+        record?.status === 'Present' ||
+        record?.status === 'Leave';
       if (countsAsPresent) presentDays += 1;
       if (record?.is_tour === 1 && record?.tour_approval_status === 'approved') {
         tourDays += 1;
