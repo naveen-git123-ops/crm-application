@@ -1374,6 +1374,48 @@ def migrate_cgw_flow_metres_audit_columns():
 
 migrate_cgw_flow_metres_audit_columns()
 
+
+def _cgw_sql_type_for_column(col) -> str:
+    """Best-effort SQL type mapping for dynamic CGW column backfill."""
+    t = col.type
+    if isinstance(t, DateTime):
+        return 'DATETIME'
+    if isinstance(t, Integer):
+        return 'INTEGER'
+    if isinstance(t, Float):
+        return 'FLOAT'
+    if isinstance(t, Text):
+        return 'TEXT'
+    if isinstance(t, String):
+        ln = getattr(t, 'length', None) or 255
+        return f'VARCHAR({ln})'
+    return 'VARCHAR(255)'
+
+
+def migrate_cgw_flow_metres_model_columns():
+    """
+    Ensure cgw_flow_metres has every column present in CGWFlowMetreModel.
+    This guards production servers that missed one or more incremental migrations.
+    """
+    try:
+        insp = inspect(engine)
+        existing = {c['name'] for c in insp.get_columns('cgw_flow_metres')}
+        model_cols = [c for c in CGWFlowMetreModel.__table__.columns]
+        missing = [c for c in model_cols if c.name not in existing]
+        if not missing:
+            return
+
+        with engine.begin() as conn:
+            for col in missing:
+                ddl_type = _cgw_sql_type_for_column(col)
+                conn.execute(text(f'ALTER TABLE cgw_flow_metres ADD COLUMN {col.name} {ddl_type} NULL'))
+                print(f'Added missing model column {col.name} to cgw_flow_metres')
+    except Exception as e:
+        print(f'Migration error for cgw_flow_metres model column sync: {e}')
+
+
+migrate_cgw_flow_metres_model_columns()
+
 # Seed default roles (Admin cannot be edited/deleted; others can)
 DEFAULT_PERMISSION_KEYS = [
     "dashboard", "leads", "employees", "attendance", "monthly-report", "leaves", "expenses",
@@ -3721,6 +3763,7 @@ def get_cgw_flow_metres(current_user: UserModel = Depends(get_current_user), db:
         migrate_cgw_flow_metres_piezometer_details_json()
         migrate_cgw_flow_metres_telemetry_portal_columns()
         migrate_cgw_flow_metres_audit_columns()
+        migrate_cgw_flow_metres_model_columns()
         try:
             items = db.query(CGWFlowMetreModel).all()
         except OperationalError:
