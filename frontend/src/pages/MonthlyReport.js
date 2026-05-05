@@ -79,7 +79,7 @@ const attendanceGridRowClass = (row) => {
 
 export const MonthlyReport = () => {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'Admin';
+  const canSelectEmployee = user?.role === 'Admin' || user?.role === 'Accountant';
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
@@ -89,7 +89,7 @@ export const MonthlyReport = () => {
 
   useEffect(() => {
     if (!user) return;
-    if (user.role !== 'Admin') {
+    if (!canSelectEmployee) {
       setReportEmployeeId(user.employee_id || '');
       return;
     }
@@ -97,10 +97,10 @@ export const MonthlyReport = () => {
       if (prev) return prev;
       return user.employee_id || '';
     });
-  }, [user?.id, user?.role, user?.employee_id]);
+  }, [user?.id, user?.role, user?.employee_id, canSelectEmployee]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canSelectEmployee) return;
     let cancelled = false;
     (async () => {
       try {
@@ -118,7 +118,7 @@ export const MonthlyReport = () => {
     return () => {
       cancelled = true;
     };
-  }, [isAdmin]);
+  }, [canSelectEmployee]);
 
   const load = useCallback(async () => {
     const canView =
@@ -130,13 +130,13 @@ export const MonthlyReport = () => {
       setLateData(null);
       return;
     }
-    if (isAdmin && !reportEmployeeId) {
+    if (canSelectEmployee && !reportEmployeeId) {
       setLoading(false);
       setData(null);
       setLateData(null);
       return;
     }
-    if (!isAdmin && !user?.employee_id) {
+    if (!canSelectEmployee && !user?.employee_id) {
       setLoading(false);
       setData(null);
       setLateData(null);
@@ -144,7 +144,7 @@ export const MonthlyReport = () => {
     }
     setLoading(true);
     const params = { month };
-    if (isAdmin && reportEmployeeId) {
+    if (canSelectEmployee && reportEmployeeId) {
       params.employee_id = reportEmployeeId;
     }
     try {
@@ -177,7 +177,7 @@ export const MonthlyReport = () => {
     } finally {
       setLoading(false);
     }
-  }, [month, user, isAdmin, reportEmployeeId]);
+  }, [month, user, canSelectEmployee, reportEmployeeId]);
 
   useEffect(() => {
     load();
@@ -199,7 +199,7 @@ export const MonthlyReport = () => {
     );
   }
 
-  if (!isAdmin && !user?.employee_id) {
+  if (!canSelectEmployee && !user?.employee_id) {
     return (
       <div className="space-y-6" data-testid="monthly-report-page">
         <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -249,7 +249,7 @@ export const MonthlyReport = () => {
 
       <Card className="p-4 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="flex flex-col lg:flex-row gap-5 lg:items-end lg:justify-between">
-          {isAdmin ? (
+          {canSelectEmployee ? (
             <div className="space-y-2 w-full lg:max-w-md">
               <Label htmlFor="monthly-report-employee" className="text-sm font-medium text-gray-700">
                 Employee
@@ -323,7 +323,7 @@ export const MonthlyReport = () => {
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
         </div>
-      ) : isAdmin && !reportEmployeeId ? (
+      ) : canSelectEmployee && !reportEmployeeId ? (
         <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
           <BarChart3 className="h-10 w-10 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-600">Select an employee above to load their monthly attendance report.</p>

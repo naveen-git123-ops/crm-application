@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -237,6 +238,10 @@ export const Attendance = () => {
   const [showLateReasonDialog, setShowLateReasonDialog] = useState(false);
   const [lateReasonText, setLateReasonText] = useState('');
   const [pendingLatePunch, setPendingLatePunch] = useState(null); // { action, employeeId }
+  const [showTourReasonDialog, setShowTourReasonDialog] = useState(false);
+  const [tourPlaceText, setTourPlaceText] = useState('');
+  const [tourReasonText, setTourReasonText] = useState('');
+  const [pendingTourPunch, setPendingTourPunch] = useState(null); // { action, employeeId, lateReason }
 
   // Grid view states
   const [gridMonth, setGridMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -259,8 +264,9 @@ export const Attendance = () => {
 
   // Attendance permissions:
   // - Admin/HR: full attendance management (grid, regularize, report, late)
-  // - Accountant: limited (grid + punch in/out only)
-  const canManageAttendance = ['Admin', 'HR', 'Accountant'].includes(user?.role); // legacy flag used in logic below
+  // - Accountant: limited (grid + self punch in/out only, no employee selector)
+  const canManageAttendance = ['Admin', 'HR', 'Accountant'].includes(user?.role); // legacy flag used in non-punch sections
+  const canSelectPunchEmployee = ['Admin', 'HR'].includes(user?.role);
   const canManageAttendanceFull = ['Admin', 'HR'].includes(user?.role);
   const canManageAttendanceGrid = ['Admin', 'HR', 'Accountant'].includes(user?.role);
   /** Employees (and others not on the admin grid) can open a personal month grid with only their rows */
@@ -273,7 +279,7 @@ export const Attendance = () => {
   useEffect(() => {
     fetchEmployees();
     fetchAttendance();
-    if (!canManageAttendance) {
+    if (!canSelectPunchEmployee) {
       fetchTodayAttendanceWithSessions();
     }
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -281,7 +287,7 @@ export const Attendance = () => {
   }, []);
 
   useEffect(() => {
-    if (user?.employee_id && !canManageAttendance) {
+    if (user?.employee_id && !canSelectPunchEmployee) {
       setSelectedEmployee(user.employee_id);
     }
   }, [user]);
@@ -315,7 +321,7 @@ export const Attendance = () => {
       const month = format(new Date(), 'yyyy-MM');
       const res = await axios.get(`${API}/attendance`, { params: { month }, headers: authHeader() });
       setAttendance(res.data);
-      const employeeId = canManageAttendance ? selectedEmployee : user?.employee_id;
+      const employeeId = canSelectPunchEmployee ? selectedEmployee : user?.employee_id;
       if (employeeId) {
         const todayStr = format(new Date(), 'yyyy-MM-dd');
         const todayRecord = res.data.find(
@@ -730,14 +736,14 @@ export const Attendance = () => {
     });
 
   const handlePunch = async (action) => {
-    const employeeId = canManageAttendance ? selectedEmployee : user?.employee_id;
+    const employeeId = canSelectPunchEmployee ? selectedEmployee : user?.employee_id;
     if (!employeeId) {
       toast.error('Employee information not available');
       return;
     }
 
     // For punch_out by employees (non-admins), require work log first
-    if (action === 'punch_out' && !canManageAttendance) {
+    if (action === 'punch_out' && !canSelectPunchEmployee) {
       try {
         const workLogStatus = await checkTodayWorkLog();
         if (!workLogStatus?.has_logged_today) {
@@ -795,10 +801,10 @@ export const Attendance = () => {
     setLateReasonText('');
   };
 
-  const executePunch = async (action, employeeId, lateReason = '') => {
+  const executePunch = async (action, employeeId, lateReason = '', tourPlace = '', tourReason = '') => {
     let latitude = null;
     let longitude = null;
-    if (!canManageAttendance) {
+    if (!canSelectPunchEmployee) {
       setPunchLoading(true);
       try {
         const loc = await getLocation();
@@ -816,6 +822,8 @@ export const Attendance = () => {
       if (latitude != null) payload.latitude = latitude;
       if (longitude != null) payload.longitude = longitude;
       if (lateReason) payload.late_reason = lateReason;
+      if (tourPlace) payload.tour_place = tourPlace;
+      if (tourReason) payload.tour_reason = tourReason;
       const res = await axios.post(`${API}/attendance/punch`, payload, { headers: authHeader() });
       const msg = res.data?.message || (action === 'punch_in' ? 'Punch In recorded' : 'Punch Out recorded');
       if (res.data?.is_tour) {
@@ -824,14 +832,48 @@ export const Attendance = () => {
         toast.success(msg);
       }
       fetchAttendance();
-      if (!canManageAttendance) {
+      if (!canSelectPunchEmployee) {
         fetchTodayAttendanceWithSessions();
       }
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Punch failed');
+      const detail = err.response?.data?.detail || 'Punch failed';
+      if (typeof detail === 'string' && detail.toLowerCase().includes('tour place and reason are required')) {
+        setPendingTourPunch({ action, employeeId, lateReason });
+        setTourPlaceText('');
+        setTourReasonText('');
+        setShowTourReasonDialog(true);
+      } else {
+        toast.error(detail);
+      }
     } finally {
       setPunchLoading(false);
     }
+  };
+
+  const handleSubmitTourReasonAndPunch = async () => {
+    const place = tourPlaceText.trim();
+    const reason = tourReasonText.trim();
+    if (!place || !reason) {
+      toast.error('Tour place and reason are required');
+      return;
+    }
+    if (!pendingTourPunch?.action || !pendingTourPunch?.employeeId) {
+      setShowTourReasonDialog(false);
+      return;
+    }
+    setShowTourReasonDialog(false);
+    const { action, employeeId, lateReason } = pendingTourPunch;
+    setPendingTourPunch(null);
+    setTourPlaceText('');
+    setTourReasonText('');
+    await executePunch(action, employeeId, lateReason || '', place, reason);
+  };
+
+  const handleCancelTourReasonDialog = () => {
+    setShowTourReasonDialog(false);
+    setPendingTourPunch(null);
+    setTourPlaceText('');
+    setTourReasonText('');
   };
 
   const handleSubmitPunchOutWorkLog = async () => {
@@ -999,7 +1041,7 @@ export const Attendance = () => {
       data-testid="attendance-page"
     >
       {/* Location notice for employees */}
-      {!canManageAttendance && (
+      {!canSelectPunchEmployee && (
         <Card className="p-4 sm:p-5 rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-white shadow-[0_2px_12px_rgba(0,0,0,0.04)] flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
             <MapPin className="h-5 w-5" />
@@ -1628,7 +1670,7 @@ export const Attendance = () => {
         <Card className="p-4 sm:p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
           <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Mark Attendance</h3>
 
-          {!canManageAttendance && user && (
+          {!canSelectPunchEmployee && user && (
             <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
               <div className="flex items-center gap-3">
                 <User className="h-10 w-10 text-gray-400" />
@@ -1640,7 +1682,7 @@ export const Attendance = () => {
             </div>
           )}
 
-          {canManageAttendance && (
+          {canSelectPunchEmployee && (
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">Select Employee</label>
               <select
@@ -1664,7 +1706,7 @@ export const Attendance = () => {
               size="lg"
               className="h-14 sm:h-20 text-base sm:text-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 min-h-[48px]"
               onClick={() => handlePunch('punch_in')}
-              disabled={canManageAttendance ? (todayAttendance?.is_active_session === 1 || punchLoading) : (isPunchedIn || punchLoading)}
+              disabled={canSelectPunchEmployee ? (todayAttendance?.is_active_session === 1 || punchLoading) : (isPunchedIn || punchLoading)}
               data-testid="punch-in-button"
             >
               {punchLoading ? (
@@ -1681,7 +1723,7 @@ export const Attendance = () => {
               variant="outline"
               className="h-14 sm:h-20 text-base sm:text-lg border-gray-300 text-gray-900 hover:bg-gray-50 font-semibold min-h-[48px]"
               onClick={() => handlePunch('punch_out')}
-              disabled={canManageAttendance ? (!todayAttendance || todayAttendance.is_active_session !== 1 || punchLoading) : (!isPunchedIn || punchLoading)}
+              disabled={canSelectPunchEmployee ? (!todayAttendance || todayAttendance.is_active_session !== 1 || punchLoading) : (!isPunchedIn || punchLoading)}
               data-testid="punch-out-button"
             >
               {punchLoading ? (
@@ -1843,6 +1885,8 @@ export const Attendance = () => {
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch In (IST)</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch Out (IST)</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Hours</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Tour Place</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Tour Reason</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Approval Status</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
                   </tr>
@@ -1863,6 +1907,8 @@ export const Attendance = () => {
                       <td className="py-3 px-4 font-mono text-gray-700">{formatPunchTime(row.punch_in)}</td>
                       <td className="py-3 px-4 font-mono text-gray-700">{formatPunchTime(row.punch_out)}</td>
                       <td className="py-3 px-4 font-mono text-gray-700">{row.work_hours?.toFixed(2) ?? '–'} hrs</td>
+                      <td className="py-3 px-4 text-gray-700">{row.tour_place || '—'}</td>
+                      <td className="py-3 px-4 text-gray-700 max-w-[320px]">{row.tour_reason || '—'}</td>
                       <td className="py-3 px-4">
                         <span
                           className={`inline-block px-2 py-1 rounded text-xs font-medium ${
@@ -2449,6 +2495,62 @@ export const Attendance = () => {
               disabled={punchLoading || !lateReasonText.trim()}
             >
               {punchLoading ? 'Submitting…' : 'Submit for approval'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showTourReasonDialog} onOpenChange={(open) => { if (!open) handleCancelTourReasonDialog(); }}>
+        <DialogContent className="sm:max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0 pointer-events-auto">
+          <div className="bg-fuchsia-600 text-white p-5 rounded-t-lg">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+                <Briefcase className="h-5 w-5" />
+                Tour details required
+              </DialogTitle>
+              <DialogDescription className="text-fuchsia-100 text-sm mt-1">
+                You are punching outside office. Enter tour place and reason so it can be sent for admin/manager approval.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="space-y-3 p-5">
+            <div className="space-y-1.5">
+              <Label htmlFor="tour-place-text" className="text-sm font-semibold text-gray-900">
+                Tour place (required) *
+              </Label>
+              <Input
+                id="tour-place-text"
+                value={tourPlaceText}
+                onChange={(e) => setTourPlaceText(e.target.value)}
+                placeholder="e.g. Client site - Salt Lake, Kolkata"
+                className="h-10"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="tour-reason-text" className="text-sm font-semibold text-gray-900">
+                Tour reason (required) *
+              </Label>
+              <textarea
+                id="tour-reason-text"
+                value={tourReasonText}
+                onChange={(e) => setTourReasonText(e.target.value)}
+                rows={4}
+                placeholder="e.g. On-site installation, client meeting, field verification..."
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end p-5 border-t border-gray-200 bg-gray-50">
+            <Button type="button" variant="outline" className="border-gray-300" onClick={handleCancelTourReasonDialog} disabled={punchLoading}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-fuchsia-600 text-white hover:bg-fuchsia-700"
+              onClick={handleSubmitTourReasonAndPunch}
+              disabled={punchLoading || !tourPlaceText.trim() || !tourReasonText.trim()}
+            >
+              {punchLoading ? 'Submitting…' : 'Submit tour request'}
             </Button>
           </div>
         </DialogContent>

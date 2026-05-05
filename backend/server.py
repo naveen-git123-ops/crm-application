@@ -190,6 +190,8 @@ class AttendanceModel(Base):
     punch_out_lng = Column(Float, nullable=True)
     is_tour = Column(Integer, default=0)
     tour_approval_status = Column(String(50), nullable=True)  # 'pending', 'approved', 'rejected'
+    tour_place = Column(String(255), nullable=True)
+    tour_reason = Column(String(500), nullable=True)
     is_active_session = Column(Integer, default=0)  # 1 if currently punched in
 
 
@@ -952,6 +954,23 @@ def migrate_late_punch_reason_columns():
             pass
 
 migrate_late_punch_reason_columns()
+
+def migrate_tour_reason_columns():
+    """Add tour_place and tour_reason columns to attendance if missing."""
+    from sqlalchemy import text, inspect
+    with engine.connect() as conn:
+        try:
+            inspector = inspect(engine)
+            cols = [col['name'] for col in inspector.get_columns('attendance')]
+            if 'tour_place' not in cols:
+                conn.execute(text("ALTER TABLE attendance ADD COLUMN tour_place VARCHAR(255) NULL"))
+            if 'tour_reason' not in cols:
+                conn.execute(text("ALTER TABLE attendance ADD COLUMN tour_reason VARCHAR(500) NULL"))
+            conn.commit()
+        except Exception:
+            pass
+
+migrate_tour_reason_columns()
 
 def migrate_leads_add_category_and_contacts():
     """Add category, sub_category, and contacts columns to leads if missing (for new Leads UI)."""
@@ -1822,6 +1841,8 @@ class Attendance(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_tour: Optional[int] = None
     tour_approval_status: Optional[str] = None
+    tour_place: Optional[str] = None
+    tour_reason: Optional[str] = None
     is_active_session: Optional[int] = None
     sessions: Optional[List[AttendanceSession]] = None
 
@@ -1881,6 +1902,8 @@ class AttendancePunch(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     late_reason: Optional[str] = None
+    tour_place: Optional[str] = None
+    tour_reason: Optional[str] = None
 
 class AttendanceSummary(BaseModel):
     employee_id: str
@@ -5256,11 +5279,17 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             late_reason_in = (punch_data.late_reason or '').strip()
             if is_late and not late_reason_in:
                 raise HTTPException(status_code=400, detail='Reason is required for late punch-in before approval can be requested')
+            tour_place_in = (punch_data.tour_place or '').strip()
+            tour_reason_in = (punch_data.tour_reason or '').strip()
+            if not at_office and (not tour_place_in or not tour_reason_in):
+                raise HTTPException(status_code=400, detail='Tour place and reason are required for tour punch-in')
             existing.punch_in = current_time
             existing.punch_in_lat = punch_data.latitude
             existing.punch_in_lng = punch_data.longitude
             existing.is_tour = 1 if not at_office else 0
             existing.tour_approval_status = 'pending' if not at_office else None
+            existing.tour_place = tour_place_in if not at_office else None
+            existing.tour_reason = tour_reason_in if not at_office else None
             existing.is_active_session = 1
             existing.status = 'Late' if is_late else 'Incomplete'
             db.commit()
@@ -5306,6 +5335,10 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         late_reason_first = (punch_data.late_reason or '').strip()
         if is_late and not late_reason_first:
             raise HTTPException(status_code=400, detail='Reason is required for late punch-in before approval can be requested')
+        tour_place_first = (punch_data.tour_place or '').strip()
+        tour_reason_first = (punch_data.tour_reason or '').strip()
+        if not at_office and (not tour_place_first or not tour_reason_first):
+            raise HTTPException(status_code=400, detail='Tour place and reason are required for tour punch-in')
         
         # On-time punch-in: day not complete until punch-out (before 7 PM) and approvals
         status = 'Late' if is_late else 'Incomplete'
@@ -5320,6 +5353,8 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             punch_in_lng=punch_data.longitude,
             is_tour=1 if not at_office else 0,
             tour_approval_status='pending' if not at_office else None,
+            tour_place=tour_place_first if not at_office else None,
+            tour_reason=tour_reason_first if not at_office else None,
             is_active_session=1,
         )
         db.add(new_attendance)
@@ -5379,6 +5414,10 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         late_reason_out = (punch_data.late_reason or '').strip()
         if is_late_punch_out and not late_reason_out:
             raise HTTPException(status_code=400, detail='Reason is required for late punch-out before approval can be requested')
+        tour_place_out = (punch_data.tour_place or '').strip()
+        tour_reason_out = (punch_data.tour_reason or '').strip()
+        if not at_office and (not tour_place_out or not tour_reason_out):
+            raise HTTPException(status_code=400, detail='Tour place and reason are required for tour punch-out')
         
         # Find the session number for this session
         last_session = db.query(AttendanceSessionModel).filter(
@@ -5434,9 +5473,12 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         existing.total_work_hours = round(total_hours, 2)
         
         # If punch out is outside office, ensure record is marked as tour if not already
-        if not at_office and existing.is_tour != 1:
-            existing.is_tour = 1
-            existing.tour_approval_status = 'pending'
+        if not at_office:
+            if existing.is_tour != 1:
+                existing.is_tour = 1
+                existing.tour_approval_status = 'pending'
+            existing.tour_place = tour_place_out
+            existing.tour_reason = tour_reason_out
         
         db.commit()
         db.refresh(existing)
@@ -5524,6 +5566,8 @@ def get_today_attendance(
             'total_work_hours': existing.total_work_hours,
             'status': existing.status,
             'is_active_session': existing.is_active_session,
+            'tour_place': getattr(existing, 'tour_place', None),
+            'tour_reason': getattr(existing, 'tour_reason', None),
         },
         'sessions': session_list,
         'total_work_hours': existing.total_work_hours,
@@ -5614,6 +5658,8 @@ def get_tour_pending(
             'work_hours': r.work_hours,
             'status': r.status,
             'tour_approval_status': r.tour_approval_status,
+            'tour_place': getattr(r, 'tour_place', None),
+            'tour_reason': getattr(r, 'tour_reason', None),
             'punch_in_lat': getattr(r, 'punch_in_lat', None),
             'punch_in_lng': getattr(r, 'punch_in_lng', None),
         }
@@ -6138,8 +6184,8 @@ def get_attendance_monthly_report(
     Monthly attendance for every calendar day. Each day has ``status`` of Present, Absent, or Holiday only
     (Sundays, government holidays, and future dates in the month count as Holiday; missing punch on a working
     day is Absent). Punch times use first in / last out from sessions.
-    Requires ``monthly-report`` permission. Non-admins always see their own linked ``employee_id`` only.
-    Admins may pass ``employee_id`` (business employee id) to view any employee's report.
+    Requires ``monthly-report`` permission. Admin and Accountant may pass ``employee_id`` (business employee id)
+    to view any employee's report. Other roles always see their own linked ``employee_id`` only.
     """
     finalize_stale_attendance_without_punch_out(db)
     try:
@@ -6153,7 +6199,8 @@ def get_attendance_monthly_report(
         raise HTTPException(status_code=400, detail='Invalid month; use YYYY-MM')
 
     requested = (employee_id or '').strip()
-    if current_user.role == 'Admin':
+    role_name = (current_user.role or '').strip().lower()
+    if role_name in ('admin', 'accountant'):
         if requested:
             emp_row = db.query(EmployeeModel).filter(EmployeeModel.employee_id == requested).first()
             if not emp_row:
@@ -6361,7 +6408,7 @@ def get_attendance_monthly_late_report(
 ) -> Dict[str, Any]:
     """
     Late punch-in and punch-out requests for the month (with employee reasons), for analytics on the monthly report.
-    Same access rules as ``/attendance/monthly-report``.
+    Same access rules as ``/attendance/monthly-report`` (Admin and Accountant can select any employee).
     """
     try:
         parts = month.split('-')
@@ -6374,7 +6421,8 @@ def get_attendance_monthly_late_report(
         raise HTTPException(status_code=400, detail='Invalid month; use YYYY-MM')
 
     requested = (employee_id or '').strip()
-    if current_user.role == 'Admin':
+    role_name = (current_user.role or '').strip().lower()
+    if role_name in ('admin', 'accountant'):
         if requested:
             emp_row = db.query(EmployeeModel).filter(EmployeeModel.employee_id == requested).first()
             if not emp_row:
