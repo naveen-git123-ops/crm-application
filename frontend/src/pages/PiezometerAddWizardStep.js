@@ -1,35 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
-import { toast } from 'sonner';
-
-function LocalImagePreviews({ files }) {
-  const list = Array.isArray(files) ? files : [];
-  const [urls, setUrls] = useState([]);
-  useEffect(() => {
-    const imgs = list.filter((f) => f && typeof f.type === 'string' && f.type.startsWith('image/'));
-    const u = imgs.map((f) => URL.createObjectURL(f));
-    setUrls(u);
-    return () => {
-      u.forEach((x) => URL.revokeObjectURL(x));
-    };
-  }, [list]);
-  if (!urls.length) return null;
-  return (
-    <div className="flex flex-wrap gap-2 pt-1">
-      {urls.map((src, i) => (
-        <img
-          key={src}
-          src={src}
-          alt={list[i]?.name ? `Preview ${list[i].name}` : `Preview ${i + 1}`}
-          className="h-20 w-20 rounded border border-gray-200 object-cover bg-gray-100"
-        />
-      ))}
-    </div>
-  );
-}
+import { CgwMultiFilePicker } from '@/components/CgwMultiFilePicker';
 
 export const EMPTY_PIEZO_ROW = {
   piezometer_make: '',
@@ -63,10 +37,10 @@ export const EMPTY_PIEZO_ROW = {
 
 export const EMPTY_PIEZO_FILES = () => ({
   bwPhotos: [],
-  calibrationCert: undefined,
+  calibrationCert: [],
   telemetryPhotos: [],
-  telemetryExcel: undefined,
-  priorTelemetryService: undefined,
+  telemetryExcel: [],
+  priorTelemetryService: [],
 });
 
 export function piezoRowToPersist(r) {
@@ -103,9 +77,6 @@ function PiezometerAddWizardStep({
           const bundle = piezometerFiles[idx] || {};
           const patchBundle = (patch) =>
             setPiezometerFiles((prev) => prev.map((b, i) => (i === idx ? { ...b, ...patch } : b)));
-          const setOneFile = (key, file) =>
-            setPiezometerFiles((prev) => prev.map((b, i) => (i === idx ? { ...b, [key]: file || undefined } : b)));
-
           return (
             <Card key={idx} className="p-4 border border-gray-200 space-y-4">
               <p className="text-sm font-semibold text-gray-800">Piezometer {idx + 1}</p>
@@ -138,60 +109,26 @@ function PiezometerAddWizardStep({
                     />
                   </div>
                 </div>
-                <div className="space-y-2 border-t border-gray-200 pt-3">
-                  <Label className="text-sm font-medium text-gray-700">BW with piezometer photo</Label>
-                  <Input
-                    type="file"
-                    multiple
-                    accept="image/*,.jpg,.jpeg,.png,.webp,.gif"
-                    onChange={(e) => {
-                      const picked = e.target.files ? Array.from(e.target.files) : [];
-                      e.target.value = '';
-                      const imgs = picked.filter(
-                        (f) => f.type.startsWith('image/') || /\.(jpe?g|png|gif|webp)$/i.test(f.name)
-                      );
-                      if (imgs.length < picked.length) toast.error('BW piezometer photos accept image files only');
-                      patchBundle({ bwPhotos: imgs });
-                    }}
-                    className="h-11 text-sm"
-                  />
-                  <LocalImagePreviews files={bundle.bwPhotos} />
-                  {(bundle.bwPhotos || []).length > 0 ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 text-xs text-gray-600"
-                      onClick={() => patchBundle({ bwPhotos: [] })}
-                    >
-                      Clear BW photos
-                    </Button>
-                  ) : (
-                    <p className="text-xs text-gray-400">Multiple images; preview above; uploads after save (S3).</p>
-                  )}
-                </div>
+                <CgwMultiFilePicker
+                  label="BW with piezometer photo"
+                  accept="image/*,.jpg,.jpeg,.png,.webp,.gif"
+                  imageOnly
+                  files={bundle.bwPhotos}
+                  onChange={(bwPhotos) => patchBundle({ bwPhotos })}
+                  hint="Multiple images; uploads after save (S3)."
+                  className="border-t border-gray-200 pt-3"
+                />
               </div>
 
               <div className="rounded-lg border border-gray-200 p-3 space-y-3">
                 <p className="text-sm font-semibold text-gray-800">Calibration certificate</p>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-gray-700">Certificate (file)</Label>
-                  <Input
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      e.target.value = '';
-                      setOneFile('calibrationCert', f);
-                    }}
-                    className="h-11 text-sm"
-                  />
-                  {bundle.calibrationCert ? (
-                    <p className="text-xs text-gray-600">Selected: {bundle.calibrationCert.name}</p>
-                  ) : (
-                    <p className="text-xs text-gray-400">Uploads after save (S3).</p>
-                  )}
-                </div>
+                <CgwMultiFilePicker
+                  label="Certificate (file)"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                  files={bundle.calibrationCert}
+                  onChange={(calibrationCert) => patchBundle({ calibrationCert })}
+                  hint="Uploads after save (S3)."
+                />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label className="text-sm font-medium text-gray-700">Valid from</Label>
@@ -347,38 +284,15 @@ function PiezometerAddWizardStep({
                     </div>
                   </div>
 
-                  <div className="space-y-2 rounded-md border border-gray-200 bg-white p-3">
-                    <Label className="text-sm font-medium text-gray-700">Upload telemetry photo</Label>
-                    <Input
-                      type="file"
-                      multiple
-                      accept="image/*,.jpg,.jpeg,.png,.webp,.gif"
-                      onChange={(e) => {
-                        const picked = e.target.files ? Array.from(e.target.files) : [];
-                        e.target.value = '';
-                        const imgs = picked.filter(
-                          (f) => f.type.startsWith('image/') || /\.(jpe?g|png|gif|webp)$/i.test(f.name)
-                        );
-                        if (imgs.length < picked.length) toast.error('Telemetry photos accept image files only');
-                        patchBundle({ telemetryPhotos: imgs });
-                      }}
-                      className="h-11 text-sm"
-                    />
-                    <LocalImagePreviews files={bundle.telemetryPhotos} />
-                    {(bundle.telemetryPhotos || []).length > 0 ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 text-xs text-gray-600"
-                        onClick={() => patchBundle({ telemetryPhotos: [] })}
-                      >
-                        Clear telemetry photos
-                      </Button>
-                    ) : (
-                      <p className="text-xs text-gray-400">Multiple images; preview above.</p>
-                    )}
-                  </div>
+                  <CgwMultiFilePicker
+                    label="Upload telemetry photo"
+                    accept="image/*,.jpg,.jpeg,.png,.webp,.gif"
+                    imageOnly
+                    files={bundle.telemetryPhotos}
+                    onChange={(telemetryPhotos) => patchBundle({ telemetryPhotos })}
+                    hint="Multiple images; uploads after save (S3)."
+                    className="rounded-md border border-gray-200 bg-white p-3"
+                  />
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-2 sm:col-span-2">
@@ -507,40 +421,19 @@ function PiezometerAddWizardStep({
                               />
                             </div>
                           </div>
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-700">Upload Excel data</Label>
-                            <Input
-                              type="file"
-                              accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                e.target.value = '';
-                                setOneFile('telemetryExcel', f);
-                              }}
-                              className="h-11 text-sm"
-                            />
-                            {bundle.telemetryExcel ? (
-                              <p className="text-xs text-gray-600">Selected: {bundle.telemetryExcel.name}</p>
-                            ) : null}
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-700">Upload service report</Label>
-                            <Input
-                              type="file"
-                              accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                e.target.value = '';
-                                setOneFile('priorTelemetryService', f);
-                              }}
-                              className="h-11 text-sm"
-                            />
-                            {bundle.priorTelemetryService ? (
-                              <p className="text-xs text-gray-600">Selected: {bundle.priorTelemetryService.name}</p>
-                            ) : (
-                              <p className="text-xs text-gray-400">Optional prior-year service report.</p>
-                            )}
-                          </div>
+                          <CgwMultiFilePicker
+                            label="Upload Excel data"
+                            accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                            files={bundle.telemetryExcel}
+                            onChange={(telemetryExcel) => patchBundle({ telemetryExcel })}
+                          />
+                          <CgwMultiFilePicker
+                            label="Upload service report"
+                            accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                            files={bundle.priorTelemetryService}
+                            onChange={(priorTelemetryService) => patchBundle({ priorTelemetryService })}
+                            hint="Optional prior-year service report."
+                          />
                         </div>
                       ) : null}
                     </div>

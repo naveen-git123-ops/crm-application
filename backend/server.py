@@ -1379,6 +1379,7 @@ migrate_cgw_flow_metres_telemetry_portal_columns()
 
 def migrate_cgw_flow_metres_audit_columns():
     """Add created_by_name / last_modified_by_name to cgw_flow_metres if missing."""
+    from sqlalchemy import text, inspect
     try:
         insp = inspect(engine)
         existing = {col['name'] for col in insp.get_columns('cgw_flow_metres')}
@@ -1417,6 +1418,7 @@ def migrate_cgw_flow_metres_model_columns():
     Ensure cgw_flow_metres has every column present in CGWFlowMetreModel.
     This guards production servers that missed one or more incremental migrations.
     """
+    from sqlalchemy import text, inspect
     try:
         insp = inspect(engine)
         existing = {c['name'] for c in insp.get_columns('cgw_flow_metres')}
@@ -3854,15 +3856,62 @@ def update_cgw_flow_metre(inventory_id: str, data: CGWFlowMetreUpdate, current_u
     return item
 
 
+def _cgw_collect_upload_files(
+    file: Optional[UploadFile],
+    files: Optional[List[UploadFile]],
+) -> List[UploadFile]:
+    """Merge single `file` and multi `files` form parts into one upload list."""
+    out: List[UploadFile] = []
+    if file and file.filename:
+        out.append(file)
+    for f in files or []:
+        if f and f.filename:
+            out.append(f)
+    return out
+
+
+def _cgw_append_uploaded_file_to_bucket(
+    item: CGWFlowMetreModel,
+    category: str,
+    buckets: Dict[str, List[dict]],
+    upload: UploadFile,
+) -> None:
+    if not upload.filename:
+        return
+    ext = Path(upload.filename).suffix.lower()
+    allowed_ext = _cgw_media_allowed_extensions_for_category(category)
+    if ext not in allowed_ext:
+        if category in ('telemetry_excel_prior', 'piezometer_excel_prior'):
+            detail = 'Allowed file types for Excel upload: XLSX, XLS, CSV'
+        else:
+            detail = 'Allowed file types: PDF, JPG, JPEG, PNG, WEBP, GIF'
+        raise HTTPException(status_code=400, detail=f'{upload.filename}: {detail}')
+
+    file_content = upload.file.read()
+    if len(file_content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f'{upload.filename}: file must be 25 MB or smaller')
+
+    safe_base = Path(upload.filename).name.replace('..', '_').replace('/', '_') or f'file{ext}'
+    new_filename = f'{item.id}_{uuid.uuid4().hex}_{safe_base}'
+    file_url = upload_to_s3(file_content, new_filename, folder='cgw_media')
+    if not file_url:
+        raise HTTPException(
+            status_code=503,
+            detail='File upload service is temporarily unavailable. Please try again in a few moments.',
+        )
+    buckets[category].append({'id': str(uuid.uuid4()), 'file_name': safe_base, 'url': file_url})
+
+
 @api_router.post('/cgw-flow-metres/{inventory_id}/media-attachments', response_model=CGWFlowMetre)
 def cgw_upload_media_attachment(
     inventory_id: str,
     category: str = Form(...),
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Append one photo/PDF to the given attachment bucket (S3 required)."""
+    """Append one or more photos/PDFs to the given attachment bucket (S3 required)."""
     if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
     if not USE_S3 or not s3_client:
@@ -3876,38 +3925,19 @@ def cgw_upload_media_attachment(
             detail=f'Invalid category. Use one of: {", ".join(CGW_MEDIA_ATTACHMENT_KEYS)}',
         )
 
+    uploads = _cgw_collect_upload_files(file, files)
+    if not uploads:
+        raise HTTPException(status_code=400, detail='No file provided')
+
     item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
     if not item:
         raise HTTPException(status_code=404, detail='Inventory item not found')
-    if not file.filename:
-        raise HTTPException(status_code=400, detail='No file provided')
-
-    ext = Path(file.filename).suffix.lower()
-    allowed_ext = _cgw_media_allowed_extensions_for_category(category)
-    if ext not in allowed_ext:
-        if category in ('telemetry_excel_prior', 'piezometer_excel_prior'):
-            detail = 'Allowed file types for Excel upload: XLSX, XLS, CSV'
-        else:
-            detail = 'Allowed file types: PDF, JPG, JPEG, PNG, WEBP, GIF'
-        raise HTTPException(status_code=400, detail=detail)
-
-    file_content = file.file.read()
-    if len(file_content) > 25 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail='File must be 25 MB or smaller')
-
-    safe_base = Path(file.filename).name.replace('..', '_').replace('/', '_') or f'file{ext}'
-    new_filename = f'{inventory_id}_{uuid.uuid4().hex}_{safe_base}'
-    file_url = upload_to_s3(file_content, new_filename, folder='cgw_media')
-    if not file_url:
-        raise HTTPException(
-            status_code=503,
-            detail='File upload service is temporarily unavailable. Please try again in a few moments.',
-        )
 
     buckets = _cgw_media_buckets_from_stored_json(item)
     if category == 'calibration_certificate' and (getattr(item, 'calibration_certificate', None) or '').strip():
         item.calibration_certificate = None
-    buckets[category].append({'id': str(uuid.uuid4()), 'file_name': safe_base, 'url': file_url})
+    for uf in uploads:
+        _cgw_append_uploaded_file_to_bucket(item, category, buckets, uf)
     _cgw_persist_media_buckets(item, buckets)
     item.last_modified_by_name = current_user.name
     item.updated_at = datetime.now(timezone.utc)

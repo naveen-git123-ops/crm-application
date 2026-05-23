@@ -15,6 +15,7 @@ import PiezometerAddWizardStep, {
   EMPTY_PIEZO_FILES,
   piezoRowToPersist,
 } from './PiezometerAddWizardStep';
+import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFilePicker';
 
 const API = API_ENDPOINT;
 
@@ -121,44 +122,28 @@ function equipmentRowToApiPayload(r) {
   return { ...rest, telemetry_previous_serial: telemetry_previous_serial || null };
 }
 
-/** In-memory image previews for wizard file picks; revokes blob URLs on change/unmount. */
-function LocalImagePreviews({ files }) {
-  const list = Array.isArray(files) ? files : [];
-  const [urls, setUrls] = useState([]);
-  useEffect(() => {
-    const imgs = list.filter((f) => f && typeof f.type === 'string' && f.type.startsWith('image/'));
-    const u = imgs.map((f) => URL.createObjectURL(f));
-    setUrls(u);
-    return () => {
-      u.forEach((x) => URL.revokeObjectURL(x));
-    };
-  }, [list]);
-  if (!urls.length) return null;
-  return (
-    <div className="flex flex-wrap gap-2 pt-1">
-      {urls.map((src, i) => (
-        <img
-          key={src}
-          src={src}
-          alt={list[i]?.name ? `Preview ${list[i].name}` : `Preview ${i + 1}`}
-          className="h-20 w-20 rounded border border-gray-200 object-cover bg-gray-100"
-        />
-      ))}
-    </div>
-  );
-}
-
 /** True if this line should be included in bulk create (pending files count for the same row index). */
 function equipmentRowIncludeInBulk(r, bundle = {}) {
   const b = bundle || {};
   if ((r.flow_meter_serial || '').trim()) return true;
   if ((r.flow_meter_size || '').trim()) return true;
   if ((r.calibration_valid_from || '').trim() || (r.calibration_valid_to || '').trim()) return true;
-  if (b.calibration_cert) return true;
-  if (b.water_quality_certificate || b.cte || b.cto || b.rwss_watco_phed_noc || b.approval_letter || b.rain_water_harvesting_data || b.additional_doc) return true;
-  if ((b.bwGeoPhotos || []).length > 0) return true;
-  if ((b.telemetryPhotoFiles || []).length > 0) return true;
-  if (b.telemetry_excel || b.telemetry_service) return true;
+  if (normalizeFileList(b.calibration_cert).length > 0) return true;
+  if (
+    normalizeFileList(b.water_quality_certificate).length > 0 ||
+    normalizeFileList(b.cte).length > 0 ||
+    normalizeFileList(b.cto).length > 0 ||
+    normalizeFileList(b.rwss_watco_phed_noc).length > 0 ||
+    normalizeFileList(b.approval_letter).length > 0 ||
+    normalizeFileList(b.rain_water_harvesting_data).length > 0 ||
+    normalizeFileList(b.additional_doc).length > 0
+  ) {
+    return true;
+  }
+  if (normalizeFileList(b.bwGeoPhotos).length > 0) return true;
+  if (normalizeFileList(b.telemetryPhotoFiles).length > 0) return true;
+  if (normalizeFileList(b.telemetry_excel).length > 0 || normalizeFileList(b.telemetry_service).length > 0) return true;
+  if (normalizeFileList(b.service_report).length > 0) return true;
   if (r.telemetry_applicable === 'yes') return true;
   if (
     (r.telemetry_product_code || '').trim() ||
@@ -230,18 +215,21 @@ const EMPTY_FORM = {
   review: '',
   remarks: ''
 };
-/** Per-row pending uploads in add wizard (arrays kept stable for preview hooks). */
+/** Per-row pending uploads in add wizard (all attachment fields are File arrays). */
 const EMPTY_EQUIPMENT_FLOW_FILES = () => ({
   bwGeoPhotos: [],
   telemetryPhotoFiles: [],
-  service_report: undefined,
-  water_quality_certificate: undefined,
-  cte: undefined,
-  cto: undefined,
-  rwss_watco_phed_noc: undefined,
-  approval_letter: undefined,
-  rain_water_harvesting_data: undefined,
-  additional_doc: undefined,
+  calibration_cert: [],
+  service_report: [],
+  telemetry_excel: [],
+  telemetry_service: [],
+  water_quality_certificate: [],
+  cte: [],
+  cto: [],
+  rwss_watco_phed_noc: [],
+  approval_letter: [],
+  rain_water_harvesting_data: [],
+  additional_doc: [],
 });
 
 const EMPTY_NOC_FORM = {
@@ -1109,11 +1097,7 @@ const CGWFlowMetre = () => {
     return compressed;
   };
 
-  const uploadCgwRowAttachment = async (inventoryRowId, category, file) => {
-    const uploadFile = await prepareFileForUpload(file);
-    const fd = new FormData();
-    fd.append('category', category);
-    fd.append('file', uploadFile);
+  const postCgwMediaFormData = async (inventoryRowId, fd) => {
     try {
       await axios.post(`${API}/cgw-flow-metres/${inventoryRowId}/media-attachments`, fd, {
         headers: authHeaders(),
@@ -1130,6 +1114,64 @@ const CGWFlowMetre = () => {
       }
       throw error;
     }
+  };
+
+  const uploadCgwRowAttachments = async (inventoryRowId, category, fileList) => {
+    const list = normalizeFileList(fileList);
+    if (!list.length) return;
+    const prepared = [];
+    for (const f of list) {
+      prepared.push(await prepareFileForUpload(f));
+    }
+    const fd = new FormData();
+    fd.append('category', category);
+    if (prepared.length === 1) {
+      fd.append('file', prepared[0]);
+    } else {
+      for (const f of prepared) {
+        fd.append('files', f);
+      }
+    }
+    await postCgwMediaFormData(inventoryRowId, fd);
+  };
+
+  const uploadCgwRowAttachment = async (inventoryRowId, category, file) =>
+    uploadCgwRowAttachments(inventoryRowId, category, [file]);
+
+  const uploadEquipmentFlowBundle = async (inventoryRowId, bundle, equipmentRow) => {
+    const b = bundle || {};
+    await uploadCgwRowAttachments(inventoryRowId, 'calibration_certificate', b.calibration_cert);
+    await uploadCgwRowAttachments(inventoryRowId, 'service_report', b.service_report);
+    await uploadCgwRowAttachments(inventoryRowId, 'water_quality_certificate', b.water_quality_certificate);
+    await uploadCgwRowAttachments(inventoryRowId, 'cte', b.cte);
+    await uploadCgwRowAttachments(inventoryRowId, 'cto', b.cto);
+    await uploadCgwRowAttachments(inventoryRowId, 'rwss_watco_phed_noc', b.rwss_watco_phed_noc);
+    await uploadCgwRowAttachments(inventoryRowId, 'approval_letter', b.approval_letter);
+    await uploadCgwRowAttachments(inventoryRowId, 'rain_water_harvesting_data', b.rain_water_harvesting_data);
+    const addDocs = normalizeFileList(b.additional_doc);
+    const typed = (equipmentRow?.additional_document_type || '').trim();
+    const renamed = typed
+      ? addDocs.map(
+          (f) =>
+            new File([f], `${typed}_${f.name}`, {
+              type: f.type || 'application/octet-stream',
+            }),
+        )
+      : addDocs;
+    await uploadCgwRowAttachments(inventoryRowId, 'additional_doc', renamed);
+    await uploadCgwRowAttachments(inventoryRowId, 'telemetry_excel_prior', b.telemetry_excel);
+    await uploadCgwRowAttachments(inventoryRowId, 'telemetry_service_prior', b.telemetry_service);
+    await uploadCgwRowAttachments(inventoryRowId, 'bw_geo_flowmeter', b.bwGeoPhotos);
+    await uploadCgwRowAttachments(inventoryRowId, 'telemetry', b.telemetryPhotoFiles);
+  };
+
+  const uploadPiezometerFlowBundle = async (inventoryRowId, pb) => {
+    const bundle = pb || {};
+    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_bw', bundle.bwPhotos);
+    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_calibration', bundle.calibrationCert);
+    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_telemetry', bundle.telemetryPhotos);
+    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_excel_prior', bundle.telemetryExcel);
+    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_service_report', bundle.priorTelemetryService);
   };
 
   const handleSubmit = async (e) => {
@@ -1193,31 +1235,9 @@ const CGWFlowMetre = () => {
         }, { headers: authHeaders() });
 
         const bundle = equipmentFlowFiles[0] || {};
-        if (bundle.calibration_cert) await uploadCgwRowAttachment(editingItemId, 'calibration_certificate', bundle.calibration_cert);
-        if (bundle.service_report) await uploadCgwRowAttachment(editingItemId, 'service_report', bundle.service_report);
-        if (bundle.water_quality_certificate) await uploadCgwRowAttachment(editingItemId, 'water_quality_certificate', bundle.water_quality_certificate);
-        if (bundle.cte) await uploadCgwRowAttachment(editingItemId, 'cte', bundle.cte);
-        if (bundle.cto) await uploadCgwRowAttachment(editingItemId, 'cto', bundle.cto);
-        if (bundle.rwss_watco_phed_noc) await uploadCgwRowAttachment(editingItemId, 'rwss_watco_phed_noc', bundle.rwss_watco_phed_noc);
-        if (bundle.approval_letter) await uploadCgwRowAttachment(editingItemId, 'approval_letter', bundle.approval_letter);
-        if (bundle.rain_water_harvesting_data) await uploadCgwRowAttachment(editingItemId, 'rain_water_harvesting_data', bundle.rain_water_harvesting_data);
-        if (bundle.additional_doc) {
-          const typed = (row.additional_document_type || '').trim();
-          const f = typed
-            ? new File([bundle.additional_doc], `${typed}_${bundle.additional_doc.name}`, { type: bundle.additional_doc.type || 'application/octet-stream' })
-            : bundle.additional_doc;
-          await uploadCgwRowAttachment(editingItemId, 'additional_doc', f);
-        }
-        if (bundle.telemetry_excel) await uploadCgwRowAttachment(editingItemId, 'telemetry_excel_prior', bundle.telemetry_excel);
-        if (bundle.telemetry_service) await uploadCgwRowAttachment(editingItemId, 'telemetry_service_prior', bundle.telemetry_service);
-        for (const f of bundle.bwGeoPhotos || []) await uploadCgwRowAttachment(editingItemId, 'bw_geo_flowmeter', f);
-        for (const f of bundle.telemetryPhotoFiles || []) await uploadCgwRowAttachment(editingItemId, 'telemetry', f);
+        await uploadEquipmentFlowBundle(editingItemId, bundle, row);
         for (const pb of piezometerFiles || []) {
-          for (const f of pb.bwPhotos || []) await uploadCgwRowAttachment(editingItemId, 'piezometer_bw', f);
-          if (pb.calibrationCert) await uploadCgwRowAttachment(editingItemId, 'piezometer_calibration', pb.calibrationCert);
-          for (const f of pb.telemetryPhotos || []) await uploadCgwRowAttachment(editingItemId, 'piezometer_telemetry', f);
-          if (pb.telemetryExcel) await uploadCgwRowAttachment(editingItemId, 'piezometer_excel_prior', pb.telemetryExcel);
-          if (pb.priorTelemetryService) await uploadCgwRowAttachment(editingItemId, 'piezometer_service_report', pb.priorTelemetryService);
+          await uploadPiezometerFlowBundle(editingItemId, pb);
         }
 
         if (addNocFile) {
@@ -1421,49 +1441,7 @@ const CGWFlowMetre = () => {
         const bundle = rowsForSubmit[i]?.files;
         if (!inv?.id || !bundle) continue;
         try {
-          if (bundle.calibration_cert) {
-            await uploadCgwRowAttachment(inv.id, 'calibration_certificate', bundle.calibration_cert);
-          }
-          if (bundle.service_report) {
-            await uploadCgwRowAttachment(inv.id, 'service_report', bundle.service_report);
-          }
-          if (bundle.water_quality_certificate) {
-            await uploadCgwRowAttachment(inv.id, 'water_quality_certificate', bundle.water_quality_certificate);
-          }
-          if (bundle.cte) {
-            await uploadCgwRowAttachment(inv.id, 'cte', bundle.cte);
-          }
-          if (bundle.cto) {
-            await uploadCgwRowAttachment(inv.id, 'cto', bundle.cto);
-          }
-          if (bundle.rwss_watco_phed_noc) {
-            await uploadCgwRowAttachment(inv.id, 'rwss_watco_phed_noc', bundle.rwss_watco_phed_noc);
-          }
-          if (bundle.approval_letter) {
-            await uploadCgwRowAttachment(inv.id, 'approval_letter', bundle.approval_letter);
-          }
-          if (bundle.rain_water_harvesting_data) {
-            await uploadCgwRowAttachment(inv.id, 'rain_water_harvesting_data', bundle.rain_water_harvesting_data);
-          }
-          if (bundle.additional_doc) {
-            const typed = (equipmentRows[i]?.additional_document_type || '').trim();
-            const f = typed
-              ? new File([bundle.additional_doc], `${typed}_${bundle.additional_doc.name}`, { type: bundle.additional_doc.type || 'application/octet-stream' })
-              : bundle.additional_doc;
-            await uploadCgwRowAttachment(inv.id, 'additional_doc', f);
-          }
-          if (bundle.telemetry_excel) {
-            await uploadCgwRowAttachment(inv.id, 'telemetry_excel_prior', bundle.telemetry_excel);
-          }
-          if (bundle.telemetry_service) {
-            await uploadCgwRowAttachment(inv.id, 'telemetry_service_prior', bundle.telemetry_service);
-          }
-          for (const f of bundle.bwGeoPhotos || []) {
-            await uploadCgwRowAttachment(inv.id, 'bw_geo_flowmeter', f);
-          }
-          for (const f of bundle.telemetryPhotoFiles || []) {
-            await uploadCgwRowAttachment(inv.id, 'telemetry', f);
-          }
+          await uploadEquipmentFlowBundle(inv.id, bundle, equipmentRows[i]);
         } catch (uploadErr) {
           toast.error(uploadErr.response?.data?.detail || 'Saved row but an attachment upload failed');
           fetchItems();
@@ -1477,21 +1455,7 @@ const CGWFlowMetre = () => {
           if (!inv?.id) continue;
           const pb = piezometerFiles[pi] || {};
           try {
-            for (const f of pb.bwPhotos || []) {
-              await uploadCgwRowAttachment(inv.id, 'piezometer_bw', f);
-            }
-            if (pb.calibrationCert) {
-              await uploadCgwRowAttachment(inv.id, 'piezometer_calibration', pb.calibrationCert);
-            }
-            for (const f of pb.telemetryPhotos || []) {
-              await uploadCgwRowAttachment(inv.id, 'piezometer_telemetry', f);
-            }
-            if (pb.telemetryExcel) {
-              await uploadCgwRowAttachment(inv.id, 'piezometer_excel_prior', pb.telemetryExcel);
-            }
-            if (pb.priorTelemetryService) {
-              await uploadCgwRowAttachment(inv.id, 'piezometer_service_report', pb.priorTelemetryService);
-            }
+            await uploadPiezometerFlowBundle(inv.id, pb);
           } catch (pzErr) {
             toast.error(pzErr.response?.data?.detail || 'Piezometer file upload failed');
             fetchItems();
@@ -1972,9 +1936,7 @@ const CGWFlowMetre = () => {
     const list = Array.from(files);
     setMediaUploading(true);
     try {
-      for (const f of list) {
-        await uploadCgwRowAttachment(mediaDialogItem.id, cat, f);
-      }
+      await uploadCgwRowAttachments(mediaDialogItem.id, cat, list);
       toast.success(list.length > 1 ? `${list.length} files uploaded` : 'File uploaded');
       const res = await axios.get(`${API}/cgw-flow-metres/${mediaDialogItem.id}`, { headers: authHeaders() });
       setMediaDialogItem(res.data);
@@ -2569,9 +2531,9 @@ const CGWFlowMetre = () => {
                           const patchRow = (patch) =>
                             setEquipmentRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
                           const flowFiles = equipmentFlowFiles[idx] || {};
-                          const setFlowFile = (key, file) =>
+                          const patchFlowFiles = (patch) =>
                             setEquipmentFlowFiles((prev) =>
-                              prev.map((b, i) => (i === idx ? { ...b, [key]: file || undefined } : b))
+                              prev.map((b, i) => (i === idx ? { ...b, ...patch } : b))
                             );
                           return (
                             <Card key={idx} className="p-4 border border-gray-200">
@@ -2606,70 +2568,26 @@ const CGWFlowMetre = () => {
                                         />
                                       </div>
                                     </div>
-                                    <div className="space-y-2 border-t border-gray-200 pt-3">
-                                      <Label className="text-sm font-medium text-gray-700">
-                                        BW with flowmeter GEO tagging photos
-                                      </Label>
-                                      <Input
-                                        type="file"
-                                        multiple
-                                        accept="image/*,.jpg,.jpeg,.png,.webp,.gif"
-                                        onChange={(e) => {
-                                          const picked = e.target.files ? Array.from(e.target.files) : [];
-                                          e.target.value = '';
-                                          const imgs = picked.filter(
-                                            (f) => f.type.startsWith('image/') || /\.(jpe?g|png|gif|webp)$/i.test(f.name)
-                                          );
-                                          if (imgs.length < picked.length) {
-                                            toast.error('GEO tagging accepts image files only');
-                                          }
-                                          setEquipmentFlowFiles((prev) =>
-                                            prev.map((b, i) => (i === idx ? { ...b, bwGeoPhotos: imgs } : b))
-                                          );
-                                        }}
-                                        className="h-11 text-sm"
-                                      />
-                                      <LocalImagePreviews files={flowFiles.bwGeoPhotos} />
-                                      {(flowFiles.bwGeoPhotos || []).length > 0 ? (
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-8 text-xs text-gray-600"
-                                          onClick={() =>
-                                            setEquipmentFlowFiles((prev) =>
-                                              prev.map((b, i) => (i === idx ? { ...b, bwGeoPhotos: [] } : b))
-                                            )
-                                          }
-                                        >
-                                          Clear GEO photos
-                                        </Button>
-                                      ) : (
-                                        <p className="text-xs text-gray-400">Multiple images; uploads after save (S3).</p>
-                                      )}
-                                    </div>
+                                    <CgwMultiFilePicker
+                                      label="BW with flowmeter GEO tagging photos"
+                                      accept="image/*,.jpg,.jpeg,.png,.webp,.gif"
+                                      imageOnly
+                                      files={flowFiles.bwGeoPhotos}
+                                      onChange={(bwGeoPhotos) => patchFlowFiles({ bwGeoPhotos })}
+                                      hint="Multiple images; uploads after save (S3)."
+                                      className="border-t border-gray-200 pt-3"
+                                    />
                                   </div>
 
                                   <div className="rounded-lg border border-gray-200 p-3 space-y-3">
                                     <p className="text-sm font-semibold text-gray-800">Calibration certificate</p>
-                                    <div className="space-y-2">
-                                      <Label className="text-sm font-medium text-gray-700">Certificate (file)</Label>
-                                      <Input
-                                        type="file"
-                                        accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
-                                        onChange={(e) => {
-                                          const f = e.target.files?.[0];
-                                          e.target.value = '';
-                                          setFlowFile('calibration_cert', f);
-                                        }}
-                                        className="h-11 text-sm"
-                                      />
-                                      {flowFiles.calibration_cert ? (
-                                        <p className="text-xs text-gray-600">Selected: {flowFiles.calibration_cert.name}</p>
-                                      ) : (
-                                        <p className="text-xs text-gray-400">Uploads after the row is saved (S3).</p>
-                                      )}
-                                    </div>
+                                    <CgwMultiFilePicker
+                                      label="Certificate (file)"
+                                      accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                                      files={flowFiles.calibration_cert}
+                                      onChange={(calibration_cert) => patchFlowFiles({ calibration_cert })}
+                                      hint="Uploads after the row is saved (S3)."
+                                    />
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                       <div className="space-y-2">
                                         <Label className="text-sm font-medium text-gray-700">Valid from</Label>
@@ -2694,22 +2612,13 @@ const CGWFlowMetre = () => {
 
                                   <div className="rounded-lg border border-gray-200 p-3 space-y-2">
                                     <p className="text-sm font-semibold text-gray-800">Service report</p>
-                                      <Label className="text-sm font-medium text-gray-700">Upload service report</Label>
-                                    <Input
-                                      type="file"
+                                    <CgwMultiFilePicker
+                                      label="Upload service report"
                                       accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
-                                      onChange={(e) => {
-                                        const f = e.target.files?.[0];
-                                        e.target.value = '';
-                                        setFlowFile('service_report', f);
-                                      }}
-                                      className="h-11 text-sm"
+                                      files={flowFiles.service_report}
+                                      onChange={(service_report) => patchFlowFiles({ service_report })}
+                                      hint="Optional; uploads after save (S3)."
                                     />
-                                    {flowFiles.service_report ? (
-                                      <p className="text-xs text-gray-600">Selected: {flowFiles.service_report.name}</p>
-                                    ) : (
-                                      <p className="text-xs text-gray-400">Optional; uploads after save (S3).</p>
-                                    )}
                                   </div>
 
                                   <div className="space-y-2">
@@ -2845,46 +2754,15 @@ const CGWFlowMetre = () => {
                                         </div>
                                       </div>
 
-                                      <div className="space-y-2 rounded-md border border-gray-200 bg-white p-3">
-                                        <Label className="text-sm font-medium text-gray-700">Telemetry device photos</Label>
-                                        <Input
-                                          type="file"
-                                          multiple
-                                          accept="image/*,.jpg,.jpeg,.png,.webp,.gif"
-                                          onChange={(e) => {
-                                            const picked = e.target.files ? Array.from(e.target.files) : [];
-                                            e.target.value = '';
-                                            const imgs = picked.filter(
-                                              (f) => f.type.startsWith('image/') || /\.(jpe?g|png|gif|webp)$/i.test(f.name)
-                                            );
-                                            if (imgs.length < picked.length) {
-                                              toast.error('Telemetry photos accept image files only');
-                                            }
-                                            setEquipmentFlowFiles((prev) =>
-                                              prev.map((b, i) => (i === idx ? { ...b, telemetryPhotoFiles: imgs } : b))
-                                            );
-                                          }}
-                                          className="h-11 text-sm"
-                                        />
-                                        <LocalImagePreviews files={flowFiles.telemetryPhotoFiles} />
-                                        {(flowFiles.telemetryPhotoFiles || []).length > 0 ? (
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 text-xs text-gray-600"
-                                            onClick={() =>
-                                              setEquipmentFlowFiles((prev) =>
-                                                prev.map((b, i) => (i === idx ? { ...b, telemetryPhotoFiles: [] } : b))
-                                              )
-                                            }
-                                          >
-                                            Clear telemetry photos
-                                          </Button>
-                                        ) : (
-                                          <p className="text-xs text-gray-400">Multiple images; preview above; uploads after save (S3).</p>
-                                        )}
-                                      </div>
+                                      <CgwMultiFilePicker
+                                        label="Telemetry device photos"
+                                        accept="image/*,.jpg,.jpeg,.png,.webp,.gif"
+                                        imageOnly
+                                        files={flowFiles.telemetryPhotoFiles}
+                                        onChange={(telemetryPhotoFiles) => patchFlowFiles({ telemetryPhotoFiles })}
+                                        hint="Multiple images; uploads after save (S3)."
+                                        className="rounded-md border border-gray-200 bg-white p-3"
+                                      />
 
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <div className="space-y-2 sm:col-span-2">
@@ -3013,42 +2891,19 @@ const CGWFlowMetre = () => {
                                                   />
                                                 </div>
                                               </div>
-                                              <div className="space-y-2">
-                                                <Label className="text-sm font-medium text-gray-700">Upload Excel data</Label>
-                                                <Input
-                                                  type="file"
-                                                  accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
-                                                  onChange={(e) => {
-                                                    const f = e.target.files?.[0];
-                                                    e.target.value = '';
-                                                    setFlowFile('telemetry_excel', f);
-                                                  }}
-                                                  className="h-11 text-sm"
-                                                />
-                                                {flowFiles.telemetry_excel ? (
-                                                  <p className="text-xs text-gray-600">Selected: {flowFiles.telemetry_excel.name}</p>
-                                                ) : null}
-                                              </div>
-                                              <div className="space-y-2">
-                                                <Label className="text-sm font-medium text-gray-700">
-                                                  Prior-year telemetry service report
-                                                </Label>
-                                                <Input
-                                                  type="file"
-                                                  accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
-                                                  onChange={(e) => {
-                                                    const f = e.target.files?.[0];
-                                                    e.target.value = '';
-                                                    setFlowFile('telemetry_service', f);
-                                                  }}
-                                                  className="h-11 text-sm"
-                                                />
-                                                {flowFiles.telemetry_service ? (
-                                                  <p className="text-xs text-gray-600">Selected: {flowFiles.telemetry_service.name}</p>
-                                                ) : (
-                                                  <p className="text-xs text-gray-400">Optional; uploads as prior-year telemetry report.</p>
-                                                )}
-                                              </div>
+                                              <CgwMultiFilePicker
+                                                label="Upload Excel data"
+                                                accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                                                files={flowFiles.telemetry_excel}
+                                                onChange={(telemetry_excel) => patchFlowFiles({ telemetry_excel })}
+                                              />
+                                              <CgwMultiFilePicker
+                                                label="Prior-year telemetry service report"
+                                                accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                                                files={flowFiles.telemetry_service}
+                                                onChange={(telemetry_service) => patchFlowFiles({ telemetry_service })}
+                                                hint="Optional; uploads as prior-year telemetry report."
+                                              />
                                             </div>
                                           ) : null}
                                         </div>
@@ -3098,27 +2953,72 @@ const CGWFlowMetre = () => {
                       <p className="text-sm font-semibold text-gray-800">Additional attachment</p>
                       {equipmentRows.map((row, idx) => {
                         const flowFiles = equipmentFlowFiles[idx] || {};
-                        const setFlowFile = (key, file) =>
+                        const patchFlowFiles = (patch) =>
                           setEquipmentFlowFiles((prev) =>
-                            prev.map((b, i) => (i === idx ? { ...b, [key]: file || undefined } : b))
+                            prev.map((b, i) => (i === idx ? { ...b, ...patch } : b))
                           );
                         const patchRow = (patch) =>
                           setEquipmentRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+                        const docAccept =
+                          '.pdf,.jpg,.jpeg,.png,.webp,.gif,.xlsx,.xls,.csv,application/pdf,image/*,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv';
                         return (
                           <div key={`add-attach-${idx}`} className="rounded-md border border-gray-200 bg-gray-50/60 p-3 space-y-3">
                             <p className="text-xs font-semibold text-gray-700">Flow metre line {idx + 1}</p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">Water quality certificate</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('water_quality_certificate', f); }} className="h-11 text-sm" />{flowFiles.water_quality_certificate ? <p className="text-xs text-gray-600">Selected: {flowFiles.water_quality_certificate.name}</p> : null}</div>
-                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">CTE</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('cte', f); }} className="h-11 text-sm" />{flowFiles.cte ? <p className="text-xs text-gray-600">Selected: {flowFiles.cte.name}</p> : null}</div>
-                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">CTO</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('cto', f); }} className="h-11 text-sm" />{flowFiles.cto ? <p className="text-xs text-gray-600">Selected: {flowFiles.cto.name}</p> : null}</div>
-                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">RWSS/WATCO/PHED NOC</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('rwss_watco_phed_noc', f); }} className="h-11 text-sm" />{flowFiles.rwss_watco_phed_noc ? <p className="text-xs text-gray-600">Selected: {flowFiles.rwss_watco_phed_noc.name}</p> : null}</div>
-                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">Approval letter</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('approval_letter', f); }} className="h-11 text-sm" />{flowFiles.approval_letter ? <p className="text-xs text-gray-600">Selected: {flowFiles.approval_letter.name}</p> : null}</div>
-                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">Rain water harvesting data</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('rain_water_harvesting_data', f); }} className="h-11 text-sm" />{flowFiles.rain_water_harvesting_data ? <p className="text-xs text-gray-600">Selected: {flowFiles.rain_water_harvesting_data.name}</p> : null}</div>
+                              <CgwMultiFilePicker
+                                label="Water quality certificate"
+                                accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                                files={flowFiles.water_quality_certificate}
+                                onChange={(water_quality_certificate) => patchFlowFiles({ water_quality_certificate })}
+                              />
+                              <CgwMultiFilePicker
+                                label="CTE"
+                                accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                                files={flowFiles.cte}
+                                onChange={(cte) => patchFlowFiles({ cte })}
+                              />
+                              <CgwMultiFilePicker
+                                label="CTO"
+                                accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                                files={flowFiles.cto}
+                                onChange={(cto) => patchFlowFiles({ cto })}
+                              />
+                              <CgwMultiFilePicker
+                                label="RWSS/WATCO/PHED NOC"
+                                accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                                files={flowFiles.rwss_watco_phed_noc}
+                                onChange={(rwss_watco_phed_noc) => patchFlowFiles({ rwss_watco_phed_noc })}
+                              />
+                              <CgwMultiFilePicker
+                                label="Approval letter"
+                                accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                                files={flowFiles.approval_letter}
+                                onChange={(approval_letter) => patchFlowFiles({ approval_letter })}
+                              />
+                              <CgwMultiFilePicker
+                                label="Rain water harvesting data"
+                                accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                                files={flowFiles.rain_water_harvesting_data}
+                                onChange={(rain_water_harvesting_data) => patchFlowFiles({ rain_water_harvesting_data })}
+                              />
                             </div>
                             <div className="rounded-md border border-gray-200 bg-white p-3 space-y-3">
                               <p className="text-sm font-semibold text-gray-800">Additional doc</p>
-                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">Document type</Label><Input value={row.additional_document_type} onChange={(e) => patchRow({ additional_document_type: e.target.value })} className="h-11" /></div>
-                              <div className="space-y-2"><Label className="text-sm font-medium text-gray-700">Doc</Label><Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.xlsx,.xls,.csv,application/pdf,image/*,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; setFlowFile('additional_doc', f); }} className="h-11 text-sm" />{flowFiles.additional_doc ? <p className="text-xs text-gray-600">Selected: {flowFiles.additional_doc.name}</p> : <p className="text-xs text-gray-400">Optional.</p>}</div>
+                              <div className="space-y-2">
+                                <Label className="text-sm font-medium text-gray-700">Document type</Label>
+                                <Input
+                                  value={row.additional_document_type}
+                                  onChange={(e) => patchRow({ additional_document_type: e.target.value })}
+                                  className="h-11"
+                                />
+                              </div>
+                              <CgwMultiFilePicker
+                                label="Doc"
+                                accept={docAccept}
+                                files={flowFiles.additional_doc}
+                                onChange={(additional_doc) => patchFlowFiles({ additional_doc })}
+                                hint="Optional."
+                              />
                             </div>
                           </div>
                         );
