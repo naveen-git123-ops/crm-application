@@ -3659,6 +3659,11 @@ def create_cgw_flow_metres_bulk(
     ).scalar()
     next_inv_num = (max_inv_num or 0) + 1
 
+    # Draft rows should only be created via the explicit draft endpoints.
+    normalized_status = (data.status or 'Active').strip()
+    if normalized_status.lower() == 'draft':
+        normalized_status = 'Active'
+
     new_items: List[CGWFlowMetreModel] = []
     for eq in data.equipments:
         inv_id = f'INV{str(next_inv_num).zfill(4)}'
@@ -3708,7 +3713,7 @@ def create_cgw_flow_metres_bulk(
             url_link=data.url_link,
             user_id=data.user_id,
             password=data.password,
-            status=data.status,
+            status=normalized_status,
             renewal_date=data.renewal_date,
             review=data.review,
             remarks=data.remarks,
@@ -3741,6 +3746,10 @@ def create_cgw_flow_metre(data: CGWFlowMetreCreate, current_user: UserModel = De
     next_inv_num = (max_inv_num or 0) + 1
     inv_id = f'INV{str(next_inv_num).zfill(4)}'
     
+    normalized_status = (data.status or 'Active').strip()
+    if normalized_status.lower() == 'draft':
+        normalized_status = 'Active'
+
     new_item = CGWFlowMetreModel(
         inventory_id=inv_id,
         customer_id=data.customer_id,
@@ -3786,7 +3795,7 @@ def create_cgw_flow_metre(data: CGWFlowMetreCreate, current_user: UserModel = De
         url_link=data.url_link,
         user_id=data.user_id,
         password=data.password,
-        status=data.status,
+        status=normalized_status,
         renewal_date=data.renewal_date,
         review=data.review,
         remarks=data.remarks,

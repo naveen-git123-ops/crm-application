@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save } from 'lucide-react';
@@ -17,6 +18,7 @@ import PiezometerAddWizardStep, {
   piezoRowToPersist,
 } from './PiezometerAddWizardStep';
 import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFilePicker';
+import { CgwCustomerPreviewDialog } from '@/components/CgwCustomerPreviewDialog';
 
 const API = API_ENDPOINT;
 
@@ -743,6 +745,9 @@ const CGWFlowMetre = () => {
   const [digestSaving, setDigestSaving] = useState(false);
 
   const [nocDialogOpen, setNocDialogOpen] = useState(false);
+  const [customerPreviewOpen, setCustomerPreviewOpen] = useState(false);
+  const [customerPreviewGroup, setCustomerPreviewGroup] = useState(null);
+  const [customerPreviewCode, setCustomerPreviewCode] = useState('');
   const [nocTargetItem, setNocTargetItem] = useState(null);
   const [nocFile, setNocFile] = useState(null);
   const [nocLocalPreview, setNocLocalPreview] = useState('');
@@ -1412,6 +1417,10 @@ const CGWFlowMetre = () => {
     const submittingDraft = editMode && isDraftRecord(editingItem);
     const draftIdToRemove = submittingDraft ? editingItemId : null;
     const useSingleRowEdit = editMode && editingItemId && (!submittingDraft || equipmentRows.length <= 1);
+    const finalStatus =
+      (formData.status || '').trim().toLowerCase() === 'draft'
+        ? 'Active'
+        : (formData.status || 'Active');
     try {
       if (useSingleRowEdit) {
         const row = equipmentRows[0] || { ...EMPTY_EQUIPMENT_ROW };
@@ -1460,7 +1469,8 @@ const CGWFlowMetre = () => {
           person_mobile_number: formData.person_mobile_number || '',
           email_id: formData.email_id || '',
           date_of_commissioning: formData.date_of_commissioning || null,
-          ...(submittingDraft ? { status: 'Active', wizard_draft_json: null } : {}),
+          status: submittingDraft ? 'Active' : finalStatus,
+          ...(submittingDraft ? { wizard_draft_json: null } : {}),
         }, { headers: authHeaders() });
 
         const bundle = equipmentFlowFiles[0] || {};
@@ -1517,7 +1527,8 @@ const CGWFlowMetre = () => {
             noc_flowmeter_count: addNocForm.flowmeter_applicable === 'yes' ? (addNocForm.flowmeter_count || '') : '',
             noc_piezometer_applicable: addNocForm.piezometer_applicable || '',
             noc_piezometer_count: addNocForm.piezometer_applicable === 'yes' ? String(piezometerWizardCount || addNocForm.piezometer_count || '') : '',
-            ...(submittingDraft ? { status: 'Active', wizard_draft_json: null } : {}),
+            status: submittingDraft ? 'Active' : finalStatus,
+            ...(submittingDraft ? { wizard_draft_json: null } : {}),
           }, { headers: authHeaders() });
         }
 
@@ -1667,7 +1678,7 @@ const CGWFlowMetre = () => {
         url_link: base.url_link || null,
         user_id: base.user_id || null,
         password: base.password || null,
-        status: base.status || 'Active',
+        status: finalStatus,
         renewal_date: base.renewal_date || null,
         review: base.review || null,
         remarks: base.remarks || null,
@@ -2096,6 +2107,15 @@ const CGWFlowMetre = () => {
     });
   }, [mediaDialogOpen, mediaDialogItem, mediaActiveCategory]);
 
+  const openCustomerPreview = (group) => {
+    if (!group?.rows?.length) return;
+    const anchor = group.rows[0];
+    const code = customerCodeById.get(anchor.customer_id) || anchor.customer_id || '';
+    setCustomerPreviewGroup(group);
+    setCustomerPreviewCode(code);
+    setCustomerPreviewOpen(true);
+  };
+
   const openMediaDialog = (item, category = 'bw_geo_flowmeter', selectedFileId = null) => {
     setMediaDialogItem(item);
     setMediaActiveCategory(CGW_MEDIA_KEYS.includes(category) ? category : 'bw_geo_flowmeter');
@@ -2288,6 +2308,108 @@ const CGWFlowMetre = () => {
     }
   };
 
+  const pageHeaderSubtitle = useMemo(() => {
+    const base = `${items.length} total ${items.length === 1 ? 'row' : 'rows'}`;
+    if (filteredItems.length !== items.length) {
+      return `${base} · ${filteredItems.length} ${filteredItems.length === 1 ? 'match' : 'matches'}`;
+    }
+    return base;
+  }, [items.length, filteredItems.length]);
+
+  const pageHeaderActions = useMemo(() => {
+    if (!canManage) return null;
+    return (
+      <>
+        <div className="relative">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-gray-300 text-gray-700 hover:bg-gray-50 h-9 sm:h-10 text-xs sm:text-sm"
+            onClick={() => setShowColumnFilter((prev) => !prev)}
+            title="Filter specific column"
+          >
+            <Filter className="h-4 w-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">Filter</span>
+          </Button>
+          {showColumnFilter && (
+            <Card className="absolute right-0 top-full z-50 mt-1 w-80 p-3 border border-gray-200 shadow-lg bg-white rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-gray-800">Filter specific column</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-gray-600"
+                  onClick={() => setShowColumnFilter(false)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="space-y-2">
+                <select
+                  value={selectedFilterField}
+                  onChange={(e) => setSelectedFilterField(e.target.value)}
+                  className="w-full h-10 rounded-lg border border-gray-300 px-2 text-sm bg-white text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                >
+                  {FILTER_GROUPS.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.fields.map((field) => (
+                        <option key={field} value={field}>
+                          {FILTER_LABELS[field]}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <Input
+                  value={selectedFilterValue}
+                  onChange={(e) => setSelectedFilterValue(e.target.value)}
+                  placeholder="Type value to filter..."
+                  className="h-10 text-sm border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                />
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button type="button" size="sm" variant="outline" className="h-9 text-xs border-gray-300 text-gray-700 hover:bg-gray-50" onClick={handleClearColumnFilter}>
+                    Clear
+                  </Button>
+                  <Button type="button" size="sm" className="h-9 text-xs bg-blue-600 hover:bg-blue-700 text-white" onClick={handleApplyColumnFilter}>
+                    Apply
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+        </div>
+        <Button
+          className="bg-blue-600 text-white hover:bg-blue-700 h-9 sm:h-10 text-xs sm:text-sm"
+          data-testid="add-item-button"
+          onClick={() => {
+            resetForm();
+            setDialogOpen(true);
+          }}
+        >
+          <Plus className="h-4 w-4 mr-1.5" />
+          <span className="hidden sm:inline">Add Flow Metre</span>
+          <span className="sm:hidden">Add</span>
+        </Button>
+      </>
+    );
+  }, [
+    canManage,
+    showColumnFilter,
+    selectedFilterField,
+    selectedFilterValue,
+    handleClearColumnFilter,
+    handleApplyColumnFilter,
+    resetForm,
+  ]);
+
+  useRegisterPageHeader({
+    subtitle: pageHeaderSubtitle,
+    actions: pageHeaderActions,
+    enabled: !loading,
+  });
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -2298,99 +2420,12 @@ const CGWFlowMetre = () => {
 
   return (
     <div className="space-y-6" data-testid="cgw-flow-metre-page">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">CGW Flow Metre</h1>
-          <p className="text-gray-600 text-sm mt-1 max-w-3xl">
-            Inventory, NOCs, and CGWA attachments per customer and equipment row.
-            <span className="text-gray-500">
-              {' '}
-              · {items.length} total {items.length === 1 ? 'row' : 'rows'}
-              {filteredItems.length !== items.length ? (
-                <>
-                  {' '}
-                  · {filteredItems.length} {filteredItems.length === 1 ? 'matches' : 'match'} search/filters
-                </>
-              ) : null}
-            </span>
-          </p>
-        </div>
-        {canManage && (
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <div className="relative">
-              <Button
-                type="button"
-                variant="outline"
-                className="border-gray-300 text-gray-700 hover:bg-gray-50 h-10"
-                onClick={() => setShowColumnFilter((prev) => !prev)}
-                title="Filter specific column"
-              >
-                <Filter className="h-4 w-4 mr-2" />
-                Filter
-              </Button>
-              {showColumnFilter && (
-                <Card className="absolute right-0 top-full z-30 mt-1 w-80 p-3 border border-gray-200 shadow-lg bg-white rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium text-gray-800">Filter specific column</p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0 text-gray-600"
-                      onClick={() => setShowColumnFilter(false)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="space-y-2">
-                    <select
-                      value={selectedFilterField}
-                      onChange={(e) => setSelectedFilterField(e.target.value)}
-                      className="w-full h-10 rounded-lg border border-gray-300 px-2 text-sm bg-white text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    >
-                      {FILTER_GROUPS.map((group) => (
-                        <optgroup key={group.label} label={group.label}>
-                          {group.fields.map((field) => (
-                            <option key={field} value={field}>
-                              {FILTER_LABELS[field]}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                    <Input
-                      value={selectedFilterValue}
-                      onChange={(e) => setSelectedFilterValue(e.target.value)}
-                      placeholder="Type value to filter..."
-                      className="h-10 text-sm border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    />
-                    <div className="flex justify-end gap-2 pt-1">
-                      <Button type="button" size="sm" variant="outline" className="h-9 text-xs border-gray-300 text-gray-700 hover:bg-gray-50" onClick={handleClearColumnFilter}>
-                        Clear
-                      </Button>
-                      <Button type="button" size="sm" className="h-9 text-xs bg-blue-600 hover:bg-blue-700 text-white" onClick={handleApplyColumnFilter}>
-                        Apply
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              )}
-            </div>
-            <Dialog open={dialogOpen} onOpenChange={(open) => {
-              setDialogOpen(open);
-              if (!open) resetForm();
-            }}>
-              <DialogTrigger asChild>
-                <Button
-                  className="bg-blue-600 text-white hover:bg-blue-700 h-10"
-                  data-testid="add-item-button"
-                  onClick={resetForm}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Flow Metre
-                </Button>
-              </DialogTrigger>
-            <DialogContent className="flex h-[min(96vh,100dvh)] max-h-[min(96vh,100dvh)] w-[min(1600px,98vw)] max-w-[min(1600px,98vw)] flex-col overflow-hidden bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+      {canManage && (
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) resetForm();
+        }}>
+          <DialogContent className="flex h-[min(96vh,100dvh)] max-h-[min(96vh,100dvh)] w-[min(1600px,98vw)] max-w-[min(1600px,98vw)] flex-col overflow-hidden bg-white rounded-lg border border-gray-200 shadow-xl p-0">
               <div className="bg-blue-600 text-white p-6 rounded-t-lg shrink-0">
                 <DialogHeader>
                   <DialogTitle className="text-xl font-bold text-white">
@@ -3348,11 +3383,9 @@ const CGWFlowMetre = () => {
                   </div>
                 </div>
               </form>
-            </DialogContent>
-          </Dialog>
-          </div>
-        )}
-      </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       <Card className="p-4 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="relative">
@@ -3427,7 +3460,10 @@ const CGWFlowMetre = () => {
       {/* Inventory grid */}
       {filteredItems.length > 0 ? (
         <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-          <div className="overflow-auto table-scroll max-h-[calc(100vh-220px)] scrollbar-thin" style={{ scrollbarWidth: 'auto' }}>
+          <div
+            className="table-scroll overflow-x-auto overflow-y-scroll h-[calc(100vh-240px)] min-h-[400px] max-h-[calc(100vh-240px)] scrollbar-thin"
+            style={{ scrollbarWidth: 'auto' }}
+          >
             <table className="w-full text-sm min-w-[8400px]">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
@@ -3591,9 +3627,14 @@ const CGWFlowMetre = () => {
                           {/* Customer ID on every sub-row (no rowspan) so line 2+ still shows id + CUST…-n */}
                           <td className="py-3 px-4 text-gray-800 whitespace-nowrap bg-sky-50/40 font-mono text-[11px] align-top">
                             <div className="flex flex-col gap-0.5">
-                              <span className="font-semibold">
+                              <button
+                                type="button"
+                                className="font-semibold text-left text-blue-700 hover:text-blue-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
+                                title="View full customer details"
+                                onClick={() => openCustomerPreview(group)}
+                              >
                                 {customerCodeById.get(groupAnchor.customer_id) || groupAnchor.customer_id || '—'}
-                              </span>
+                              </button>
                               {group.rows.length > 1 ? (
                                 <span
                                   className="text-[9px] font-medium text-sky-950/80 tabular-nums"
@@ -3655,9 +3696,14 @@ const CGWFlowMetre = () => {
                         </>
                       ) : rowIndex === 0 ? (
                         <td rowSpan={group.rows.length} className="py-3 px-3 text-gray-800 bg-sky-50/40 align-top max-w-[200px]">
-                          <p className="text-[11px] font-mono font-semibold text-gray-900 truncate" title={String(customerCodeById.get(groupAnchor.customer_id) || groupAnchor.customer_id || '')}>
+                          <button
+                            type="button"
+                            className="text-[11px] font-mono font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
+                            title="View full customer details"
+                            onClick={() => openCustomerPreview(group)}
+                          >
                             {customerCodeById.get(groupAnchor.customer_id) || groupAnchor.customer_id || '—'}
-                          </p>
+                          </button>
                           {group.rows.length > 1 ? (
                             <p className="text-[9px] font-mono text-sky-900/90 mt-1 leading-snug">
                               {customerLineIdBase && customerLineIdBase !== '—'
@@ -4581,6 +4627,16 @@ const CGWFlowMetre = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <CgwCustomerPreviewDialog
+        open={customerPreviewOpen}
+        onOpenChange={setCustomerPreviewOpen}
+        group={customerPreviewGroup}
+        customerCode={customerPreviewCode}
+        onPreviewNoc={(item) => {
+          if (item) openNocDialog(item, { startInPreviewMode: true });
+        }}
+      />
     </div>
   );
 };

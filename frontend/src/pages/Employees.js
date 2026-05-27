@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Plus, Edit, Trash2, Search, Mail, Phone, Eye, EyeOff } from 'lucide-react';
@@ -124,6 +125,30 @@ export const Employees = () => {
 
   const canManageEmployees = ['Admin', 'HR'].includes(user?.role);
 
+  const pageHeaderActions = useMemo(
+    () =>
+      canManageEmployees ? (
+        <Button
+          className="bg-blue-600 text-white hover:bg-blue-700 h-9 sm:h-10 text-sm"
+          data-testid="add-employee-button"
+          onClick={() => {
+            resetForm();
+            setDialogOpen(true);
+          }}
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Add Employee
+        </Button>
+      ) : null,
+    [canManageEmployees, resetForm],
+  );
+
+  useRegisterPageHeader({
+    subtitle: `${employees.length} total employees`,
+    actions: pageHeaderActions,
+    enabled: !loading,
+  });
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -134,24 +159,12 @@ export const Employees = () => {
 
   return (
     <div className="space-y-6" data-testid="employees-page">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Employees</h1>
-          <p className="text-gray-600 text-sm mt-1">{employees.length} total employees</p>
-        </div>
-        {canManageEmployees && (
-          <Dialog open={dialogOpen} onOpenChange={(open) => {
-            setDialogOpen(open);
-            if (!open) resetForm();
-          }}>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 text-white hover:bg-blue-700" data-testid="add-employee-button">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Employee
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+      {canManageEmployees && (
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) resetForm();
+        }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-lg border border-gray-200 shadow-xl p-0">
               <div className="bg-blue-600 text-white p-6 rounded-t-lg">
                 <DialogHeader>
                   <DialogTitle className="text-xl font-bold text-white">
@@ -287,10 +300,9 @@ export const Employees = () => {
                   </Button>
                 </div>
               </form>
-            </DialogContent>
-          </Dialog>
-        )}
-      </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Search */}
       <Card className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">

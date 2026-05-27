@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { toast } from 'sonner';
 import {
   Package,
@@ -581,48 +582,63 @@ const Inventory = () => {
     }
   };
 
+  const pageHeaderActions = useMemo(
+    () => (
+      <>
+        <Button
+          onClick={handleDownloadTemplate}
+          variant="outline"
+          size="sm"
+          className="border-blue-300 text-blue-600 hover:bg-blue-50 gap-1.5 h-9 sm:h-10 text-xs sm:text-sm"
+        >
+          <FileText className="w-4 h-4" />
+          <span className="hidden md:inline">Download Template</span>
+          <span className="md:hidden">Template</span>
+        </Button>
+        <Button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={importing}
+          size="sm"
+          className="bg-purple-600 hover:bg-purple-700 text-white gap-1.5 h-9 sm:h-10 text-xs sm:text-sm"
+        >
+          <Upload className="w-4 h-4" />
+          {importing ? 'Importing…' : (
+            <>
+              <span className="hidden md:inline">Import Orders</span>
+              <span className="md:hidden">Import</span>
+            </>
+          )}
+        </Button>
+        <Button
+          onClick={handleExportToExcel}
+          size="sm"
+          className="bg-green-600 hover:bg-green-700 text-white gap-1.5 h-9 sm:h-10 text-xs sm:text-sm"
+        >
+          <Download className="w-4 h-4" />
+          <span className="hidden md:inline">Export to Excel</span>
+          <span className="md:hidden">Export</span>
+        </Button>
+      </>
+    ),
+    [importing, handleDownloadTemplate, handleExportToExcel],
+  );
+
+  useRegisterPageHeader({
+    subtitle: `${orders.length} total orders`,
+    actions: pageHeaderActions,
+  });
+
   // Main render
   return (
     <div className="space-y-6" data-testid="inventory-page">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Orders & Inventory</h1>
-          <p className="text-gray-600 text-sm mt-1">{orders.length} total orders</p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button
-            onClick={handleDownloadTemplate}
-            variant="outline"
-            className="border-blue-300 text-blue-600 hover:bg-blue-50 gap-2"
-          >
-            <FileText className="w-4 h-4" />
-            Download Template
-          </Button>
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importing}
-            className="bg-purple-600 hover:bg-purple-700 text-white gap-2"
-          >
-            <Upload className="w-4 h-4" />
-            {importing ? 'Importing...' : 'Import Orders'}
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            onChange={handleFileImport}
-            className="hidden"
-          />
-          <Button
-            onClick={handleExportToExcel}
-            className="bg-green-600 hover:bg-green-700 text-white gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Export to Excel
-          </Button>
-        </div>
-      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        onChange={handleFileImport}
+        className="hidden"
+        aria-hidden
+      />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

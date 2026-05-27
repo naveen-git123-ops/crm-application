@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -10,8 +10,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
+import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import {
   Sheet,
   SheetContent,
@@ -804,6 +804,61 @@ export const Leads = () => {
     leads: filteredLeads.filter((l) => l.status === status),
   }));
 
+  const pageHeaderActions = useMemo(
+    () => (
+      <>
+        <Button
+          onClick={handleDownloadTemplate}
+          variant="outline"
+          size="sm"
+          className="border-blue-300 text-blue-600 hover:bg-blue-50 gap-1.5 h-9 sm:h-10 text-xs sm:text-sm"
+        >
+          <FileText className="h-4 w-4" />
+          <span className="hidden md:inline">Download Template</span>
+          <span className="md:hidden">Template</span>
+        </Button>
+        <Button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={importing}
+          size="sm"
+          className="bg-purple-600 hover:bg-purple-700 text-white gap-1.5 h-9 sm:h-10 text-xs sm:text-sm"
+        >
+          <Upload className="h-4 w-4" />
+          {importing ? 'Importing…' : (
+            <>
+              <span className="hidden md:inline">Import Leads</span>
+              <span className="md:hidden">Import</span>
+            </>
+          )}
+        </Button>
+        <Button
+          onClick={handleExportToExcel}
+          size="sm"
+          className="bg-green-600 hover:bg-green-700 text-white gap-1.5 h-9 sm:h-10 text-xs sm:text-sm"
+        >
+          <Download className="h-4 w-4" />
+          <span className="hidden md:inline">Export to Excel</span>
+          <span className="md:hidden">Export</span>
+        </Button>
+        <Button
+          size="sm"
+          className="bg-blue-600 text-white hover:bg-blue-700 h-9 sm:h-10 text-xs sm:text-sm"
+          onClick={() => setAddDialogOpen(true)}
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          Add Lead
+        </Button>
+      </>
+    ),
+    [importing, handleDownloadTemplate, handleExportToExcel],
+  );
+
+  useRegisterPageHeader({
+    subtitle: `${stats.total} total`,
+    actions: pageHeaderActions,
+    enabled: !(loading && leads.length === 0),
+  });
+
   if (loading && leads.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -814,6 +869,14 @@ export const Leads = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6" data-testid="leads-page">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        onChange={handleFileImport}
+        className="hidden"
+        aria-hidden
+      />
       {/* Notification Toast - Bottom Right Like Teams */}
       {currentNotification && (
         <div className="fixed bottom-4 right-4 w-96 bg-white rounded-lg shadow-2xl border border-gray-200 p-4 z-50" style={{animation: 'slideInRight 0.3s ease-out'}}>
@@ -854,52 +917,8 @@ export const Leads = () => {
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Leads</h1>
-          <p className="text-gray-600 text-sm mt-1">
-            Manage leads and sales pipeline • {stats.total} total
-          </p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button
-            onClick={handleDownloadTemplate}
-            variant="outline"
-            className="border-blue-300 text-blue-600 hover:bg-blue-50 gap-2 h-10"
-          >
-            <FileText className="h-4 w-4" />
-            Download Template
-          </Button>
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importing}
-            className="bg-purple-600 hover:bg-purple-700 text-white gap-2 h-10"
-          >
-            <Upload className="h-4 w-4" />
-            {importing ? 'Importing...' : 'Import Leads'}
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            onChange={handleFileImport}
-            className="hidden"
-          />
-          <Button
-            onClick={handleExportToExcel}
-            className="bg-green-600 hover:bg-green-700 text-white gap-2 h-10"
-          >
-            <Download className="h-4 w-4" />
-            Export to Excel
-          </Button>
-          <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 text-white hover:bg-blue-700 h-10">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Lead
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl p-0 max-h-[90vh] overflow-y-auto">
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl p-0 max-h-[90vh] overflow-y-auto">
               <div className="bg-blue-600 text-white p-6 rounded-t-lg">
                 <DialogHeader>
                   <DialogTitle className="text-xl font-bold text-white">New Lead</DialogTitle>
@@ -1176,10 +1195,8 @@ export const Leads = () => {
                 </Button>
               </div>
             </form>
-          </DialogContent>
-        </Dialog>
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Filters & view toggle */}
       <Card className="p-3 rounded-lg border border-gray-200 bg-white shadow-sm">

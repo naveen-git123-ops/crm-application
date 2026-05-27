@@ -1,10 +1,10 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import '@/App.css';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { Toaster } from 'sonner';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { ProtectedRoute, RequireAuth } from '@/components/ProtectedRoute';
 import { Layout } from '@/components/Layout';
 import { Login } from '@/pages/Login';
 import { Dashboard } from '@/pages/Dashboard';
@@ -37,238 +37,200 @@ function App() {
           <Toaster position="top-right" richColors />
           <Routes>
             <Route path="/login" element={<Login />} />
-            
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute requiredPermission="dashboard">
-                  <Layout>
-                    <Dashboard />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/leads"
-              element={
-                <ProtectedRoute requiredPermission="leads">
-                  <Layout>
-                    <Leads />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/inventory"
-              element={
-                <ProtectedRoute requiredPermission="leads">
-                  <Layout>
-                    <Inventory />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/employees"
-              element={
-                <ProtectedRoute requiredPermission="employees">
-                  <Layout>
-                    <Employees />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/customers"
-              element={
-                <ProtectedRoute requiredPermission="customers">
-                  <Layout>
-                    <Customers />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/cgw-flow-metre"
-              element={
-                <ProtectedRoute requiredPermission="cgw-flow-metre">
-                  <Layout>
-                    <CGWFlowMetre />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/tasks"
-              element={
-                <ProtectedRoute requiredPermission="tasks">
-                  <Layout>
-                    <Tasks />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/attendance"
-              element={
-                <ProtectedRoute requiredPermission="attendance">
-                  <Layout>
-                    <Attendance />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
 
-            <Route
-              path="/monthly-report"
-              element={
-                <ProtectedRoute requiredPermission="monthly-report">
-                  <Layout>
-                    <MonthlyReport />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/leaves"
-              element={
-                <ProtectedRoute requiredPermission="leaves">
-                  <Layout>
-                    <Leaves />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/expenses"
-              element={
-                <ProtectedRoute requiredPermission="expenses">
-                  <Layout>
-                    <Expenses />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/vehicles"
-              element={
-                <ProtectedRoute requiredPermission="vehicles">
-                  <Layout>
-                    <Vehicles />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/location-tracker"
-              element={
-                <ProtectedRoute allowedRoles={['Admin']}>
-                  <Layout>
-                    <LocationTracker />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/roles"
-              element={
-                <ProtectedRoute requiredPermission="roles">
-                  <Layout>
-                    <Roles />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/workspace"
-              element={
-                <ProtectedRoute requiredPermission="workspace">
-                  <Layout>
-                    <Workspace />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/documents"
-              element={
-                <ProtectedRoute requiredPermission="documents">
-                  <Layout>
-                    <Documents />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/government-holidays"
-              element={
-                <ProtectedRoute requiredPermission="holidays">
-                  <Layout>
-                    <GovernmentHolidays />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/payroll"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Payroll />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
+            <Route element={<RequireAuth />}>
+              <Route element={<Layout />}>
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedRoute requiredPermission="dashboard">
+                      <Dashboard />
+                    </ProtectedRoute>
+                  }
+                />
 
-            <Route
-              path="/salary"
-              element={
-                <ProtectedRoute allowedRoles={['Admin', 'Accountant']}>
-                  <Layout>
-                    <Salary />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/idcards"
-              element={
-                <ProtectedRoute requiredPermission="idcards">
-                  <Layout>
-                    <IDCards />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
-            <Route
-              path="/settings"
-              element={
-                <ProtectedRoute requiredPermission="settings">
-                  <Layout>
-                    <Settings />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            
+                <Route
+                  path="/leads"
+                  element={
+                    <ProtectedRoute requiredPermission="leads">
+                      <Leads />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/inventory"
+                  element={
+                    <ProtectedRoute requiredPermission="leads">
+                      <Inventory />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/employees"
+                  element={
+                    <ProtectedRoute requiredPermission="employees">
+                      <Employees />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/customers"
+                  element={
+                    <ProtectedRoute requiredPermission="customers">
+                      <Customers />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/cgw-flow-metre"
+                  element={
+                    <ProtectedRoute requiredPermission="cgw-flow-metre">
+                      <CGWFlowMetre />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/tasks"
+                  element={
+                    <ProtectedRoute requiredPermission="tasks">
+                      <Tasks />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/attendance"
+                  element={
+                    <ProtectedRoute requiredPermission="attendance">
+                      <Attendance />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/monthly-report"
+                  element={
+                    <ProtectedRoute requiredPermission="monthly-report">
+                      <MonthlyReport />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/leaves"
+                  element={
+                    <ProtectedRoute requiredPermission="leaves">
+                      <Leaves />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/expenses"
+                  element={
+                    <ProtectedRoute requiredPermission="expenses">
+                      <Expenses />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/vehicles"
+                  element={
+                    <ProtectedRoute requiredPermission="vehicles">
+                      <Vehicles />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/location-tracker"
+                  element={
+                    <ProtectedRoute allowedRoles={['Admin']}>
+                      <LocationTracker />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/roles"
+                  element={
+                    <ProtectedRoute requiredPermission="roles">
+                      <Roles />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/workspace"
+                  element={
+                    <ProtectedRoute requiredPermission="workspace">
+                      <Workspace />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/documents"
+                  element={
+                    <ProtectedRoute requiredPermission="documents">
+                      <Documents />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/government-holidays"
+                  element={
+                    <ProtectedRoute requiredPermission="holidays">
+                      <GovernmentHolidays />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/payroll"
+                  element={
+                    <ProtectedRoute>
+                      <Payroll />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/salary"
+                  element={
+                    <ProtectedRoute allowedRoles={['Admin', 'Accountant']}>
+                      <Salary />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/idcards"
+                  element={
+                    <ProtectedRoute requiredPermission="idcards">
+                      <IDCards />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/settings"
+                  element={
+                    <ProtectedRoute requiredPermission="settings">
+                      <Settings />
+                    </ProtectedRoute>
+                  }
+                />
+              </Route>
+            </Route>
+
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

@@ -45,23 +45,16 @@ export function CgwExistingAttachments({ attachments, onPreview, label = 'Saved 
       <p className="text-[10px] font-medium uppercase tracking-wide text-gray-500">{label}</p>
       <ul className="space-y-1">
         {list.map((att) => (
-          <li
-            key={att.id}
-            className="flex items-center gap-2 rounded border border-blue-100 bg-blue-50/50 px-2 py-1.5 text-xs text-gray-800"
-          >
-            <span className="flex-1 truncate" title={att.file_name}>
-              {att.file_name || 'File'}
-            </span>
-            <Button
+          <li key={att.id}>
+            <button
               type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[10px] text-blue-700 hover:bg-blue-100"
               onClick={() => onPreview?.(att)}
+              className="flex w-full items-center gap-2 rounded border border-blue-100 bg-blue-50/50 px-2 py-1.5 text-xs text-blue-800 hover:bg-blue-100 hover:border-blue-200 text-left transition-colors"
+              title={`Preview: ${att.file_name || 'File'}`}
             >
-              <Eye className="h-3 w-3 mr-1" />
-              Preview
-            </Button>
+              <span className="flex-1 truncate font-medium">{att.file_name || 'File'}</span>
+              <Eye className="h-3.5 w-3.5 shrink-0 opacity-70" />
+            </button>
           </li>
         ))}
       </ul>

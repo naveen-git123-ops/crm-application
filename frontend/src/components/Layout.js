@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { 
@@ -29,10 +29,73 @@ import {
   Wallet
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { PageHeaderProvider, usePageHeader, usePageHeaderActions } from '@/contexts/PageHeaderContext';
 
-export const Layout = ({ children }) => {
+function ClearHeaderOnNavigate() {
+  const location = useLocation();
+  const { clearPageHeader } = usePageHeaderActions();
+
+  useEffect(() => {
+    clearPageHeader();
+  }, [location.pathname, clearPageHeader]);
+
+  return null;
+}
+
+function AppHeaderBar({
+  currentPath,
+  filteredNavItems,
+  desktopSidebarCollapsed,
+  onOpenMobileMenu,
+  onToggleDesktopSidebar,
+}) {
+  const header = usePageHeader();
+  const title = filteredNavItems.find((item) => currentPath === item.path)?.label || 'Dashboard';
+
+  return (
+    <header className="min-h-12 sm:min-h-14 border-b border-gray-200 bg-white flex items-center gap-2.5 sm:gap-3 px-3 sm:px-5 py-2 sm:py-2.5 shadow-sm flex-shrink-0 pt-[env(safe-area-inset-top)]">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="lg:hidden h-10 w-10 min-h-[40px] min-w-[40px] flex-shrink-0 border border-gray-300 text-gray-700 hover:bg-gray-100"
+        onClick={onOpenMobileMenu}
+        data-testid="mobile-menu-button"
+        aria-label="Open menu"
+      >
+        <Menu className="h-5 w-5" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="hidden lg:inline-flex h-9 w-9 flex-shrink-0 border border-gray-300 text-gray-700 hover:bg-gray-100"
+        onClick={onToggleDesktopSidebar}
+        data-testid="desktop-sidebar-toggle"
+        aria-label={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        {desktopSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+      </Button>
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <h2 className="text-base sm:text-lg font-semibold tracking-tight text-gray-900 truncate">{title}</h2>
+        {header.subtitle ? (
+          <span className="hidden sm:inline text-sm text-gray-500 truncate border-l border-gray-200 pl-2.5 ml-0.5">
+            {header.subtitle}
+          </span>
+        ) : null}
+      </div>
+      {header.actions ? (
+        <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 shrink-0 max-w-[min(100%,72vw)]">
+          {header.actions}
+        </div>
+      ) : null}
+    </header>
+  );
+}
+
+export const Layout = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => {
     try {
@@ -89,7 +152,7 @@ export const Layout = ({ children }) => {
     return hasPermission;
   });
 
-  const currentPath = window.location.pathname;
+  const currentPath = location.pathname;
   const bottomNavItems = filteredNavItems.slice(0, 5);
 
   return (
@@ -205,38 +268,21 @@ export const Layout = ({ children }) => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {/* Header - touch-friendly on mobile */}
-        <header className="h-10 sm:h-11 border-b border-gray-200 bg-white flex items-center px-3 sm:px-4 shadow-sm flex-shrink-0 pt-[env(safe-area-inset-top)]">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden mr-2 h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 bg-gray-200 border border-gray-300 text-gray-800 hover:bg-gray-300"
-            onClick={() => setSidebarOpen(true)}
-            data-testid="mobile-menu-button"
-            aria-label="Open menu"
-          >
-            <Menu className="h-6 w-6" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden lg:inline-flex mr-2 h-8 w-8 flex-shrink-0 border border-gray-300 text-gray-700 hover:bg-gray-100"
-            onClick={() => setDesktopSidebarCollapsed(prev => !prev)}
-            data-testid="desktop-sidebar-toggle"
-            aria-label={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {desktopSidebarCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
-          </Button>
-          <h2 className="text-sm sm:text-base font-semibold tracking-tight text-gray-900 truncate">
-            {filteredNavItems.find(item => currentPath === item.path)?.label || 'Dashboard'}
-          </h2>
-        </header>
+        <PageHeaderProvider>
+          <ClearHeaderOnNavigate />
+          <AppHeaderBar
+            currentPath={currentPath}
+            filteredNavItems={filteredNavItems}
+            desktopSidebarCollapsed={desktopSidebarCollapsed}
+            onOpenMobileMenu={() => setSidebarOpen(true)}
+            onToggleDesktopSidebar={() => setDesktopSidebarCollapsed((prev) => !prev)}
+          />
 
-        {/* Page Content - responsive padding, space for bottom nav on mobile */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 pb-24 sm:pb-6 bg-gray-50">
-          {children}
-        </main>
+          {/* Page Content - responsive padding, space for bottom nav on mobile */}
+          <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 pb-24 sm:pb-6 bg-gray-50">
+            <Outlet />
+          </main>
+        </PageHeaderProvider>
 
         {/* Bottom navigation - mobile only */}
         <nav 
