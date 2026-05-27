@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PageHeaderProvider, usePageHeader, usePageHeaderActions } from '@/contexts/PageHeaderContext';
+import { EmployeeLocationTracker } from '@/components/EmployeeLocationTracker';
 
 function ClearHeaderOnNavigate() {
   const location = useLocation();
@@ -269,6 +270,7 @@ export const Layout = () => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <PageHeaderProvider>
+          <EmployeeLocationTracker />
           <ClearHeaderOnNavigate />
           <AppHeaderBar
             currentPath={currentPath}

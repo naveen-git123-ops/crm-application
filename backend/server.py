@@ -213,6 +213,22 @@ class AttendanceSessionModel(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class EmployeeLocationLogModel(Base):
+    """Continuous GPS breadcrumbs while employee is punched in (field tracking)."""
+    __tablename__ = "employee_location_logs"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), index=True, nullable=False)
+    employee_name = Column(String(255), nullable=True)
+    date = Column(String(10), index=True, nullable=False)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    accuracy = Column(Float, nullable=True)
+    speed = Column(Float, nullable=True)
+    heading = Column(Float, nullable=True)
+    recorded_at = Column(DateTime, default=datetime.now, index=True)
+    source = Column(String(32), default="web")
+
+
 class LatePunchInRequestModel(Base):
     __tablename__ = "late_punch_in_requests"
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -904,6 +920,21 @@ def migrate_attendance_sessions_table():
             print(f"Migration error for attendance_sessions: {e}")
 
 migrate_attendance_sessions_table()
+
+
+def migrate_employee_location_logs_table():
+    """Create employee_location_logs table for continuous GPS tracking."""
+    from sqlalchemy import text, inspect
+    try:
+        insp = inspect(engine)
+        if "employee_location_logs" not in insp.get_table_names():
+            EmployeeLocationLogModel.__table__.create(bind=engine, checkfirst=True)
+            print("Created employee_location_logs table")
+    except Exception as e:
+        print(f"Migration error for employee_location_logs: {e}")
+
+
+migrate_employee_location_logs_table()
 
 def migrate_attendance_new_columns():
     """Add new columns to attendance if missing."""
@@ -1867,6 +1898,64 @@ class Attendance(BaseModel):
     tour_reason: Optional[str] = None
     is_active_session: Optional[int] = None
     sessions: Optional[List[AttendanceSession]] = None
+
+
+class LocationLogCreate(BaseModel):
+    latitude: float
+    longitude: float
+    accuracy: Optional[float] = None
+    speed: Optional[float] = None
+    heading: Optional[float] = None
+    recorded_at: Optional[datetime] = None
+    source: Optional[str] = "web"
+
+
+class LocationLogBatchCreate(BaseModel):
+    points: List[LocationLogCreate] = Field(default_factory=list)
+
+
+def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    import math
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlon / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _employee_is_punched_in(db: Session, employee_id: str) -> bool:
+    today = attendance_local_date_str()
+    rec = (
+        db.query(AttendanceModel)
+        .filter(AttendanceModel.employee_id == employee_id, AttendanceModel.date == today)
+        .first()
+    )
+    return bool(rec and rec.is_active_session == 1)
+
+
+def _should_skip_location_log(
+    db: Session, employee_id: str, lat: float, lng: float, min_seconds: int = 90, min_meters: float = 25.0
+) -> bool:
+    last = (
+        db.query(EmployeeLocationLogModel)
+        .filter(EmployeeLocationLogModel.employee_id == employee_id)
+        .order_by(EmployeeLocationLogModel.recorded_at.desc())
+        .first()
+    )
+    if not last:
+        return False
+    try:
+        dist = _haversine_meters(last.latitude, last.longitude, lat, lng)
+    except Exception:
+        dist = 9999.0
+    if dist >= min_meters:
+        return False
+    rec_at = last.recorded_at
+    if rec_at and hasattr(rec_at, "timestamp"):
+        delta = (datetime.now() - rec_at).total_seconds()
+        return delta < min_seconds
+    return False
 
 
 def _punch_time_to_minutes(value: Optional[str]) -> Optional[int]:
@@ -5898,6 +5987,96 @@ def approve_tour(
     return {'message': f'Tour {body.status}', 'attendance_id': rec.id}
 
 
+@api_router.post('/attendance/location-log')
+def create_location_log(
+    data: LocationLogCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Record a GPS breadcrumb while punched in (employee's own device)."""
+    employee_id = (current_user.employee_id or '').strip()
+    if not employee_id:
+        raise HTTPException(status_code=400, detail='Employee ID is required for location tracking')
+
+    if not _employee_is_punched_in(db, employee_id):
+        raise HTTPException(status_code=400, detail='Location tracking is only active while punched in')
+
+    lat, lng = float(data.latitude), float(data.longitude)
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        raise HTTPException(status_code=400, detail='Invalid coordinates')
+
+    if data.accuracy is not None and data.accuracy > 150:
+        raise HTTPException(status_code=400, detail='GPS accuracy too low; wait for a better signal')
+
+    if _should_skip_location_log(db, employee_id, lat, lng):
+        return {'message': 'skipped_duplicate', 'saved': False}
+
+    recorded = data.recorded_at or datetime.now()
+    row = EmployeeLocationLogModel(
+        employee_id=employee_id,
+        employee_name=current_user.name,
+        date=attendance_local_date_str(),
+        latitude=lat,
+        longitude=lng,
+        accuracy=data.accuracy,
+        speed=data.speed,
+        heading=data.heading,
+        recorded_at=recorded,
+        source=(data.source or 'web')[:32],
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {'message': 'saved', 'saved': True, 'id': row.id}
+
+
+@api_router.post('/attendance/location-logs/batch')
+def create_location_logs_batch(
+    data: LocationLogBatchCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Batch upload GPS points (e.g. after connectivity loss). Max 100 per request."""
+    employee_id = (current_user.employee_id or '').strip()
+    if not employee_id:
+        raise HTTPException(status_code=400, detail='Employee ID is required')
+
+    if not _employee_is_punched_in(db, employee_id):
+        raise HTTPException(status_code=400, detail='Not punched in')
+
+    points = data.points or []
+    if len(points) > 100:
+        raise HTTPException(status_code=400, detail='Maximum 100 points per batch')
+
+    saved = 0
+    today = attendance_local_date_str()
+    for pt in points:
+        lat, lng = float(pt.latitude), float(pt.longitude)
+        if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            continue
+        if pt.accuracy is not None and pt.accuracy > 150:
+            continue
+        if _should_skip_location_log(db, employee_id, lat, lng):
+            continue
+        db.add(
+            EmployeeLocationLogModel(
+                employee_id=employee_id,
+                employee_name=current_user.name,
+                date=today,
+                latitude=lat,
+                longitude=lng,
+                accuracy=pt.accuracy,
+                speed=pt.speed,
+                heading=pt.heading,
+                recorded_at=pt.recorded_at or datetime.now(),
+                source=(pt.source or 'web')[:32],
+            )
+        )
+        saved += 1
+    db.commit()
+    return {'message': 'batch_saved', 'saved_count': saved}
+
+
 @api_router.get('/attendance/employee-locations')
 def get_employee_locations(
     employee_id: str,
@@ -5905,7 +6084,7 @@ def get_employee_locations(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get punch-in/out GPS points for an employee on a given day (attendance row + per-session coords). Admin only."""
+    """Get punch-in/out GPS points + continuous track logs for an employee on a given day. Admin only."""
     if current_user.role != 'Admin':
         raise HTTPException(status_code=403, detail='Only Admin can view employee locations')
 
@@ -5993,19 +6172,50 @@ def get_employee_locations(
                     }
                 )
 
-    def _time_key(loc: Dict[str, Any]) -> str:
-        t = loc.get('time') or '00:00:00'
-        if isinstance(t, str) and len(t) >= 5:
-            return t
-        return '99:99:99'
+    track_logs = (
+        db.query(EmployeeLocationLogModel)
+        .filter(
+            EmployeeLocationLogModel.employee_id == employee_id,
+            EmployeeLocationLogModel.date == effective_date,
+        )
+        .order_by(EmployeeLocationLogModel.recorded_at.asc())
+        .all()
+    )
+    for log in track_logs:
+        rec_at = log.recorded_at
+        time_str = rec_at.strftime('%H:%M:%S') if rec_at and hasattr(rec_at, 'strftime') else None
+        locations.append(
+            {
+                'id': log.id,
+                'type': 'track',
+                'latitude': float(log.latitude),
+                'longitude': float(log.longitude),
+                'time': time_str,
+                'timestamp': _ts(rec_at),
+                'date': log.date,
+                'accuracy': log.accuracy,
+            }
+        )
 
-    locations.sort(key=_time_key)
+    def _sort_key(loc: Dict[str, Any]) -> str:
+        ts = loc.get('timestamp')
+        if ts:
+            return str(ts)
+        t = loc.get('time') or '00:00:00'
+        return f"{effective_date}T{t}"
+
+    locations.sort(key=_sort_key)
+
+    track_count = sum(1 for loc in locations if loc.get('type') == 'track')
+    punch_count = len(locations) - track_count
 
     return {
         'employee_id': employee_id,
         'date': effective_date,
         'locations': locations,
         'total_locations': len(locations),
+        'track_points': track_count,
+        'punch_points': punch_count,
     }
 
 

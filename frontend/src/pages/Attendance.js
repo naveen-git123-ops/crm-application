@@ -834,6 +834,11 @@ export const Attendance = () => {
       fetchAttendance();
       if (!canSelectPunchEmployee) {
         fetchTodayAttendanceWithSessions();
+        window.dispatchEvent(
+          new CustomEvent('crm-attendance-changed', {
+            detail: { isPunchedIn: action === 'punch_in' },
+          }),
+        );
       }
     } catch (err) {
       const detail = err.response?.data?.detail || 'Punch failed';
@@ -1769,6 +1774,12 @@ export const Attendance = () => {
                   </div>
                 </div>
               </div>
+              {isPunchedIn && !canSelectPunchEmployee && (
+                <p className="mt-3 text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                  GPS tracking is on while you are punched in. Keep this browser tab open (or install the app on your
+                  phone) so your route appears on the admin Location Tracker map.
+                </p>
+              )}
 
               {/* Sessions History */}
               {todaySessions.length > 0 && (

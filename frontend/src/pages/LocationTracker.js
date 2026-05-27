@@ -7,16 +7,16 @@ import 'leaflet/dist/leaflet.css';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { MapPin, Calendar, User, Clock, AlertCircle } from 'lucide-react';
+import { MapPin, Calendar, User, Clock, AlertCircle, Radio } from 'lucide-react';
 import { formatISTDateTime } from '@/utils/date';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
 
-/** OpenStreetMap tiles — free, no API key (fair-use; fine for typical internal CRM traffic). */
 const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
@@ -39,6 +39,12 @@ function FitBounds({ points }) {
   return null;
 }
 
+function typeLabel(type) {
+  if (type === 'punch_in') return 'Punch in';
+  if (type === 'punch_out') return 'Punch out';
+  return 'GPS track';
+}
+
 function RouteMapLeaflet({ locations, selectedId, onSelectLocation }) {
   const path = locations.map((loc) => [loc.latitude, loc.longitude]);
   const center = path.length ? path[0] : defaultCenter;
@@ -58,18 +64,24 @@ function RouteMapLeaflet({ locations, selectedId, onSelectLocation }) {
         />
       )}
       {locations.map((location, index) => {
+        const isTrack = location.type === 'track';
         const isIn = location.type === 'punch_in';
+        const isOut = location.type === 'punch_out';
         const isSelected = selectedId === location.id;
+        const radius = isTrack ? (isSelected ? 7 : 5) : isSelected ? 12 : 9;
+        const color = isIn ? '#15803d' : isOut ? '#b91c1c' : '#2563eb';
+        const fill = isIn ? '#22c55e' : isOut ? '#ef4444' : '#60a5fa';
+
         return (
           <CircleMarker
             key={location.id}
             center={[location.latitude, location.longitude]}
-            radius={isSelected ? 12 : 9}
+            radius={radius}
             pathOptions={{
-              color: isIn ? '#15803d' : '#b91c1c',
-              fillColor: isIn ? '#22c55e' : '#ef4444',
-              fillOpacity: 0.92,
-              weight: 2,
+              color,
+              fillColor: fill,
+              fillOpacity: isTrack ? 0.75 : 0.92,
+              weight: isTrack ? 1 : 2,
             }}
             eventHandlers={{
               click: () => onSelectLocation(selectedId === location.id ? null : location),
@@ -77,10 +89,13 @@ function RouteMapLeaflet({ locations, selectedId, onSelectLocation }) {
           >
             <Popup>
               <div className="text-sm text-gray-800 min-w-[160px]">
-                <p className="font-semibold capitalize mb-1">{isIn ? 'Punch in' : 'Punch out'}</p>
+                <p className="font-semibold mb-1">{typeLabel(location.type)}</p>
                 <p>
                   <span className="text-gray-500">Time:</span> {location.time || '—'}
                 </p>
+                {location.accuracy != null ? (
+                  <p className="text-xs text-gray-500 mt-1">Accuracy: ~{Math.round(location.accuracy)} m</p>
+                ) : null}
                 <p className="text-xs text-gray-500 mt-1">
                   {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
                 </p>
@@ -101,12 +116,17 @@ function RouteMapLeaflet({ locations, selectedId, onSelectLocation }) {
 const LocationTracker = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const [date, setDate] = useState(todayStr);
   const [employees, setEmployees] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [locations, setLocations] = useState([]);
+  const [trackPoints, setTrackPoints] = useState(0);
+  const [punchPoints, setPunchPoints] = useState(0);
   const [loading, setLoading] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState(null);
+  const [liveRefresh, setLiveRefresh] = useState(true);
 
   const fetchEmployees = useCallback(async () => {
     try {
@@ -123,43 +143,54 @@ const LocationTracker = () => {
     }
   }, []);
 
+  const fetchLocations = useCallback(async () => {
+    if (!selectedEmployee || !date) return;
+    setLoading(true);
+    try {
+      const response = await axios.get(`${API}/attendance/employee-locations`, {
+        params: { employee_id: selectedEmployee, date },
+        headers: authHeaders(),
+      });
+
+      const locs = response.data?.locations;
+      if (Array.isArray(locs)) {
+        setLocations(locs);
+        setTrackPoints(response.data?.track_points ?? locs.filter((l) => l.type === 'track').length);
+        setPunchPoints(response.data?.punch_points ?? locs.filter((l) => l.type !== 'track').length);
+      } else {
+        setLocations([]);
+        setTrackPoints(0);
+        setPunchPoints(0);
+      }
+    } catch (err) {
+      console.error(err);
+      if (err.response?.status === 403) {
+        toast.error('Permission denied');
+      } else {
+        toast.error(err.response?.data?.detail || 'Failed to load location data');
+      }
+      setLocations([]);
+      setTrackPoints(0);
+      setPunchPoints(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedEmployee, date]);
+
   useEffect(() => {
     if (isAdmin) fetchEmployees();
   }, [isAdmin, fetchEmployees]);
 
   useEffect(() => {
     if (!isAdmin || !selectedEmployee || !date) return;
-
-    const fetchLocations = async () => {
-      setLoading(true);
-      setSelectedLocation(null);
-      try {
-        const response = await axios.get(`${API}/attendance/employee-locations`, {
-          params: { employee_id: selectedEmployee, date },
-          headers: authHeaders(),
-        });
-
-        const locs = response.data?.locations;
-        if (Array.isArray(locs)) {
-          setLocations(locs);
-        } else {
-          setLocations([]);
-        }
-      } catch (err) {
-        console.error(err);
-        if (err.response?.status === 403) {
-          toast.error('Permission denied');
-        } else {
-          toast.error(err.response?.data?.detail || 'Failed to load location data');
-        }
-        setLocations([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchLocations();
-  }, [isAdmin, selectedEmployee, date]);
+  }, [isAdmin, selectedEmployee, date, fetchLocations]);
+
+  useEffect(() => {
+    if (!isAdmin || !liveRefresh || date !== todayStr || !selectedEmployee) return undefined;
+    const interval = setInterval(fetchLocations, 30_000);
+    return () => clearInterval(interval);
+  }, [isAdmin, liveRefresh, date, todayStr, selectedEmployee, fetchLocations]);
 
   const selectedEmployeeName =
     employees.find((emp) => emp.employee_id === selectedEmployee)?.name || 'Employee';
@@ -189,13 +220,14 @@ const LocationTracker = () => {
           <MapPin className="w-7 h-7 text-blue-600 shrink-0" />
           Location tracker
         </h1>
-        <p className="text-gray-600 text-sm mt-1">
-          Map uses free <strong>OpenStreetMap</strong> tiles (no Google billing). GPS points come from punch in/out.
+        <p className="text-gray-600 text-sm mt-1 max-w-3xl">
+          Full-day route from automatic GPS while punched in (every ~3 min), plus punch in/out markers.
+          Employees must keep this CRM tab open on their phone or laptop during work hours for web tracking.
         </p>
       </div>
 
       <Card className="p-4 sm:p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-2">
             <Label className="flex items-center gap-2 text-sm font-medium text-gray-700">
               <User className="w-4 h-4" />
@@ -224,16 +256,41 @@ const LocationTracker = () => {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              max={new Date().toISOString().split('T')[0]}
+              max={todayStr}
               className="h-11 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
             />
           </div>
 
-          <div className="flex items-end">
-            <p className="text-sm text-gray-600 pb-2">
-              <strong className="text-gray-900">{locations.length}</strong> GPS point
-              {locations.length !== 1 ? 's' : ''} for this day
+          <div className="flex flex-col justify-end gap-1">
+            <p className="text-sm text-gray-600">
+              <strong className="text-gray-900">{trackPoints}</strong> GPS track point
+              {trackPoints !== 1 ? 's' : ''}
+              {punchPoints > 0 ? (
+                <>
+                  {' '}
+                  · <strong className="text-gray-900">{punchPoints}</strong> punch point
+                  {punchPoints !== 1 ? 's' : ''}
+                </>
+              ) : null}
             </p>
+          </div>
+
+          <div className="flex items-end">
+            {date === todayStr ? (
+              <Button
+                type="button"
+                variant={liveRefresh ? 'default' : 'outline'}
+                className={liveRefresh ? 'bg-blue-600 hover:bg-blue-700 text-white h-11 w-full' : 'h-11 w-full'}
+                onClick={() => setLiveRefresh((v) => !v)}
+              >
+                <Radio className={`h-4 w-4 mr-2 ${liveRefresh ? 'animate-pulse' : ''}`} />
+                {liveRefresh ? 'Live refresh on' : 'Live refresh off'}
+              </Button>
+            ) : (
+              <Button type="button" variant="outline" className="h-11 w-full" onClick={fetchLocations}>
+                Reload map
+              </Button>
+            )}
           </div>
         </div>
       </Card>
@@ -253,8 +310,8 @@ const LocationTracker = () => {
               <MapPin className="w-12 h-12 mx-auto mb-2 opacity-40" />
               <p className="font-medium text-gray-700">No location data</p>
               <p className="text-sm mt-1 max-w-md mx-auto">
-                This employee has no stored GPS coordinates for the selected date. Locations are saved when employees
-                punch in/out with location enabled on their device.
+                No GPS points for this date. Employee must punch in with location enabled and keep the CRM
+                browser tab open for automatic tracking.
               </p>
             </div>
           </div>
@@ -270,10 +327,10 @@ const LocationTracker = () => {
       {locations.length > 0 && (
         <Card className="p-4 sm:p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Location details</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px] border-collapse">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
+          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+            <table className="w-full text-sm min-w-[720px] border-collapse">
+              <thead className="sticky top-0 bg-gray-50 z-10">
+                <tr className="border-b border-gray-200">
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">#</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Type</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Time</th>
@@ -295,10 +352,14 @@ const LocationTracker = () => {
                     <td className="py-3 px-4">
                       <span
                         className={`inline-flex px-2.5 py-1 rounded-md text-xs font-medium text-white ${
-                          location.type === 'punch_in' ? 'bg-green-600' : 'bg-red-600'
+                          location.type === 'punch_in'
+                            ? 'bg-green-600'
+                            : location.type === 'punch_out'
+                              ? 'bg-red-600'
+                              : 'bg-blue-600'
                         }`}
                       >
-                        {location.type === 'punch_in' ? 'Punch in' : 'Punch out'}
+                        {typeLabel(location.type)}
                       </span>
                     </td>
                     <td className="py-3 px-4 font-mono text-gray-800">
@@ -323,6 +384,9 @@ const LocationTracker = () => {
             </span>
             <span className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-red-600" /> Punch out
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-500" /> GPS track
             </span>
             <span className="flex items-center gap-2">
               <span className="h-0.5 w-6 bg-blue-600" /> Route
