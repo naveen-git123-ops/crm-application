@@ -13,20 +13,95 @@ import {
   previewCommunicationVia,
   previewDisplay,
   previewNocType,
-  previewPassword,
   previewProjectStatus,
   previewTelemetryCompany,
   previewYesNo,
 } from '@/lib/cgwCustomerPreview';
-import { Eye, FileText, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { Copy, Eye, EyeOff, FileText, X } from 'lucide-react';
 
 const API = API_ENDPOINT;
+
+async function copyToClipboard(text, label = 'Value') {
+  const value = String(text ?? '').trim();
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success(`${label} copied`);
+  } catch {
+    toast.error('Could not copy to clipboard');
+  }
+}
+
+function CopyIconButton({ text, label }) {
+  const hasValue = Boolean(String(text ?? '').trim());
+  if (!hasValue) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => copyToClipboard(text, label)}
+      className="shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+      title={`Copy ${label}`}
+      aria-label={`Copy ${label}`}
+    >
+      <Copy className="h-4 w-4" />
+    </button>
+  );
+}
 
 function PreviewField({ label, value, className = '' }) {
   return (
     <div className={`space-y-1 ${className}`}>
       <p className="text-xs font-medium text-gray-500">{label}</p>
       <p className="text-sm text-gray-900 break-words whitespace-pre-wrap">{value}</p>
+    </div>
+  );
+}
+
+function CopyablePreviewField({ label, value, className = '' }) {
+  const raw = value != null && String(value).trim() !== '' ? String(value) : '';
+  const hasValue = Boolean(raw);
+
+  return (
+    <div className={`space-y-1 ${className}`}>
+      <p className="text-xs font-medium text-gray-500">{label}</p>
+      <div className="flex items-center gap-1.5">
+        <p className="text-sm text-gray-900 break-all flex-1 font-mono">
+          {hasValue ? raw : '—'}
+        </p>
+        {hasValue ? <CopyIconButton text={raw} label={label} /> : null}
+      </div>
+    </div>
+  );
+}
+
+function PasswordPreviewField({ label, password, className = '' }) {
+  const [visible, setVisible] = useState(false);
+  const raw = password != null && String(password).trim() !== '' ? String(password) : '';
+  const hasValue = Boolean(raw);
+
+  return (
+    <div className={`space-y-1 ${className}`}>
+      <p className="text-xs font-medium text-gray-500">{label}</p>
+      <div className="flex items-center gap-1.5">
+        <p className="text-sm text-gray-900 break-all flex-1 font-mono">
+          {!hasValue ? '—' : visible ? raw : '••••••••'}
+        </p>
+        {hasValue ? (
+          <>
+            <CopyIconButton text={raw} label={label} />
+            <button
+              type="button"
+              onClick={() => setVisible((v) => !v)}
+              className="shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+              title={visible ? 'Hide password' : 'Show password'}
+              aria-label={visible ? 'Hide password' : 'Show password'}
+            >
+              {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -136,8 +211,8 @@ function FlowMetrePreviewCard({ line, lineLabel, onOpenAttachmentPreview }) {
             <PreviewField label="Product code" value={previewDisplay(row.telemetry_product_code)} />
             <PreviewField label="Serial number" value={previewDisplay(row.telemetry_serial_number)} />
             <PreviewField label="Portal URL" value={previewDisplay(row.telemetry_portal_url)} />
-            <PreviewField label="Username" value={previewDisplay(row.telemetry_username)} />
-            <PreviewField label="Password" value={previewPassword(row.telemetry_password)} />
+            <CopyablePreviewField label="Username" value={row.telemetry_username} />
+            <PasswordPreviewField label="Password" password={row.telemetry_password} />
             <PreviewField label="Valid from" value={previewDisplay(row.telemetry_valid_from)} />
             <PreviewField label="Valid to" value={previewDisplay(row.telemetry_valid_to)} />
             <PreviewField
@@ -324,8 +399,8 @@ export function CgwCustomerPreviewDialog({
                     <PreviewField label="Renewal date" value={previewDisplay(fd.renewal_date)} />
                     <PreviewField label="Commissioning date" value={previewDisplay(fd.date_of_commissioning)} />
                     <PreviewField label="Portal URL" value={previewDisplay(fd.url_link)} className="sm:col-span-2" />
-                    <PreviewField label="Portal user ID" value={previewDisplay(fd.user_id)} />
-                    <PreviewField label="Portal password" value={previewPassword(fd.password)} />
+                    <CopyablePreviewField label="Portal user ID" value={fd.user_id} />
+                    <PasswordPreviewField label="Portal password" password={fd.password} />
                     <PreviewField label="Remarks" value={previewDisplay(fd.remarks)} className="sm:col-span-2" />
                   </div>
                 </SectionPanel>
@@ -350,10 +425,10 @@ export function CgwCustomerPreviewDialog({
                   )}
                   <SubBox title="BHUNEER / no-cap portal">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <PreviewField label="BHUNEER user ID" value={previewDisplay(noc.bhuneer_user_id)} />
-                      <PreviewField label="BHUNEER password" value={previewPassword(noc.bhuneer_password)} />
-                      <PreviewField label="No cap user ID" value={previewDisplay(noc.nocap_user_id)} />
-                      <PreviewField label="No cap password" value={previewPassword(noc.nocap_password)} />
+                      <CopyablePreviewField label="BHUNEER user ID" value={noc.bhuneer_user_id} />
+                      <PasswordPreviewField label="BHUNEER password" password={noc.bhuneer_password} />
+                      <CopyablePreviewField label="No cap user ID" value={noc.nocap_user_id} />
+                      <PasswordPreviewField label="No cap password" password={noc.nocap_password} />
                     </div>
                   </SubBox>
                 </SectionPanel>

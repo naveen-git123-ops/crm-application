@@ -1,5 +1,5 @@
 from sqlalchemy import text
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status, Form
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status, Form, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -368,6 +368,7 @@ class CustomerModel(Base):
     pincode = Column(String(20), nullable=True)
     country = Column(String(100), nullable=True, default='India')
     status = Column(String(50), default='Active')
+    entity_type = Column(Integer, default=0, index=True)  # 0 = customer, 1 = vendor
     # JSON array: [{"id": "...", "file_name": "...", "url": "/uploads/... or https://..."}]
     attachments_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
@@ -488,6 +489,7 @@ class LeadModel(Base):
     created_by_name = Column(String(255), nullable=True)
     category = Column(String(100), nullable=True)
     sub_category = Column(String(100), nullable=True)
+    enquiry_date = Column(String(10), nullable=True)  # YYYY-MM-DD
     contacts = Column(String(2000), nullable=True)  # JSON string: list of {name, designation, email, number}
     negotiation_price = Column(Float, nullable=True)  # Price during negotiation phase
     negotiation_terms = Column(String(500), nullable=True)  # Terms and conditions during negotiation
@@ -1036,6 +1038,19 @@ def migrate_leads_add_negotiation_fields():
         except Exception:
             pass
 
+def migrate_leads_add_enquiry_date():
+    """Add enquiry_date column to leads if missing."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            r = conn.execute(text("PRAGMA table_info(leads)"))
+            cols = [row[1] for row in r.fetchall()]
+            if 'enquiry_date' not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN enquiry_date VARCHAR(10)"))
+            conn.commit()
+        except Exception:
+            pass
+
 def migrate_orders_add_attachments_and_estimation():
     """Add offer_copy_path, order_copy_path, estimation and subscription reminder tracking columns to orders if missing."""
     from sqlalchemy import text
@@ -1060,6 +1075,7 @@ def migrate_orders_add_attachments_and_estimation():
             pass
 
 migrate_leads_add_negotiation_fields()
+migrate_leads_add_enquiry_date()
 migrate_orders_add_attachments_and_estimation()
 
 migrate_leads_add_category_and_contacts()
@@ -1093,6 +1109,29 @@ def migrate_customers():
 migrate_customers()
 
 
+def migrate_customers_entity_type():
+    """Add entity_type (0=customer, 1=vendor) and mark all existing rows as customers."""
+    from sqlalchemy import text, inspect
+    try:
+        inspector = inspect(engine)
+        existing_columns = [col['name'] for col in inspector.get_columns('customers')]
+        if 'entity_type' not in existing_columns:
+            with engine.connect() as conn:
+                if DATABASE_URL.startswith('mysql'):
+                    conn.execute(text('ALTER TABLE customers ADD COLUMN entity_type INT NOT NULL DEFAULT 0'))
+                else:
+                    conn.execute(text('ALTER TABLE customers ADD COLUMN entity_type INTEGER NOT NULL DEFAULT 0'))
+                conn.commit()
+        with engine.connect() as conn:
+            # All pre-existing ledger rows are customers; only rows explicitly set to 1 remain vendors
+            conn.execute(text('UPDATE customers SET entity_type = 0 WHERE entity_type IS NULL'))
+            conn.execute(text('UPDATE customers SET entity_type = 0 WHERE entity_type != 1'))
+            conn.commit()
+        print('customers.entity_type migration applied (existing rows -> customers)')
+    except Exception as e:
+        print(f'Migration error for customers entity_type: {e}')
+
+
 def migrate_customer_attachments_json():
     """Add attachments_json (multiple PDF metadata) to customers if missing."""
     from sqlalchemy import text, inspect
@@ -1112,6 +1151,7 @@ def migrate_customer_attachments_json():
 
 
 migrate_customer_attachments_json()
+migrate_customers_entity_type()
 
 
 def migrate_vehicle_usage_is_claimed():
@@ -1699,6 +1739,7 @@ class Customer(BaseModel):
     pincode: Optional[str] = None
     country: str = 'India'
     status: Literal['Active', 'Inactive'] = 'Active'
+    entity_type: int = 0  # 0 = customer, 1 = vendor
     contacts: Optional[List[CustomerContact]] = None
     addresses: Optional[List[CustomerAddress]] = None
     attachments: Optional[List[CustomerAttachment]] = None
@@ -1717,6 +1758,7 @@ class CustomerCreateUpdate(BaseModel):
     pincode: Optional[str] = None
     country: str = 'India'
     status: Literal['Active', 'Inactive'] = 'Active'
+    entity_type: int = 0  # 0 = customer, 1 = vendor
     contacts: Optional[List[CustomerContactCreate]] = None
     addresses: Optional[List[CustomerAddressCreate]] = None
 
@@ -2180,6 +2222,7 @@ class Lead(BaseModel):
     created_by_name: Optional[str] = None
     category: Optional[str] = None
     sub_category: Optional[str] = None
+    enquiry_date: Optional[str] = None  # YYYY-MM-DD
     contacts: Optional[list] = None  # List of dicts: {name, designation, email, number}
     negotiation_price: Optional[float] = None  # Price during negotiation phase
     negotiation_terms: Optional[str] = None  # Terms and conditions during negotiation
@@ -2199,6 +2242,7 @@ class LeadCreate(BaseModel):
     assigned_to_name: Optional[str] = None
     category: Optional[str] = None
     sub_category: Optional[str] = None
+    enquiry_date: Optional[str] = None  # YYYY-MM-DD
     contacts: Optional[list] = None  # List of dicts: {name, designation, email, number}
 
 class LeadUpdate(BaseModel):
@@ -2215,6 +2259,7 @@ class LeadUpdate(BaseModel):
     assigned_to_name: Optional[str] = None
     category: Optional[str] = None
     sub_category: Optional[str] = None
+    enquiry_date: Optional[str] = None  # YYYY-MM-DD
     contacts: Optional[list] = None  # List of dicts: {name, designation, email, number}
     negotiation_price: Optional[float] = None  # Price during negotiation phase
     negotiation_terms: Optional[str] = None  # Terms and conditions during negotiation
@@ -3350,14 +3395,51 @@ def _customer_delete_attachment_files(items: List[dict]) -> None:
                 pass
 
 
+def _next_ledger_id(db: Session, entity_type: int) -> str:
+    """Generate CUST##### or VEND##### id based on entity_type (0=customer, 1=vendor)."""
+    from sqlalchemy import or_
+    prefix = 'VEND' if entity_type == 1 else 'CUST'
+    q = db.query(func.max(cast(func.substr(CustomerModel.customer_id, 5), Integer))).filter(
+        CustomerModel.customer_id.like(f'{prefix}%')
+    )
+    if entity_type == 1:
+        q = q.filter(CustomerModel.entity_type == 1)
+    else:
+        q = q.filter(or_(CustomerModel.entity_type == 0, CustomerModel.entity_type.is_(None)))
+    max_num = q.scalar()
+    return f'{prefix}{str((max_num or 0) + 1).zfill(5)}'
+
+
+def _sync_customer_summary_from_related(customer: CustomerModel, db: Session) -> None:
+    """Copy phone/email/city from primary (or first) contact/address onto the customer row for list views."""
+    contacts = db.query(CustomerContactModel).filter(CustomerContactModel.customer_id == customer.id).all()
+    addresses = db.query(CustomerAddressModel).filter(CustomerAddressModel.customer_id == customer.id).all()
+    primary_contact = next((c for c in contacts if c.is_primary), contacts[0] if contacts else None)
+    primary_address = next((a for a in addresses if a.is_primary), addresses[0] if addresses else None)
+    if primary_contact:
+        if primary_contact.phone:
+            customer.phone = primary_contact.phone
+        if primary_contact.email:
+            customer.email = primary_contact.email
+        if primary_contact.contact_person_name and not (customer.contact_person_name or '').strip():
+            customer.contact_person_name = primary_contact.contact_person_name
+    if primary_address:
+        if primary_address.address_line:
+            customer.address_line = primary_address.address_line
+        if primary_address.city:
+            customer.city = primary_address.city
+        if primary_address.state:
+            customer.state = primary_address.state
+        if primary_address.pincode:
+            customer.pincode = primary_address.pincode
+        if primary_address.country:
+            customer.country = primary_address.country
+
+
 @api_router.post('/customers', response_model=Customer)
 def create_customer(cust_data: CustomerCreateUpdate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    
-    max_cust_num = db.query(
-        func.max(cast(func.substr(CustomerModel.customer_id, 5), Integer))
-    ).scalar()
-    next_cust_num = (max_cust_num or 0) + 1
-    cust_id = f'CUST{str(next_cust_num).zfill(5)}'
+    entity_type = 1 if int(getattr(cust_data, 'entity_type', 0) or 0) == 1 else 0
+    cust_id = _next_ledger_id(db, entity_type)
     
     new_customer = CustomerModel(
         customer_id=cust_id,
@@ -3371,7 +3453,8 @@ def create_customer(cust_data: CustomerCreateUpdate, current_user: UserModel = D
         state=cust_data.state,
         pincode=cust_data.pincode,
         country=cust_data.country,
-        status=cust_data.status
+        status=cust_data.status,
+        entity_type=entity_type,
     )
     db.add(new_customer)
     try:
@@ -3408,6 +3491,7 @@ def create_customer(cust_data: CustomerCreateUpdate, current_user: UserModel = D
             )
             db.add(new_address)
     
+    _sync_customer_summary_from_related(new_customer, db)
     db.commit()
     db.refresh(new_customer)
     
@@ -3419,8 +3503,17 @@ def create_customer(cust_data: CustomerCreateUpdate, current_user: UserModel = D
     return new_customer
 
 @api_router.get('/customers', response_model=List[Customer])
-def get_customers(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    customers = db.query(CustomerModel).filter(CustomerModel.status == 'Active').all()
+def get_customers(
+    entity_type: int = Query(0, ge=0, le=1, description='0=customer, 1=vendor'),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    q = db.query(CustomerModel).filter(CustomerModel.status == 'Active')
+    if entity_type == 1:
+        q = q.filter(CustomerModel.entity_type == 1)
+    else:
+        q = q.filter(CustomerModel.entity_type == 0)
+    customers = q.all()
     
     # Attach contacts and addresses
     for customer in customers:
@@ -3489,6 +3582,7 @@ def update_customer(customer_id: str, cust_data: CustomerCreateUpdate, current_u
             )
             db.add(new_address)
     
+    _sync_customer_summary_from_related(customer, db)
     db.commit()
     db.refresh(customer)
     
@@ -4673,7 +4767,8 @@ def import_cgw_from_excel(
                         phone=clean_cell(row.get('PERSON MOBILE NUMBER')),
                         email=clean_cell(row.get('EMAIL ID')),
                         address_line=clean_cell(row.get('LOCATION')),
-                        status='Active'
+                        status='Active',
+                        entity_type=0,
                     )
                     next_cust_num += 1
                     db.add(customer)
@@ -8270,6 +8365,7 @@ def create_lead(
         created_by_name=current_user.name,
         category=getattr(data, 'category', None),
         sub_category=getattr(data, 'sub_category', None),
+        enquiry_date=getattr(data, 'enquiry_date', None),
         contacts=json.dumps(data.contacts) if getattr(data, 'contacts', None) is not None else None
     )
     db.add(new_lead)

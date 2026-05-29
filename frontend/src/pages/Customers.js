@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { toast } from 'sonner';
 import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, Building2, X } from 'lucide-react';
@@ -14,13 +15,61 @@ const API = API_ENDPOINT;
 
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
 
+function customerPrimaryContact(customer) {
+  const list = customer?.contacts || [];
+  if (!list.length) return null;
+  return list.find((c) => c.is_primary === 1 || c.is_primary === true) || list[0];
+}
+
+function customerPrimaryAddress(customer) {
+  const list = customer?.addresses || [];
+  if (!list.length) return null;
+  return list.find((a) => a.is_primary === 1 || a.is_primary === true) || list[0];
+}
+
+function customerDisplayPhone(customer) {
+  if (customer?.phone) return customer.phone;
+  return customerPrimaryContact(customer)?.phone || '';
+}
+
+function customerDisplayEmail(customer) {
+  if (customer?.email) return customer.email;
+  return customerPrimaryContact(customer)?.email || '';
+}
+
+function customerDisplayCity(customer) {
+  if (customer?.city) return customer.city;
+  return customerPrimaryAddress(customer)?.city || '';
+}
+
+const ENTITY_CUSTOMER = 0;
+const ENTITY_VENDOR = 1;
+
 export const Customers = () => {
-  const [customers, setCustomers] = useState([]);
-  const [filteredCustomers, setFilteredCustomers] = useState([]);
+  const [activeTab, setActiveTab] = useState('customer');
+  const [records, setRecords] = useState([]);
+  const [filteredRecords, setFilteredRecords] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingCustomer, setEditingCustomer] = useState(null);
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [dialogEntityType, setDialogEntityType] = useState(ENTITY_CUSTOMER);
+
+  const entityType = activeTab === 'vendor' ? ENTITY_VENDOR : ENTITY_CUSTOMER;
+  const entityLabel = activeTab === 'vendor' ? 'Vendor' : 'Customer';
+  const entityLabelLower = entityLabel.toLowerCase();
+  const dialogEntityLabel =
+    editingRecord?.entity_type === ENTITY_VENDOR || (!editingRecord && dialogEntityType === ENTITY_VENDOR)
+      ? 'Vendor'
+      : 'Customer';
+  const dialogEntityLabelLower = dialogEntityLabel.toLowerCase();
+
+  const openAddDialog = (type) => {
+    resetForm();
+    setDialogEntityType(type);
+    setEditingRecord(null);
+    setDialogOpen(true);
+  };
 
   const [formData, setFormData] = useState({
     company_name: '',
@@ -38,29 +87,42 @@ export const Customers = () => {
     addresses: [{ address_line: '', city: '', state: '', pincode: '', country: 'India', is_primary: 0 }]
   });
 
-  useEffect(() => {
-    fetchCustomers();
-  }, []);
+  const recordsForActiveTab = React.useMemo(() => {
+    return records.filter((row) => {
+      const rowType = row.entity_type === 1 || row.entity_type === '1' ? 1 : 0;
+      return entityType === ENTITY_VENDOR ? rowType === 1 : rowType === 0;
+    });
+  }, [records, entityType]);
 
   useEffect(() => {
-    const filtered = customers.filter(cust =>
-      cust.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cust.contact_person_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cust.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cust.phone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cust.customer_id.toLowerCase().includes(searchTerm.toLowerCase())
+    setSearchTerm('');
+    setRecords([]);
+    setFilteredRecords([]);
+    setLoading(true);
+    fetchRecords(entityType);
+  }, [entityType, activeTab]);
+
+  useEffect(() => {
+    const term = searchTerm.toLowerCase();
+    const filtered = recordsForActiveTab.filter((cust) =>
+      cust.company_name.toLowerCase().includes(term) ||
+      cust.contact_person_name.toLowerCase().includes(term) ||
+      customerDisplayEmail(cust).toLowerCase().includes(term) ||
+      customerDisplayPhone(cust).toLowerCase().includes(term) ||
+      customerDisplayCity(cust).toLowerCase().includes(term) ||
+      cust.customer_id.toLowerCase().includes(term)
     );
-    setFilteredCustomers(filtered);
-  }, [searchTerm, customers]);
+    setFilteredRecords(filtered);
+  }, [searchTerm, recordsForActiveTab]);
 
-  const fetchCustomers = async () => {
+  const fetchRecords = async (type = entityType) => {
     try {
-      const response = await axios.get(`${API}/customers`, authHeaders());
-      setCustomers(response.data);
-      setFilteredCustomers(response.data);
+      const response = await axios.get(`${API}/customers?entity_type=${type}`, authHeaders());
+      setRecords(response.data);
+      setFilteredRecords(response.data);
       return response.data;
     } catch (error) {
-      toast.error('Failed to load customers');
+      toast.error(`Failed to load ${type === ENTITY_VENDOR ? 'vendors' : 'customers'}`);
       return null;
     } finally {
       setLoading(false);
@@ -93,22 +155,37 @@ export const Customers = () => {
           is_primary: address.is_primary || 0
         }));
 
+      const primaryContact = filteredContacts.find((c) => c.is_primary) || filteredContacts[0];
+      const primaryAddress = filteredAddresses.find((a) => a.is_primary) || filteredAddresses[0];
+
       const dataToSubmit = {
         ...formData,
+        contact_person_name: formData.contact_person_name || primaryContact?.contact_person_name || '',
+        phone: formData.phone || primaryContact?.phone || null,
+        email: formData.email || primaryContact?.email || null,
+        address_line: formData.address_line || primaryAddress?.address_line || null,
+        city: formData.city || primaryAddress?.city || null,
+        state: formData.state || primaryAddress?.state || null,
+        pincode: formData.pincode || primaryAddress?.pincode || null,
+        country: formData.country || primaryAddress?.country || 'India',
         contacts: filteredContacts,
-        addresses: filteredAddresses
+        addresses: filteredAddresses,
+        entity_type: editingRecord?.entity_type ?? dialogEntityType,
       };
 
-      if (editingCustomer) {
-        await axios.put(`${API}/customers/${editingCustomer.id}`, dataToSubmit, authHeaders());
-        toast.success('Customer updated successfully');
+      const savedType = editingRecord?.entity_type ?? dialogEntityType;
+      const savedLabel = savedType === ENTITY_VENDOR ? 'Vendor' : 'Customer';
+
+      if (editingRecord) {
+        await axios.put(`${API}/customers/${editingRecord.id}`, dataToSubmit, authHeaders());
+        toast.success(`${savedLabel} updated successfully`);
       } else {
         await axios.post(`${API}/customers`, dataToSubmit, authHeaders());
-        toast.success('Customer added successfully');
+        toast.success(`${savedLabel} added successfully`);
       }
       setDialogOpen(false);
       resetForm();
-      fetchCustomers();
+      fetchRecords(savedType);
     } catch (error) {
       console.error('Error:', error);
       const errorMsg = error.response?.data?.detail || 
@@ -119,18 +196,18 @@ export const Customers = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this customer?')) return;
+    if (!window.confirm(`Are you sure you want to delete this ${entityLabelLower}?`)) return;
     try {
       await axios.delete(`${API}/customers/${id}`, authHeaders());
-      toast.success('Customer deleted successfully');
-      fetchCustomers();
+      toast.success(`${entityLabel} deleted successfully`);
+      fetchRecords(entityType);
     } catch (error) {
       toast.error('Failed to delete customer');
     }
   };
 
   const handleEdit = (customer) => {
-    setEditingCustomer(customer);
+    setEditingRecord(customer);
     const contactsData = customer.contacts && customer.contacts.length > 0 
       ? customer.contacts.map(c => ({ contact_person_name: c.contact_person_name, designation: c.designation || '', phone: c.phone || '', email: c.email || '', is_primary: c.is_primary || 0 }))
       : [{ contact_person_name: '', designation: '', phone: '', email: '', is_primary: 0 }];
@@ -173,7 +250,7 @@ export const Customers = () => {
       contacts: [{ contact_person_name: '', designation: '', phone: '', email: '', is_primary: 0 }],
       addresses: [{ address_line: '', city: '', state: '', pincode: '', country: 'India', is_primary: 0 }]
     });
-    setEditingCustomer(null);
+    setEditingRecord(null);
   };
 
   const addContact = () => {
@@ -218,26 +295,8 @@ export const Customers = () => {
     setFormData({ ...formData, addresses: updatedAddresses });
   };
 
-  const pageHeaderActions = useMemo(
-    () => (
-      <Button
-        className="bg-blue-600 text-white hover:bg-blue-700 h-9 sm:h-10 text-sm"
-        data-testid="add-customer-button"
-        onClick={() => {
-          resetForm();
-          setDialogOpen(true);
-        }}
-      >
-        <Plus className="h-4 w-4 mr-2" />
-        Add Customer
-      </Button>
-    ),
-    [],
-  );
-
   useRegisterPageHeader({
-    subtitle: `${customers.length} total customers`,
-    actions: pageHeaderActions,
+    subtitle: `${recordsForActiveTab.length} total ${entityLabelLower}s`,
     enabled: !loading,
   });
 
@@ -259,10 +318,12 @@ export const Customers = () => {
               <div className="bg-blue-600 text-white p-6 rounded-t-lg">
                 <DialogHeader>
                   <DialogTitle className="text-xl font-bold text-white">
-                    {editingCustomer ? 'Edit Customer' : 'Add New Customer'}
+                    {editingRecord ? `Edit ${dialogEntityLabel}` : `Add New ${dialogEntityLabel}`}
                   </DialogTitle>
                   <p className="text-blue-100 text-sm mt-1">
-                    {editingCustomer ? 'Update customer details and save changes' : 'Create a new customer profile'}
+                    {editingRecord
+                      ? `Update ${dialogEntityLabelLower} details and save changes`
+                      : `Create a new ${dialogEntityLabelLower} profile`}
                   </p>
                 </DialogHeader>
               </div>
@@ -491,20 +552,71 @@ export const Customers = () => {
                     Cancel
                   </Button>
                   <Button type="submit" data-testid="save-customer-button" className="bg-blue-600 text-white hover:bg-blue-700">
-                    {editingCustomer ? 'Update' : 'Add'} Customer
+                    {editingRecord ? 'Update' : 'Add'} {dialogEntityLabel}
                   </Button>
                 </div>
               </form>
         </DialogContent>
       </Dialog>
 
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          setActiveTab(value);
+          setDialogOpen(false);
+          resetForm();
+        }}
+        className="space-y-4"
+      >
+        <TabsList className="grid w-full max-w-md grid-cols-2 bg-gray-100 p-1 rounded-lg">
+          <TabsTrigger
+            value="customer"
+            className="data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm rounded-md"
+          >
+            Customers
+          </TabsTrigger>
+          <TabsTrigger
+            value="vendor"
+            className="data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm rounded-md"
+          >
+            Vendors
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="customer" className="mt-0 space-y-4">
+          <div className="flex justify-end">
+            <Button
+              className="bg-blue-600 text-white hover:bg-blue-700 h-9 sm:h-10 text-sm"
+              data-testid="add-customer-button"
+              onClick={() => openAddDialog(ENTITY_CUSTOMER)}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Customer
+            </Button>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="vendor" className="mt-0 space-y-4">
+          <div className="flex justify-end">
+            <Button
+              className="bg-blue-600 text-white hover:bg-blue-700 h-9 sm:h-10 text-sm"
+              data-testid="add-vendor-button"
+              onClick={() => openAddDialog(ENTITY_VENDOR)}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Vendor
+            </Button>
+          </div>
+        </TabsContent>
+
+        <div className="space-y-4">
       {/* Search */}
       <Card className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
             data-testid="customer-search-input"
-            placeholder="Search by company name, contact person, email, phone, or customer ID..."
+            placeholder={`Search by company name, contact person, email, phone, or ${entityLabelLower} ID...`}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10 border border-gray-300 h-10 rounded-lg text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
@@ -518,7 +630,7 @@ export const Customers = () => {
           <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Customer ID</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">{entityLabel} ID</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Company Name</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Contact Person</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Phone</th>
@@ -530,7 +642,7 @@ export const Customers = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredCustomers.map((customer) => (
+              {filteredRecords.map((customer) => (
                 <tr
                   key={customer.id}
                   className="border-b border-gray-100 hover:bg-gray-50/50"
@@ -540,27 +652,29 @@ export const Customers = () => {
                   <td className="py-3 px-4 font-medium text-gray-900">{customer.company_name}</td>
                   <td className="py-3 px-4 text-gray-600">{customer.contact_person_name}</td>
                   <td className="py-3 px-4 text-gray-600">
-                    {customer.phone ? (
+                    {customerDisplayPhone(customer) ? (
                       <span className="flex items-center gap-1.5">
                         <Phone className="h-3.5 w-3 text-gray-400 shrink-0" />
-                        {customer.phone}
+                        {customerDisplayPhone(customer)}
                       </span>
                     ) : (
                       '—'
                     )}
                   </td>
                   <td className="py-3 px-4 text-gray-600">
-                    {customer.email ? (
+                    {customerDisplayEmail(customer) ? (
                       <span className="flex items-center gap-1.5">
                         <Mail className="h-3.5 w-3 text-gray-400 shrink-0" />
-                        <span className="truncate max-w-[160px]" title={customer.email}>{customer.email}</span>
+                        <span className="truncate max-w-[160px]" title={customerDisplayEmail(customer)}>
+                          {customerDisplayEmail(customer)}
+                        </span>
                       </span>
                     ) : (
                       '—'
                     )}
                   </td>
                   <td className="py-3 px-4 text-gray-600 font-mono">{customer.gst_number || '—'}</td>
-                  <td className="py-3 px-4 text-gray-600">{customer.city || '—'}</td>
+                  <td className="py-3 px-4 text-gray-600">{customerDisplayCity(customer) || '—'}</td>
                   <td className="py-3 px-4">
                     <span className={`inline-flex px-2.5 py-1 rounded-md text-xs font-medium ${
                       customer.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'
@@ -599,11 +713,13 @@ export const Customers = () => {
         </div>
       </Card>
 
-      {filteredCustomers.length === 0 && (
+      {filteredRecords.length === 0 && (
         <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
-          <p className="text-gray-600">No customers found</p>
+          <p className="text-gray-600">No {entityLabelLower}s found</p>
         </Card>
       )}
+        </div>
+      </Tabs>
     </div>
   );
 };

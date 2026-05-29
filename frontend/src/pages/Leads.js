@@ -48,7 +48,7 @@ import {
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
 
-const SOURCES = ['India Mart', 'Mail Inquery', 'Telephonic', 'Whats app', 'Other'];
+const SOURCES = ['India Mart', 'Mail Enquiry', 'Telephonic', 'Whats app', 'Other'];
 const STATUSES = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
 const ACTIVITY_TYPES = ['Call', 'Email', 'Meeting', 'Note'];
 
@@ -64,6 +64,8 @@ const CATEGORY_OPTIONS = [
 ];
 const BUSINESS_CATEGORY_OPTIONS = ['carry and order', 'stock and sell', 'consultancy'];
 
+const todayIsoDate = () => new Date().toISOString().slice(0, 10);
+
 const defaultLeadForm = {
   contact_name: '',
   company: '',
@@ -75,6 +77,7 @@ const defaultLeadForm = {
   notes: '',
   assigned_to_employee_id: '',
   assigned_to_name: '',
+  enquiry_date: '',
   category: '',
   sub_category: '',
   contacts: [
@@ -116,12 +119,10 @@ export const Leads = () => {
   const [currentNotification, setCurrentNotification] = useState(null);
   const [notificationQueue, setNotificationQueue] = useState([]);
   const [detailTab, setDetailTab] = useState('overview'); // 'overview', 'activity', 'reminders'
-  const [importing, setImporting] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const [leadAttachment, setLeadAttachment] = useState(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [customerContacts, setCustomerContacts] = useState([]);
-  const fileInputRef = useRef(null);
   const statusChangeFileRef = useRef(null);
   const [showOrderDialog, setShowOrderDialog] = useState(false);
   const [wonLead, setWonLead] = useState(null);
@@ -333,10 +334,13 @@ export const Leads = () => {
   const handleAddLead = async (e) => {
     e.preventDefault();
     try {
+      const contactName = (formData.contact_name || '').trim();
       const payload = {
         ...formData,
+        contact_name: contactName || formData.company || '',
         assigned_to_employee_id: formData.assigned_to_employee_id || null,
         assigned_to_name: formData.assigned_to_name || null,
+        enquiry_date: formData.enquiry_date || null,
         contacts: [],
       };
       const { data: createdLead } = await axios.post(`${API}/leads`, payload, { headers: authHeader() });
@@ -373,6 +377,7 @@ export const Leads = () => {
         ...formData,
         assigned_to_employee_id: formData.assigned_to_employee_id || null,
         assigned_to_name: formData.assigned_to_name || null,
+        enquiry_date: formData.enquiry_date || null,
       };
       await axios.put(`${API}/leads/${selectedLead.id}`, payload, { headers: authHeader() });
 
@@ -730,7 +735,7 @@ export const Leads = () => {
   const handleExportToExcel = async () => {
     try {
       const { data: leadsData } = await axios.get(`${API}/leads`, { headers: authHeader() });
-      const headers = ['id', 'contact_name', 'company', 'email', 'phone', 'source', 'status', 'value', 'category', 'sub_category', 'notes', 'assigned_to_name', 'days_open', 'created_at', 'created_by_name'];
+      const headers = ['id', 'contact_name', 'company', 'email', 'phone', 'source', 'status', 'value', 'category', 'sub_category', 'enquiry_date', 'notes', 'assigned_to_name', 'days_open', 'created_at', 'created_by_name'];
       const csvContent = [
         headers.join(','),
         ...leadsData.map(lead => 
@@ -755,91 +760,6 @@ export const Leads = () => {
     }
   };
 
-  const handleDownloadTemplate = () => {
-    const headers = ['contact_name', 'company', 'email', 'phone', 'source', 'status', 'value', 'category', 'sub_category', 'notes'];
-    const sampleRow = ['John Doe', 'Acme Inc', 'john@acme.com', '+91 9876543210', 'Website', 'New', '50000', 'Category A', 'Sub A', 'Sample notes'];
-    const csvContent = [headers.join(','), sampleRow.join(',')].join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'leads_template.csv';
-    link.click();
-    toast.success('Template downloaded');
-  };
-
-  const handleFileImport = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    
-    setImporting(true);
-    try {
-      const text = await file.text();
-      const lines = text.trim().split('\n');
-      if (lines.length < 2) {
-        toast.error('CSV file must have headers and at least one data row');
-        setImporting(false);
-        return;
-      }
-
-      const headers = lines[0].split(',').map(h => h.trim());
-      const requiredFields = ['contact_name', 'company', 'email'];
-      const missingFields = requiredFields.filter(f => !headers.includes(f));
-      if (missingFields.length > 0) {
-        toast.error(`Missing required fields: ${missingFields.join(', ')}`);
-        setImporting(false);
-        return;
-      }
-
-      let successCount = 0;
-      let failureCount = 0;
-
-      for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',').map(v => v.trim());
-        const row = {};
-        headers.forEach((header, idx) => {
-          row[header] = values[idx] || '';
-        });
-
-        // Validate required fields
-        if (!row.contact_name || !row.company || !row.email) {
-          failureCount++;
-          continue;
-        }
-
-        try {
-          await axios.post(`${API}/leads`, {
-            contact_name: row.contact_name,
-            company: row.company,
-            email: row.email,
-            phone: row.phone || '',
-            source: row.source || 'Other',
-            status: row.status || 'New',
-            value: row.value ? parseFloat(row.value) : null,
-            category: row.category || '',
-            sub_category: row.sub_category || '',
-            notes: row.notes || '',
-          }, { headers: authHeader() });
-          successCount++;
-        } catch {
-          failureCount++;
-        }
-      }
-
-      toast.success(`Import complete: ${successCount} succeeded, ${failureCount} failed`);
-      fetchLeads();
-      fetchStats();
-    } catch (err) {
-      toast.error('Failed to import file');
-    } finally {
-      setImporting(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
-
   const assigneeOptions = employees.map((emp) => ({
     value: emp.employee_id,
     label: `${emp.name} (${emp.employee_id})`,
@@ -855,30 +775,6 @@ export const Leads = () => {
     () => (
       <>
         <Button
-          onClick={handleDownloadTemplate}
-          variant="outline"
-          size="sm"
-          className="border-blue-300 text-blue-600 hover:bg-blue-50 gap-1.5 h-9 sm:h-10 text-xs sm:text-sm"
-        >
-          <FileText className="h-4 w-4" />
-          <span className="hidden md:inline">Download Template</span>
-          <span className="md:hidden">Template</span>
-        </Button>
-        <Button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={importing}
-          size="sm"
-          className="bg-purple-600 hover:bg-purple-700 text-white gap-1.5 h-9 sm:h-10 text-xs sm:text-sm"
-        >
-          <Upload className="h-4 w-4" />
-          {importing ? 'Importing…' : (
-            <>
-              <span className="hidden md:inline">Import Leads</span>
-              <span className="md:hidden">Import</span>
-            </>
-          )}
-        </Button>
-        <Button
           onClick={handleExportToExcel}
           size="sm"
           className="bg-green-600 hover:bg-green-700 text-white gap-1.5 h-9 sm:h-10 text-xs sm:text-sm"
@@ -892,6 +788,9 @@ export const Leads = () => {
           className="bg-blue-600 text-white hover:bg-blue-700 h-9 sm:h-10 text-xs sm:text-sm"
           onClick={() => {
             setLeadAttachment(null);
+            setFormData({ ...defaultLeadForm, enquiry_date: todayIsoDate() });
+            setSelectedCustomerId('');
+            setCustomerContacts([]);
             setAddDialogOpen(true);
           }}
         >
@@ -900,7 +799,7 @@ export const Leads = () => {
         </Button>
       </>
     ),
-    [importing, handleDownloadTemplate, handleExportToExcel],
+    [handleExportToExcel],
   );
 
   useRegisterPageHeader({
@@ -919,14 +818,6 @@ export const Leads = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6" data-testid="leads-page">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".csv"
-        onChange={handleFileImport}
-        className="hidden"
-        aria-hidden
-      />
       {/* Notification Toast - Bottom Right Like Teams */}
       {currentNotification && (
         <div className="fixed bottom-4 right-4 w-96 bg-white rounded-lg shadow-2xl border border-gray-200 p-4 z-50" style={{animation: 'slideInRight 0.3s ease-out'}}>
@@ -988,12 +879,12 @@ export const Leads = () => {
                         setFormData({
                           ...formData,
                           company: selectedCustomer.company_name,
-                          contact_name: selectedCustomer.contact_person_name,
                           phone: selectedCustomer.phone || '',
-                          email: selectedCustomer.email || ''
+                          email: selectedCustomer.email || '',
                         });
-                        // Fetch contacts for this customer
                         fetchCustomerContacts(e.target.value);
+                      } else {
+                        setCustomerContacts([]);
                       }
                     }}
                     required
@@ -1002,7 +893,7 @@ export const Leads = () => {
                     <option value="">Select a customer</option>
                     {customers.map((cust) => (
                       <option key={cust.id} value={cust.id}>
-                        {cust.company_name} - {cust.contact_person_name}
+                        {cust.company_name}
                       </option>
                     ))}
                   </select>
@@ -1038,21 +929,10 @@ export const Leads = () => {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-sm font-semibold text-gray-700">Contact Person Name *</Label>
-                  <Input
-                    value={formData.contact_name}
-                    onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
-                    required
-                    placeholder="John Doe"
-                    className="h-11 border border-gray-300"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-semibold text-gray-700">Company *</Label>
+                  <Label className="text-sm font-semibold text-gray-700">Company</Label>
                   <Input
                     value={formData.company}
                     onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                    required
                     placeholder="Acme Inc"
                     readOnly
                     className="h-11 border border-gray-300 bg-gray-50"
@@ -1060,6 +940,15 @@ export const Leads = () => {
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-gray-700">Contact Person Name</Label>
+                  <Input
+                    value={formData.contact_name}
+                    onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
+                    placeholder="John Doe (optional)"
+                    className="h-11 border border-gray-300"
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-gray-700">Email *</Label>
                   <Input
@@ -1071,6 +960,8 @@ export const Leads = () => {
                     className="h-11 border border-gray-300"
                   />
                 </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold text-gray-700">Phone</Label>
                   <Input
@@ -1156,13 +1047,22 @@ export const Leads = () => {
                     ))}
                   </select>
                 </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-gray-700">Enquiry Date</Label>
+                  <Input
+                    type="date"
+                    value={formData.enquiry_date}
+                    onChange={(e) => setFormData({ ...formData, enquiry_date: e.target.value })}
+                    className="h-11 border border-gray-300"
+                  />
+                </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-sm font-semibold text-gray-700">Inquery Details</Label>
+                <Label className="text-sm font-semibold text-gray-700">Enquiry  Details</Label>
                 <textarea
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  placeholder="Enter inquery details..."
+                  placeholder="Enter Enquiry  details..."
                   rows={3}
                   className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm resize-none"
                 />
@@ -1388,6 +1288,7 @@ export const Leads = () => {
                                 notes: lead.notes || '',
                                 assigned_to_employee_id: lead.assigned_to_employee_id || '',
                                 assigned_to_name: lead.assigned_to_name || '',
+                                enquiry_date: lead.enquiry_date || '',
                                 category: lead.category || '',
                                 sub_category: lead.sub_category || '',
                                 contacts: Array.isArray(lead.contacts) ? lead.contacts : (lead.contacts ? [lead.contacts] : [{ name: '', designation: '', email: '', number: '' }]),
@@ -1623,6 +1524,9 @@ export const Leads = () => {
                     {selectedLead.assigned_to_name && (
                       <p className="text-gray-600">Assigned to: {selectedLead.assigned_to_name}</p>
                     )}
+                    {selectedLead.enquiry_date && (
+                      <p className="text-gray-600">Enquiry date: {selectedLead.enquiry_date}</p>
+                    )}
                     {selectedLead.created_by_name && (
                       <p className="text-gray-600">Created by: {selectedLead.created_by_name}</p>
                     )}
@@ -1666,6 +1570,7 @@ export const Leads = () => {
                             notes: selectedLead.notes || '',
                             assigned_to_employee_id: selectedLead.assigned_to_employee_id || '',
                             assigned_to_name: selectedLead.assigned_to_name || '',
+                            enquiry_date: selectedLead.enquiry_date || '',
                             category: selectedLead.category || '',
                             sub_category: selectedLead.sub_category || '',
                             contacts: Array.isArray(selectedLead.contacts) ? selectedLead.contacts : (selectedLead.contacts ? [selectedLead.contacts] : [{ name: '', designation: '', email: '', number: '' }]),
@@ -2213,9 +2118,18 @@ export const Leads = () => {
                   ))}
                 </select>
               </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-gray-700">Enquiry Date</Label>
+                <Input
+                  type="date"
+                  value={formData.enquiry_date}
+                  onChange={(e) => setFormData({ ...formData, enquiry_date: e.target.value })}
+                  className="h-11 border border-gray-300"
+                />
+              </div>
             </div>
             <div className="space-y-2">
-              <Label className="text-sm font-semibold text-gray-700">Inquery Details</Label>
+              <Label className="text-sm font-semibold text-gray-700">Enquiry  Details</Label>
               <textarea
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}

@@ -504,6 +504,42 @@ function nocValidUrgency(isoDateRaw) {
   return renewalUrgency(isoDateRaw);
 }
 
+const NOC_VALID_UPTO_FILTER_OPTIONS = [
+  { value: '', label: 'All NOC validity' },
+  { value: 'expired', label: 'Expired (past valid upto)' },
+  { value: 'expiring_90', label: 'Expiring in 90 days' },
+  { value: 'expired_or_expiring_90', label: 'Expired or expiring in 90 days' },
+];
+
+function isNocValidUptoExpired(nocValidUptoRaw) {
+  const dt = parseGridDate(nocValidUptoRaw);
+  if (!dt) return false;
+  const today = startOfLocalDay(new Date());
+  return startOfLocalDay(dt).getTime() < today.getTime();
+}
+
+function isNocValidUptoExpiringWithinDays(nocValidUptoRaw, days) {
+  const dt = parseGridDate(nocValidUptoRaw);
+  if (!dt) return false;
+  const today = startOfLocalDay(new Date());
+  const validUpto = startOfLocalDay(dt);
+  if (validUpto.getTime() < today.getTime()) return false;
+  const limit = new Date(today);
+  limit.setDate(limit.getDate() + days);
+  return validUpto.getTime() <= limit.getTime();
+}
+
+function matchesNocValidUptoFilter(nocValidUptoRaw, filter) {
+  if (!filter) return true;
+  if (!nocValidUptoRaw) return false;
+  if (filter === 'expired') return isNocValidUptoExpired(nocValidUptoRaw);
+  if (filter === 'expiring_90') return isNocValidUptoExpiringWithinDays(nocValidUptoRaw, 90);
+  if (filter === 'expired_or_expiring_90') {
+    return isNocValidUptoExpired(nocValidUptoRaw) || isNocValidUptoExpiringWithinDays(nocValidUptoRaw, 90);
+  }
+  return true;
+}
+
 function RenewalDateCell({ groupEditActive, inlineEditData, groupAnchor, onChange }) {
   const rawForUrgency = groupEditActive ? inlineEditData.renewal_date : groupAnchor.renewal_date;
   const urgency = renewalUrgency(rawForUrgency);
@@ -729,6 +765,7 @@ const CGWFlowMetre = () => {
   const [columnFilters, setColumnFilters] = useState(
     FILTER_FIELDS.reduce((acc, key) => ({ ...acc, [key]: '' }), {})
   );
+  const [nocValidUptoFilter, setNocValidUptoFilter] = useState('');
   /** Inventory table: wizard-aligned column groups; collapsed groups show one summary column each. */
   const [cgwGridSectionsOpen, setCgwGridSectionsOpen] = useState({
     customer: true,
@@ -1121,10 +1158,12 @@ const CGWFlowMetre = () => {
         return String(item[key] ?? '').toLowerCase().includes(filterValue);
       });
 
-      return matchesGlobal && matchesColumns;
+      const matchesNocValidity = matchesNocValidUptoFilter(item.noc_valid_upto, nocValidUptoFilter);
+
+      return matchesGlobal && matchesColumns && matchesNocValidity;
     });
     setFilteredItems(filtered);
-  }, [searchTerm, columnFilters, items, customerCodeById]);
+  }, [searchTerm, columnFilters, nocValidUptoFilter, items, customerCodeById]);
 
   const totalGroups = groupedItems.length;
   const totalPages = Math.max(1, Math.ceil(totalGroups / pageSize));
@@ -1137,7 +1176,7 @@ const CGWFlowMetre = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, columnFilters, pageSize]);
+  }, [searchTerm, columnFilters, nocValidUptoFilter, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -2320,6 +2359,23 @@ const CGWFlowMetre = () => {
     if (!canManage) return null;
     return (
       <>
+        <select
+          value={nocValidUptoFilter}
+          onChange={(e) => setNocValidUptoFilter(e.target.value)}
+          className={cn(
+            'h-9 sm:h-10 rounded-lg border px-2 sm:px-3 text-xs sm:text-sm bg-white text-gray-900 max-w-[220px] sm:max-w-none',
+            nocValidUptoFilter
+              ? 'border-amber-400 ring-1 ring-amber-200 font-medium'
+              : 'border-gray-300',
+          )}
+          title="Filter by NOC valid upto date"
+        >
+          {NOC_VALID_UPTO_FILTER_OPTIONS.map((opt) => (
+            <option key={opt.value || 'all'} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
         <div className="relative">
           <Button
             type="button"
@@ -2389,13 +2445,14 @@ const CGWFlowMetre = () => {
           }}
         >
           <Plus className="h-4 w-4 mr-1.5" />
-          <span className="hidden sm:inline">Add Flow Metre</span>
+          <span className="hidden sm:inline">Add Flow Meter Details</span>
           <span className="sm:hidden">Add</span>
         </Button>
       </>
     );
   }, [
     canManage,
+    nocValidUptoFilter,
     showColumnFilter,
     selectedFilterField,
     selectedFilterValue,

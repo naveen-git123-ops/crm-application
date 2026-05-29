@@ -121,7 +121,7 @@ export const Layout = () => {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', permission: 'dashboard' },
     { icon: Target, label: 'Leads', path: '/leads', permission: 'leads' },
     { icon: Users, label: 'Employees', path: '/employees', permission: 'employees' },
-    { icon: Users, label: 'Customers', path: '/customers', permission: 'customers' },
+    { icon: Users, label: 'Create Ledger', path: '/customers', permission: 'customers' },
     { icon: Droplets, label: 'CGW Flow Metre', path: '/cgw-flow-metre', permission: 'cgw-flow-metre' },
     { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
     { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance' },
