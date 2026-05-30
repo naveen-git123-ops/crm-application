@@ -489,10 +489,15 @@ class LeadModel(Base):
     created_by_name = Column(String(255), nullable=True)
     category = Column(String(100), nullable=True)
     sub_category = Column(String(100), nullable=True)
+    customer_id = Column(String(36), ForeignKey('customers.id'), nullable=True, index=True)
+    vendor_id = Column(String(36), ForeignKey('customers.id'), nullable=True, index=True)
+    vendor_name = Column(String(255), nullable=True)
     enquiry_date = Column(String(10), nullable=True)  # YYYY-MM-DD
     contacts = Column(String(2000), nullable=True)  # JSON string: list of {name, designation, email, number}
     negotiation_price = Column(Float, nullable=True)  # Price during negotiation phase
     negotiation_terms = Column(String(500), nullable=True)  # Terms and conditions during negotiation
+    workflow_stage = Column(String(50), nullable=True, index=True)  # carry-and-order PRD pipeline
+    workflow_payload = Column(Text, nullable=True)  # JSON: BOM, offers, follow-ups, closure
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -1078,8 +1083,48 @@ def migrate_orders_add_attachments_and_estimation():
         except Exception:
             pass
 
+def migrate_leads_add_customer_vendor():
+    """Add customer_id, vendor_id, vendor_name to leads if missing."""
+    from sqlalchemy import text, inspect
+    try:
+        inspector = inspect(engine)
+        cols = [col['name'] for col in inspector.get_columns('leads')]
+        with engine.connect() as conn:
+            if 'customer_id' not in cols:
+                conn.execute(text('ALTER TABLE leads ADD COLUMN customer_id VARCHAR(36)'))
+            if 'vendor_id' not in cols:
+                conn.execute(text('ALTER TABLE leads ADD COLUMN vendor_id VARCHAR(36)'))
+            if 'vendor_name' not in cols:
+                conn.execute(text('ALTER TABLE leads ADD COLUMN vendor_name VARCHAR(255)'))
+            conn.commit()
+        print('leads customer/vendor columns migration applied')
+    except Exception as e:
+        print(f'Migration error for leads customer/vendor: {e}')
+
+
 migrate_leads_add_negotiation_fields()
 migrate_leads_add_enquiry_date()
+migrate_leads_add_customer_vendor()
+
+
+def migrate_leads_carry_order_workflow():
+    """Add workflow_stage and workflow_payload for carry-and-order PRD pipeline."""
+    from sqlalchemy import text, inspect
+    try:
+        inspector = inspect(engine)
+        cols = [col['name'] for col in inspector.get_columns('leads')]
+        with engine.connect() as conn:
+            if 'workflow_stage' not in cols:
+                conn.execute(text('ALTER TABLE leads ADD COLUMN workflow_stage VARCHAR(50)'))
+            if 'workflow_payload' not in cols:
+                conn.execute(text('ALTER TABLE leads ADD COLUMN workflow_payload TEXT'))
+            conn.commit()
+        print('leads carry-order workflow columns migration applied')
+    except Exception as e:
+        print(f'Migration error for leads workflow: {e}')
+
+
+migrate_leads_carry_order_workflow()
 migrate_orders_add_attachments_and_estimation()
 
 migrate_leads_add_category_and_contacts()
@@ -2226,10 +2271,15 @@ class Lead(BaseModel):
     created_by_name: Optional[str] = None
     category: Optional[str] = None
     sub_category: Optional[str] = None
+    customer_id: Optional[str] = None
+    vendor_id: Optional[str] = None
+    vendor_name: Optional[str] = None
     enquiry_date: Optional[str] = None  # YYYY-MM-DD
     contacts: Optional[list] = None  # List of dicts: {name, designation, email, number}
     negotiation_price: Optional[float] = None  # Price during negotiation phase
     negotiation_terms: Optional[str] = None  # Terms and conditions during negotiation
+    workflow_stage: Optional[str] = None
+    workflow_payload: Optional[dict] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 
@@ -2246,6 +2296,9 @@ class LeadCreate(BaseModel):
     assigned_to_name: Optional[str] = None
     category: Optional[str] = None
     sub_category: Optional[str] = None
+    customer_id: Optional[str] = None
+    vendor_id: Optional[str] = None
+    vendor_name: Optional[str] = None
     enquiry_date: Optional[str] = None  # YYYY-MM-DD
     contacts: Optional[list] = None  # List of dicts: {name, designation, email, number}
 
@@ -2263,6 +2316,9 @@ class LeadUpdate(BaseModel):
     assigned_to_name: Optional[str] = None
     category: Optional[str] = None
     sub_category: Optional[str] = None
+    customer_id: Optional[str] = None
+    vendor_id: Optional[str] = None
+    vendor_name: Optional[str] = None
     enquiry_date: Optional[str] = None  # YYYY-MM-DD
     contacts: Optional[list] = None  # List of dicts: {name, designation, email, number}
     negotiation_price: Optional[float] = None  # Price during negotiation phase
@@ -3014,6 +3070,10 @@ def can_manage_cgw(current_user: UserModel, db: Session) -> bool:
     perms = get_permissions_for_role(db, current_user.role)
     return 'cgw-flow-metre' in perms
 
+
+def can_delete_cgw(current_user: UserModel) -> bool:
+    """Delete entire CGW inventory rows — Admin only."""
+    return current_user.role == 'Admin'
 
 
 # ============= HEALTH CHECK ROUTES =============
@@ -4535,7 +4595,7 @@ def download_cgw_attachments_zip(
 
 @api_router.delete('/cgw-flow-metres/{inventory_id}')
 def delete_cgw_flow_metre(inventory_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    if not can_manage_cgw(current_user, db):
+    if not can_delete_cgw(current_user):
         raise HTTPException(status_code=403, detail='Not authorized')
     
     item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
@@ -8055,7 +8115,13 @@ def admin_reset_user_password(
 # --------------- Role CRUD (create/edit/delete roles; Admin role protected) ---------------
 def get_permissions_for_role(db: Session, role_name: str) -> List[str]:
     """Get list of permissions for a given role from the database"""
-    r = db.query(RoleModel).filter(RoleModel.name == role_name).first()
+    name = (role_name or '').strip()
+    if not name:
+        return []
+    r = db.query(RoleModel).filter(RoleModel.name == name).first()
+    if not r:
+        from sqlalchemy import func
+        r = db.query(RoleModel).filter(func.lower(RoleModel.name) == name.lower()).first()
     if not r:
         return []
     perms = []
@@ -8257,15 +8323,82 @@ def _deserialize_lead_contacts(lead: LeadModel) -> None:
         lead.contacts = []
 
 
-def _normalize_lead_for_response(lead: LeadModel) -> LeadModel:
+def _resolve_lead_vendor_name(db: Session, vendor_id: Optional[str], vendor_name: Optional[str]) -> Optional[str]:
+    if vendor_name:
+        return vendor_name
+    if not vendor_id:
+        return None
+    row = db.query(CustomerModel).filter(CustomerModel.id == vendor_id).first()
+    return row.company_name if row else None
+
+
+def _default_carry_order_workflow_payload() -> dict:
+    return {
+        'technical_approved': None,
+        'commercial_otx_comment': '',
+        'otx_date_from': '',
+        'otx_date_to': '',
+        'bom': {
+            'materials': [],
+            'install_cost': 0,
+            'testing_cost': 0,
+            'packaging_cost': 0,
+            'transport_mode': 'AIR',
+            'transport_cost': 0,
+            'cost_of_ap': 0,
+            'margin_amount': 0,
+        },
+        'offers': [],
+        'follow_ups': [],
+        'closed_won': {
+            'order_value': None,
+            'terms': '',
+            'packaging_regulations': '',
+            'payment_terms': '',
+            'warranty_delivery': '',
+        },
+        'closed_lost': {
+            'reasons': [],
+            'notes': '',
+        },
+    }
+
+
+def _deserialize_lead_workflow(lead: LeadModel) -> None:
+    raw = getattr(lead, 'workflow_payload', None)
+    if raw is None or raw == '':
+        lead.workflow_payload = None
+        return
+    if isinstance(raw, dict):
+        return
+    try:
+        lead.workflow_payload = json.loads(raw)
+    except Exception:
+        lead.workflow_payload = None
+
+
+def _serialize_workflow_payload(payload: Optional[dict]) -> Optional[str]:
+    if payload is None:
+        return None
+    return json.dumps(payload)
+
+
+def _is_carry_and_order_subcategory(sub_category: Optional[str]) -> bool:
+    return (sub_category or '').strip().lower() == 'carry and order'
+
+
+def _normalize_lead_for_response(lead: LeadModel, db: Optional[Session] = None) -> LeadModel:
     """Coerce nullable DB fields so Pydantic response validation does not fail."""
     _deserialize_lead_contacts(lead)
+    _deserialize_lead_workflow(lead)
     if lead.contact_name is None:
         lead.contact_name = ''
     if lead.company is None:
         lead.company = ''
     if lead.email is None:
         lead.email = ''
+    if db is not None and getattr(lead, 'vendor_id', None) and not getattr(lead, 'vendor_name', None):
+        lead.vendor_name = _resolve_lead_vendor_name(db, lead.vendor_id, None)
     return lead
 
 
@@ -8285,7 +8418,7 @@ def get_leads(
     if assigned_to_employee_id:
         query = query.filter(LeadModel.assigned_to_employee_id == assigned_to_employee_id)
     leads = query.order_by(LeadModel.updated_at.desc()).all()
-    return [_normalize_lead_for_response(lead) for lead in leads]
+    return [_normalize_lead_for_response(lead, db) for lead in leads]
 
 @api_router.get('/leads/stats', response_model=LeadStats)
 def get_lead_stats(
@@ -8388,13 +8521,153 @@ def create_lead(
         created_by_name=current_user.name,
         category=getattr(data, 'category', None),
         sub_category=getattr(data, 'sub_category', None),
+        customer_id=getattr(data, 'customer_id', None),
+        vendor_id=getattr(data, 'vendor_id', None),
+        vendor_name=_resolve_lead_vendor_name(db, getattr(data, 'vendor_id', None), getattr(data, 'vendor_name', None)),
         enquiry_date=getattr(data, 'enquiry_date', None),
         contacts=json.dumps(data.contacts) if getattr(data, 'contacts', None) is not None else None
     )
+    new_lead.workflow_stage = 'enquiry_logged'
+    new_lead.workflow_payload = json.dumps(_default_carry_order_workflow_payload())
     db.add(new_lead)
     db.commit()
     db.refresh(new_lead)
-    return _normalize_lead_for_response(new_lead)
+    return _normalize_lead_for_response(new_lead, db)
+
+
+class CarryOrderWorkflowUpdate(BaseModel):
+    workflow_stage: str
+    workflow_payload: dict
+    status_change_comment: Optional[str] = None
+
+
+CARRY_ORDER_STAGES = [
+    'enquiry_logged',
+    'technical_clearance',
+    'bom_costing',
+    'offer_revision',
+    'follow_up',
+    'closed_won',
+    'closed_lost',
+]
+
+
+def _validate_lead_workflow_transition(lead: LeadModel, new_stage: str, payload: dict) -> None:
+    if new_stage not in CARRY_ORDER_STAGES:
+        raise HTTPException(status_code=400, detail='Invalid workflow stage')
+    if (
+        _is_carry_and_order_subcategory(lead.sub_category)
+        and not lead.vendor_id
+        and new_stage != 'enquiry_logged'
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail='Assign a vendor before advancing past enquiry (open the lead to complete setup)',
+        )
+    if new_stage == 'technical_clearance':
+        return
+    tech_ok = payload.get('technical_approved')
+    otx_comment = (payload.get('commercial_otx_comment') or '').strip()
+    if new_stage not in ('enquiry_logged',) and tech_ok is False and not otx_comment:
+        raise HTTPException(
+            status_code=400,
+            detail='Commercial OTX override comment is required when technical strategy is not approved',
+        )
+    if new_stage in ('bom_costing', 'offer_revision', 'follow_up', 'closed_won', 'closed_lost'):
+        if tech_ok is not True and not otx_comment:
+            raise HTTPException(status_code=400, detail='Complete technical clearance before proceeding')
+    bom = payload.get('bom') or {}
+    materials = bom.get('materials') or []
+    if new_stage in ('offer_revision', 'follow_up', 'closed_won', 'closed_lost') and len(materials) == 0:
+        raise HTTPException(status_code=400, detail='Add at least one BOM material line before offer stage')
+    if new_stage == 'closed_won':
+        cw = payload.get('closed_won') or {}
+        required = ['order_value', 'terms', 'packaging_regulations', 'payment_terms', 'warranty_delivery']
+        for field in required:
+            val = cw.get(field)
+            if val is None or (isinstance(val, str) and not str(val).strip()):
+                raise HTTPException(status_code=400, detail=f'Closed Won requires: {field}')
+    if new_stage == 'closed_lost':
+        cl = payload.get('closed_lost') or {}
+        reasons = cl.get('reasons') or []
+        if not reasons:
+            raise HTTPException(status_code=400, detail='Select at least one reason for loss')
+        if 'other' in reasons and not (cl.get('notes') or '').strip():
+            raise HTTPException(status_code=400, detail='Loss explanation notes required when Other is selected')
+
+
+def _ensure_lead_workflow_initialized(lead: LeadModel, db: Session) -> None:
+    changed = False
+    if not lead.workflow_stage:
+        lead.workflow_stage = 'enquiry_logged'
+        changed = True
+    if not lead.workflow_payload:
+        lead.workflow_payload = json.dumps(_default_carry_order_workflow_payload())
+        changed = True
+    if changed:
+        db.commit()
+        db.refresh(lead)
+
+
+@api_router.get('/leads/{lead_id}/carry-order-workflow', response_model=Lead)
+@api_router.get('/leads/{lead_id}/workflow', response_model=Lead)
+def get_lead_workflow(
+    lead_id: str,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db),
+):
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    _ensure_lead_workflow_initialized(lead, db)
+    return _normalize_lead_for_response(lead, db)
+
+
+@api_router.put('/leads/{lead_id}/carry-order-workflow', response_model=Lead)
+@api_router.put('/leads/{lead_id}/workflow', response_model=Lead)
+def update_lead_workflow(
+    lead_id: str,
+    data: CarryOrderWorkflowUpdate,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db),
+):
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user):
+        raise HTTPException(status_code=403, detail='You can only edit leads created by you')
+    _ensure_lead_workflow_initialized(lead, db)
+    _validate_lead_workflow_transition(lead, data.workflow_stage, data.workflow_payload)
+    old_stage = lead.workflow_stage or 'enquiry_logged'
+    new_stage = data.workflow_stage
+    lead.workflow_stage = new_stage
+    lead.workflow_payload = _serialize_workflow_payload(data.workflow_payload)
+    if new_stage == 'closed_won':
+        lead.status = 'Won'
+        ow = data.workflow_payload.get('closed_won') or {}
+        if ow.get('order_value') is not None:
+            lead.value = float(ow['order_value'])
+    elif new_stage == 'closed_lost':
+        lead.status = 'Lost'
+    elif new_stage in ('bom_costing', 'offer_revision', 'follow_up'):
+        lead.status = 'Negotiation'
+    elif new_stage == 'technical_clearance':
+        lead.status = 'Qualified'
+    lead.updated_at = datetime.now(timezone.utc)
+    if new_stage != old_stage:
+        comment = data.status_change_comment or f'Workflow: {old_stage} → {new_stage}'
+        db.add(LeadStatusHistoryModel(
+            lead_id=lead_id,
+            old_status=old_stage,
+            new_status=new_stage,
+            changed_by_employee_id=current_user.employee_id,
+            changed_by_name=current_user.name,
+            change_comment=comment,
+        ))
+    db.commit()
+    db.refresh(lead)
+    return _normalize_lead_for_response(lead, db)
+
 
 @api_router.get('/leads/{lead_id}', response_model=Lead)
 def get_lead(
@@ -8405,7 +8678,7 @@ def get_lead(
     lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail='Lead not found')
-    return _normalize_lead_for_response(lead)
+    return _normalize_lead_for_response(lead, db)
 
 @api_router.put('/leads/{lead_id}', response_model=Lead)
 def update_lead(
@@ -8437,6 +8710,11 @@ def update_lead(
     
     # Remove status_change_comment from update_data (it's not a column on LeadModel)
     status_comment = update_data.pop('status_change_comment', None)
+
+    if 'vendor_id' in update_data or 'vendor_name' in update_data:
+        vid = update_data.get('vendor_id', lead.vendor_id)
+        vname = update_data.get('vendor_name', lead.vendor_name)
+        update_data['vendor_name'] = _resolve_lead_vendor_name(db, vid, vname)
     
     for key, value in update_data.items():
         setattr(lead, key, value)
@@ -8456,7 +8734,7 @@ def update_lead(
     
     db.commit()
     db.refresh(lead)
-    return _normalize_lead_for_response(lead)
+    return _normalize_lead_for_response(lead, db)
 
 @api_router.delete('/leads/{lead_id}')
 def delete_lead(

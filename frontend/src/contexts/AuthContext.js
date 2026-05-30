@@ -26,16 +26,33 @@ export const AuthProvider = ({ children }) => {
     }
   }, [token]);
 
-  const fetchUser = async () => {
+  useEffect(() => {
+    if (!token) return undefined;
+    const onFocus = () => {
+      fetchUser({ silent: true });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [token]);
+
+  const fetchUser = async ({ silent = false } = {}) => {
     try {
       const response = await axios.get(`${API_ENDPOINT}/auth/me`);
       setUser(response.data);
+      return response.data;
     } catch (error) {
       console.error('Failed to fetch user:', error);
-      logout();
+      if (!silent) logout();
+      return null;
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
+  };
+
+  /** Reload permissions from DB (e.g. after Admin updates a role). */
+  const refreshUser = async () => {
+    if (!token) return null;
+    return fetchUser({ silent: true });
   };
 
   const login = async (email, password) => {
@@ -74,7 +91,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, register, logout, loading, checkTodayWorkLog }}>
+    <AuthContext.Provider value={{ user, token, login, register, logout, loading, refreshUser, checkTodayWorkLog }}>
       {children}
     </AuthContext.Provider>
   );

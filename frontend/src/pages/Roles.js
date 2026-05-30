@@ -194,7 +194,7 @@ export const Roles = () => {
           name,
           permissions: roleForm.permissions,
         }, authHeaders());
-        toast.success('Role updated');
+        toast.success('Role updated. Users with this role get new permissions after they refresh the page or log in again.');
       } else {
         await axios.post(`${API}/roles`, {
           name,

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { userHasPermission } from '@/lib/permissions';
 
 /** Auth gate for layout routes — renders child routes via Outlet. */
 export const RequireAuth = () => {
@@ -38,9 +39,7 @@ export const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission
 
   // Check permission-based access (preferred, fully dynamic)
   if (requiredPermission) {
-    const hasPermission =
-      user?.role === 'Admin' ||
-      (Array.isArray(user?.permissions) && user.permissions.includes(requiredPermission));
+    const hasPermission = userHasPermission(user, requiredPermission);
     if (!hasPermission) {
       const fallback = user?.role === 'Admin' ? '/dashboard' : '/leaves';
       return <Navigate to={fallback} replace />;

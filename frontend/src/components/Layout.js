@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { userHasPermission } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
 import { 
   LayoutDashboard, 
@@ -143,10 +144,7 @@ export const Layout = () => {
     if (Array.isArray(item.allowedRoles) && item.allowedRoles.length > 0) {
       return item.allowedRoles.includes(user?.role);
     }
-    const hasPermission =
-      user?.role === 'Admin' ||
-      (Array.isArray(user?.permissions) && user.permissions.includes(item.permission));
-    return hasPermission;
+    return userHasPermission(user, item.permission);
   });
 
   const currentPath = location.pathname;

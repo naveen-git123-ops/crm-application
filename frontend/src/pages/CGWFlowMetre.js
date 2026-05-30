@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save } from 'lucide-react';
 import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 import { getApiErrorMessage } from '@/lib/apiErrors';
+import { userCanDeleteCgw, userCanManageCgw } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import PiezometerAddWizardStep, {
   EMPTY_PIEZO_ROW,
@@ -769,8 +770,8 @@ function formatTelemetryPriorLine(item) {
 }
 
 const CGWFlowMetre = () => {
-  const { user } = useAuth();
-  const hasCgwAccess = user?.role === 'Admin' || (Array.isArray(user?.permissions) && user.permissions.includes('cgw-flow-metre'));
+  const { user, refreshUser } = useAuth();
+  const hasCgwAccess = userCanManageCgw(user);
   const [items, setItems] = useState([]);
   const [filteredItems, setFilteredItems] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -1002,6 +1003,7 @@ const CGWFlowMetre = () => {
   };
 
   useEffect(() => {
+    refreshUser?.();
     fetchCustomers();
     fetchItems();
   }, []);
@@ -1920,6 +1922,7 @@ const CGWFlowMetre = () => {
   };
 
   const handleDelete = async (id) => {
+    if (!canDeleteCgw) return;
     if (!window.confirm('Are you sure you want to delete this item?')) return;
     try {
       await axios.delete(`${API}/cgw-flow-metres/${id}`, {
@@ -2166,6 +2169,7 @@ const CGWFlowMetre = () => {
   };
 
   const canManage = hasCgwAccess;
+  const canDeleteCgw = userCanDeleteCgw(user);
   const nocReadOnly = !canManage;
 
   const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
@@ -4136,15 +4140,17 @@ const CGWFlowMetre = () => {
                                 >
                                   <Download className="h-3 w-3" />
                                 </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 border-gray-200 text-xs text-red-600 hover:bg-red-50"
-                                  title="Delete"
-                                  onClick={() => handleDelete(item.id)}
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
+                                {canDeleteCgw && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 border-gray-200 text-xs text-red-600 hover:bg-red-50"
+                                    title="Delete"
+                                    onClick={() => handleDelete(item.id)}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                )}
                               </>
                             )}
                           </div>
