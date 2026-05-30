@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   CARRY_ORDER_STAGES,
+  WORKFLOW_PIPELINE_IDS,
+  WORKFLOW_TERMINAL_IDS,
   LOSS_REASONS,
   TRANSPORT_MODES,
   mergeWorkflowPayload,
@@ -14,7 +16,12 @@ import {
   newMaterialRow,
   newOfferRow,
   newFollowUpRow,
-  stageIndex,
+  pipelineStageIndex,
+  resolvedPipelineIndex,
+  isPipelineStageUnlocked,
+  nextPipelineStageId,
+  isStageComplete,
+  stageIncompleteMessage,
 } from '@/lib/carryOrderWorkflow';
 import {
   CheckCircle2,
@@ -27,6 +34,8 @@ import {
   FileText,
   Upload,
   Loader2,
+  Lock,
+  Check,
 } from 'lucide-react';
 import { isCarryAndOrder, leadNeedsVendor } from '@/lib/leadUtils';
 import { getApiErrorMessage } from '@/lib/apiErrors';
@@ -94,8 +103,9 @@ export function CarryOrderWorkspace({
       );
       setStage(data.workflow_stage);
       setPayload(mergeWorkflowPayload(data.workflow_payload));
-      setActiveTab(data.workflow_stage);
-      toast.success('Saved');
+      const savedStage = data.workflow_stage || stage;
+      setActiveTab(savedStage);
+      toast.success(comment === 'Progress saved' ? 'Progress saved' : 'Step completed');
       if (data?.id) onRefresh?.(data.id);
       else onRefresh?.(lead.id);
     } catch (err) {
@@ -103,16 +113,6 @@ export function CarryOrderWorkspace({
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleSaveCurrent = () => saveWorkflow(activeTab, payload);
-
-  const advanceTo = (targetStage, comment) => {
-    let next = { ...payload };
-    if (targetStage === 'bom_costing' && payload.technical_approved === true) {
-      comment = comment || 'Technical strategy approved — proceeding to BOM';
-    }
-    saveWorkflow(targetStage, next, comment);
   };
 
   const uploadOfferFile = async (file, offerId) => {
@@ -132,6 +132,65 @@ export function CarryOrderWorkspace({
     toast.success('Offer file attached');
   };
 
+  const stageCtx = { isCarryAndOrder, leadNeedsVendor };
+  const pipelineMaxIdx = resolvedPipelineIndex(stage);
+  const isClosed = WORKFLOW_TERMINAL_IDS.includes(stage);
+
+  const canOpenStage = (stageId) => isPipelineStageUnlocked(stageId, stage);
+
+  const canEditStep = (tabId) =>
+    canEdit
+    && !isClosed
+    && canOpenStage(tabId)
+    && pipelineStageIndex(tabId) <= pipelineMaxIdx;
+
+  const handleTabSelect = (stageId) => {
+    if (!canOpenStage(stageId)) {
+      const blocked = CARRY_ORDER_STAGES.find((s) => s.id === stageId);
+      const need = nextPipelineStageId(stage);
+      const needLabel = CARRY_ORDER_STAGES.find((s) => s.id === need)?.label;
+      toast.error(
+        needLabel
+          ? `Complete "${needLabel}" before opening ${blocked?.label || 'this step'}`
+          : 'Complete earlier steps first',
+      );
+      return;
+    }
+    setActiveTab(stageId);
+  };
+
+  const handleSaveDraft = () => {
+    if (!canOpenStage(activeTab) || pipelineStageIndex(activeTab) > pipelineMaxIdx) {
+      toast.error('This step is not available yet');
+      return;
+    }
+    saveWorkflow(stage, payload, 'Progress saved');
+  };
+
+  const completeCurrentStep = () => {
+    if (!isStageComplete(activeTab, payload, lead, stageCtx)) {
+      toast.error(stageIncompleteMessage(activeTab, lead, stageCtx));
+      if (activeTab === 'enquiry_logged' && leadNeedsVendor(lead)) {
+        onAssignVendor?.(lead);
+      }
+      return;
+    }
+    const next = nextPipelineStageId(activeTab);
+    if (!next) return;
+    let comment;
+    if (next === 'bom_costing' && payload.technical_approved === true) {
+      comment = 'Technical strategy approved — proceeding to BOM';
+    }
+    if (next === 'bom_costing' && payload.technical_approved === false) {
+      comment = 'OTX commercial override — proceeding to BOM';
+    }
+    saveWorkflow(
+      next,
+      payload,
+      comment || `Completed ${CARRY_ORDER_STAGES.find((s) => s.id === activeTab)?.label}`,
+    );
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -140,9 +199,11 @@ export function CarryOrderWorkspace({
     );
   }
 
-  const currentIdx = stageIndex(stage);
   const carryOrder = isCarryAndOrder(lead);
   const vendorPending = carryOrder && leadNeedsVendor(lead);
+  const editActive = canEditStep(activeTab);
+  const onCurrentStep = activeTab === stage && !isClosed;
+  const stepComplete = isStageComplete(activeTab, payload, lead, stageCtx);
 
   return (
     <div className="flex flex-col h-full min-h-[480px] bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -206,119 +267,83 @@ export function CarryOrderWorkspace({
         </div>
       </div>
 
-      {/* Stepper */}
-      <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 overflow-x-auto">
-        <div className="flex gap-1 min-w-max">
-          {CARRY_ORDER_STAGES.filter((s) => !['closed_won', 'closed_lost'].includes(s.id) || s.id === stage).map((s, i) => {
-            const idx = stageIndex(s.id);
-            const done = idx <= currentIdx && stage !== s.id;
-            const active = activeTab === s.id;
-            const isTerminal = s.id === 'closed_won' || s.id === 'closed_lost';
-            if (isTerminal && s.id !== stage && !['closed_won', 'closed_lost'].includes(stage)) {
-              if (s.id === 'closed_won' && stage === 'closed_lost') return null;
-              if (s.id === 'closed_lost' && stage === 'closed_won') return null;
-            }
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setActiveTab(s.id)}
-                className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                  active
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : done
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : 'bg-white text-slate-600 border border-slate-200 hover:border-indigo-200'
-                }`}
-              >
-                {s.short}. {s.label}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => setActiveTab('closed_won')}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold ${
-              activeTab === 'closed_won' ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-200 text-slate-600'
-            }`}
-          >
-            Won
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('closed_lost')}
-            className={`px-3 py-2 rounded-lg text-xs font-semibold ${
-              activeTab === 'closed_lost' ? 'bg-rose-600 text-white' : 'bg-white border border-slate-200 text-slate-600'
-            }`}
-          >
-            Lost
-          </button>
+      <WorkflowStepper
+        stage={stage}
+        activeTab={activeTab}
+        onSelect={handleTabSelect}
+        canOpenStage={canOpenStage}
+      />
+
+      {!canOpenStage(activeTab) && (
+        <div className="mx-5 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <Lock className="h-4 w-4 inline mr-2 -mt-0.5" />
+          Complete the current step in order to unlock this section.
         </div>
-      </div>
+      )}
 
       {/* Module content */}
       <div className="flex-1 overflow-y-auto p-5 space-y-5">
-        {activeTab === 'enquiry_logged' && (
-          <ModuleEnquiry lead={lead} attachments={attachments} payload={payload} setPayload={setPayload} canEdit={canEdit} />
+        {canOpenStage(activeTab) && activeTab === 'enquiry_logged' && (
+          <ModuleEnquiry lead={lead} attachments={attachments} payload={payload} setPayload={setPayload} canEdit={editActive} />
         )}
-        {activeTab === 'technical_clearance' && (
-          <ModuleTechnical payload={payload} setPayload={setPayload} canEdit={canEdit} />
+        {canOpenStage(activeTab) && activeTab === 'technical_clearance' && (
+          <ModuleTechnical payload={payload} setPayload={setPayload} canEdit={editActive} />
         )}
-        {activeTab === 'bom_costing' && (
-          <ModuleBom payload={payload} setPayload={setPayload} bomTotals={bomTotals} canEdit={canEdit} />
+        {canOpenStage(activeTab) && activeTab === 'bom_costing' && (
+          <ModuleBom payload={payload} setPayload={setPayload} bomTotals={bomTotals} canEdit={editActive} />
         )}
-        {(activeTab === 'offer_revision' || activeTab === 'follow_up') && (
+        {canOpenStage(activeTab) && (activeTab === 'offer_revision' || activeTab === 'follow_up') && (
           <ModuleOfferFollowUp
             payload={payload}
             setPayload={setPayload}
-            canEdit={canEdit}
+            canEdit={editActive}
             onUploadOffer={uploadOfferFile}
             showFollowUps={activeTab === 'follow_up'}
           />
         )}
-        {activeTab === 'closed_won' && (
-          <ModuleClosedWon payload={payload} setPayload={setPayload} bomTotals={bomTotals} canEdit={canEdit} />
+        {canOpenStage(activeTab) && activeTab === 'closed_won' && (
+          <ModuleClosedWon payload={payload} setPayload={setPayload} bomTotals={bomTotals} canEdit={editActive && !isClosed} />
         )}
-        {activeTab === 'closed_lost' && (
-          <ModuleClosedLost payload={payload} setPayload={setPayload} canEdit={canEdit} />
+        {canOpenStage(activeTab) && activeTab === 'closed_lost' && (
+          <ModuleClosedLost payload={payload} setPayload={setPayload} canEdit={editActive && !isClosed} />
         )}
       </div>
 
       {/* Actions */}
-      {canEdit && !['closed_won', 'closed_lost'].includes(stage) && (
-        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            className="bg-indigo-600 hover:bg-indigo-700 text-white"
-            disabled={saving}
-            onClick={handleSaveCurrent}
-          >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-            Save
-          </Button>
-          {activeTab === 'technical_clearance' && payload.technical_approved === true && (
-            <Button size="sm" variant="outline" disabled={saving} onClick={() => advanceTo('bom_costing')}>
-              Proceed to BOM <ChevronRight className="h-4 w-4 ml-1" />
+      {canEdit && !isClosed && WORKFLOW_PIPELINE_IDS.includes(activeTab) && (
+        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center gap-3">
+          <p className="text-xs text-slate-600 flex-1">
+            {onCurrentStep
+              ? stepComplete
+                ? 'Step requirements met — continue when ready.'
+                : stageIncompleteMessage(activeTab, lead, stageCtx)
+              : 'Viewing a completed step — save to update details without moving forward.'}
+          </p>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={saving || !editActive}
+              onClick={handleSaveDraft}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+              Save progress
             </Button>
-          )}
-          {activeTab === 'technical_clearance' && payload.technical_approved === false && (payload.commercial_otx_comment || '').trim() && (
-            <Button size="sm" variant="outline" disabled={saving} onClick={() => advanceTo('bom_costing', 'OTX commercial override')}>
-              Override & proceed to BOM <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          )}
-          {activeTab === 'bom_costing' && (payload.bom?.materials?.length || 0) > 0 && (
-            <Button size="sm" variant="outline" disabled={saving} onClick={() => advanceTo('offer_revision')}>
-              Proceed to offers <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          )}
-          {activeTab === 'offer_revision' && (
-            <Button size="sm" variant="outline" disabled={saving} onClick={() => advanceTo('follow_up')}>
-              Proceed to follow-up <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          )}
+            {onCurrentStep && nextPipelineStageId(activeTab) && (
+              <Button
+                size="sm"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                disabled={saving || !stepComplete}
+                onClick={completeCurrentStep}
+              >
+                Complete &amp; continue
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            )}
+          </div>
         </div>
       )}
-      {canEdit && ['closed_won', 'closed_lost'].includes(activeTab) && (
+      {canEdit && !isClosed && ['closed_won', 'closed_lost'].includes(activeTab) && canOpenStage(activeTab) && (
         <div className="px-5 py-4 border-t border-slate-100 bg-slate-50">
           <Button
             size="sm"
@@ -794,6 +819,91 @@ function ModuleClosedLost({ payload, setPayload, canEdit }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage }) {
+  const maxIdx = resolvedPipelineIndex(stage);
+  const terminalUnlocked = canOpenStage('closed_won');
+
+  const pipelineSteps = WORKFLOW_PIPELINE_IDS.map((id) => CARRY_ORDER_STAGES.find((s) => s.id === id));
+  const terminalSteps = WORKFLOW_TERMINAL_IDS.map((id) => CARRY_ORDER_STAGES.find((s) => s.id === id));
+
+  const stepButtonClass = (stepId, variant) => {
+    const unlocked = canOpenStage(stepId);
+    const idx = pipelineStageIndex(stepId);
+    const isActive = activeTab === stepId;
+    const isDone = idx >= 0 && idx < maxIdx;
+    const isCurrent = stage === stepId;
+
+    if (!unlocked) {
+      return 'flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed';
+    }
+    if (variant === 'won' && isActive) {
+      return 'flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-600 text-white shadow-sm';
+    }
+    if (variant === 'lost' && isActive) {
+      return 'flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-rose-600 text-white shadow-sm';
+    }
+    if (isActive) {
+      return 'flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200';
+    }
+    if (isDone) {
+      return 'flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100';
+    }
+    if (isCurrent) {
+      return 'flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-800 border border-indigo-300';
+    }
+    return 'flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold bg-white text-slate-700 border border-slate-200 hover:border-indigo-200';
+  };
+
+  return (
+    <div className="px-4 py-4 border-b border-slate-100 bg-slate-50/80 overflow-x-auto">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-3">
+        Workflow steps — complete in order
+      </p>
+      <div className="flex items-center gap-1 min-w-max">
+        {pipelineSteps.map((s, i) => {
+          const unlocked = canOpenStage(s.id);
+          return (
+            <React.Fragment key={s.id}>
+              {i > 0 && (
+                <ChevronRight
+                  className={`h-4 w-4 shrink-0 ${unlocked ? 'text-slate-400' : 'text-slate-200'}`}
+                  aria-hidden
+                />
+              )}
+              <button type="button" onClick={() => onSelect(s.id)} className={stepButtonClass(s.id)}>
+                {!unlocked ? (
+                  <Lock className="h-3.5 w-3.5 shrink-0" />
+                ) : pipelineStageIndex(s.id) < maxIdx ? (
+                  <Check className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <span className="text-[10px] font-bold opacity-80">{s.short}</span>
+                )}
+                <span className="whitespace-nowrap">{s.label}</span>
+              </button>
+            </React.Fragment>
+          );
+        })}
+        <ChevronRight className={`h-4 w-4 shrink-0 mx-1 ${terminalUnlocked ? 'text-slate-400' : 'text-slate-200'}`} />
+        {terminalSteps.map((s) => {
+          const unlocked = canOpenStage(s.id);
+          const variant = s.id === 'closed_won' ? 'won' : 'lost';
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => onSelect(s.id)}
+              className={`${stepButtonClass(s.id, variant)} ml-1`}
+            >
+              {!unlocked && <Lock className="h-3.5 w-3.5 shrink-0" />}
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

@@ -4,9 +4,93 @@ export const CARRY_ORDER_STAGES = [
   { id: 'bom_costing', label: 'BOM & costing', short: '3' },
   { id: 'offer_revision', label: 'Offer & revision', short: '4' },
   { id: 'follow_up', label: 'Follow-up', short: '5' },
-  { id: 'closed_won', label: 'Closed won', short: '6a' },
-  { id: 'closed_lost', label: 'Closed lost', short: '6b' },
+  { id: 'closed_won', label: 'Won', short: 'W' },
+  { id: 'closed_lost', label: 'Lost', short: 'L' },
 ];
+
+/** Ordered pipeline (excludes Won/Lost). */
+export const WORKFLOW_PIPELINE_IDS = [
+  'enquiry_logged',
+  'technical_clearance',
+  'bom_costing',
+  'offer_revision',
+  'follow_up',
+];
+
+export const WORKFLOW_TERMINAL_IDS = ['closed_won', 'closed_lost'];
+
+export function pipelineStageIndex(stageId) {
+  const idx = WORKFLOW_PIPELINE_IDS.indexOf(stageId);
+  return idx >= 0 ? idx : -1;
+}
+
+/** Furthest pipeline step reached (Won/Lost map to end of pipeline). */
+export function resolvedPipelineIndex(workflowStage) {
+  if (workflowStage === 'closed_won' || workflowStage === 'closed_lost') {
+    return WORKFLOW_PIPELINE_IDS.length - 1;
+  }
+  return pipelineStageIndex(workflowStage || 'enquiry_logged');
+}
+
+export function isPipelineStageUnlocked(targetStageId, currentWorkflowStage) {
+  if (WORKFLOW_TERMINAL_IDS.includes(targetStageId)) {
+    return resolvedPipelineIndex(currentWorkflowStage) >= WORKFLOW_PIPELINE_IDS.length - 1;
+  }
+  const targetIdx = pipelineStageIndex(targetStageId);
+  if (targetIdx < 0) return false;
+  return targetIdx <= resolvedPipelineIndex(currentWorkflowStage);
+}
+
+export function nextPipelineStageId(currentWorkflowStage) {
+  const idx = resolvedPipelineIndex(currentWorkflowStage);
+  if (idx < 0 || idx >= WORKFLOW_PIPELINE_IDS.length - 1) return null;
+  return WORKFLOW_PIPELINE_IDS[idx + 1];
+}
+
+export function isStageComplete(stageId, payload, lead, { isCarryAndOrder, leadNeedsVendor }) {
+  switch (stageId) {
+    case 'enquiry_logged':
+      if (isCarryAndOrder?.(lead)) return !leadNeedsVendor?.(lead);
+      return true;
+    case 'technical_clearance': {
+      if (payload.technical_approved === true) return true;
+      if (payload.technical_approved === false) {
+        return Boolean((payload.commercial_otx_comment || '').trim());
+      }
+      return false;
+    }
+    case 'bom_costing':
+      return (payload.bom?.materials || []).length > 0;
+    case 'offer_revision':
+      return (payload.offers || []).some(
+        (o) => (o.offer_no || '').trim() || (o.change_description || '').trim(),
+      );
+    case 'follow_up':
+      return true;
+    default:
+      return true;
+  }
+}
+
+export function stageIncompleteMessage(stageId, lead, { isCarryAndOrder, leadNeedsVendor }) {
+  switch (stageId) {
+    case 'enquiry_logged':
+      if (isCarryAndOrder?.(lead) && leadNeedsVendor?.(lead)) {
+        return 'Assign a vendor to complete enquiry';
+      }
+      return 'Complete enquiry details';
+    case 'technical_clearance':
+      return 'Select YES or NO for technical approval (and add OTX comment if NO)';
+    case 'bom_costing':
+      return 'Add at least one BOM material line';
+    case 'offer_revision':
+      return 'Add at least one offer / revision entry';
+    case 'follow_up':
+      return 'Complete follow-up';
+    default:
+      return 'Complete the previous step first';
+  }
+}
 
 export const LOSS_REASONS = [
   { id: 'price_high', label: 'Price high' },

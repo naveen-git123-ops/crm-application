@@ -8575,9 +8575,32 @@ CARRY_ORDER_STAGES = [
 ]
 
 
-def _validate_lead_workflow_transition(lead: LeadModel, new_stage: str, payload: dict) -> None:
+def _workflow_stage_index(stage: str) -> int:
+    try:
+        return CARRY_ORDER_STAGES.index(stage)
+    except ValueError:
+        return 0
+
+
+def _validate_lead_workflow_transition(
+    lead: LeadModel, old_stage: str, new_stage: str, payload: dict
+) -> None:
     if new_stage not in CARRY_ORDER_STAGES:
         raise HTTPException(status_code=400, detail='Invalid workflow stage')
+    old_stage = old_stage or 'enquiry_logged'
+    old_idx = _workflow_stage_index(old_stage)
+    new_idx = _workflow_stage_index(new_stage)
+
+    # Draft save at the same stage — allow without re-running forward gates
+    if new_idx == old_idx:
+        return
+
+    if new_idx > old_idx + 1:
+        raise HTTPException(
+            status_code=400,
+            detail='Complete each workflow step in order before continuing',
+        )
+
     if (
         _is_carry_and_order_subcategory(lead.sub_category)
         and not lead.vendor_id
@@ -8587,8 +8610,6 @@ def _validate_lead_workflow_transition(lead: LeadModel, new_stage: str, payload:
             status_code=400,
             detail='Assign a vendor before advancing past enquiry (open the lead to complete setup)',
         )
-    if new_stage == 'technical_clearance':
-        return
     tech_ok = payload.get('technical_approved')
     otx_comment = (payload.get('commercial_otx_comment') or '').strip()
     if new_stage not in ('enquiry_logged',) and tech_ok is False and not otx_comment:
@@ -8660,9 +8681,9 @@ def update_lead_workflow(
     if not can_edit_lead(lead, current_user):
         raise HTTPException(status_code=403, detail='You can only edit leads created by you')
     _ensure_lead_workflow_initialized(lead, db)
-    _validate_lead_workflow_transition(lead, data.workflow_stage, data.workflow_payload)
     old_stage = lead.workflow_stage or 'enquiry_logged'
     new_stage = data.workflow_stage
+    _validate_lead_workflow_transition(lead, old_stage, new_stage, data.workflow_payload)
     lead.workflow_stage = new_stage
     lead.workflow_payload = _serialize_workflow_payload(data.workflow_payload)
     if new_stage == 'closed_won':
