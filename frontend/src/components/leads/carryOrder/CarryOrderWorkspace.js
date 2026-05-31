@@ -918,13 +918,6 @@ function ModuleOfferFollowUp({
     }
   };
 
-  const updateRevision = (id, patch) => {
-    setPayload({
-      ...payload,
-      offer_revisions: revisions.map((r) => (r.id === id ? { ...r, ...patch } : r)),
-    });
-  };
-
   const removeRevision = (id) => {
     const next = revisions.filter((r) => r.id !== id).map((r, i) => ({ ...r, revision_index: i }));
     setPayload({ ...payload, offer_revisions: next });
@@ -954,7 +947,10 @@ function ModuleOfferFollowUp({
         </thead>
         <tbody className="text-slate-800">
           {revisions.map((rev) => (
-            <tr key={rev.id} className="border-t border-slate-100">
+            <tr
+              key={rev.id}
+              className={`border-t border-slate-100 ${rev.client_agreed ? 'bg-emerald-50/60' : ''}`}
+            >
               <td className="p-2 font-medium text-slate-800">{offerRevisionLabel(rev.revision_index)}</td>
               <td className="p-2 text-slate-600 whitespace-nowrap">{rev.recorded_at || '—'}</td>
               <td className="p-2 text-right tabular-nums font-medium text-slate-800">
@@ -1001,7 +997,7 @@ function ModuleOfferFollowUp({
           title="Offer revision log"
           subtitle={
             isFollowUp
-              ? 'Offers are recorded in Offer & revision (R0, R1, …) — mark when the client agrees below'
+              ? 'Offers are recorded in Offer & revision (R0, R1, …) — use Client decision below to close Won or Lost'
               : 'Record each offer from R0 onward — margin %, value, and total profit per row'
           }
         />
@@ -1169,6 +1165,78 @@ function ModuleOfferFollowUp({
               <Plus className="h-4 w-4 mr-1" /> Add follow-up note
             </Button>
           )}
+
+          <section className="rounded-xl border-2 border-slate-200 bg-slate-50/50 p-4 space-y-4">
+            <SectionTitle
+              title="Client decision"
+              subtitle="If the client agreed, you are taken to Won; otherwise to Lost"
+            />
+            {revisions.length > 1 && canEdit && (
+              <div>
+                <Label className={labelClass}>Offer client agreed to</Label>
+                <select
+                  className={`${selectClass} mt-1`}
+                  disabled={parentSaving}
+                  value={payload.agreed_revision_id || revisions[revisions.length - 1]?.id || ''}
+                  onChange={(e) => setPayload({ ...payload, agreed_revision_id: e.target.value })}
+                >
+                  {revisions.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {offerRevisionLabel(r.revision_index)} — {formatInr(r.offer_value)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {revisions.length === 1 && (
+              <p className="text-sm text-slate-600">
+                Agreed offer:{' '}
+                <strong className="text-slate-900">
+                  {offerRevisionLabel(revisions[0].revision_index)} ({formatInr(revisions[0].offer_value)})
+                </strong>
+              </p>
+            )}
+            {payload.client_outcome && (
+              <p className="text-sm font-medium text-slate-700">
+                Decision recorded:{' '}
+                <span className={payload.client_outcome === 'won' ? 'text-emerald-700' : 'text-rose-700'}>
+                  {payload.client_outcome === 'won' ? 'Client agreed (Won)' : 'Client did not agree (Lost)'}
+                </span>
+              </p>
+            )}
+            {canEdit && (
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={parentSaving || !revisions.length}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={() => onClientDecision?.(true)}
+                >
+                  {parentSaving ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 mr-1" />
+                  )}
+                  Client agreed — go to Won
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={parentSaving || !revisions.length}
+                  className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                  onClick={() => onClientDecision?.(false)}
+                >
+                  <XCircle className="h-4 w-4 mr-1" />
+                  Client did not agree — go to Lost
+                </Button>
+              </div>
+            )}
+            {!revisions.length && (
+              <p className="text-sm text-amber-800">Add at least one offer in Offer & revision before recording a decision.</p>
+            )}
+          </section>
         </section>
       )}
     </section>
