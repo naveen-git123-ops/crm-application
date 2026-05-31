@@ -73,9 +73,7 @@ export function isStageComplete(stageId, payload, lead, { isCarryAndOrder, leadN
     case 'bom_costing':
       return (payload.bom?.materials || []).length > 0;
     case 'offer_revision':
-      return (payload.offers || []).some(
-        (o) => (o.offer_no || '').trim() || (o.change_description || '').trim(),
-      );
+      return (payload.offer_revisions || []).some((r) => (Number(r.offer_profit_margin_pct) || 0) > 0);
     case 'follow_up':
       return true;
     default:
@@ -98,7 +96,7 @@ export function stageIncompleteMessage(stageId, lead, { isCarryAndOrder, leadNee
     case 'bom_costing':
       return 'Add at least one BOM material line';
     case 'offer_revision':
-      return 'Add at least one offer / revision entry';
+      return 'Record at least one offer revision with profit margin %';
     case 'follow_up':
       return 'Complete follow-up';
     default:
@@ -133,9 +131,12 @@ export function defaultWorkflowPayload() {
       transport_cost: 0,
       cost_of_ap: 0,
       margin_amount: 0,
+      profit_margin_pct: 0,
     },
     offers: [],
+    offer_revisions: [],
     follow_ups: [],
+    offer_profit_margin_pct: 0,
     closed_won: {
       order_value: null,
       terms: '',
@@ -159,6 +160,9 @@ export function mergeWorkflowPayload(stored) {
     technical_attachments: Array.isArray(stored.technical_attachments)
       ? stored.technical_attachments
       : base.technical_attachments,
+    offer_revisions: Array.isArray(stored.offer_revisions)
+      ? stored.offer_revisions
+      : base.offer_revisions,
   };
 }
 
@@ -172,17 +176,92 @@ export function newTechnicalAttachmentRef(uploaded) {
   };
 }
 
+export function applyMarginFormula(base, marginPct) {
+  const pct = Math.min(Math.max(Number(marginPct) || 0, 0), 99.99);
+  const rate = pct / 100;
+  const safeBase = Number(base) || 0;
+  if (safeBase <= 0 || rate <= 0 || rate >= 1) {
+    return { pct, value: safeBase, amount: 0 };
+  }
+  const value = safeBase / (1 - rate);
+  return { pct, value, amount: value - safeBase };
+}
+
 export function computeBomTotals(bom) {
   const materials = bom?.materials || [];
-  const tpc = materials.reduce((sum, row) => sum + (Number(row.base_cost) || 0), 0);
+  const materialsTotal = materials.reduce((sum, row) => sum + (Number(row.base_cost) || 0), 0);
   const install = Number(bom?.install_cost) || 0;
   const testing = Number(bom?.testing_cost) || 0;
   const packaging = Number(bom?.packaging_cost) || 0;
   const transport = Number(bom?.transport_cost) || 0;
-  const totalCost = tpc + install + testing + packaging + transport;
-  const margin = Number(bom?.margin_amount) || 0;
-  const sellingValue = totalCost + margin;
-  return { tpc, totalCost, sellingValue };
+  const costOfAp = Number(bom?.cost_of_ap) || 0;
+  const tpcCost = Number(bom?.margin_amount) || 0;
+  const consignmentTotal =
+    materialsTotal + install + testing + packaging + transport + costOfAp + tpcCost;
+  const { pct, value: profitValue, amount: profitAmount } = applyMarginFormula(
+    consignmentTotal,
+    bom?.profit_margin_pct,
+  );
+  return {
+    tpc: materialsTotal,
+    totalCost: materialsTotal + install + testing + packaging + transport + costOfAp,
+    sellingValue: profitValue,
+    consignmentTotal,
+    profitMarginPct: pct,
+    profitValue,
+    profitAmount,
+  };
+}
+
+export function latestOfferRevision(revisions) {
+  const list = Array.isArray(revisions) ? revisions : [];
+  if (!list.length) return null;
+  return list[list.length - 1];
+}
+
+export function buildOfferRevisionEntry(bom, marginPct, stage = 'offer_revision', options = {}) {
+  const opts = typeof options === 'string' ? { notes: options } : options || {};
+  const notes = (opts.notes || '').trim();
+  const recordedAt = opts.recordedAt || new Date().toISOString().slice(0, 10);
+  const bomTotals = computeBomTotals(bom);
+  const baseAfterBomProfit = bomTotals.profitValue;
+  const { pct, value: offerValue, amount: offerProfitAmount } = applyMarginFormula(
+    baseAfterBomProfit,
+    marginPct,
+  );
+  const calculationComment =
+    pct > 0 && baseAfterBomProfit > 0
+      ? `${formatInr(baseAfterBomProfit)} ÷ (1 − ${pct}%) = ${formatInr(offerValue)}`
+      : '';
+  return {
+    id: `or-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    revision_index: 1,
+    offer_profit_margin_pct: pct,
+    base_after_bom_profit: baseAfterBomProfit,
+    offer_value: offerValue,
+    offer_profit_amount: offerProfitAmount,
+    notes,
+    calculation_comment: calculationComment,
+    recorded_at: recordedAt,
+    stage,
+    client_agreed: false,
+  };
+}
+
+export function computeOfferTotals(bom, offerProfitMarginPct) {
+  const bomTotals = computeBomTotals(bom);
+  const baseAfterBomProfit = bomTotals.profitValue;
+  const { pct, value: offerValue, amount: offerProfitAmount } = applyMarginFormula(
+    baseAfterBomProfit,
+    offerProfitMarginPct,
+  );
+  return {
+    bomTotals,
+    baseAfterBomProfit,
+    offerMarginPct: pct,
+    offerValue,
+    offerProfitAmount,
+  };
 }
 
 export function stageIndex(stageId) {
@@ -208,6 +287,11 @@ export function newMaterialRow() {
   };
 }
 
+export function newOfferRevisionRow(bom, marginPct, stage = 'offer_revision', notes = '') {
+  return buildOfferRevisionEntry(bom, marginPct, stage, notes);
+}
+
+/** @deprecated legacy shape — kept for old payloads */
 export function newOfferRow() {
   return {
     id: `o-${Date.now()}`,

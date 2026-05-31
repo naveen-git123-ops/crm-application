@@ -12,10 +12,11 @@ import {
   TRANSPORT_MODES,
   mergeWorkflowPayload,
   computeBomTotals,
+  computeOfferTotals,
+  buildOfferRevisionEntry,
+  latestOfferRevision,
   formatInr,
   newMaterialRow,
-  newOfferRow,
-  newFollowUpRow,
   pipelineStageIndex,
   canAccessWorkflowStage,
   effectivePipelineMaxIndex,
@@ -33,7 +34,6 @@ import {
   ChevronRight,
   Store,
   FileText,
-  Upload,
   Loader2,
   Lock,
   Check,
@@ -86,6 +86,11 @@ export function CarryOrderWorkspace({
   }, [lead?.id]);
 
   const bomTotals = useMemo(() => computeBomTotals(payload.bom), [payload.bom]);
+  const offerTotals = useMemo(() => {
+    const latest = latestOfferRevision(payload.offer_revisions);
+    const pct = latest?.offer_profit_margin_pct ?? payload.offer_profit_margin_pct;
+    return computeOfferTotals(payload.bom, pct);
+  }, [payload.bom, payload.offer_revisions, payload.offer_profit_margin_pct]);
 
   const saveWorkflow = async (nextStage, nextPayload, comment) => {
     if (isCarryAndOrder(lead) && leadNeedsVendor(lead) && nextStage !== 'enquiry_logged') {
@@ -116,23 +121,6 @@ export function CarryOrderWorkspace({
     } finally {
       setSaving(false);
     }
-  };
-
-  const uploadOfferFile = async (file, offerId) => {
-    const fd = new FormData();
-    fd.append('file', file);
-    const { data } = await axios.post(`${apiBase}/leads/${lead.id}/attachments`, fd, {
-      headers: { ...authHeader(), 'Content-Type': 'multipart/form-data' },
-    });
-    setPayload((p) => ({
-      ...p,
-      offers: p.offers.map((o) =>
-        o.id === offerId
-          ? { ...o, attachment_url: data.file_url, attachment_name: data.file_name || file.name }
-          : o,
-      ),
-    }));
-    toast.success('Offer file attached');
   };
 
   const uploadTechnicalAttachments = async (pickedFiles) => {
@@ -345,6 +333,7 @@ export function CarryOrderWorkspace({
         activeTab={activeTab}
         onSelect={handleTabSelect}
         canOpenStage={canOpenStage}
+        maxIdx={pipelineMaxIdx}
       />
 
       {!canOpenStage(activeTab) && (
@@ -376,13 +365,19 @@ export function CarryOrderWorkspace({
           <ModuleOfferFollowUp
             payload={payload}
             setPayload={setPayload}
+            offerTotals={offerTotals}
             canEdit={editActive}
-            onUploadOffer={uploadOfferFile}
-            showFollowUps={activeTab === 'follow_up'}
+            workflowStage={activeTab}
           />
         )}
         {canOpenStage(activeTab) && activeTab === 'closed_won' && (
-          <ModuleClosedWon payload={payload} setPayload={setPayload} bomTotals={bomTotals} canEdit={editActive && !isClosed} />
+          <ModuleClosedWon
+            payload={payload}
+            setPayload={setPayload}
+            bomTotals={bomTotals}
+            offerTotals={offerTotals}
+            canEdit={editActive && !isClosed}
+          />
         )}
         {canOpenStage(activeTab) && activeTab === 'closed_lost' && (
           <ModuleClosedLost payload={payload} setPayload={setPayload} canEdit={editActive && !isClosed} />
@@ -478,7 +473,7 @@ function ModuleEnquiry({ lead, attachments, payload, setPayload, canEdit }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <Label className={labelClass}>
-              OTX validity from <span className="font-normal normal-case text-slate-500">(optional)</span>
+              Enquiry Validity From <span className="font-normal normal-case text-slate-500">(optional)</span>
             </Label>
             <Input
               type="date"
@@ -490,7 +485,7 @@ function ModuleEnquiry({ lead, attachments, payload, setPayload, canEdit }) {
           </div>
           <div>
             <Label className={labelClass}>
-              Enquiry validity date <span className="font-normal normal-case text-slate-500">(optional)</span>
+              Enquiry Validity To <span className="font-normal normal-case text-slate-500">(optional)</span>
             </Label>
             <Input
               type="date"
@@ -625,13 +620,13 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit }) {
 
   return (
     <section className="space-y-4">
-      <SectionTitle title="BOM & costing workspace" subtitle="TPC = Σ material costs; totals update in real time" />
+      <SectionTitle title="BOM & Costing Workspace" subtitle="Consignment total updates as you enter material and cost fields" />
       <div className="overflow-x-auto rounded-xl border border-slate-200">
         <table className="w-full text-sm">
           <thead className="bg-slate-100 border-b border-slate-200">
             <tr>
-              <th className="text-left p-2 font-semibold text-slate-700">Material / model</th>
-              <th className="text-left p-2 font-semibold text-slate-700">Max WP</th>
+              <th className="text-left p-2 font-semibold text-slate-700">Material / Services</th>
+              {/* <th className="text-left p-2 font-semibold text-slate-700">Max WP</th> */}
               <th className="text-right p-2 font-semibold text-slate-700">Base cost (₹)</th>
               <th className="w-10" />
             </tr>
@@ -652,7 +647,7 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit }) {
                     placeholder="Material name"
                   />
                 </td>
-                <td className="p-2">
+                {/* <td className="p-2">
                   <Input
                     disabled={!canEdit}
                     value={row.max_wp_rating}
@@ -663,7 +658,7 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit }) {
                     }}
                     className={inputClass}
                   />
-                </td>
+                </td> */}
                 <td className="p-2">
                   <Input
                     type="number"
@@ -705,10 +700,10 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit }) {
         </Button>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <NumField label="Installation, commissioning & amenity (₹)" value={bom.install_cost} onChange={(v) => setBom({ install_cost: v })} canEdit={canEdit} />
-        <NumField label="Testing, training & TPI (₹)" value={bom.testing_cost} onChange={(v) => setBom({ testing_cost: v })} canEdit={canEdit} />
-        <NumField label="Packaging (₹)" value={bom.packaging_cost} onChange={(v) => setBom({ packaging_cost: v })} canEdit={canEdit} />
-        <div>
+        <NumField label="Installation, Commissioning & Cost(₹)" value={bom.install_cost} onChange={(v) => setBom({ install_cost: v })} canEdit={canEdit} />
+        {/* <NumField label="Testing, training & TPI (₹)" value={bom.testing_cost} onChange={(v) => setBom({ testing_cost: v })} canEdit={canEdit} /> */}
+        <NumField label="Packaging Cost(₹)" value={bom.packaging_cost} onChange={(v) => setBom({ packaging_cost: v })} canEdit={canEdit} />
+        {/* <div>
           <Label className={labelClass}>Transportation mode</Label>
           <select
             disabled={!canEdit}
@@ -720,195 +715,360 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit }) {
               <option key={m} value={m}>{m} logistics</option>
             ))}
           </select>
-        </div>
+        </div> */}
         <NumField label="Transportation cost (₹)" value={bom.transport_cost} onChange={(v) => setBom({ transport_cost: v })} canEdit={canEdit} />
-        <NumField label="Cost of AP — approved base (₹)" value={bom.cost_of_ap} onChange={(v) => setBom({ cost_of_ap: v })} canEdit={canEdit} />
-        <NumField label="Desired margin (₹)" value={bom.margin_amount} onChange={(v) => setBom({ margin_amount: v })} canEdit={canEdit} />
+        <NumField label="Tour & Travel Cost (₹)" value={bom.cost_of_ap} onChange={(v) => setBom({ cost_of_ap: v })} canEdit={canEdit} />
+        <NumField label="TPC  Cost (₹)" value={bom.margin_amount} onChange={(v) => setBom({ margin_amount: v })} canEdit={canEdit} />
+        <div>
+          <Label className={labelClass}>Profit margin (%)</Label>
+          <Input
+            type="number"
+            min="0"
+            max="99.99"
+            step="0.01"
+            disabled={!canEdit}
+            value={bom.profit_margin_pct ?? ''}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              setBom({ profit_margin_pct: Number.isFinite(v) ? Math.min(Math.max(v, 0), 99.99) : 0 });
+            }}
+            className={`${inputClass} mt-1`}
+            placeholder="e.g. 20"
+          />
+        </div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <TotalCard label="TPC aggregation" value={formatInr(bomTotals.tpc)} />
-        <TotalCard label="Total cost to customer" value={formatInr(bomTotals.totalCost)} highlight />
-        <TotalCard label="Cost of AP" value={formatInr(bom.cost_of_ap)} />
-        <TotalCard label="Final selling value" value={formatInr(bomTotals.sellingValue)} accent />
+      <div className="space-y-2">
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <p className="text-sm font-semibold text-slate-800">Total cost for consignment</p>
+          <p className="text-xl font-bold tabular-nums text-indigo-900">
+            {formatInr(bomTotals.consignmentTotal)}
+          </p>
+        </div>
+        {bomTotals.profitMarginPct > 0 && (
+          <>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Total Cost For Consignment after Adding Profit</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {formatInr(bomTotals.consignmentTotal)} ÷ (1 − {bomTotals.profitMarginPct}%)
+                </p>
+              </div>
+              <p className="text-xl font-bold tabular-nums text-emerald-800">
+                {formatInr(bomTotals.profitValue)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm">
+              <span className="text-slate-600">Profit amount (₹)</span>
+              <span className="font-semibold tabular-nums text-slate-900">
+                {formatInr(bomTotals.profitAmount)}
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </section>
   );
 }
 
-function ModuleOfferFollowUp({ payload, setPayload, canEdit, onUploadOffer, showFollowUps }) {
-  const offers = payload.offers || [];
-  const followUps = payload.follow_ups || [];
+function ModuleOfferFollowUp({
+  payload,
+  setPayload,
+  offerTotals,
+  canEdit,
+  workflowStage,
+}) {
+  const revisions = payload.offer_revisions || [];
+  const isFollowUp = workflowStage === 'follow_up';
+  const [draftNotes, setDraftNotes] = React.useState('');
+  const [followUpDraft, setFollowUpDraft] = React.useState(() => ({
+    date: new Date().toISOString().slice(0, 10),
+    comment: '',
+    revised_pct: '',
+  }));
+
+  const draftTotals = computeOfferTotals(payload.bom, payload.offer_profit_margin_pct);
+  const followUpDraftTotals = computeOfferTotals(payload.bom, followUpDraft.revised_pct);
+
+  const appendRevision = (entry, pct) => {
+    entry.revision_index = revisions.length + 1;
+    setPayload({
+      ...payload,
+      offer_revisions: [...revisions, entry],
+      offer_profit_margin_pct: pct,
+    });
+  };
+
+  const recordRevision = () => {
+    const pct = Number(payload.offer_profit_margin_pct) || 0;
+    if (pct <= 0) {
+      toast.error('Enter offer profit margin % before recording');
+      return;
+    }
+    const entry = buildOfferRevisionEntry(payload.bom, pct, workflowStage, { notes: draftNotes });
+    appendRevision(entry, pct);
+    setDraftNotes('');
+    toast.success(`Offer revision ${entry.revision_index} recorded`);
+  };
+
+  const recordFollowUpRevision = () => {
+    const pct = Number(followUpDraft.revised_pct) || 0;
+    if (!followUpDraft.date) {
+      toast.error('Enter follow-up date');
+      return;
+    }
+    if (!followUpDraft.comment.trim()) {
+      toast.error('Enter follow-up comment');
+      return;
+    }
+    if (pct <= 0) {
+      toast.error('Enter revised profit margin %');
+      return;
+    }
+    const entry = buildOfferRevisionEntry(payload.bom, pct, 'follow_up', {
+      notes: followUpDraft.comment.trim(),
+      recordedAt: followUpDraft.date,
+    });
+    appendRevision(entry, pct);
+    setFollowUpDraft({
+      date: new Date().toISOString().slice(0, 10),
+      comment: '',
+      revised_pct: '',
+    });
+    toast.success(`Revised offer R${entry.revision_index} added to offer log`);
+  };
+
+  const updateRevision = (id, patch) => {
+    setPayload({
+      ...payload,
+      offer_revisions: revisions.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    });
+  };
+
+  const removeRevision = (id) => {
+    const next = revisions.filter((r) => r.id !== id).map((r, i) => ({ ...r, revision_index: i + 1 }));
+    setPayload({ ...payload, offer_revisions: next });
+  };
+
+  const revisionLogTable = revisions.length === 0 ? (
+    <p className="text-sm text-slate-500 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center">
+      {isFollowUp
+        ? 'No offer revisions yet — record follow-up details below to add a revised offer.'
+        : 'No offers recorded yet — enter margin % and record the first offer.'}
+    </p>
+  ) : (
+    <div className="overflow-x-auto rounded-xl border border-slate-200">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-100 border-b border-slate-200">
+          <tr>
+            <th className="p-2 text-left font-semibold text-slate-700">Rev #</th>
+            <th className="p-2 text-left font-semibold text-slate-700">Date</th>
+            <th className="p-2 text-right font-semibold text-slate-700">Margin %</th>
+            <th className="p-2 text-right font-semibold text-slate-700">Offered value</th>
+            <th className="p-2 text-left font-semibold text-slate-700">Comment</th>
+            <th className="p-2 text-left font-semibold text-slate-700">Calculation</th>
+            {isFollowUp && (
+              <th className="p-2 text-center font-semibold text-slate-700">Client agreed</th>
+            )}
+            {canEdit && <th className="w-8" />}
+          </tr>
+        </thead>
+        <tbody>
+          {revisions.map((rev) => (
+            <tr key={rev.id} className="border-t border-slate-100">
+              <td className="p-2 font-medium text-slate-800">R{rev.revision_index}</td>
+              <td className="p-2 text-slate-600 whitespace-nowrap">{rev.recorded_at || '—'}</td>
+              <td className="p-2 text-right tabular-nums">{rev.offer_profit_margin_pct}%</td>
+              <td className="p-2 text-right tabular-nums font-semibold text-indigo-800">
+                {formatInr(rev.offer_value)}
+              </td>
+              <td className="p-2 text-slate-600 max-w-[180px]">{rev.notes || '—'}</td>
+              <td className="p-2 text-slate-500 text-xs max-w-[220px]">
+                {rev.calculation_comment
+                  || (rev.offer_profit_margin_pct > 0 && rev.base_after_bom_profit
+                    ? `${formatInr(rev.base_after_bom_profit)} ÷ (1 − ${rev.offer_profit_margin_pct}%) = ${formatInr(rev.offer_value)}`
+                    : '—')}
+              </td>
+              {isFollowUp && (
+                <td className="p-2 text-center">
+                  <input
+                    type="checkbox"
+                    disabled={!canEdit}
+                    checked={Boolean(rev.client_agreed)}
+                    onChange={(e) => updateRevision(rev.id, { client_agreed: e.target.checked })}
+                    className="h-4 w-4"
+                    title="Mark when client agreed to this offer"
+                  />
+                </td>
+              )}
+              {canEdit && (
+                <td className="p-2">
+                  <button
+                    type="button"
+                    onClick={() => removeRevision(rev.id)}
+                    className="text-rose-500 hover:bg-rose-50 p-1 rounded"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <section className="space-y-6">
-      <SectionTitle title="Techno-commercial offer tracking" subtitle="Revision index auto-increments per offer row" />
-      {offers.map((offer, idx) => (
-        <div key={offer.id} className="rounded-xl border border-slate-200 p-4 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <Label className={labelClass}>Techno-commercial offer #</Label>
-              <Input
-                disabled={!canEdit}
-                value={offer.offer_no}
-                onChange={(e) => {
-                  const next = [...offers];
-                  next[idx] = { ...offer, offer_no: e.target.value };
-                  setPayload({ ...payload, offers: next });
-                }}
-                className={inputClass}
-                placeholder="TCO-2026-089A"
-              />
-            </div>
-            <div>
-              <Label className={labelClass}>Revision #</Label>
-              <Input
-                type="number"
-                min="1"
-                disabled={!canEdit}
-                value={offer.revision_index}
-                onChange={(e) => {
-                  const next = [...offers];
-                  next[idx] = { ...offer, revision_index: parseInt(e.target.value, 10) || 1 };
-                  setPayload({ ...payload, offers: next });
-                }}
-                className={inputClass}
-              />
-            </div>
-            <div className="flex items-end">
-              {canEdit && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-rose-600"
-                  onClick={() => setPayload({ ...payload, offers: offers.filter((_, i) => i !== idx) })}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          </div>
-          <div>
-            <Label className={labelClass}>Change / modification</Label>
-            <Input
-              disabled={!canEdit}
-              value={offer.change_description}
-              onChange={(e) => {
-                const next = [...offers];
-                next[idx] = { ...offer, change_description: e.target.value };
-                setPayload({ ...payload, offers: next });
-              }}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <Label className={labelClass}>Outbound offer attachment</Label>
-            {offer.attachment_name && <p className="text-xs text-emerald-700 mb-1">{offer.attachment_name}</p>}
-            {canEdit && (
-              <Input
-                type="file"
-                className={inputClass}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) onUploadOffer(f, offer.id);
-                }}
-              />
-            )}
-          </div>
+      <section className="space-y-4">
+        <SectionTitle
+          title="Offer revision log"
+          subtitle={
+            isFollowUp
+              ? 'Each follow-up revision is logged with date, comment, margin %, and calculation'
+              : 'Record the first offer — margin % and offered value are saved per revision'
+          }
+        />
+        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase text-slate-500">
+            Total cost for consignment after adding profit (BOM base)
+          </p>
+          <p className="text-sm font-semibold tabular-nums text-slate-900 mt-1">
+            {formatInr(offerTotals.baseAfterBomProfit)}
+          </p>
         </div>
-      ))}
-      {canEdit && (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            const rev = offers.length + 1;
-            setPayload({ ...payload, offers: [...offers, { ...newOfferRow(), revision_index: rev }] });
-          }}
-        >
-          <Plus className="h-4 w-4 mr-1" /> Add offer revision
-        </Button>
+
+        {canEdit && !isFollowUp && (
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/30 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wide text-indigo-700">
+              {revisions.length === 0 ? 'First offer' : `Revision ${revisions.length + 1}`}
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className={labelClass}>Offer profit margin (%)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="99.99"
+                  step="0.01"
+                  value={payload.offer_profit_margin_pct ?? ''}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    setPayload({
+                      ...payload,
+                      offer_profit_margin_pct: Number.isFinite(v) ? Math.min(Math.max(v, 0), 99.99) : 0,
+                    });
+                  }}
+                  className={`${inputClass} mt-1`}
+                  placeholder="e.g. 15"
+                />
+              </div>
+              <div className="rounded-lg border border-white bg-white px-3 py-2">
+                <p className="text-[10px] font-semibold uppercase text-slate-500">Offered value</p>
+                {draftTotals.offerMarginPct > 0 ? (
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {formatInr(draftTotals.baseAfterBomProfit)} ÷ (1 − {draftTotals.offerMarginPct}%)
+                  </p>
+                ) : null}
+                <p className="text-lg font-bold tabular-nums text-indigo-900 mt-1">
+                  {formatInr(draftTotals.offerValue)}
+                </p>
+              </div>
+            </div>
+            <div>
+              <Label className={labelClass}>
+                Comment <span className="font-normal normal-case text-slate-500">(optional)</span>
+              </Label>
+              <Input
+                value={draftNotes}
+                onChange={(e) => setDraftNotes(e.target.value)}
+                className={`${inputClass} mt-1`}
+                placeholder="e.g. Initial techno-commercial offer sent"
+              />
+            </div>
+            <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={recordRevision}>
+              <Plus className="h-4 w-4 mr-1" />
+              Record offer revision
+            </Button>
+          </div>
+        )}
+
+        {revisionLogTable}
+      </section>
+
+      {isFollowUp && canEdit && (
+        <section className="space-y-4">
+          <SectionTitle
+            title="Follow-up & revised offer"
+            subtitle="Enter date, comment, and revised margin — calculation is saved in the offer log above"
+          />
+          <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className={labelClass}>Follow-up date *</Label>
+                <Input
+                  type="date"
+                  value={followUpDraft.date}
+                  onChange={(e) => setFollowUpDraft({ ...followUpDraft, date: e.target.value })}
+                  className={`${inputClass} mt-1`}
+                />
+              </div>
+              <div>
+                <Label className={labelClass}>Revised profit margin (%) *</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="99.99"
+                  step="0.01"
+                  value={followUpDraft.revised_pct}
+                  onChange={(e) => setFollowUpDraft({ ...followUpDraft, revised_pct: e.target.value })}
+                  className={`${inputClass} mt-1`}
+                  placeholder="e.g. 12"
+                />
+              </div>
+            </div>
+            <div>
+              <Label className={labelClass}>Follow-up comment *</Label>
+              <textarea
+                rows={2}
+                value={followUpDraft.comment}
+                onChange={(e) => setFollowUpDraft({ ...followUpDraft, comment: e.target.value })}
+                className="w-full mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                placeholder="e.g. Client requested lower margin after price discussion"
+              />
+            </div>
+            {followUpDraftTotals.offerMarginPct > 0 && (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2 text-sm text-slate-700">
+                <span className="font-medium text-slate-800">Calculation: </span>
+                {formatInr(followUpDraftTotals.baseAfterBomProfit)} ÷ (1 − {followUpDraftTotals.offerMarginPct}%) ={' '}
+                <span className="font-semibold text-indigo-900">{formatInr(followUpDraftTotals.offerValue)}</span>
+              </div>
+            )}
+            <Button
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={recordFollowUpRevision}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Record revised offer in log
+            </Button>
+          </div>
+        </section>
       )}
 
-      {showFollowUps && (
-        <>
-          <SectionTitle title="Follow-up log" subtitle="Negotiation history & next actions" />
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-100">
-                <tr>
-                  <th className="p-2 text-left">#</th>
-                  <th className="p-2 text-left">Date</th>
-                  <th className="p-2 text-left">Notes</th>
-                  <th className="p-2 text-left">Next date</th>
-                  <th className="p-2 text-left">Status</th>
-                  <th className="w-8" />
-                </tr>
-              </thead>
-              <tbody>
-                {followUps.map((fu, idx) => (
-                  <tr key={fu.id} className="border-t border-slate-100">
-                    <td className="p-2 text-slate-500">F{idx + 1}</td>
-                    <td className="p-2">
-                      <Input type="date" disabled={!canEdit} value={fu.follow_up_date} className={inputClass}
-                        onChange={(e) => {
-                          const next = [...followUps];
-                          next[idx] = { ...fu, follow_up_date: e.target.value };
-                          setPayload({ ...payload, follow_ups: next });
-                        }} />
-                    </td>
-                    <td className="p-2">
-                      <Input disabled={!canEdit} value={fu.notes} className={inputClass}
-                        onChange={(e) => {
-                          const next = [...followUps];
-                          next[idx] = { ...fu, notes: e.target.value };
-                          setPayload({ ...payload, follow_ups: next });
-                        }} />
-                    </td>
-                    <td className="p-2">
-                      <Input type="date" disabled={!canEdit} value={fu.next_date} className={inputClass}
-                        onChange={(e) => {
-                          const next = [...followUps];
-                          next[idx] = { ...fu, next_date: e.target.value };
-                          setPayload({ ...payload, follow_ups: next });
-                        }} />
-                    </td>
-                    <td className="p-2">
-                      <select disabled={!canEdit} value={fu.status} className={selectClass}
-                        onChange={(e) => {
-                          const next = [...followUps];
-                          next[idx] = { ...fu, status: e.target.value };
-                          setPayload({ ...payload, follow_ups: next });
-                        }}>
-                        <option>Pending</option>
-                        <option>Done</option>
-                      </select>
-                    </td>
-                    <td className="p-2">
-                      {canEdit && (
-                        <button type="button" onClick={() => setPayload({ ...payload, follow_ups: followUps.filter((_, i) => i !== idx) })}>
-                          <Trash2 className="h-4 w-4 text-rose-500" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {canEdit && (
-            <Button size="sm" variant="outline" onClick={() => setPayload({ ...payload, follow_ups: [...followUps, newFollowUpRow()] })}>
-              <Plus className="h-4 w-4 mr-1" /> Add follow-up
-            </Button>
-          )}
-        </>
+      {isFollowUp && !canEdit && revisions.length === 0 && (
+        <p className="text-sm text-slate-500">No follow-up revisions recorded.</p>
       )}
     </section>
   );
 }
 
-function ModuleClosedWon({ payload, setPayload, bomTotals, canEdit }) {
+function ModuleClosedWon({ payload, setPayload, bomTotals, offerTotals, canEdit }) {
   const cw = payload.closed_won || {};
   const setCw = (patch) => setPayload({ ...payload, closed_won: { ...cw, ...patch } });
+  const defaultOrderValue =
+    latestOfferRevision(payload.offer_revisions)?.offer_value
+    ?? (offerTotals?.offerMarginPct > 0 ? offerTotals.offerValue : bomTotals.sellingValue);
 
   return (
     <section className="space-y-4">
@@ -916,7 +1076,7 @@ function ModuleClosedWon({ payload, setPayload, bomTotals, canEdit }) {
       <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/30 p-5 space-y-3">
         <NumField
           label="Order value target (₹) *"
-          value={cw.order_value ?? bomTotals.sellingValue}
+          value={cw.order_value ?? defaultOrderValue}
           onChange={(v) => setCw({ order_value: v })}
           canEdit={canEdit}
         />
@@ -968,8 +1128,7 @@ function ModuleClosedLost({ payload, setPayload, canEdit }) {
   );
 }
 
-function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage }) {
-  const maxIdx = resolvedPipelineIndex(stage);
+function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage, maxIdx }) {
   const terminalUnlocked = canOpenStage('closed_won');
 
   const pipelineSteps = WORKFLOW_PIPELINE_IDS.map((id) => CARRY_ORDER_STAGES.find((s) => s.id === id));
@@ -1090,19 +1249,6 @@ function TextField({ label, value, onChange, canEdit, rows = 3 }) {
         onChange={(e) => onChange(e.target.value)}
         className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
       />
-    </div>
-  );
-}
-
-function TotalCard({ label, value, highlight, accent }) {
-  return (
-    <div
-      className={`rounded-lg border p-3 ${
-        accent ? 'border-indigo-200 bg-indigo-50' : highlight ? 'border-slate-300 bg-slate-50' : 'border-slate-200 bg-white'
-      }`}
-    >
-      <p className="text-[10px] font-semibold uppercase text-slate-500">{label}</p>
-      <p className={`text-lg font-bold mt-1 tabular-nums ${accent ? 'text-indigo-800' : 'text-slate-900'}`}>{value}</p>
     </div>
   );
 }

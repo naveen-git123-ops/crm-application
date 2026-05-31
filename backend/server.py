@@ -2309,7 +2309,7 @@ class LeadCreate(BaseModel):
     vendor_id: Optional[str] = None
     vendor_name: Optional[str] = None
     enquiry_date: Optional[str] = None  # YYYY-MM-DD
-    otx_date_from: Optional[str] = None  # YYYY-MM-DD — OTX validity from (workflow)
+    otx_date_from: Optional[str] = None  # YYYY-MM-DD — Enquiry Validity From (workflow)
     otx_date_to: Optional[str] = None  # YYYY-MM-DD — enquiry validity / OTX validity to
     contacts: Optional[list] = None  # List of dicts: {name, designation, email, number}
 
@@ -8373,9 +8373,12 @@ def _default_carry_order_workflow_payload() -> dict:
             'transport_cost': 0,
             'cost_of_ap': 0,
             'margin_amount': 0,
+            'profit_margin_pct': 0,
         },
         'offers': [],
         'follow_ups': [],
+        'offer_profit_margin_pct': 0,
+        'offer_revisions': [],
         'closed_won': {
             'order_value': None,
             'terms': '',

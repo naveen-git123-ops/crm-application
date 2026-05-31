@@ -361,7 +361,7 @@ export function LeadCreateDialog({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="lead-otx-from" className={labelClass}>
-                  OTX validity from <span className="font-normal text-gray-500">(optional)</span>
+                  Enquiry Validity From <span className="font-normal text-gray-500">(optional)</span>
                 </Label>
                 <Input
                   id="lead-otx-from"
@@ -373,7 +373,7 @@ export function LeadCreateDialog({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="lead-otx-to" className={labelClass}>
-                  Enquiry validity date <span className="font-normal text-gray-500">(optional)</span>
+                  Enquiry Validity To <span className="font-normal text-gray-500">(optional)</span>
                 </Label>
                 <Input
                   id="lead-otx-to"
