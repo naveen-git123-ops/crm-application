@@ -71,6 +71,15 @@ try:
                 connection.execute(text('UPDATE orders SET lead_id = NULL WHERE lead_id IS NOT NULL'))
                 print(f'  orders: cleared lead_id on {linked} row(s)')
 
+        # Reset RTB offer sequence so next enquiry gets RTB/OFFER/3700
+        if table_exists(connection, 'app_settings'):
+            connection.execute(
+                text(
+                    "DELETE FROM app_settings WHERE `key` = 'rtb_offer_next_number'"
+                )
+            )
+            print('  app_settings: reset rtb_offer_next_number (next offer: RTB/OFFER/3700)')
+
         if DATABASE_URL.startswith('mysql'):
             connection.execute(text('SET FOREIGN_KEY_CHECKS = 1'))
 

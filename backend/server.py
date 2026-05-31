@@ -8391,6 +8391,7 @@ def _default_carry_order_workflow_payload() -> dict:
         'follow_ups': [],
         'offer_profit_margin_pct': 0,
         'offer_revisions': [],
+        'lead_offer_no': '',
         'client_outcome': None,
         'agreed_revision_id': None,
         'closed_won': {
@@ -8591,6 +8592,117 @@ class CarryOrderWorkflowUpdate(BaseModel):
     status_change_comment: Optional[str] = None
 
 
+class AllocateOfferNumberResponse(BaseModel):
+    offer_base: str
+
+
+RTB_OFFER_PREFIX = 'RTB/OFFER/'
+RTB_OFFER_SEQUENCE_START = 3700
+SETTING_RTB_OFFER_NEXT = 'rtb_offer_next_number'
+
+
+def _strip_offer_revision_suffix(offer_no: str) -> str:
+    s = (offer_no or '').strip()
+    m = re.match(r'^(.+)-R\d+$', s, re.IGNORECASE)
+    return m.group(1) if m else s
+
+
+def _parse_rtb_offer_sequence(offer_no: str) -> Optional[int]:
+    base = _strip_offer_revision_suffix(offer_no)
+    m = re.match(r'^RTB/OFFER/(\d+)$', base, re.IGNORECASE)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return None
+
+
+def _format_rtb_offer_base(seq: int) -> str:
+    return f'{RTB_OFFER_PREFIX}{seq}'
+
+
+def _resolve_offer_base_from_workflow_payload(payload: dict) -> str:
+    if not isinstance(payload, dict):
+        return ''
+    direct = (payload.get('lead_offer_no') or '').strip()
+    if direct:
+        return _strip_offer_revision_suffix(direct)
+    for rev in payload.get('offer_revisions') or []:
+        if not isinstance(rev, dict):
+            continue
+        base = (rev.get('lead_offer_base') or '').strip()
+        if base:
+            return _strip_offer_revision_suffix(base)
+        parsed = _parse_rtb_offer_sequence(rev.get('offer_no') or '')
+        if parsed is not None:
+            return _format_rtb_offer_base(parsed)
+        stripped = _strip_offer_revision_suffix(rev.get('offer_no') or '')
+        if stripped.upper().startswith('RTB/OFFER/'):
+            return stripped
+    return ''
+
+
+def _max_rtb_offer_sequence_in_db(db: Session) -> int:
+    max_seq = 0
+    rows = db.query(LeadModel.workflow_payload).filter(LeadModel.workflow_payload.isnot(None)).all()
+    for (raw,) in rows:
+        if not raw:
+            continue
+        try:
+            payload = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        base = _resolve_offer_base_from_workflow_payload(payload)
+        n = _parse_rtb_offer_sequence(base)
+        if n is not None:
+            max_seq = max(max_seq, n)
+    return max_seq
+
+
+def _allocate_rtb_offer_base(db: Session, lead: LeadModel) -> str:
+    payload = lead.workflow_payload
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    existing = _resolve_offer_base_from_workflow_payload(payload)
+    if existing:
+        return existing
+
+    row = (
+        db.query(AppSettingModel)
+        .filter(AppSettingModel.key == SETTING_RTB_OFFER_NEXT)
+        .with_for_update()
+        .first()
+    )
+    if row and (row.value or '').strip().isdigit():
+        next_num = int(row.value.strip())
+    else:
+        max_in_leads = _max_rtb_offer_sequence_in_db(db)
+        next_num = max(RTB_OFFER_SEQUENCE_START, max_in_leads + 1)
+
+    offer_base = _format_rtb_offer_base(next_num)
+    now = datetime.now(timezone.utc)
+    if row:
+        row.value = str(next_num + 1)
+        row.updated_at = now
+    else:
+        db.add(
+            AppSettingModel(
+                key=SETTING_RTB_OFFER_NEXT,
+                value=str(next_num + 1),
+                updated_at=now,
+            )
+        )
+    return offer_base
+
+
 CARRY_ORDER_STAGES = [
     'enquiry_logged',
     'technical_clearance',
@@ -8679,6 +8791,28 @@ def _ensure_lead_workflow_initialized(lead: LeadModel, db: Session) -> None:
     if changed:
         db.commit()
         db.refresh(lead)
+
+
+@api_router.post('/leads/{lead_id}/allocate-offer-number', response_model=AllocateOfferNumberResponse)
+def allocate_lead_offer_number(
+    lead_id: str,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db),
+):
+    """Assign RTB/OFFER/#### for this enquiry (once); revisions use -R0, -R1, …"""
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user):
+        raise HTTPException(status_code=403, detail='You can only edit leads created by you')
+    _ensure_lead_workflow_initialized(lead, db)
+    try:
+        offer_base = _allocate_rtb_offer_base(db, lead)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return AllocateOfferNumberResponse(offer_base=offer_base)
 
 
 @api_router.get('/leads/{lead_id}/carry-order-workflow', response_model=Lead)

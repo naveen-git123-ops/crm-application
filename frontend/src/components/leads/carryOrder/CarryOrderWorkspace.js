@@ -10,6 +10,8 @@ import {
   WORKFLOW_TERMINAL_IDS,
   LOSS_REASONS,
   TRANSPORT_MODES,
+  FOLLOW_UP_CHANNELS,
+  followUpChannelLabel,
   mergeWorkflowPayload,
   computeBomTotals,
   computeOfferTotals,
@@ -17,8 +19,13 @@ import {
   latestOfferRevision,
   agreedOfferRevision,
   offerRevisionLabel,
+  resolveLeadOfferBaseNumber,
+  formatOfferRevisionNumber,
+  RTB_OFFER_PREFIX,
+  RTB_OFFER_SEQUENCE_START,
   revisionTotalProfit,
   revisionAttachments,
+  followUpAttachments,
   formatInr,
   newFollowUpRow,
   newMaterialRow,
@@ -39,6 +46,7 @@ import {
   ChevronRight,
   Store,
   FileText,
+  Eye,
   Loader2,
   Lock,
   Check,
@@ -818,8 +826,8 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit }) {
   );
 }
 
-function OfferRevisionAttachmentPreview({ rev }) {
-  const files = revisionAttachments(rev);
+function WorkflowAttachmentPreview({ attachments }) {
+  const files = Array.isArray(attachments) ? attachments : [];
   if (!files.length) {
     return <span className="text-slate-400 text-xs">—</span>;
   }
@@ -832,7 +840,7 @@ function OfferRevisionAttachmentPreview({ rev }) {
             onClick={() => {
               if (att.file_url) window.open(att.file_url, '_blank', 'noopener,noreferrer');
             }}
-            className="flex items-center gap-1.5 text-left text-indigo-700 hover:text-indigo-900 hover:underline text-xs max-w-[140px]"
+            className="flex items-center gap-1.5 text-left text-indigo-700 hover:text-indigo-900 hover:underline text-xs max-w-[200px]"
             title={`Preview: ${att.file_name || 'File'}`}
           >
             <Eye className="h-3.5 w-3.5 shrink-0" />
@@ -842,6 +850,10 @@ function OfferRevisionAttachmentPreview({ rev }) {
       ))}
     </ul>
   );
+}
+
+function OfferRevisionAttachmentPreview({ rev }) {
+  return <WorkflowAttachmentPreview attachments={revisionAttachments(rev)} />;
 }
 
 function ModuleOfferFollowUp({
@@ -867,13 +879,86 @@ function ModuleOfferFollowUp({
     pendingFiles: [],
   }));
   const [recording, setRecording] = React.useState(false);
+  const [followUpUploadingIdx, setFollowUpUploadingIdx] = React.useState(null);
+  const [followUpDraft, setFollowUpDraft] = React.useState(() => ({
+    date: new Date().toISOString().slice(0, 10),
+    channel: 'telephonic',
+    comment: '',
+    pendingFiles: [],
+  }));
+  const [addingFollowUp, setAddingFollowUp] = React.useState(false);
 
   const draftTotals = computeOfferTotals(payload.bom, offerDraft.margin_pct);
+  const canEditFollowUp = canEdit && isFollowUp;
+
+  const uploadFollowUpAttachments = async (idx, pickedFiles) => {
+    const files = normalizeFileList(pickedFiles);
+    if (!files.length || !uploadLeadFile) return;
+    setFollowUpUploadingIdx(idx);
+    try {
+      const fu = followUps[idx];
+      const refs = [...followUpAttachments(fu)];
+      for (const file of files) {
+        refs.push(await uploadLeadFile(file));
+      }
+      const next = [...followUps];
+      next[idx] = { ...fu, attachments: refs };
+      setPayload({ ...payload, follow_ups: next });
+      toast.success(files.length > 1 ? 'Attachments added' : 'Attachment added');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Upload failed'));
+    } finally {
+      setFollowUpUploadingIdx(null);
+    }
+  };
+
+  const addFollowUpFromDraft = async () => {
+    if (!followUpDraft.date) {
+      toast.error('Enter follow-up date');
+      return;
+    }
+    setAddingFollowUp(true);
+    try {
+      const attachmentRefs = [];
+      const pending = normalizeFileList(followUpDraft.pendingFiles);
+      if (pending.length && uploadLeadFile) {
+        for (const file of pending) {
+          attachmentRefs.push(await uploadLeadFile(file));
+        }
+      }
+      const row = {
+        ...newFollowUpRow(),
+        follow_up_date: followUpDraft.date,
+        follow_up_channel: followUpDraft.channel,
+        notes: followUpDraft.comment.trim(),
+        attachments: attachmentRefs,
+      };
+      setPayload({ ...payload, follow_ups: [...followUps, row] });
+      setFollowUpDraft({
+        date: new Date().toISOString().slice(0, 10),
+        channel: 'telephonic',
+        comment: '',
+        pendingFiles: [],
+      });
+      toast.success('Follow-up recorded');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to add follow-up'));
+    } finally {
+      setAddingFollowUp(false);
+    }
+  };
+
+  const leadOfferBase = resolveLeadOfferBaseNumber(payload, revisions);
 
   const appendRevision = (entry, pct) => {
-    entry.revision_index = revisions.length;
+    const idx = revisions.length;
+    entry.revision_index = idx;
+    const base = entry.lead_offer_base || resolveLeadOfferBaseNumber(payload, revisions);
+    entry.lead_offer_base = base;
+    entry.offer_no = formatOfferRevisionNumber(base, idx);
     setPayload({
       ...payload,
+      lead_offer_no: base,
       offer_revisions: [...revisions, entry],
       offer_profit_margin_pct: pct,
     });
@@ -898,10 +983,22 @@ function ModuleOfferFollowUp({
           attachmentRefs.push(await uploadLeadFile(file));
         }
       }
+      let offerBase = resolveLeadOfferBaseNumber(payload, revisions);
+      if (!offerBase) {
+        const { data: alloc } = await axios.post(
+          `${apiBase}/leads/${lead.id}/allocate-offer-number`,
+          {},
+          { headers: authHeader() },
+        );
+        offerBase = alloc.offer_base;
+      }
       const entry = buildOfferRevisionEntry(payload.bom, pct, 'offer_revision', {
         notes: offerDraft.comment.trim(),
         recordedAt: offerDraft.date,
         attachments: attachmentRefs,
+        existingRevisions: revisions,
+        lead_offer_no: offerBase,
+        offerBase,
       });
       appendRevision(entry, pct);
       setOfferDraft({
@@ -910,7 +1007,7 @@ function ModuleOfferFollowUp({
         margin_pct: '',
         pendingFiles: [],
       });
-      toast.success(`${offerRevisionLabel(entry.revision_index)} recorded`);
+      toast.success(`${entry.offer_no} recorded`);
     } catch (err) {
       toast.error(getApiErrorMessage(err, 'Failed to record offer'));
     } finally {
@@ -919,9 +1016,145 @@ function ModuleOfferFollowUp({
   };
 
   const removeRevision = (id) => {
-    const next = revisions.filter((r) => r.id !== id).map((r, i) => ({ ...r, revision_index: i }));
-    setPayload({ ...payload, offer_revisions: next });
+    const remaining = revisions.filter((r) => r.id !== id);
+    const base = resolveLeadOfferBaseNumber(payload, remaining);
+    const next = remaining.map((r, i) => ({
+      ...r,
+      revision_index: i,
+      lead_offer_base: base || r.lead_offer_base,
+      offer_no: formatOfferRevisionNumber(base || r.lead_offer_base, i),
+    }));
+    setPayload({
+      ...payload,
+      lead_offer_no: base,
+      offer_revisions: next,
+    });
   };
+
+  const followUpLogTable = followUps.length === 0 ? (
+    <p className="text-sm text-slate-500 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center">
+      {isOfferStep
+        ? 'No follow-ups yet — they appear here after you log them on the Follow-up step.'
+        : 'No follow-ups yet — add an entry below.'}
+    </p>
+  ) : (
+    <div className="overflow-x-auto rounded-xl border border-slate-200">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-100 border-b border-slate-200">
+          <tr>
+            <th className="p-2 text-left font-semibold text-slate-700">#</th>
+            <th className="p-2 text-left font-semibold text-slate-700">Date</th>
+            <th className="p-2 text-left font-semibold text-slate-700">Follow-up through</th>
+            <th className="p-2 text-left font-semibold text-slate-700">Comment</th>
+            <th className="p-2 text-left font-semibold text-slate-700">Attachment</th>
+            {canEditFollowUp && <th className="w-8" />}
+          </tr>
+        </thead>
+        <tbody className="text-slate-800">
+          {followUps.map((fu, idx) => (
+            <tr key={fu.id} className="border-t border-slate-100">
+              <td className="p-2 text-slate-500">F{idx + 1}</td>
+              <td className="p-2 whitespace-nowrap">
+                {canEditFollowUp ? (
+                  <Input
+                    type="date"
+                    value={fu.follow_up_date || ''}
+                    className={inputClass}
+                    onChange={(e) => {
+                      const next = [...followUps];
+                      next[idx] = { ...fu, follow_up_date: e.target.value };
+                      setPayload({ ...payload, follow_ups: next });
+                    }}
+                  />
+                ) : (
+                  <span className="text-slate-600">{fu.follow_up_date || '—'}</span>
+                )}
+              </td>
+              <td className="p-2 min-w-[130px]">
+                {canEditFollowUp ? (
+                  <select
+                    className={selectClass}
+                    value={fu.follow_up_channel || 'telephonic'}
+                    onChange={(e) => {
+                      const next = [...followUps];
+                      next[idx] = { ...fu, follow_up_channel: e.target.value };
+                      setPayload({ ...payload, follow_ups: next });
+                    }}
+                  >
+                    {FOLLOW_UP_CHANNELS.map((ch) => (
+                      <option key={ch.id} value={ch.id}>
+                        {ch.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-slate-700">{followUpChannelLabel(fu.follow_up_channel)}</span>
+                )}
+              </td>
+              <td className="p-2 max-w-[200px]">
+                {canEditFollowUp ? (
+                  <Input
+                    value={fu.notes || ''}
+                    className={inputClass}
+                    placeholder="Comment"
+                    onChange={(e) => {
+                      const next = [...followUps];
+                      next[idx] = { ...fu, notes: e.target.value };
+                      setPayload({ ...payload, follow_ups: next });
+                    }}
+                  />
+                ) : (
+                  <span className="text-slate-600">{fu.notes || '—'}</span>
+                )}
+              </td>
+              <td className="p-2 align-top">
+                <WorkflowAttachmentPreview attachments={followUpAttachments(fu)} />
+                {canEditFollowUp && (
+                  <div className="mt-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs text-indigo-700 px-1"
+                      disabled={followUpUploadingIdx === idx || parentSaving}
+                      onClick={() => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.multiple = true;
+                        input.onchange = (e) => {
+                          uploadFollowUpAttachments(idx, e.target.files ? Array.from(e.target.files) : []);
+                        };
+                        input.click();
+                      }}
+                    >
+                      {followUpUploadingIdx === idx ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        'Attach'
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </td>
+              {canEditFollowUp && (
+                <td className="p-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPayload({ ...payload, follow_ups: followUps.filter((_, i) => i !== idx) })
+                    }
+                    className="text-rose-500 hover:bg-rose-50 p-1 rounded"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 
   const revisionLogTable = revisions.length === 0 ? (
     <p className="text-sm text-slate-500 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center">
@@ -934,7 +1167,8 @@ function ModuleOfferFollowUp({
       <table className="w-full text-sm">
         <thead className="bg-slate-100 border-b border-slate-200">
           <tr>
-            <th className="p-2 text-left font-semibold text-slate-700">Offer</th>
+            <th className="p-2 text-left font-semibold text-slate-700">Rev</th>
+            <th className="p-2 text-left font-semibold text-slate-700">Offer #</th>
             <th className="p-2 text-left font-semibold text-slate-700">Date</th>
             <th className="p-2 text-right font-semibold text-slate-700">Margin %</th>
             <th className="p-2 text-right font-semibold text-slate-700">Offered value</th>
@@ -952,6 +1186,9 @@ function ModuleOfferFollowUp({
               className={`border-t border-slate-100 ${rev.client_agreed ? 'bg-emerald-50/60' : ''}`}
             >
               <td className="p-2 font-medium text-slate-800">{offerRevisionLabel(rev.revision_index)}</td>
+              <td className="p-2 font-mono text-xs font-semibold text-indigo-800 whitespace-nowrap">
+                {rev.offer_no || '—'}
+              </td>
               <td className="p-2 text-slate-600 whitespace-nowrap">{rev.recorded_at || '—'}</td>
               <td className="p-2 text-right tabular-nums font-medium text-slate-800">
                 {rev.offer_profit_margin_pct}%
@@ -1001,13 +1238,24 @@ function ModuleOfferFollowUp({
               : 'Record each offer from R0 onward — margin %, value, and total profit per row'
           }
         />
-        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase text-slate-500">
-            Total cost for consignment after adding profit (BOM base)
-          </p>
-          <p className="text-sm font-semibold tabular-nums text-slate-900 mt-1">
-            {formatInr(offerTotals.baseAfterBomProfit)}
-          </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase text-slate-500">
+              Total cost for consignment after adding profit (BOM base)
+            </p>
+            <p className="text-sm font-semibold tabular-nums text-slate-900 mt-1">
+              {formatInr(offerTotals.baseAfterBomProfit)}
+            </p>
+          </div>
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50/80 px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase text-indigo-700">Enquiry offer number</p>
+            <p className="text-sm font-mono font-semibold text-indigo-900 mt-1">
+              {leadOfferBase || 'Assigned on first offer (R0)'}
+            </p>
+            <p className="text-[10px] text-indigo-600/80 mt-0.5">
+              Format RTB/OFFER/#### — revisions R0, R1, R2 on the same enquiry number
+            </p>
+          </div>
         </div>
 
         {canEdit && isOfferStep && (
@@ -1067,6 +1315,11 @@ function ModuleOfferFollowUp({
                 placeholder="e.g. Initial offer sent to client"
               />
             </div>
+            <p className="text-xs text-slate-500">
+              {leadOfferBase
+                ? `Next revision: ${formatOfferRevisionNumber(leadOfferBase, nextRevIndex)}`
+                : `First offer assigns ${RTB_OFFER_PREFIX}#### (from ${RTB_OFFER_SEQUENCE_START}); revisions R0, R1, R2…`}
+            </p>
             <CgwMultiFilePicker
               label="Offer attachment"
               hint="Attach offer PDF or document (optional). Preview from the log table after recording."
@@ -1094,78 +1347,83 @@ function ModuleOfferFollowUp({
         {revisionLogTable}
       </section>
 
-      {isFollowUp && (
+      {(isFollowUp || isOfferStep) && (
         <section className="space-y-4">
           <SectionTitle
-            title="Follow-up notes"
-            subtitle="Log calls and meetings — offers (R0, R1, …) are added only in Offer & revision"
+            title="Follow-up log"
+            subtitle={
+              isFollowUp
+                ? 'Same layout as offer log — date, channel, comment, and attachment per row'
+                : 'Read-only — add follow-ups on the Follow-up step'
+            }
           />
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-100">
-                <tr>
-                  <th className="p-2 text-left">#</th>
-                  <th className="p-2 text-left">Date</th>
-                  <th className="p-2 text-left">Comment</th>
-                  <th className="w-8" />
-                </tr>
-              </thead>
-              <tbody>
-                {followUps.map((fu, idx) => (
-                  <tr key={fu.id} className="border-t border-slate-100">
-                    <td className="p-2 text-slate-500">F{idx + 1}</td>
-                    <td className="p-2">
-                      <Input
-                        type="date"
-                        disabled={!canEdit}
-                        value={fu.follow_up_date}
-                        className={inputClass}
-                        onChange={(e) => {
-                          const next = [...followUps];
-                          next[idx] = { ...fu, follow_up_date: e.target.value };
-                          setPayload({ ...payload, follow_ups: next });
-                        }}
-                      />
-                    </td>
-                    <td className="p-2">
-                      <Input
-                        disabled={!canEdit}
-                        value={fu.notes}
-                        className={inputClass}
-                        onChange={(e) => {
-                          const next = [...followUps];
-                          next[idx] = { ...fu, notes: e.target.value };
-                          setPayload({ ...payload, follow_ups: next });
-                        }}
-                      />
-                    </td>
-                    <td className="p-2">
-                      {canEdit && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setPayload({ ...payload, follow_ups: followUps.filter((_, i) => i !== idx) })
-                          }
-                        >
-                          <Trash2 className="h-4 w-4 text-rose-500" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {canEdit && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setPayload({ ...payload, follow_ups: [...followUps, newFollowUpRow()] })}
-            >
-              <Plus className="h-4 w-4 mr-1" /> Add follow-up note
-            </Button>
+          {followUpLogTable}
+          {canEditFollowUp && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-4 space-y-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-amber-800">New follow-up</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className={labelClass}>Date *</Label>
+                  <Input
+                    type="date"
+                    value={followUpDraft.date}
+                    onChange={(e) => setFollowUpDraft({ ...followUpDraft, date: e.target.value })}
+                    className={`${inputClass} mt-1`}
+                  />
+                </div>
+                <div>
+                  <Label className={labelClass}>Follow-up through *</Label>
+                  <select
+                    className={`${selectClass} mt-1`}
+                    value={followUpDraft.channel}
+                    onChange={(e) => setFollowUpDraft({ ...followUpDraft, channel: e.target.value })}
+                  >
+                    {FOLLOW_UP_CHANNELS.map((ch) => (
+                      <option key={ch.id} value={ch.id}>
+                        {ch.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <Label className={labelClass}>Comment</Label>
+                <textarea
+                  rows={2}
+                  value={followUpDraft.comment}
+                  onChange={(e) => setFollowUpDraft({ ...followUpDraft, comment: e.target.value })}
+                  className="w-full mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                  placeholder="Follow-up comment"
+                />
+              </div>
+              <CgwMultiFilePicker
+                label="Attachment"
+                hint="Optional — preview in the table after adding."
+                disabled={addingFollowUp || parentSaving}
+                files={followUpDraft.pendingFiles}
+                onChange={(files) => setFollowUpDraft({ ...followUpDraft, pendingFiles: files })}
+                addLabel="Attach"
+              />
+              <Button
+                size="sm"
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+                disabled={addingFollowUp || parentSaving}
+                onClick={addFollowUpFromDraft}
+              >
+                {addingFollowUp ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4 mr-1" />
+                )}
+                Add to follow-up log
+              </Button>
+            </div>
           )}
+        </section>
+      )}
 
+      {isFollowUp && (
+        <section className="space-y-4">
           <section className="rounded-xl border-2 border-slate-200 bg-slate-50/50 p-4 space-y-4">
             <SectionTitle
               title="Client decision"
@@ -1182,7 +1440,7 @@ function ModuleOfferFollowUp({
                 >
                   {revisions.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {offerRevisionLabel(r.revision_index)} — {formatInr(r.offer_value)}
+                      {r.offer_no || offerRevisionLabel(r.revision_index)} — {formatInr(r.offer_value)}
                     </option>
                   ))}
                 </select>
@@ -1192,7 +1450,8 @@ function ModuleOfferFollowUp({
               <p className="text-sm text-slate-600">
                 Agreed offer:{' '}
                 <strong className="text-slate-900">
-                  {offerRevisionLabel(revisions[0].revision_index)} ({formatInr(revisions[0].offer_value)})
+                  {revisions[0].offer_no || offerRevisionLabel(revisions[0].revision_index)} (
+                  {formatInr(revisions[0].offer_value)})
                 </strong>
               </p>
             )}

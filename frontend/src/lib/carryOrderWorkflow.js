@@ -115,6 +115,16 @@ export const LOSS_REASONS = [
 
 export const TRANSPORT_MODES = ['SEA', 'AIR', 'ROAD'];
 
+export const FOLLOW_UP_CHANNELS = [
+  { id: 'whatsapp', label: 'WhatsApp' },
+  { id: 'email', label: 'Email' },
+  { id: 'telephonic', label: 'Telephonic' },
+];
+
+export function followUpChannelLabel(channelId) {
+  return FOLLOW_UP_CHANNELS.find((c) => c.id === channelId)?.label || channelId || '—';
+}
+
 export function defaultWorkflowPayload() {
   return {
     technical_approved: null,
@@ -135,6 +145,7 @@ export function defaultWorkflowPayload() {
     },
     offers: [],
     offer_revisions: [],
+    lead_offer_no: '',
     follow_ups: [],
     offer_profit_margin_pct: 0,
     client_outcome: null,
@@ -153,6 +164,9 @@ export function defaultWorkflowPayload() {
 export function mergeWorkflowPayload(stored) {
   const base = defaultWorkflowPayload();
   if (!stored || typeof stored !== 'object') return base;
+  const offer_revisions = normalizeOfferRevisions(stored);
+  const lead_offer_no =
+    String(stored.lead_offer_no || '').trim() || offer_revisions[0]?.lead_offer_base || '';
   return {
     ...base,
     ...stored,
@@ -162,10 +176,84 @@ export function mergeWorkflowPayload(stored) {
     technical_attachments: Array.isArray(stored.technical_attachments)
       ? stored.technical_attachments
       : base.technical_attachments,
-    offer_revisions: Array.isArray(stored.offer_revisions)
-      ? stored.offer_revisions
-      : base.offer_revisions,
+    offer_revisions,
+    lead_offer_no,
   };
+}
+
+export const RTB_OFFER_PREFIX = 'RTB/OFFER/';
+/** Next enquiry offer number when the sequence counter is unset (current company sequence). */
+export const RTB_OFFER_SEQUENCE_START = 3700;
+
+/** Strip trailing -R0, -R1 from per-revision offer numbers. */
+export function stripOfferRevisionSuffix(offerNo) {
+  const s = String(offerNo || '').trim();
+  const match = s.match(/^(.+)-R\d+$/i);
+  return match ? match[1] : s;
+}
+
+export function parseRtbOfferSequenceNumber(offerNo) {
+  const base = stripOfferRevisionSuffix(offerNo);
+  const m = String(base || '')
+    .trim()
+    .match(/^RTB\/OFFER\/(\d+)$/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+export function formatRtbOfferBaseNumber(seq) {
+  return `${RTB_OFFER_PREFIX}${seq}`;
+}
+
+export function resolveLeadOfferBaseNumber(payload, revisions = []) {
+  const fromPayload = String(payload?.lead_offer_no || '').trim();
+  if (fromPayload) return fromPayload;
+  const list = Array.isArray(revisions) ? revisions : [];
+  for (const r of list) {
+    const base = String(r.lead_offer_base || '').trim();
+    if (base) return base;
+    const stripped = stripOfferRevisionSuffix(r.offer_no);
+    if (stripped) return stripped;
+  }
+  return '';
+}
+
+/** One base offer number per enquiry; revisions are base-R0, base-R1, … */
+export function formatOfferRevisionNumber(baseNo, revisionIndex) {
+  const base = String(baseNo || '').trim();
+  if (!base) return offerRevisionLabel(revisionIndex);
+  return `${base}-${offerRevisionLabel(revisionIndex)}`;
+}
+
+/** Local fallback only — prefer POST /leads/{id}/allocate-offer-number for new enquiries. */
+export function generateOfferBaseNumber(existingBases = [], explicitSeq = null) {
+  if (explicitSeq != null && Number.isFinite(Number(explicitSeq))) {
+    return formatRtbOfferBaseNumber(Number(explicitSeq));
+  }
+  const nums = (existingBases || [])
+    .map((b) => parseRtbOfferSequenceNumber(b))
+    .filter((n) => n != null);
+  const maxSeq = nums.length ? Math.max(...nums) : RTB_OFFER_SEQUENCE_START - 1;
+  const next = Math.max(RTB_OFFER_SEQUENCE_START, maxSeq + 1);
+  return formatRtbOfferBaseNumber(next);
+}
+
+function normalizeOfferRevisions(stored) {
+  const list = Array.isArray(stored?.offer_revisions) ? stored.offer_revisions : [];
+  if (!list.length) return [];
+  let base = String(stored.lead_offer_no || '').trim() || resolveLeadOfferBaseNumber(stored, list);
+  if (!base) {
+    base = stripOfferRevisionSuffix(list[0].offer_no) || generateOfferBaseNumber();
+  }
+  return list.map((r, i) => {
+    const idx = Number.isFinite(Number(r.revision_index)) ? Number(r.revision_index) : i;
+    const rowBase = String(r.lead_offer_base || base).trim() || base;
+    return {
+      ...r,
+      revision_index: idx,
+      lead_offer_base: rowBase,
+      offer_no: formatOfferRevisionNumber(rowBase, idx),
+    };
+  });
 }
 
 export function newTechnicalAttachmentRef(uploaded) {
@@ -236,10 +324,32 @@ export function latestOfferRevision(revisions) {
   return list[list.length - 1];
 }
 
+/** @deprecated use generateOfferBaseNumber */
+export function generateOfferNumber(existingRevisions = []) {
+  const bases = (existingRevisions || []).map(
+    (r) => r.lead_offer_base || stripOfferRevisionSuffix(r.offer_no),
+  );
+  return generateOfferBaseNumber(bases);
+}
+
 export function buildOfferRevisionEntry(bom, marginPct, stage = 'offer_revision', options = {}) {
   const opts = typeof options === 'string' ? { notes: options } : options || {};
   const notes = (opts.notes || '').trim();
   const recordedAt = opts.recordedAt || new Date().toISOString().slice(0, 10);
+  const existingRevisions = opts.existingRevisions || [];
+  const revisionIndex =
+    Number.isFinite(Number(opts.revisionIndex)) ? Number(opts.revisionIndex) : existingRevisions.length;
+  let baseNo = resolveLeadOfferBaseNumber(
+    { lead_offer_no: opts.lead_offer_no || opts.offerBase },
+    existingRevisions,
+  );
+  if (!baseNo) {
+    baseNo = generateOfferBaseNumber(
+      existingRevisions.map((r) => r.lead_offer_base || stripOfferRevisionSuffix(r.offer_no)),
+      opts.explicitOfferSeq,
+    );
+  }
+  const offerNo = formatOfferRevisionNumber(baseNo, revisionIndex);
   const bomTotals = computeBomTotals(bom);
   const baseAfterBomProfit = bomTotals.profitValue;
   const { pct, value: offerValue, amount: offerProfitAmount } = applyMarginFormula(
@@ -254,7 +364,9 @@ export function buildOfferRevisionEntry(bom, marginPct, stage = 'offer_revision'
   const totalProfit = offerValue - consignmentTotal;
   return {
     id: `or-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    revision_index: 0,
+    revision_index: revisionIndex,
+    lead_offer_base: baseNo,
+    offer_no: offerNo,
     offer_profit_margin_pct: pct,
     base_after_bom_profit: baseAfterBomProfit,
     consignment_total: consignmentTotal,
@@ -346,9 +458,16 @@ export function newOfferRow() {
 export function newFollowUpRow() {
   return {
     id: `f-${Date.now()}`,
-    follow_up_date: '',
+    follow_up_date: new Date().toISOString().slice(0, 10),
+    follow_up_channel: 'telephonic',
     notes: '',
+    attachments: [],
     next_date: '',
     status: 'Pending',
   };
+}
+
+export function followUpAttachments(fu) {
+  if (Array.isArray(fu?.attachments) && fu.attachments.length) return fu.attachments;
+  return [];
 }
