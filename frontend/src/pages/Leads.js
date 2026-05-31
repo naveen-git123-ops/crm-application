@@ -12,6 +12,7 @@ import { LeadCreateDialog } from '@/components/leads/LeadCreateDialog';
 import { LeadVendorDialog } from '@/components/leads/LeadVendorDialog';
 import { LeadStatusDialog } from '@/components/leads/LeadStatusDialog';
 import { LeadProfileSheet } from '@/components/leads/LeadProfileSheet';
+import { LeadWorkflowDialog } from '@/components/leads/LeadWorkflowDialog';
 import {
   LEAD_SOURCES,
   LEAD_STATUSES,
@@ -48,6 +49,7 @@ export const Leads = () => {
   const [leadAttachments, setLeadAttachments] = useState([]);
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [workflowOpen, setWorkflowOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
   const [vendorOpen, setVendorOpen] = useState(false);
@@ -188,14 +190,26 @@ export const Leads = () => {
     [filteredLeads],
   );
 
-  const selectLead = async (lead, { openProfile = false, openSheet = false } = {}) => {
+  const selectLead = async (lead, { openProfile = false, openWorkflow = true } = {}) => {
     setSelectedLead(lead);
     await loadLeadDetails(lead.id);
-    if (openProfile || openSheet || (typeof window !== 'undefined' && window.innerWidth < 1024)) {
+    if (openProfile) {
+      setWorkflowOpen(false);
       setProfileOpen(true);
-    } else {
+    } else if (openWorkflow) {
       setProfileOpen(false);
+      setWorkflowOpen(true);
     }
+  };
+
+  const closeWorkflow = (open) => {
+    setWorkflowOpen(open);
+    if (!open) setSelectedLead(null);
+  };
+
+  const openLeadRecord = (lead) => {
+    if (lead) setSelectedLead(lead);
+    setProfileOpen(true);
   };
 
   const openVendorDialog = (lead, { afterStatus = false } = {}) => {
@@ -329,15 +343,23 @@ export const Leads = () => {
         statusColors={STATUS_COLORS}
         onSelectLead={(lead, opts) => selectLead(lead, opts)}
         onAssignVendor={(lead) => openVendorDialog(lead)}
-        canEditLead={canEditLead}
         isCarryAndOrder={isCarryAndOrder}
         leadNeedsVendor={leadNeedsVendor}
         getLeadInitials={getLeadInitials}
+      />
+
+      <LeadWorkflowDialog
+        open={workflowOpen && !!selectedLead}
+        onOpenChange={closeWorkflow}
+        lead={selectedLead}
         apiBase={API}
         authHeader={authHeader}
         vendors={vendors}
         leadAttachments={leadAttachments}
+        canEdit={selectedLead ? canEditLead(selectedLead) : false}
         onLeadRefresh={refreshLead}
+        onAssignVendor={(lead) => openVendorDialog(lead)}
+        onOpenRecord={openLeadRecord}
       />
 
       <LeadCreateDialog
@@ -413,6 +435,7 @@ export const Leads = () => {
         }}
         onDeleted={() => {
           setSelectedLead(null);
+          setWorkflowOpen(false);
           setProfileOpen(false);
           fetchLeads();
           fetchStats();

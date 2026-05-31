@@ -55,6 +55,7 @@ export function CarryOrderWorkspace({
   onRefresh,
   onAssignVendor,
   onOpenProfile,
+  embedded = false,
 }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -206,7 +207,11 @@ export function CarryOrderWorkspace({
   const stepComplete = isStageComplete(activeTab, payload, lead, stageCtx);
 
   return (
-    <div className="flex flex-col h-full min-h-[480px] bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div
+      className={`flex flex-col h-full bg-white overflow-hidden ${
+        embedded ? 'min-h-0 rounded-lg border border-slate-200' : 'min-h-[480px] rounded-xl border border-slate-200 shadow-sm'
+      }`}
+    >
       {vendorPending && (
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-3 bg-amber-50 border-b border-amber-200 text-amber-950">
           <div className="flex-1 min-w-0">
@@ -228,44 +233,45 @@ export function CarryOrderWorkspace({
           )}
         </div>
       )}
-      {/* Header */}
-      <div className="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-300">
-          Inquiry & costing workflow
-          {lead.sub_category ? ` · ${lead.sub_category}` : ''}
-        </p>
-        <h2 className="text-lg font-bold mt-0.5">{lead.company}</h2>
-        <p className="text-sm text-slate-300 mt-0.5">{lead.contact_name}</p>
-        <div className="flex flex-wrap items-center gap-2 mt-3">
-          {carryOrder && (
-            lead.vendor_name ? (
-              <span className="inline-flex items-center gap-1 text-xs bg-white/10 px-2 py-1 rounded-md">
-                <Store className="h-3.5 w-3.5" />
-                {lead.vendor_name}
-              </span>
-            ) : (
-              canEdit && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="h-7 text-xs bg-amber-500/90 hover:bg-amber-500 text-white border-0"
-                  onClick={() => onAssignVendor?.(lead)}
-                >
-                  Assign vendor
-                </Button>
+      {!embedded && (
+        <div className="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-300">
+            Inquiry & costing workflow
+            {lead.sub_category ? ` · ${lead.sub_category}` : ''}
+          </p>
+          <h2 className="text-lg font-bold mt-0.5">{lead.company}</h2>
+          <p className="text-sm text-slate-300 mt-0.5">{lead.contact_name}</p>
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            {carryOrder && (
+              lead.vendor_name ? (
+                <span className="inline-flex items-center gap-1 text-xs bg-white/10 px-2 py-1 rounded-md">
+                  <Store className="h-3.5 w-3.5" />
+                  {lead.vendor_name}
+                </span>
+              ) : (
+                canEdit && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-7 text-xs bg-amber-500/90 hover:bg-amber-500 text-white border-0"
+                    onClick={() => onAssignVendor?.(lead)}
+                  >
+                    Assign vendor
+                  </Button>
+                )
               )
-            )
-          )}
-          <span className="text-xs text-slate-400">
-            Stage: <strong className="text-white">{CARRY_ORDER_STAGES.find((s) => s.id === stage)?.label}</strong>
-          </span>
-          {onOpenProfile && (
-            <Button size="sm" variant="secondary" className="h-7 text-xs ml-auto bg-white/10 hover:bg-white/20 text-white border-0" onClick={onOpenProfile}>
-              Activity log
-            </Button>
-          )}
+            )}
+            <span className="text-xs text-slate-400">
+              Stage: <strong className="text-white">{CARRY_ORDER_STAGES.find((s) => s.id === stage)?.label}</strong>
+            </span>
+            {onOpenProfile && (
+              <Button size="sm" variant="secondary" className="h-7 text-xs ml-auto bg-white/10 hover:bg-white/20 text-white border-0" onClick={onOpenProfile}>
+                Activity log
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <WorkflowStepper
         stage={stage}

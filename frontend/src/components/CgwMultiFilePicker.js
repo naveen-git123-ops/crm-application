@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Eye, Plus, X } from 'lucide-react';
@@ -76,12 +76,24 @@ export function CgwMultiFilePicker({
   addLabel = 'Add',
   existingAttachments = null,
   onPreviewExisting = null,
+  disabled = false,
 }) {
+  const inputId = useId();
   const inputRef = useRef(null);
   const list = normalizeFileList(files);
 
   const openPicker = () => {
-    inputRef.current?.click();
+    if (disabled) return;
+    const input = inputRef.current;
+    if (!input) return;
+    // Defer so Radix dialog focus trap does not block the native file picker.
+    window.setTimeout(() => {
+      try {
+        input.click();
+      } catch {
+        toast.error('Could not open file picker');
+      }
+    }, 0);
   };
 
   const handlePick = (e) => {
@@ -102,10 +114,12 @@ export function CgwMultiFilePicker({
   };
 
   return (
-    <div className={`space-y-2 ${className}`}>
+    <div className={`space-y-2 ${className}`} data-cgw-file-picker>
       <div className="flex items-start justify-between gap-2">
         {label ? (
-          <Label className="text-sm font-medium text-gray-700 leading-snug pt-1">{label}</Label>
+          <Label htmlFor={inputId} className="text-sm font-medium text-gray-700 leading-snug pt-1 cursor-pointer">
+            {label}
+          </Label>
         ) : (
           <span className="text-sm font-medium text-gray-700">{addLabel}</span>
         )}
@@ -113,6 +127,7 @@ export function CgwMultiFilePicker({
           type="button"
           variant="outline"
           size="sm"
+          disabled={disabled}
           className="h-8 shrink-0 border-gray-300 text-gray-700 hover:bg-gray-50 bg-white"
           onClick={openPicker}
           aria-label={label ? `Add file for ${label}` : 'Add file'}
@@ -122,9 +137,28 @@ export function CgwMultiFilePicker({
         </Button>
       </div>
 
-      <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={handlePick} />
+      <input
+        id={inputId}
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        multiple
+        disabled={disabled}
+        className="sr-only"
+        onChange={handlePick}
+        tabIndex={-1}
+      />
 
-      <div className="rounded-md border border-dashed border-gray-200 bg-white px-3 py-2.5">
+      <div
+        onClick={(e) => {
+          if (disabled) return;
+          if (e.target.closest('button')) return;
+          openPicker();
+        }}
+        className={`rounded-md border border-dashed border-gray-200 bg-white px-3 py-2.5 ${
+          disabled ? '' : 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/30'
+        }`}
+      >
         <CgwExistingAttachments
           attachments={existingAttachments}
           onPreview={onPreviewExisting}
@@ -144,6 +178,7 @@ export function CgwMultiFilePicker({
                   type="button"
                   variant="ghost"
                   size="sm"
+                  disabled={disabled}
                   className="h-7 w-7 p-0 shrink-0 text-gray-500 hover:text-red-600"
                   aria-label={`Remove ${f.name}`}
                   onClick={() => onChange(list.filter((_, j) => j !== i))}
@@ -163,6 +198,7 @@ export function CgwMultiFilePicker({
               type="button"
               variant="outline"
               size="sm"
+              disabled={disabled}
               className="h-7 text-xs border-gray-300 text-gray-700 hover:bg-gray-50 bg-white"
               onClick={openPicker}
             >
@@ -173,6 +209,7 @@ export function CgwMultiFilePicker({
               type="button"
               variant="ghost"
               size="sm"
+              disabled={disabled}
               className="h-7 text-xs text-gray-500"
               onClick={() => onChange([])}
             >

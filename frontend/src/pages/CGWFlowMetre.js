@@ -2547,7 +2547,14 @@ const CGWFlowMetre = () => {
           setDialogOpen(open);
           if (!open) resetForm();
         }}>
-          <DialogContent className="flex h-[min(96vh,100dvh)] max-h-[min(96vh,100dvh)] w-[min(1600px,98vw)] max-w-[min(1600px,98vw)] flex-col overflow-hidden bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+          <DialogContent
+            className="flex h-[min(96vh,100dvh)] max-h-[min(96vh,100dvh)] w-[min(1600px,98vw)] max-w-[min(1600px,98vw)] flex-col overflow-hidden bg-white rounded-lg border border-gray-200 shadow-xl p-0"
+            onPointerDownOutside={(e) => {
+              if (e.target instanceof Element && e.target.closest('[data-cgw-file-picker]')) {
+                e.preventDefault();
+              }
+            }}
+          >
               <div className="bg-blue-600 text-white p-6 rounded-t-lg shrink-0">
                 <DialogHeader>
                   <DialogTitle className="text-xl font-bold text-white">
@@ -2944,7 +2951,11 @@ const CGWFlowMetre = () => {
                           const flowFiles = equipmentFlowFiles[idx] || {};
                           const patchFlowFiles = (patch) =>
                             setEquipmentFlowFiles((prev) =>
-                              prev.map((b, i) => (i === idx ? { ...b, ...patch } : b))
+                              prev.map((b, i) =>
+                                i === idx
+                                  ? { ...EMPTY_EQUIPMENT_FLOW_FILES(), ...b, ...patch }
+                                  : b,
+                              ),
                             );
                           const rowSaved = (apiCategory) => ({
                             existingAttachments: editMode && idx === 0 ? getSavedAttachments(apiCategory) : [],
@@ -3372,12 +3383,22 @@ const CGWFlowMetre = () => {
                 {addStep === (needsPiezometerWizardStep ? 5 : 4) ? (
                   <div className="space-y-4">
                     <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
-                      <p className="text-sm font-semibold text-gray-800">Additional attachment</p>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">Additional attachment</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Click + or the dashed area to add files. They upload when you save the item or draft.
+                          {needsPiezometerWizardStep ? ' (This is step 5 — after piezometer.)' : ''}
+                        </p>
+                      </div>
                       {equipmentRows.map((row, idx) => {
-                        const flowFiles = equipmentFlowFiles[idx] || {};
+                        const flowFiles = { ...EMPTY_EQUIPMENT_FLOW_FILES(), ...(equipmentFlowFiles[idx] || {}) };
                         const patchFlowFiles = (patch) =>
                           setEquipmentFlowFiles((prev) =>
-                            prev.map((b, i) => (i === idx ? { ...b, ...patch } : b))
+                            prev.map((b, i) =>
+                              i === idx
+                                ? { ...EMPTY_EQUIPMENT_FLOW_FILES(), ...b, ...patch }
+                                : b,
+                            ),
                           );
                         const patchRow = (patch) =>
                           setEquipmentRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));

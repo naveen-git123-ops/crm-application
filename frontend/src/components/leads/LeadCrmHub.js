@@ -3,14 +3,12 @@ import { Input } from '@/components/ui/input';
 import {
   Search,
   SlidersHorizontal,
-  Building2,
   Store,
   AlertCircle,
   ChevronRight,
 } from 'lucide-react';
 import { formatLeadValue } from '@/lib/leadUtils';
 import { workflowStageLabel } from '@/lib/carryOrderWorkflow';
-import { CarryOrderWorkspace } from '@/components/leads/carryOrder/CarryOrderWorkspace';
 
 function StatusBadge({ status, statusColors }) {
   const c = statusColors[status];
@@ -76,15 +74,9 @@ export function LeadCrmHub({
   statusColors,
   onSelectLead,
   onAssignVendor,
-  canEditLead,
   isCarryAndOrder,
   leadNeedsVendor,
   getLeadInitials,
-  apiBase,
-  authHeader,
-  vendors,
-  leadAttachments,
-  onLeadRefresh,
 }) {
   const statusCounts = stats?.by_status || {};
   const totalForBar = Math.max(stats?.total || 1, 1);
@@ -178,7 +170,7 @@ export function LeadCrmHub({
       </section>
 
       {/* Main workspace */}
-      <section className="rounded-xl border border-slate-200/80 bg-white shadow-sm overflow-hidden min-h-[560px] flex flex-col">
+      <section className="rounded-xl border border-slate-200/80 bg-white shadow-sm overflow-hidden flex flex-col">
         {/* Toolbar */}
         <div className="px-4 py-3 border-b border-slate-100 flex flex-col lg:flex-row gap-3 lg:items-center bg-white">
           <div className="relative flex-1 max-w-md">
@@ -221,7 +213,7 @@ export function LeadCrmHub({
                 <span className="ml-2 font-normal text-slate-500 normal-case">({sortedLeads.length})</span>
               </p>
             </div>
-            <div className="overflow-auto flex-1 max-h-[min(520px,calc(100vh-20rem))]">
+            <div className="overflow-auto max-h-[min(68vh,calc(100vh-16rem))]">
               {sortedLeads.length === 0 ? (
                 <EmptyRegistry />
               ) : (
@@ -298,7 +290,7 @@ export function LeadCrmHub({
                                     ? 'bg-indigo-600 text-white'
                                     : 'bg-slate-100 text-slate-500'
                               }`}
-                              title={pendingSetup ? 'Open lead — vendor setup pending' : 'Open lead'}
+                              title={pendingSetup ? 'Open workflow — vendor pending' : 'Open workflow'}
                             >
                               <ChevronRight className="h-4 w-4" />
                             </span>
@@ -314,31 +306,11 @@ export function LeadCrmHub({
 
         </div>
 
-        {selectedLead && apiBase && (
-          <div className="border-t border-slate-200 p-4 bg-slate-50/40">
-            <CarryOrderWorkspace
-              lead={selectedLead}
-              apiBase={apiBase}
-              authHeader={authHeader}
-              vendors={vendors || []}
-              attachments={leadAttachments || []}
-              canEdit={canEditLead(selectedLead)}
-              onRefresh={(data) => onLeadRefresh?.(data.id)}
-              onAssignVendor={onAssignVendor}
-              onOpenProfile={() => onSelectLead(selectedLead, { openProfile: true })}
-            />
-          </div>
-        )}
-
-        {!selectedLead && sortedLeads.length > 0 && (
-          <div className="hidden lg:flex flex-1 items-center justify-center p-12 border-t border-slate-100 bg-slate-50/30">
-            <div className="text-center max-w-sm">
-              <div className="mx-auto h-12 w-12 rounded-xl bg-indigo-100 flex items-center justify-center mb-3">
-                <Building2 className="h-6 w-6 text-indigo-600" />
-              </div>
-              <p className="text-sm font-semibold text-slate-800">Select a lead to open the workflow</p>
-              <p className="text-xs text-slate-500 mt-1">Click any row to manage enquiry, costing, offers, and closure</p>
-            </div>
+        {sortedLeads.length > 0 && (
+          <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/60 text-center">
+            <p className="text-xs text-slate-500">
+              Click a row to open enquiry, costing, and next steps in a popup
+            </p>
           </div>
         )}
       </section>
