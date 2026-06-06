@@ -62,6 +62,8 @@ export const AuthProvider = ({ children }) => {
     setUser(userData);
     localStorage.setItem('token', newToken);
     axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+    // Enrich with permissions and is_admin from /auth/me
+    await fetchUser({ silent: true });
   };
 
   const register = async (email, password, name, employee_id, role) => {

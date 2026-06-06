@@ -8,7 +8,16 @@ export function normalizeRole(user) {
 }
 
 export function isAdminUser(user) {
+  if (!user) return false;
+  if (user.is_admin === true) return true;
   return normalizeRole(user) === 'admin';
+}
+
+/** Admin or Manager — may edit/delete any lead in the CRM. */
+export function canManageAllLeads(user) {
+  if (!user) return false;
+  if (isAdminUser(user)) return true;
+  return normalizeRole(user) === 'manager';
 }
 
 export function isAdminOrHrUser(user) {

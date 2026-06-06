@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus } from 'lucide-react';
+import { Plus, Edit2, Trash2 } from 'lucide-react';
 import { LeadKpiStrip } from '@/components/leads/LeadKpiStrip';
 import { LeadCrmHub } from '@/components/leads/LeadCrmHub';
 import { LeadCreateDialog } from '@/components/leads/LeadCreateDialog';
@@ -14,7 +14,7 @@ import { LeadVendorDialog } from '@/components/leads/LeadVendorDialog';
 import { LeadStatusDialog } from '@/components/leads/LeadStatusDialog';
 import { LeadProfileSheet } from '@/components/leads/LeadProfileSheet';
 import { LeadWorkflowDialog } from '@/components/leads/LeadWorkflowDialog';
-import { isAdminOrManagerUser, userCanManageAnyRecord, userHasPermission } from '@/lib/permissions';
+import { canManageAllLeads, userHasPermission } from '@/lib/permissions';
 import {
   LEAD_SOURCES,
   LEAD_STATUSES,
@@ -73,21 +73,22 @@ export const Leads = () => {
     [],
   );
 
-  const canManageAnyLead = userCanManageAnyRecord(user);
+  const canManageEveryLead = canManageAllLeads(user);
 
   const canEditLead = useCallback(
     (lead) => {
-      if (!lead || !user) return false;
-      if (canManageAnyLead || isAdminOrManagerUser(user)) return true;
+      if (!user) return false;
+      if (canManageEveryLead) return true;
+      if (!lead) return false;
       const empId = String(user.employee_id || '');
       const isOwn =
         String(lead.created_by_employee_id || '') === empId
         || String(lead.assigned_to_employee_id || '') === empId;
-      if (user.role === 'Sales' && isOwn) return true;
+      if ((user.role || '').trim().toLowerCase() === 'sales' && isOwn) return true;
       if (userHasPermission(user, 'leads') && isOwn) return true;
       return false;
     },
-    [user, canManageAnyLead],
+    [user, canManageEveryLead],
   );
 
   const fetchLeads = useCallback(async () => {
@@ -322,16 +323,40 @@ export const Leads = () => {
 
   const pageHeaderActions = useMemo(
     () => (
-      <Button
-        size="sm"
-        className="bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
-        onClick={() => setCreateOpen(true)}
-      >
-        <Plus className="h-4 w-4 mr-1" />
-        Add lead
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        {workflowOpen && selectedLead && canManageEveryLead && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-slate-300"
+              onClick={() => openEditLead(selectedLead)}
+            >
+              <Edit2 className="h-4 w-4 mr-1" />
+              Edit lead
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-red-200 text-red-600 hover:bg-red-50"
+              onClick={() => handleDeleteLead(selectedLead)}
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Delete lead
+            </Button>
+          </>
+        )}
+        <Button
+          size="sm"
+          className="bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+          onClick={() => setCreateOpen(true)}
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          Add lead
+        </Button>
+      </div>
     ),
-    [],
+    [workflowOpen, selectedLead, canManageEveryLead, openEditLead, handleDeleteLead],
   );
 
   useRegisterPageHeader({
@@ -377,7 +402,7 @@ export const Leads = () => {
         onSelectLead={(lead, opts) => selectLead(lead, opts)}
         onAssignVendor={(lead) => openVendorDialog(lead)}
         canEditLead={canEditLead}
-        canManageAnyRecord={canManageAnyLead}
+        canManageAllLeads={canManageEveryLead}
         onEditLead={openEditLead}
         onDeleteLead={handleDeleteLead}
         isCarryAndOrder={isCarryAndOrder}
@@ -393,7 +418,7 @@ export const Leads = () => {
         authHeader={authHeader}
         vendors={vendors}
         leadAttachments={leadAttachments}
-        canEdit={selectedLead ? canEditLead(selectedLead) : false}
+        canEdit={canManageEveryLead || (selectedLead ? canEditLead(selectedLead) : false)}
         onLeadRefresh={refreshLead}
         onAssignVendor={(lead) => openVendorDialog(lead)}
         onOpenRecord={openLeadRecord}

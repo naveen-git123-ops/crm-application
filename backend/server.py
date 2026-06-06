@@ -1675,6 +1675,7 @@ class UserDetails(BaseModel):
     email: EmailStr
     name: str
     role: str
+    is_admin: Optional[bool] = False
     permissions: Optional[List[str]] = None
     employee_id: Optional[str] = None
     created_at: datetime
@@ -3255,11 +3256,11 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
         'email': user.email,
         'name': user.name,
         'role': user.role,
+        'is_admin': is_admin_user(user),
         'employee_id': user.employee_id,
         'created_at': user.created_at
     }
-   
- 
+
     # If user is an employee, fetch additional employee details
     if user.role == 'Employee' and user.employee_id:
         employee = db.query(EmployeeModel).filter(
@@ -3290,10 +3291,11 @@ def get_me(current_user: UserModel = Depends(get_current_user), db: Session = De
         'email': current_user.email,
         'name': current_user.name,
         'role': current_user.role,
+        'is_admin': is_admin_user(current_user),
         'employee_id': current_user.employee_id,
         'created_at': current_user.created_at
     }
-    
+
     # If user is an employee, fetch additional employee details
     if current_user.role == 'Employee' and current_user.employee_id:
         employee = db.query(EmployeeModel).filter(

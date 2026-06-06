@@ -77,7 +77,7 @@ export function LeadCrmHub({
   onSelectLead,
   onAssignVendor,
   canEditLead,
-  canManageAnyRecord,
+  canManageAllLeads,
   onEditLead,
   onDeleteLead,
   isCarryAndOrder,
@@ -86,6 +86,12 @@ export function LeadCrmHub({
 }) {
   const statusCounts = stats?.by_status || {};
   const totalForBar = Math.max(stats?.total || 1, 1);
+
+  const showActionsColumn = useMemo(() => {
+    if (canManageAllLeads) return true;
+    if (typeof canEditLead !== 'function') return false;
+    return filteredLeads.some((lead) => canEditLead(lead));
+  }, [canManageAllLeads, canEditLead, filteredLeads]);
 
   const sortedLeads = useMemo(() => {
     const list = [...filteredLeads];
@@ -231,8 +237,8 @@ export function LeadCrmHub({
                       <th className="text-left py-2.5 px-2 font-semibold text-slate-600 text-xs">Stage</th>
                       <th className="text-left py-2.5 px-2 font-semibold text-slate-600 text-xs hidden lg:table-cell">Vendor</th>
                       <th className="text-right py-2.5 px-2 font-semibold text-slate-600 text-xs">Value</th>
-                      {(canManageAnyRecord || canEditLead) && (
-                        <th className="w-20 py-2.5 px-2 font-semibold text-slate-600 text-xs text-right">Actions</th>
+                      {showActionsColumn && (
+                        <th className="w-[5.5rem] py-2.5 px-2 font-semibold text-slate-600 text-xs text-right">Actions</th>
                       )}
                       <th className="w-10 py-2.5 pr-3" aria-label="Open" />
                     </tr>
@@ -290,33 +296,33 @@ export function LeadCrmHub({
                           <td className="py-3 px-2 text-right font-medium text-slate-800 tabular-nums">
                             {formatLeadValue(lead.value)}
                           </td>
-                          {(canManageAnyRecord || canEditLead) && (
+                          {showActionsColumn && (
                             <td className="py-3 px-2 text-right">
-                              {(canManageAnyRecord || canEditLead?.(lead)) ? (
-                                <div className="inline-flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    title="Edit lead"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onEditLead?.(lead);
-                                    }}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200"
-                                  >
-                                    <Edit2 className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    title="Delete lead"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onDeleteLead?.(lead);
-                                    }}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-white text-red-600 hover:bg-red-50"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
+                              {(canManageAllLeads || canEditLead?.(lead)) ? (
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  title="Edit lead"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onEditLead?.(lead);
+                                  }}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Delete lead"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteLead?.(lead);
+                                  }}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-white text-red-600 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                               ) : null}
                             </td>
                           )}
