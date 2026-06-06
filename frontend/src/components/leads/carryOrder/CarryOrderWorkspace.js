@@ -54,11 +54,13 @@ import {
 import { isCarryAndOrder, leadNeedsVendor } from '@/lib/leadUtils';
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFilePicker';
+import { LEAD_ATTACHMENT_ACCEPT, LEAD_ATTACHMENT_HINT } from '@/lib/leadAttachmentAccept';
 
-const inputClass = 'h-9 rounded-lg border-slate-200 text-sm';
+const inputClass = 'h-9 rounded-lg border-slate-200 bg-white text-sm text-slate-900';
 const selectClass =
-  'h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800';
-const labelClass = 'text-xs font-semibold text-slate-600 uppercase tracking-wide';
+  'h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900';
+const labelClass = 'text-xs font-semibold text-slate-800 uppercase tracking-wide';
+const readOnlyValueClass = 'text-sm font-medium mt-1 text-slate-900';
 
 export function CarryOrderWorkspace({
   lead,
@@ -398,7 +400,7 @@ export function CarryOrderWorkspace({
       )}
 
       {/* Module content */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+      <div className="flex-1 overflow-y-auto p-5 space-y-5 text-slate-900">
         {canOpenStage(activeTab) && activeTab === 'enquiry_logged' && (
           <ModuleEnquiry lead={lead} attachments={attachments} payload={payload} setPayload={setPayload} canEdit={editActive} />
         )}
@@ -505,19 +507,19 @@ function ModuleEnquiry({ lead, attachments, payload, setPayload, canEdit }) {
   return (
     <section className="space-y-4">
       <SectionTitle title="Module 1 — Enquiry details" subtitle="Client parameters captured at lead creation" />
-      <div className="rounded-xl border border-slate-200 p-4 bg-slate-50/50 space-y-3">
+      <div className="rounded-xl border border-slate-200 p-4 bg-white space-y-3 text-slate-900">
         <div>
           <Label className={labelClass}>Enquiry details</Label>
-          <p className="text-sm text-slate-800 mt-1 whitespace-pre-wrap">{lead.notes || '—'}</p>
+          <p className={`${readOnlyValueClass} whitespace-pre-wrap`}>{lead.notes || '—'}</p>
         </div>
         <div>
           <Label className={labelClass}>Customer enquiry attachments</Label>
           {attachments.length === 0 ? (
-            <p className="text-sm text-slate-500 mt-1">No files — attach when creating the lead</p>
+            <p className="text-sm text-slate-600 mt-1">No files — attach when creating the lead</p>
           ) : (
             <ul className="mt-2 space-y-1">
               {attachments.map((a) => (
-                <li key={a.id} className="flex items-center gap-2 text-sm text-indigo-700">
+                <li key={a.id} className="flex items-center gap-2 text-sm text-indigo-800">
                   <FileText className="h-4 w-4" />
                   {a.file_name}
                 </li>
@@ -528,11 +530,11 @@ function ModuleEnquiry({ lead, attachments, payload, setPayload, canEdit }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <Label className={labelClass}>Assigned user</Label>
-            <p className="text-sm font-medium mt-1">{lead.assigned_to_name || lead.created_by_name || '—'}</p>
+            <p className={readOnlyValueClass}>{lead.assigned_to_name || lead.created_by_name || '—'}</p>
           </div>
           <div>
             <Label className={labelClass}>Enquiry date</Label>
-            <p className="text-sm font-medium mt-1">{lead.enquiry_date || '—'}</p>
+            <p className={readOnlyValueClass}>{lead.enquiry_date || '—'}</p>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -666,7 +668,8 @@ function ModuleTechnical({
           )}
           <CgwMultiFilePicker
             label="Technical clearance attachments"
-            hint="Add drawings, specs, or approval documents (optional)."
+            accept={LEAD_ATTACHMENT_ACCEPT}
+            hint={`Add drawings, specs, or approval documents (optional). ${LEAD_ATTACHMENT_HINT}`}
             disabled={!canEdit || saving}
             files={[]}
             onChange={(files) => onUploadFiles?.(files)}
@@ -1168,6 +1171,7 @@ function ModuleOfferFollowUp({
                         const input = document.createElement('input');
                         input.type = 'file';
                         input.multiple = true;
+                        input.accept = LEAD_ATTACHMENT_ACCEPT;
                         input.onchange = (e) => {
                           uploadFollowUpAttachments(idx, e.target.files ? Array.from(e.target.files) : []);
                         };
@@ -1267,7 +1271,7 @@ function ModuleOfferFollowUp({
                         const input = document.createElement('input');
                         input.type = 'file';
                         input.multiple = true;
-                        input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg';
+                        input.accept = LEAD_ATTACHMENT_ACCEPT;
                         input.onchange = (e) => {
                           uploadOfferRevisionAttachments(
                             rev.id,
@@ -1402,7 +1406,8 @@ function ModuleOfferFollowUp({
             </p>
             <CgwMultiFilePicker
               label="Offer attachment"
-              hint="Attach offer PDF or document (optional). Preview from the log table after recording."
+              accept={LEAD_ATTACHMENT_ACCEPT}
+              hint={`Attach offer document (optional). ${LEAD_ATTACHMENT_HINT}`}
               disabled={recording}
               files={offerDraft.pendingFiles}
               onChange={(files) => setOfferDraft({ ...offerDraft, pendingFiles: files })}
@@ -1478,7 +1483,8 @@ function ModuleOfferFollowUp({
               </div>
               <CgwMultiFilePicker
                 label="Attachment"
-                hint="Optional — preview in the table after adding."
+                accept={LEAD_ATTACHMENT_ACCEPT}
+                hint={`Optional — preview in the table after adding. ${LEAD_ATTACHMENT_HINT}`}
                 disabled={addingFollowUp || parentSaving}
                 files={followUpDraft.pendingFiles}
                 onChange={(files) => setFollowUpDraft({ ...followUpDraft, pendingFiles: files })}
@@ -1659,31 +1665,32 @@ function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage, maxIdx }) {
     const isActive = activeTab === stepId;
     const isDone = idx >= 0 && idx < maxIdx;
     const isCurrent = stage === stepId;
+    const base = 'flex items-center gap-1.5 rounded-lg text-xs font-semibold text-slate-900';
 
     if (!unlocked) {
-      return 'flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed';
+      return `${base} px-2.5 py-2 bg-slate-100 text-slate-600 border border-slate-200 cursor-not-allowed`;
     }
     if (variant === 'won' && isActive) {
-      return 'flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-600 text-white shadow-sm';
+      return `${base} px-3 py-2 bg-emerald-100 text-emerald-950 border-2 border-emerald-600 shadow-sm`;
     }
     if (variant === 'lost' && isActive) {
-      return 'flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-rose-600 text-white shadow-sm';
+      return `${base} px-3 py-2 bg-rose-100 text-rose-950 border-2 border-rose-600 shadow-sm`;
     }
     if (isActive) {
-      return 'flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200';
+      return `${base} px-2.5 py-2 bg-indigo-100 text-slate-900 border-2 border-indigo-600 shadow-sm ring-2 ring-indigo-100`;
     }
     if (isDone) {
-      return 'flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100';
+      return `${base} px-2.5 py-2 bg-emerald-50 text-emerald-950 border border-emerald-300 hover:bg-emerald-100`;
     }
     if (isCurrent) {
-      return 'flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-800 border border-indigo-300';
+      return `${base} px-2.5 py-2 bg-indigo-50 text-indigo-950 border border-indigo-400`;
     }
-    return 'flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold bg-white text-slate-700 border border-slate-200 hover:border-indigo-200';
+    return `${base} px-2.5 py-2 bg-white text-slate-900 border border-slate-300 hover:border-indigo-300 hover:bg-slate-50`;
   };
 
   return (
-    <div className="px-4 py-4 border-b border-slate-100 bg-slate-50/80 overflow-x-auto">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-3">
+    <div className="px-4 py-4 border-b border-slate-100 bg-white overflow-x-auto text-slate-900">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-700 mb-3">
         Workflow steps — complete in order
       </p>
       <div className="flex items-center gap-1 min-w-max">
@@ -1699,13 +1706,13 @@ function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage, maxIdx }) {
               )}
               <button type="button" onClick={() => onSelect(s.id)} className={stepButtonClass(s.id)}>
                 {!unlocked ? (
-                  <Lock className="h-3.5 w-3.5 shrink-0" />
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-slate-600" />
                 ) : pipelineStageIndex(s.id) < maxIdx ? (
-                  <Check className="h-3.5 w-3.5 shrink-0" />
+                  <Check className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
                 ) : (
-                  <span className="text-[10px] font-bold opacity-80">{s.short}</span>
+                  <span className="text-[10px] font-bold text-slate-800">{s.short}</span>
                 )}
-                <span className="whitespace-nowrap">{s.label}</span>
+                <span className="whitespace-nowrap text-slate-900">{s.label}</span>
               </button>
             </React.Fragment>
           );
@@ -1721,8 +1728,8 @@ function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage, maxIdx }) {
               onClick={() => onSelect(s.id)}
               className={`${stepButtonClass(s.id, variant)} ml-1`}
             >
-              {!unlocked && <Lock className="h-3.5 w-3.5 shrink-0" />}
-              {s.label}
+              {!unlocked && <Lock className="h-3.5 w-3.5 shrink-0 text-slate-600" />}
+              <span className="text-slate-900">{s.label}</span>
             </button>
           );
         })}

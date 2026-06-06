@@ -14,6 +14,8 @@ import {
   defaultLeadForm,
 } from '@/lib/leadUtils';
 import { getApiErrorMessage } from '@/lib/apiErrors';
+import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFilePicker';
+import { LEAD_ATTACHMENT_ACCEPT, LEAD_ATTACHMENT_HINT } from '@/lib/leadAttachmentAccept';
 
 const selectClass =
   'flex h-11 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900';
@@ -34,7 +36,7 @@ export function LeadCreateDialog({
   const [customerId, setCustomerId] = useState('');
   const [vendorId, setVendorId] = useState('');
   const [customerContacts, setCustomerContacts] = useState([]);
-  const [attachment, setAttachment] = useState(null);
+  const [attachments, setAttachments] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
   const reset = () => {
@@ -42,7 +44,7 @@ export function LeadCreateDialog({
     setCustomerId('');
     setVendorId('');
     setCustomerContacts([]);
-    setAttachment(null);
+    setAttachments([]);
   };
 
   const handleClose = (isOpen) => {
@@ -86,12 +88,15 @@ export function LeadCreateDialog({
         contacts: [],
       };
       const { data: created } = await axios.post(`${apiBase}/leads`, payload, { headers: authHeader() });
-      if (attachment && created?.id) {
-        const fd = new FormData();
-        fd.append('file', attachment);
-        await axios.post(`${apiBase}/leads/${created.id}/attachments`, fd, {
-          headers: { ...authHeader(), 'Content-Type': 'multipart/form-data' },
-        });
+      const filesToUpload = normalizeFileList(attachments);
+      if (filesToUpload.length && created?.id) {
+        for (const file of filesToUpload) {
+          const fd = new FormData();
+          fd.append('file', file);
+          await axios.post(`${apiBase}/leads/${created.id}/attachments`, fd, {
+            headers: { ...authHeader(), 'Content-Type': 'multipart/form-data' },
+          });
+        }
       }
       if (carryOrder && !vendorId) {
         toast.success('Lead created — assign vendor from the list below to continue', { duration: 6000 });
@@ -350,10 +355,14 @@ export function LeadCreateDialog({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="lead-attachment" className={labelClass}>Attachment</Label>
-            <Input id="lead-attachment" type="file" onChange={(e) => setAttachment(e.target.files?.[0] || null)} className="h-11" />
-          </div>
+          <CgwMultiFilePicker
+            label="Attachment"
+            accept={LEAD_ATTACHMENT_ACCEPT}
+            hint={LEAD_ATTACHMENT_HINT}
+            files={attachments}
+            onChange={setAttachments}
+            addLabel="Attach"
+          />
 
           <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 space-y-3">
             <p className="text-sm font-semibold text-gray-800">Enquiry validity (OTX)</p>

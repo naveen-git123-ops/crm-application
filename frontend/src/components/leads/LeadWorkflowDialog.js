@@ -93,7 +93,7 @@ export function LeadWorkflowDialog({
           </DialogHeader>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50/50 p-4">
+        <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50/50 p-4 text-slate-900">
           <CarryOrderWorkspace
             embedded
             lead={lead}

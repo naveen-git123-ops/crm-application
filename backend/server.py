@@ -2997,6 +2997,14 @@ def upload_to_s3(file_content: bytes, filename: str, folder: str = 'uploads') ->
             content_type = 'image/gif'
         elif ext == '.webp':
             content_type = 'image/webp'
+        elif ext == '.psd':
+            content_type = 'image/vnd.adobe.photoshop'
+        elif ext == '.msg':
+            content_type = 'application/vnd.ms-outlook'
+        elif ext == '.pst':
+            content_type = 'application/vnd.ms-outlook-pst'
+        elif ext == '.eml':
+            content_type = 'message/rfc822'
         else:
             content_type = 'application/octet-stream'
         # Upload to S3
