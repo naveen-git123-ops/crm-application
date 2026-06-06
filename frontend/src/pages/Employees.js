@@ -9,6 +9,7 @@ import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Plus, Edit, Trash2, Search, Mail, Phone, Eye, EyeOff } from 'lucide-react';
+import { isAdminOrHrUser } from '@/lib/permissions';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -123,7 +124,7 @@ export const Employees = () => {
     setEditingEmployee(null);
   };
 
-  const canManageEmployees = ['Admin', 'HR'].includes(user?.role);
+  const canManageEmployees = isAdminOrHrUser(user);
 
   const pageHeaderActions = useMemo(
     () =>

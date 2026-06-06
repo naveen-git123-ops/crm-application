@@ -3,9 +3,32 @@
  * Having a screen permission (e.g. cgw-flow-metre) grants full use of that screen.
  */
 
+export function normalizeRole(user) {
+  return (user?.role || '').trim().toLowerCase();
+}
+
+export function isAdminUser(user) {
+  return normalizeRole(user) === 'admin';
+}
+
+export function isAdminOrHrUser(user) {
+  const role = normalizeRole(user);
+  return role === 'admin' || role === 'hr';
+}
+
+export function isAdminOrManagerUser(user) {
+  const role = normalizeRole(user);
+  return role === 'admin' || role === 'manager';
+}
+
+/** Admin may edit/delete any business record regardless of creator or assignee. */
+export function userCanManageAnyRecord(user) {
+  return isAdminUser(user);
+}
+
 export function normalizeUserPermissions(user) {
   if (!user) return [];
-  if (user.role === 'Admin') return ['*'];
+  if (isAdminUser(user)) return ['*'];
   const raw = user.permissions;
   if (Array.isArray(raw)) return raw.filter(Boolean);
   if (typeof raw === 'string' && raw.trim()) {
@@ -21,7 +44,7 @@ export function normalizeUserPermissions(user) {
 
 export function userHasPermission(user, permissionKey) {
   if (!user || !permissionKey) return false;
-  if (user.role === 'Admin') return true;
+  if (isAdminUser(user)) return true;
   return normalizeUserPermissions(user).includes(permissionKey);
 }
 
@@ -32,5 +55,5 @@ export function userCanManageCgw(user) {
 
 /** Delete entire CGW inventory rows — Admin only. */
 export function userCanDeleteCgw(user) {
-  return user?.role === 'Admin';
+  return isAdminUser(user);
 }

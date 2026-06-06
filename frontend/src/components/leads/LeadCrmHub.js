@@ -77,6 +77,7 @@ export function LeadCrmHub({
   onSelectLead,
   onAssignVendor,
   canEditLead,
+  canManageAnyRecord,
   onEditLead,
   onDeleteLead,
   isCarryAndOrder,
@@ -230,7 +231,9 @@ export function LeadCrmHub({
                       <th className="text-left py-2.5 px-2 font-semibold text-slate-600 text-xs">Stage</th>
                       <th className="text-left py-2.5 px-2 font-semibold text-slate-600 text-xs hidden lg:table-cell">Vendor</th>
                       <th className="text-right py-2.5 px-2 font-semibold text-slate-600 text-xs">Value</th>
-                      {canEditLead && <th className="w-20 py-2.5 px-2 font-semibold text-slate-600 text-xs text-right">Actions</th>}
+                      {(canManageAnyRecord || canEditLead) && (
+                        <th className="w-20 py-2.5 px-2 font-semibold text-slate-600 text-xs text-right">Actions</th>
+                      )}
                       <th className="w-10 py-2.5 pr-3" aria-label="Open" />
                     </tr>
                   </thead>
@@ -287,9 +290,9 @@ export function LeadCrmHub({
                           <td className="py-3 px-2 text-right font-medium text-slate-800 tabular-nums">
                             {formatLeadValue(lead.value)}
                           </td>
-                          {canEditLead && (
+                          {(canManageAnyRecord || canEditLead) && (
                             <td className="py-3 px-2 text-right">
-                              {canEditLead(lead) ? (
+                              {(canManageAnyRecord || canEditLead?.(lead)) ? (
                                 <div className="inline-flex items-center gap-1">
                                   <button
                                     type="button"

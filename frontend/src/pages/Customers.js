@@ -9,6 +9,8 @@ import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { toast } from 'sonner';
 import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, Building2, Store, X } from 'lucide-react';
 import { API_ENDPOINT } from '@/lib/apiConfig';
+import { useAuth } from '@/contexts/AuthContext';
+import { userCanManageAnyRecord, userHasPermission } from '@/lib/permissions';
 
 const API = API_ENDPOINT;
 
@@ -320,7 +322,9 @@ export const Customers = () => {
             <th className="text-left p-3 font-medium text-gray-700">GST Number</th>
             <th className="text-left p-3 font-medium text-gray-700">City</th>
             <th className="text-left p-3 font-medium text-gray-700">Status</th>
-            <th className="text-left p-3 font-medium text-gray-700">Actions</th>
+            {canManageRecords && (
+              <th className="text-left p-3 font-medium text-gray-700">Actions</th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -366,30 +370,32 @@ export const Customers = () => {
                   {customer.status}
                 </span>
               </td>
-              <td className="p-3">
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 border-gray-300"
-                    onClick={() => handleEdit(customer)}
-                    data-testid={`edit-customer-${customer.customer_id}`}
-                  >
-                    <Edit className="h-3.5 w-3 mr-1" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 border-gray-300 text-red-600 hover:bg-red-50"
-                    onClick={() => handleDelete(customer.id)}
-                    data-testid={`delete-customer-${customer.customer_id}`}
-                  >
-                    <Trash2 className="h-3.5 w-3 mr-1" />
-                    Delete
-                  </Button>
-                </div>
-              </td>
+              {canManageRecords && (
+                <td className="p-3">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 border-gray-300"
+                      onClick={() => handleEdit(customer)}
+                      data-testid={`edit-customer-${customer.customer_id}`}
+                    >
+                      <Edit className="h-3.5 w-3 mr-1" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 border-gray-300 text-red-600 hover:bg-red-50"
+                      onClick={() => handleDelete(customer.id)}
+                      data-testid={`delete-customer-${customer.customer_id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3 mr-1" />
+                      Delete
+                    </Button>
+                  </div>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

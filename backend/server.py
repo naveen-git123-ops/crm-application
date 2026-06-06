@@ -3089,10 +3089,37 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail='Invalid token')
 
+def _user_role_normalized(user: UserModel) -> str:
+    return (user.role or '').strip().lower()
+
+
+def is_admin_user(user: UserModel) -> bool:
+    return _user_role_normalized(user) == 'admin'
+
+
+def user_has_role(user: UserModel, *roles: str) -> bool:
+    allowed = {r.strip().lower() for r in roles}
+    return _user_role_normalized(user) in allowed
+
+
+def can_manage_any_record(user: UserModel) -> bool:
+    """Admin may edit/delete any business record regardless of ownership."""
+    return is_admin_user(user)
+
+
+def _require_customers_manage(current_user: UserModel, db: Session) -> None:
+    """Admin or roles with customers permission may create/update/delete ledger records."""
+    if is_admin_user(current_user):
+        return
+    perms = get_permissions_for_role(db, current_user.role)
+    if 'customers' not in perms:
+        raise HTTPException(status_code=403, detail='Not authorized to manage customers or vendors')
+
+
 def require_permission(permission: str):
     """Dependency for checking user has specific permission"""
     def verify_permission(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-        if current_user.role == 'Admin':
+        if is_admin_user(current_user):
             return current_user  # Admins have all permissions
         
         # Get role permissions from database
@@ -3110,7 +3137,7 @@ def require_permission(permission: str):
 
 def can_manage_cgw(current_user: UserModel, db: Session) -> bool:
     """Allow Admin and any role with cgw-flow-metre permission."""
-    if current_user.role == 'Admin':
+    if is_admin_user(current_user):
         return True
     perms = get_permissions_for_role(db, current_user.role)
     return 'cgw-flow-metre' in perms
@@ -3118,7 +3145,7 @@ def can_manage_cgw(current_user: UserModel, db: Session) -> bool:
 
 def can_delete_cgw(current_user: UserModel) -> bool:
     """Delete entire CGW inventory rows — Admin only."""
-    return current_user.role == 'Admin'
+    return is_admin_user(current_user)
 
 
 # ============= HEALTH CHECK ROUTES =============
@@ -3293,7 +3320,7 @@ def get_me(current_user: UserModel = Depends(get_current_user), db: Session = De
 
 @api_router.post('/employees', response_model=Employee)
 def create_employee(emp_data: EmployeeCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.role not in ['Admin', 'HR']:
+    if not user_has_role(current_user, 'Admin', 'HR'):
         raise HTTPException(status_code=403, detail='Not authorized')
     
     max_emp_num = db.query(
@@ -3339,7 +3366,7 @@ def get_employee(employee_id: str, current_user: UserModel = Depends(get_current
 
 @api_router.put('/employees/{employee_id}', response_model=Employee)
 def update_employee(employee_id: str, emp_data: EmployeeCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.role not in ['Admin', 'HR']:
+    if not user_has_role(current_user, 'Admin', 'HR'):
         raise HTTPException(status_code=403, detail='Not authorized')
     
     employee = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
@@ -3355,7 +3382,7 @@ def update_employee(employee_id: str, emp_data: EmployeeCreate, current_user: Us
 
 @api_router.delete('/employees/{employee_id}')
 def delete_employee(employee_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.role not in ['Admin', 'HR']:
+    if not user_has_role(current_user, 'Admin', 'HR'):
         raise HTTPException(status_code=403, detail='Not authorized')
     
     employee = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
@@ -3547,6 +3574,7 @@ def _sync_customer_summary_from_related(customer: CustomerModel, db: Session) ->
 
 @api_router.post('/customers', response_model=Customer)
 def create_customer(cust_data: CustomerCreateUpdate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_customers_manage(current_user, db)
     entity_type = 1 if int(getattr(cust_data, 'entity_type', 0) or 0) == 1 else 0
     cust_id = _next_ledger_id(db, entity_type)
     
@@ -3647,7 +3675,7 @@ def get_customer(customer_id: str, current_user: UserModel = Depends(get_current
 
 @api_router.put('/customers/{customer_id}', response_model=Customer)
 def update_customer(customer_id: str, cust_data: CustomerCreateUpdate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    
+    _require_customers_manage(current_user, db)
     customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail='Customer not found')
@@ -3791,7 +3819,7 @@ def get_customer_contacts(customer_id: str, current_user: UserModel = Depends(ge
 
 @api_router.delete('/customers/{customer_id}')
 def delete_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    
+    _require_customers_manage(current_user, db)
     customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail='Customer not found')
@@ -5265,7 +5293,7 @@ def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = D
     # Allow updates by: Admin, Manager, creator, or assignee
     is_creator = task.created_by_employee_id == current_user.employee_id
     is_assignee = task.assigned_to_employee_id == current_user.employee_id
-    is_admin_or_manager = current_user.role in ['Admin', 'Manager']
+    is_admin_or_manager = can_manage_any_record(current_user) or user_has_role(current_user, 'Manager')
     
     if not (is_admin_or_manager or is_creator or is_assignee):
         raise HTTPException(status_code=403, detail='Not authorized to update this task')
@@ -5317,7 +5345,7 @@ def delete_task(task_id: str, current_user: UserModel = Depends(get_current_user
     
     # Allow deletion by: Admin, Manager, or the creator of the task
     is_creator = task.created_by_employee_id == current_user.employee_id
-    is_admin_or_manager = current_user.role in ['Admin', 'Manager']
+    is_admin_or_manager = can_manage_any_record(current_user) or user_has_role(current_user, 'Manager')
     
     if not (is_admin_or_manager or is_creator):
         raise HTTPException(status_code=403, detail='Not authorized to delete this task')
@@ -8359,9 +8387,11 @@ def require_leads_access(
 
 
 def can_edit_lead(lead: LeadModel, current_user: UserModel, db: Session) -> bool:
-    """Admin/Manager: any lead. Others with leads access: created by or assigned to them."""
-    role = (current_user.role or '').strip().lower()
-    if role in ('admin', 'manager'):
+    """Admin: any record. Manager: any lead. Others with leads access: created by or assigned to them."""
+    if can_manage_any_record(current_user):
+        return True
+    role = _user_role_normalized(current_user)
+    if role == 'manager':
         return True
     if not user_has_leads_access(current_user, db):
         return False

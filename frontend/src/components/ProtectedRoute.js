@@ -1,7 +1,7 @@
 import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { userHasPermission } from '@/lib/permissions';
+import { isAdminUser, userHasPermission } from '@/lib/permissions';
 
 /** Auth gate for layout routes — renders child routes via Outlet. */
 export const RequireAuth = () => {
@@ -41,13 +41,13 @@ export const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission
   if (requiredPermission) {
     const hasPermission = userHasPermission(user, requiredPermission);
     if (!hasPermission) {
-      const fallback = user?.role === 'Admin' ? '/dashboard' : '/leaves';
+      const fallback = isAdminUser(user) ? '/dashboard' : '/leaves';
       return <Navigate to={fallback} replace />;
     }
   }
   // Fallback to role-based access (for backward compatibility)
-  else if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
-    const fallback = user?.role === 'Admin' ? '/dashboard' : '/leaves';
+  else if (allowedRoles.length > 0 && !allowedRoles.map((r) => r.toLowerCase()).includes((user.role || '').trim().toLowerCase())) {
+    const fallback = isAdminUser(user) ? '/dashboard' : '/leaves';
     return <Navigate to={fallback} replace />;
   }
 

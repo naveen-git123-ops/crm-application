@@ -14,7 +14,7 @@ import { LeadVendorDialog } from '@/components/leads/LeadVendorDialog';
 import { LeadStatusDialog } from '@/components/leads/LeadStatusDialog';
 import { LeadProfileSheet } from '@/components/leads/LeadProfileSheet';
 import { LeadWorkflowDialog } from '@/components/leads/LeadWorkflowDialog';
-import { userHasPermission } from '@/lib/permissions';
+import { isAdminOrManagerUser, userCanManageAnyRecord, userHasPermission } from '@/lib/permissions';
 import {
   LEAD_SOURCES,
   LEAD_STATUSES,
@@ -73,11 +73,12 @@ export const Leads = () => {
     [],
   );
 
+  const canManageAnyLead = userCanManageAnyRecord(user);
+
   const canEditLead = useCallback(
     (lead) => {
       if (!lead || !user) return false;
-      const role = (user.role || '').trim().toLowerCase();
-      if (role === 'admin' || role === 'manager') return true;
+      if (canManageAnyLead || isAdminOrManagerUser(user)) return true;
       const empId = String(user.employee_id || '');
       const isOwn =
         String(lead.created_by_employee_id || '') === empId
@@ -86,7 +87,7 @@ export const Leads = () => {
       if (userHasPermission(user, 'leads') && isOwn) return true;
       return false;
     },
-    [user],
+    [user, canManageAnyLead],
   );
 
   const fetchLeads = useCallback(async () => {
@@ -376,6 +377,7 @@ export const Leads = () => {
         onSelectLead={(lead, opts) => selectLead(lead, opts)}
         onAssignVendor={(lead) => openVendorDialog(lead)}
         canEditLead={canEditLead}
+        canManageAnyRecord={canManageAnyLead}
         onEditLead={openEditLead}
         onDeleteLead={handleDeleteLead}
         isCarryAndOrder={isCarryAndOrder}
