@@ -9,6 +9,7 @@ import { Plus } from 'lucide-react';
 import { LeadKpiStrip } from '@/components/leads/LeadKpiStrip';
 import { LeadCrmHub } from '@/components/leads/LeadCrmHub';
 import { LeadCreateDialog } from '@/components/leads/LeadCreateDialog';
+import { LeadEditDialog } from '@/components/leads/LeadEditDialog';
 import { LeadVendorDialog } from '@/components/leads/LeadVendorDialog';
 import { LeadStatusDialog } from '@/components/leads/LeadStatusDialog';
 import { LeadProfileSheet } from '@/components/leads/LeadProfileSheet';
@@ -50,6 +51,8 @@ export const Leads = () => {
   const [leadAttachments, setLeadAttachments] = useState([]);
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editLead, setEditLead] = useState(null);
   const [workflowOpen, setWorkflowOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
@@ -73,7 +76,8 @@ export const Leads = () => {
   const canEditLead = useCallback(
     (lead) => {
       if (!lead || !user) return false;
-      if (['Admin', 'Manager'].includes(user.role)) return true;
+      const role = (user.role || '').trim().toLowerCase();
+      if (role === 'admin' || role === 'manager') return true;
       const empId = String(user.employee_id || '');
       const isOwn =
         String(lead.created_by_employee_id || '') === empId
@@ -216,6 +220,30 @@ export const Leads = () => {
     setProfileOpen(true);
   };
 
+  const openEditLead = (lead) => {
+    if (!lead || !canEditLead(lead)) return;
+    setEditLead(lead);
+    setEditOpen(true);
+  };
+
+  const handleDeleteLead = async (lead) => {
+    if (!lead || !canEditLead(lead)) return;
+    if (!window.confirm(`Delete lead for "${lead.company}"? This cannot be undone.`)) return;
+    try {
+      await axios.delete(`${API}/leads/${lead.id}`, { headers: authHeader() });
+      toast.success('Lead deleted');
+      if (selectedLead?.id === lead.id) {
+        setSelectedLead(null);
+        setWorkflowOpen(false);
+        setProfileOpen(false);
+      }
+      fetchLeads();
+      fetchStats();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to delete lead'));
+    }
+  };
+
   const openVendorDialog = (lead, { afterStatus = false } = {}) => {
     setVendorLead(lead);
     setVendorId(lead.vendor_id || '');
@@ -347,6 +375,9 @@ export const Leads = () => {
         statusColors={STATUS_COLORS}
         onSelectLead={(lead, opts) => selectLead(lead, opts)}
         onAssignVendor={(lead) => openVendorDialog(lead)}
+        canEditLead={canEditLead}
+        onEditLead={openEditLead}
+        onDeleteLead={handleDeleteLead}
         isCarryAndOrder={isCarryAndOrder}
         leadNeedsVendor={leadNeedsVendor}
         getLeadInitials={getLeadInitials}
@@ -364,6 +395,27 @@ export const Leads = () => {
         onLeadRefresh={refreshLead}
         onAssignVendor={(lead) => openVendorDialog(lead)}
         onOpenRecord={openLeadRecord}
+        onEditLead={() => selectedLead && openEditLead(selectedLead)}
+        onDeleteLead={() => selectedLead && handleDeleteLead(selectedLead)}
+      />
+
+      <LeadEditDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        lead={editLead}
+        apiBase={API}
+        authHeader={authHeader}
+        customers={customers}
+        vendors={vendors}
+        assigneeOptions={assigneeOptions}
+        onUpdated={async (updated) => {
+          if (updated?.id) {
+            await refreshLead(updated.id);
+            await loadLeadDetails(updated.id);
+          }
+          fetchLeads();
+          fetchStats();
+        }}
       />
 
       <LeadCreateDialog

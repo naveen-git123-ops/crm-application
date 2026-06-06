@@ -8360,7 +8360,8 @@ def require_leads_access(
 
 def can_edit_lead(lead: LeadModel, current_user: UserModel, db: Session) -> bool:
     """Admin/Manager: any lead. Others with leads access: created by or assigned to them."""
-    if current_user.role in ['Admin', 'Manager']:
+    role = (current_user.role or '').strip().lower()
+    if role in ('admin', 'manager'):
         return True
     if not user_has_leads_access(current_user, db):
         return False

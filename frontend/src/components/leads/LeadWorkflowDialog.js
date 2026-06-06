@@ -1,7 +1,7 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { X, FileText, Store, AlertCircle } from 'lucide-react';
+import { X, FileText, Store, AlertCircle, Edit2, Trash2 } from 'lucide-react';
 import { CarryOrderWorkspace } from '@/components/leads/carryOrder/CarryOrderWorkspace';
 import { workflowStageLabel } from '@/lib/carryOrderWorkflow';
 import { isCarryAndOrder, leadNeedsVendor } from '@/lib/leadUtils';
@@ -18,6 +18,8 @@ export function LeadWorkflowDialog({
   onLeadRefresh,
   onAssignVendor,
   onOpenRecord,
+  onEditLead,
+  onDeleteLead,
 }) {
   if (!lead) return null;
 
@@ -66,6 +68,30 @@ export function LeadWorkflowDialog({
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                {canEdit && onEditLead && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-8 text-xs bg-white/10 hover:bg-white/20 text-white border-0"
+                    onClick={onEditLead}
+                  >
+                    <Edit2 className="h-3.5 w-3.5 mr-1.5" />
+                    Edit
+                  </Button>
+                )}
+                {canEdit && onDeleteLead && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-8 text-xs bg-red-500/90 hover:bg-red-600 text-white border-0"
+                    onClick={onDeleteLead}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                    Delete
+                  </Button>
+                )}
                 {onOpenRecord && (
                   <Button
                     type="button"
