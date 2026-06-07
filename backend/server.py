@@ -282,6 +282,7 @@ class LeaveModel(Base):
     start_date = Column(String(10))
     end_date = Column(String(10))
     days = Column(Integer)
+    half_day_session = Column(String(20), nullable=True)  # First Half | Second Half
     reason = Column(String(500))
     attachment_path = Column(String(500), nullable=True)
     status = Column(String(50), default='Pending')
@@ -1286,6 +1287,26 @@ def migrate_leaves_add_attachment():
 
 migrate_leaves_add_attachment()
 
+def migrate_leaves_add_half_day_session():
+    """Add half_day_session column to leaves if missing."""
+    from sqlalchemy import text, inspect
+    try:
+        inspector = inspect(engine)
+        existing_columns = [col['name'] for col in inspector.get_columns('leaves')]
+        if 'half_day_session' not in existing_columns:
+            with engine.connect() as conn:
+                try:
+                    conn.execute(text('ALTER TABLE leaves ADD COLUMN half_day_session VARCHAR(20) NULL'))
+                    conn.commit()
+                    print('Added column half_day_session to leaves table')
+                except Exception as alter_err:
+                    print(f'Could not add column half_day_session: {alter_err}')
+                    conn.rollback()
+    except Exception as e:
+        print(f'Migration error for leaves half_day_session: {e}')
+
+migrate_leaves_add_half_day_session()
+
 def migrate_cgw_flow_metres_product_columns():
     """Add product_code/model_no to cgw_flow_metres and backfill from telemetric_system."""
     from sqlalchemy import text, inspect
@@ -2126,6 +2147,7 @@ class Leave(BaseModel):
     start_date: str
     end_date: str
     days: int
+    half_day_session: Optional[Literal['First Half', 'Second Half']] = None
     reason: str
     attachment_path: Optional[str] = None
     status: Literal['Pending', 'Approved', 'Rejected'] = 'Pending'
@@ -6795,7 +6817,7 @@ def get_attendance(
                     date=date_str,
                     punch_in=None,
                     punch_out=None,
-                    status='Leave',
+                    status=_leave_attendance_status(leave),
                     work_hours=0.0,
                     total_work_hours=0.0,
                     is_tour=0,
@@ -6818,9 +6840,9 @@ def get_attendance_monthly_report(
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """
-    Monthly attendance for every calendar day. Each day has ``status`` of Present, Absent, or Holiday only
+    Monthly attendance for every calendar day. Each day has ``status`` of Present, Absent, Half Day, or Holiday
     (Sundays, government holidays, and future dates in the month count as Holiday; missing punch on a working
-    day is Absent). Punch times use first in / last out from sessions.
+    day is Absent; approved half-day leave is Half Day). Punch times use first in / last out from sessions.
     Requires ``monthly-report`` permission. Admin and Accountant may pass ``employee_id`` (business employee id)
     to view any employee's report. Other roles always see their own linked ``employee_id`` only.
     """
@@ -6893,7 +6915,7 @@ def get_attendance_monthly_report(
                     date=date_str,
                     punch_in=None,
                     punch_out=None,
-                    status='Leave',
+                    status=_leave_attendance_status(leave),
                     work_hours=0.0,
                     total_work_hours=0.0,
                     is_tour=0,
@@ -6927,12 +6949,19 @@ def get_attendance_monthly_report(
         .all()
     )
     record_by_date: Dict[str, Any] = {r.date: r for r in records}
+    half_day_session_by_date: Dict[str, str] = {}
+    for leave in approved_leaves:
+        if _is_half_day_leave(getattr(leave, 'leave_type', None)):
+            session = (getattr(leave, 'half_day_session', None) or '').strip()
+            if session:
+                half_day_session_by_date[leave.start_date] = session
     last_calendar_day = monthrange(year, month_num)[1]
     today_local = attendance_local_now().date()
 
     days_out: List[Dict[str, Any]] = []
     total_work_sum = 0.0
     worked_days = 0
+    half_day_days = 0
 
     for day_num in range(1, last_calendar_day + 1):
         date_str = f'{year}-{month_num:02d}-{day_num:02d}'
@@ -6980,7 +7009,11 @@ def get_attendance_monthly_report(
         tw_raw = float(record.total_work_hours or 0.0)
         wh = float(record.work_hours or 0.0)
         # Keep worked_days aligned with Attendance Grid / Summary "present-day" logic:
-        counts_as_worked_day = (record.status == 'Present') or (has_tour and tour_approved)
+        counts_as_worked_day = (
+            (record.status == 'Present')
+            or (record.status == 'Half Day')
+            or (has_tour and tour_approved)
+        )
         # Regularized Present rows historically could have work_hours set but total_work_hours still 0.
         if tw_raw > 0:
             hours_for_day = tw_raw
@@ -6994,9 +7027,12 @@ def get_attendance_monthly_report(
             worked_days += 1
 
         st = (record.status or '').strip()
-        if st == 'Leave':
+        if st == 'Half Day':
+            grid_status = 'Half Day'
+            half_day_days += 1
+        elif st == 'Leave':
             grid_status = 'Present'
-        elif counts_as_worked_day or hours_for_day > 0 or st in ('Present', 'Half Day', 'Late'):
+        elif counts_as_worked_day or hours_for_day > 0 or st in ('Present', 'Late'):
             grid_status = 'Present'
         elif d.weekday() == 6 or date_str in holiday_dates:
             grid_status = 'Holiday'
@@ -7012,6 +7048,7 @@ def get_attendance_monthly_report(
                 'last_punch_out': last_punch_out,
                 'total_work_hours': hours_for_day,
                 'status': grid_status,
+                'half_day_session': half_day_session_by_date.get(record.date) if grid_status == 'Half Day' else None,
             }
         )
 
@@ -7033,6 +7070,7 @@ def get_attendance_monthly_report(
         'avg_hours_per_worked_day': avg_hours,
         'total_work_hours': round(total_work_sum, 2),
         'worked_days': worked_days,
+        'half_day_days': half_day_days,
     }
 
 
@@ -7377,6 +7415,21 @@ def get_attendance_report(
 
 # ============= LEAVE ROUTES =============
 
+def _is_half_day_leave(leave_type: Optional[str]) -> bool:
+    return (leave_type or '').strip() == 'Half Day'
+
+
+def _effective_leave_days(leave) -> float:
+    """Half-day leave counts as 0.5 day against balance; full days use stored days."""
+    if _is_half_day_leave(getattr(leave, 'leave_type', None)):
+        return 0.5
+    return float(getattr(leave, 'days', None) or 0)
+
+
+def _leave_attendance_status(leave) -> str:
+    return 'Half Day' if _is_half_day_leave(getattr(leave, 'leave_type', None)) else 'Leave'
+
+
 @api_router.post('/leaves')
 def create_leave(
     current_user: UserModel = Depends(get_current_user),
@@ -7388,10 +7441,37 @@ def create_leave(
     end_date: str = Form(...),
     days: int = Form(...),
     reason: str = Form(...),
+    half_day_session: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
 ):
     """Create a new leave request with optional file attachment."""
     try:
+        valid_types = ('Casual', 'Sick', 'Paid', 'WFH', 'Half Day')
+        if leave_type not in valid_types:
+            raise HTTPException(status_code=400, detail=f'leave_type must be one of: {", ".join(valid_types)}')
+
+        if _is_half_day_leave(leave_type):
+            if start_date != end_date:
+                raise HTTPException(
+                    status_code=400,
+                    detail='Half day leave must be for a single date (from and to date must match)',
+                )
+            session = (half_day_session or '').strip()
+            if session not in ('First Half', 'Second Half'):
+                raise HTTPException(
+                    status_code=400,
+                    detail='Half day leave requires session: First Half or Second Half',
+                )
+            days_int = 1
+            half_day_session_val = session
+        else:
+            if half_day_session:
+                raise HTTPException(status_code=400, detail='half_day_session is only for Half Day leave')
+            days_int = int(days) if isinstance(days, str) else days
+            if days_int < 1:
+                raise HTTPException(status_code=400, detail='days must be at least 1')
+            half_day_session_val = None
+
         attachment_path = None
         
         # Handle file upload if provided
@@ -7415,9 +7495,6 @@ def create_leave(
             except Exception as e:
                 logging.error(f"File upload error: {str(e)}")
         
-        # Convert days to integer if it's a string
-        days_int = int(days) if isinstance(days, str) else days
-        
         new_leave = LeaveModel(
             employee_id=employee_id,
             employee_name=employee_name,
@@ -7425,6 +7502,7 @@ def create_leave(
             start_date=start_date,
             end_date=end_date,
             days=days_int,
+            half_day_session=half_day_session_val,
             reason=reason,
             attachment_path=attachment_path
         )
@@ -7528,8 +7606,8 @@ def get_leave_balance(
     leaves = db.query(LeaveModel).filter(LeaveModel.employee_id == eid).all()
     def in_year(d):
         return d and (d.startswith(str(y)) if isinstance(d, str) else str(y) in str(d))
-    taken = sum(l.days or 0 for l in leaves if l.status == 'Approved' and in_year(l.start_date))
-    pending = sum(l.days or 0 for l in leaves if l.status == 'Pending' and in_year(l.start_date))
+    taken = sum(_effective_leave_days(l) for l in leaves if l.status == 'Approved' and in_year(l.start_date))
+    pending = sum(_effective_leave_days(l) for l in leaves if l.status == 'Pending' and in_year(l.start_date))
     balance = max(0, allowed - taken)
     return {"allowed": allowed, "taken": taken, "pending": pending, "balance": balance, "year": y}
 

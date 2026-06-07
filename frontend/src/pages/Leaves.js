@@ -39,13 +39,25 @@ const API = `${BACKEND_URL}/api`;
 
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
 
-const formatLeaveRange = (start, end, days) => {
+const isHalfDayLeave = (leave) => leave?.leave_type === 'Half Day';
+
+const effectiveLeaveDays = (leave) => (isHalfDayLeave(leave) ? 0.5 : Number(leave?.days) || 0);
+
+const formatLeaveDays = (days, isHalfDay = false) => {
+  if (isHalfDay) return '0.5 day';
+  return `${days} ${days === 1 ? 'day' : 'days'}`;
+};
+
+const formatLeaveRange = (start, end, days, leave = null) => {
+  const halfDay = leave ? isHalfDayLeave(leave) : false;
+  const dayLabel = formatLeaveDays(halfDay ? 0.5 : days, halfDay);
+  const session = leave?.half_day_session ? ` · ${leave.half_day_session}` : '';
   try {
     const s = parseISO(String(start));
     const e = parseISO(String(end));
     const same = format(s, 'MMM d') === format(e, 'MMM d');
-    if (same) return `${format(s, 'MMM d')} (${days} ${days === 1 ? 'Day' : 'Days'})`;
-    return `${format(s, 'MMM d')} – ${format(e, 'MMM d')} (${days} ${days === 1 ? 'Day' : 'Days'})`;
+    if (same) return `${format(s, 'MMM d')} (${dayLabel}${session})`;
+    return `${format(s, 'MMM d')} – ${format(e, 'MMM d')} (${dayLabel}${session})`;
   } catch {
     return `${start} → ${end}`;
   }
@@ -97,6 +109,7 @@ export const Leaves = () => {
     start_date: '',
     end_date: '',
     days: 1,
+    half_day_session: 'First Half',
     reason: ''
   });
 
@@ -249,8 +262,17 @@ export const Leaves = () => {
       toast.error('Please select a start date');
       return;
     }
-    if (!formData.end_date) {
+    const isHalfDay = formData.leave_type === 'Half Day';
+    if (!isHalfDay && !formData.end_date) {
       toast.error('Please select an end date');
+      return;
+    }
+    if (isHalfDay && formData.start_date !== formData.end_date) {
+      toast.error('Half day leave must be for a single date');
+      return;
+    }
+    if (isHalfDay && !formData.half_day_session) {
+      toast.error('Please select first half or second half');
       return;
     }
     if (!formData.reason || formData.reason.trim() === '') {
@@ -265,9 +287,12 @@ export const Leaves = () => {
       formDataToSend.append('employee_name', formData.employee_name || user?.name);
       formDataToSend.append('leave_type', formData.leave_type);
       formDataToSend.append('start_date', formData.start_date);
-      formDataToSend.append('end_date', formData.end_date);
-      formDataToSend.append('days', String(formData.days));
+      formDataToSend.append('end_date', isHalfDay ? formData.start_date : formData.end_date);
+      formDataToSend.append('days', String(isHalfDay ? 1 : formData.days));
       formDataToSend.append('reason', formData.reason);
+      if (isHalfDay) {
+        formDataToSend.append('half_day_session', formData.half_day_session);
+      }
       
       // Append file if present (attachment is completely optional)
       if (attachment) {
@@ -330,6 +355,7 @@ export const Leaves = () => {
       start_date: '',
       end_date: '',
       days: 1,
+      half_day_session: 'First Half',
       reason: ''
     });
     setAttachment(null);
@@ -349,19 +375,59 @@ export const Leaves = () => {
     }
   };
 
+  const isHalfDayForm = formData.leave_type === 'Half Day';
+
   const calculateDays = () => {
+    if (isHalfDayForm) {
+      if (formData.start_date) {
+        setFormData((prev) => ({
+          ...prev,
+          end_date: prev.start_date,
+          days: 0.5,
+        }));
+      }
+      return;
+    }
     if (formData.start_date && formData.end_date) {
       const start = new Date(formData.start_date);
       const end = new Date(formData.end_date);
       const diffTime = Math.abs(end - start);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-      setFormData({ ...formData, days: diffDays });
+      setFormData((prev) => ({ ...prev, days: diffDays }));
     }
   };
 
   useEffect(() => {
     calculateDays();
-  }, [formData.start_date, formData.end_date]);
+  }, [formData.start_date, formData.end_date, formData.leave_type]);
+
+  const handleLeaveTypeChange = (leaveType) => {
+    if (leaveType === 'Half Day') {
+      setFormData((prev) => ({
+        ...prev,
+        leave_type: leaveType,
+        end_date: prev.start_date || prev.end_date,
+        days: 0.5,
+        half_day_session: prev.half_day_session || 'First Half',
+      }));
+      return;
+    }
+    setFormData((prev) => ({
+      ...prev,
+      leave_type: leaveType,
+      days: prev.start_date && prev.end_date
+        ? Math.ceil(Math.abs(new Date(prev.end_date) - new Date(prev.start_date)) / (1000 * 60 * 60 * 24)) + 1
+        : 1,
+    }));
+  };
+
+  const handleStartDateChange = (startDate) => {
+    setFormData((prev) => ({
+      ...prev,
+      start_date: startDate,
+      end_date: prev.leave_type === 'Half Day' ? startDate : prev.end_date,
+    }));
+  };
 
   const canApprove = ['Admin', 'HR', 'Manager'].includes(user?.role);
 
@@ -467,7 +533,7 @@ export const Leaves = () => {
                       id="leave_type"
                       data-testid="leave-type-select"
                       value={formData.leave_type}
-                      onChange={(e) => setFormData({ ...formData, leave_type: e.target.value })}
+                      onChange={(e) => handleLeaveTypeChange(e.target.value)}
                       className="flex h-12 w-full appearance-none rounded-xl border border-slate-200/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-500/12"
                       required
                     >
@@ -475,48 +541,89 @@ export const Leaves = () => {
                       <option value="Sick">Sick Leave</option>
                       <option value="Paid">Paid Leave</option>
                       <option value="WFH">Work From Home</option>
-                      <option value="Half Day">Half Day</option>
+                      <option value="Half Day">Half Day Leave</option>
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   </div>
                 </div>
 
-                <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="start_date" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
-                      From date *
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="start_date"
-                        type="date"
-                        data-testid="leave-start-date"
-                        value={formData.start_date}
-                        onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                        required
-                        className="h-12 rounded-xl border-slate-200/90 bg-white pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus-visible:border-red-500 focus-visible:ring-4 focus-visible:ring-red-500/12"
-                      />
-                      <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-red-400/80" />
+                {isHalfDayForm ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="start_date" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                        Date *
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="start_date"
+                          type="date"
+                          data-testid="leave-start-date"
+                          value={formData.start_date}
+                          onChange={(e) => handleStartDateChange(e.target.value)}
+                          required
+                          className="h-12 rounded-xl border-slate-200/90 bg-white pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus-visible:border-red-500 focus-visible:ring-4 focus-visible:ring-red-500/12"
+                        />
+                        <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-red-400/80" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="half_day_session" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                        Half day session *
+                      </Label>
+                      <div className="relative">
+                        <select
+                          id="half_day_session"
+                          data-testid="half-day-session-select"
+                          value={formData.half_day_session}
+                          onChange={(e) => setFormData({ ...formData, half_day_session: e.target.value })}
+                          className="flex h-12 w-full appearance-none rounded-xl border border-slate-200/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-500/12"
+                          required
+                        >
+                          <option value="First Half">First half (morning)</option>
+                          <option value="Second Half">Second half (afternoon)</option>
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="start_date" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                        From date *
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="start_date"
+                          type="date"
+                          data-testid="leave-start-date"
+                          value={formData.start_date}
+                          onChange={(e) => handleStartDateChange(e.target.value)}
+                          required
+                          className="h-12 rounded-xl border-slate-200/90 bg-white pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus-visible:border-red-500 focus-visible:ring-4 focus-visible:ring-red-500/12"
+                        />
+                        <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-red-400/80" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="end_date" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                        To date *
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="end_date"
+                          type="date"
+                          data-testid="leave-end-date"
+                          value={formData.end_date}
+                          onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                          required
+                          className="h-12 rounded-xl border-slate-200/90 bg-white pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus-visible:border-red-500 focus-visible:ring-4 focus-visible:ring-red-500/12"
+                        />
+                        <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-red-400/80" />
+                      </div>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="end_date" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
-                      To date *
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="end_date"
-                        type="date"
-                        data-testid="leave-end-date"
-                        value={formData.end_date}
-                        onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                        required
-                        className="h-12 rounded-xl border-slate-200/90 bg-white pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus-visible:border-red-500 focus-visible:ring-4 focus-visible:ring-red-500/12"
-                      />
-                      <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-red-400/80" />
-                    </div>
-                  </div>
-                </div>
+                )}
 
                 <div className="space-y-2">
                   <Label className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
@@ -524,9 +631,11 @@ export const Leaves = () => {
                   </Label>
                   <div className="flex h-12 items-center justify-between rounded-xl border border-slate-200/90 bg-gradient-to-r from-slate-50/90 to-white px-4 shadow-inner ring-1 ring-slate-100/80">
                     <span className="text-lg font-bold tabular-nums tracking-tight text-slate-800">
-                      {formData.days}
+                      {isHalfDayForm ? '0.5' : formData.days}
                     </span>
-                    <span className="text-xs font-medium uppercase tracking-wider text-slate-400">days</span>
+                    <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                      {isHalfDayForm || formData.days === 0.5 ? 'half day' : 'days'}
+                    </span>
                   </div>
                 </div>
 
@@ -856,6 +965,9 @@ export const Leaves = () => {
                         )}
                         <td className="px-4 py-3">
                           <div className="font-semibold text-slate-900">{leaveTypeLabel(leave.leave_type)}</div>
+                          {leave.half_day_session && (
+                            <div className="text-xs text-slate-500">{leave.half_day_session}</div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <div className="line-clamp-3 max-w-[280px] text-sm text-slate-700">{leave.reason}</div>
@@ -876,10 +988,10 @@ export const Leaves = () => {
                           )}
                         </td>
                         <td className="px-4 py-3 text-slate-700">
-                          {formatLeaveRange(leave.start_date, leave.end_date, leave.days)}
+                          {formatLeaveRange(leave.start_date, leave.end_date, leave.days, leave)}
                         </td>
                         <td className="px-4 py-3 font-medium tabular-nums text-slate-900">
-                          {leave.days} {leave.days === 1 ? 'day' : 'days'}
+                          {formatLeaveDays(effectiveLeaveDays(leave), isHalfDayLeave(leave))}
                         </td>
                         <td className="px-4 py-3">
                           <span
@@ -950,7 +1062,9 @@ export const Leaves = () => {
                   {canApprove && (
                     <p className="truncate text-xs text-slate-500">{leave.employee_name}</p>
                   )}
-                  <p className="text-sm text-slate-600">{formatLeaveRange(leave.start_date, leave.end_date, leave.days)}</p>
+                  <p className="text-sm text-slate-600">
+                    {formatLeaveRange(leave.start_date, leave.end_date, leave.days, leave)}
+                  </p>
                   <p className="mt-1 text-sm text-slate-700 line-clamp-2">{leave.reason}</p>
                   {leave.attachment_path && (
                     <button

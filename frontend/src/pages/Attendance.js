@@ -168,6 +168,12 @@ const deriveDayCellModel = (record, isFutureDate, isSunday, isHoliday) => {
     circleClass = 'bg-sky-500 text-white shadow-sm';
     return { letter, circleClass, statusText };
   }
+  if (record.status === 'Half Day') {
+    statusText = 'Half day';
+    letter = 'H';
+    circleClass = 'bg-teal-500 text-white shadow-sm';
+    return { letter, circleClass, statusText };
+  }
   if (record.status === 'Present') {
     statusText = 'Present';
     letter = 'P';
@@ -391,9 +397,15 @@ export const Attendance = () => {
             const countsAsPresent =
               (rec?.is_tour === 1 && rec?.tour_approval_status === 'approved') ||
               rec?.status === 'Present' ||
-              rec?.status === 'Leave';
+              rec?.status === 'Leave' ||
+              rec?.status === 'Half Day';
             if (countsAsPresent) presentDays += 1;
           }
+        });
+
+        let halfDayDays = 0;
+        Object.values(emp.records).forEach((rec) => {
+          if (rec?.status === 'Half Day') halfDayDays += 1;
         });
 
         Object.values(emp.records).forEach((rec) => {
@@ -412,7 +424,7 @@ export const Attendance = () => {
           employee_name: emp.employee_name,
           present_days: presentDays,
           late_days: lateDays,
-          half_day_days: 0,
+          half_day_days: halfDayDays,
           absent_days: Math.max(totalDays - presentDays, 0),
           total_days: totalDays
         };
@@ -1134,6 +1146,12 @@ export const Attendance = () => {
               Leave
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal-500 text-[10px] font-bold text-white">
+                H
+              </span>
+              Half day
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white">
                 O
               </span>
@@ -1293,6 +1311,7 @@ export const Attendance = () => {
                   let stripClass = 'from-rose-500 to-red-600';
                   if (letter === 'P') stripClass = 'from-emerald-500 to-teal-600';
                   else if (letter === 'L') stripClass = 'from-sky-500 to-blue-600';
+                  else if (letter === 'H') stripClass = 'from-teal-500 to-cyan-600';
                   else if (letter === '–') stripClass = 'from-slate-400 to-slate-500';
                   else if (letter === 'O' || letter === '!') stripClass = 'from-amber-500 to-orange-600';
                   else if (letter === 'T')
@@ -1420,6 +1439,9 @@ export const Attendance = () => {
                       Present / days
                     </th>
                     <th className="min-w-[72px] border-b border-l border-slate-200 bg-slate-100 p-2 text-center text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                      Half day
+                    </th>
+                    <th className="min-w-[72px] border-b border-l border-slate-200 bg-slate-100 p-2 text-center text-[11px] font-bold uppercase tracking-wide text-slate-600">
                       Tours
                     </th>
                     <th className="min-w-[88px] border-b border-l border-slate-200 bg-slate-100 p-2 text-center text-[11px] font-bold uppercase tracking-wide text-slate-600">
@@ -1430,13 +1452,13 @@ export const Attendance = () => {
                 <tbody>
                   {gridRowsSorted.length === 0 ? (
                     <tr>
-                      <td colSpan={daysInGridMonth + 4} className="p-10 text-center text-sm text-slate-500">
+                      <td colSpan={daysInGridMonth + 5} className="p-10 text-center text-sm text-slate-500">
                         No attendance data yet for this month.
                       </td>
                     </tr>
                   ) : filteredGridRowsForTable.length === 0 ? (
                     <tr>
-                      <td colSpan={daysInGridMonth + 4} className="p-10 text-center text-sm text-slate-500">
+                      <td colSpan={daysInGridMonth + 5} className="p-10 text-center text-sm text-slate-500">
                         No employees match your search or department filter.
                       </td>
                     </tr>
@@ -1468,6 +1490,7 @@ export const Attendance = () => {
                           const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
                           let totalWorkingDays = 0;
                           let presentDays = 0;
+                          let halfDayCount = 0;
                           let tourCount = 0;
                           const lateLoginCount = lateLogins[empData.employee_id]?.count || 0;
 
@@ -1499,9 +1522,11 @@ export const Attendance = () => {
                               const countsAsPresent =
                                 (record?.is_tour === 1 && record?.tour_approval_status === 'approved') ||
                                 record?.status === 'Present' ||
-                                record?.status === 'Leave';
+                                record?.status === 'Leave' ||
+                                record?.status === 'Half Day';
                               if (countsAsPresent) presentDays += 1;
-                              
+                              if (record?.status === 'Half Day') halfDayCount += 1;
+
                               // Count tours
                               if (record?.is_tour === 1 && record?.tour_approval_status === 'approved') {
                                 tourCount += 1;
@@ -1530,6 +1555,9 @@ export const Attendance = () => {
                               {cells}
                               <td className="border-b border-l border-slate-100 bg-slate-50/90 p-2 text-center text-sm font-bold tabular-nums text-slate-800 whitespace-nowrap">
                                 {presentDays} / {totalWorkingDays}
+                              </td>
+                              <td className="border-b border-l border-slate-100 bg-slate-50/90 p-2 text-center text-sm font-bold tabular-nums text-teal-600 whitespace-nowrap">
+                                {halfDayCount}
                               </td>
                               <td className="border-b border-l border-slate-100 bg-slate-50/90 p-2 text-center text-sm font-bold tabular-nums text-fuchsia-600 whitespace-nowrap">
                                 {tourCount}

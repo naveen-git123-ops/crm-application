@@ -35,7 +35,7 @@ export function computePresentWorkingAbsentForMonth(recordsByDate, monthStr, hol
   const y = parseInt(parts[0], 10);
   const m = parseInt(parts[1], 10);
   if (!y || !m) {
-    return { presentDays: 0, totalWorkingDays: 0, absentDays: 0, tourDays: 0 };
+    return { presentDays: 0, totalWorkingDays: 0, absentDays: 0, halfDayDays: 0, tourDays: 0 };
   }
 
   const monthStart = new Date(y, m - 1, 1);
@@ -47,6 +47,7 @@ export function computePresentWorkingAbsentForMonth(recordsByDate, monthStr, hol
 
   let totalWorkingDays = 0;
   let presentDays = 0;
+  let halfDayDays = 0;
   let tourDays = 0;
 
   days.forEach((day) => {
@@ -63,8 +64,10 @@ export function computePresentWorkingAbsentForMonth(recordsByDate, monthStr, hol
       const countsAsPresent =
         (record?.is_tour === 1 && record?.tour_approval_status === 'approved') ||
         record?.status === 'Present' ||
-        record?.status === 'Leave';
+        record?.status === 'Leave' ||
+        record?.status === 'Half Day';
       if (countsAsPresent) presentDays += 1;
+      if (record?.status === 'Half Day') halfDayDays += 1;
       if (record?.is_tour === 1 && record?.tour_approval_status === 'approved') {
         tourDays += 1;
       }
@@ -72,7 +75,7 @@ export function computePresentWorkingAbsentForMonth(recordsByDate, monthStr, hol
   });
 
   const absentDays = Math.max(totalWorkingDays - presentDays, 0);
-  return { presentDays, totalWorkingDays, absentDays, tourDays };
+  return { presentDays, totalWorkingDays, absentDays, halfDayDays, tourDays };
 }
 
 /**
@@ -104,7 +107,7 @@ export function buildSalaryAttendanceMetrics(employees, attendanceRecords, holid
   (employees || []).forEach((emp) => {
     const id = emp.employee_id;
     const recordsByDate = byEmp[id]?.records || {};
-    const { presentDays, totalWorkingDays, absentDays, tourDays } = computePresentWorkingAbsentForMonth(
+    const { presentDays, totalWorkingDays, absentDays, halfDayDays, tourDays } = computePresentWorkingAbsentForMonth(
       recordsByDate,
       monthStr,
       holidaySet
@@ -118,7 +121,7 @@ export function buildSalaryAttendanceMetrics(employees, attendanceRecords, holid
       /** Working days in grid sense (non-future, non-Sunday, non-holiday). */
       working_days: totalWorkingDays,
       late_days: lateDays,
-      half_day_days: 0,
+      half_day_days: halfDayDays,
       tour_days: tourDays
     };
   });

@@ -69,12 +69,27 @@ const formatShortDate = (ds) => {
   }
 };
 
-/** Row background: Present, Absent, or Holiday only. */
+/** Row background by day status. */
 const attendanceGridRowClass = (row) => {
   const s = row.status;
   if (s === 'Holiday') return 'bg-emerald-50 hover:bg-emerald-100/70 ';
   if (s === 'Absent') return 'bg-rose-50 hover:bg-rose-100/70 ';
+  if (s === 'Half Day') return 'bg-teal-50 hover:bg-teal-100/70 ';
   return 'bg-white hover:bg-gray-50/80 ';
+};
+
+const statusBadgeClass = (status) => {
+  if (status === 'Holiday') return 'bg-emerald-100 text-emerald-800';
+  if (status === 'Absent') return 'bg-rose-100 text-rose-800';
+  if (status === 'Half Day') return 'bg-teal-100 text-teal-800';
+  return 'bg-blue-100 text-blue-800';
+};
+
+const statusLabel = (row) => {
+  if (row.status === 'Half Day' && row.half_day_session) {
+    return `Half day (${row.half_day_session})`;
+  }
+  return row.status || 'Present';
 };
 
 export const MonthlyReport = () => {
@@ -234,8 +249,8 @@ export const MonthlyReport = () => {
         <div>
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Monthly attendance</h1>
           <p className="text-gray-600 text-sm mt-1">
-            Full calendar month with each day marked Present, Absent, or Holiday. Use the Late attendance report tab for
-            charts and reasons for late punch-ins and punch-outs.
+            Full calendar month with each day marked Present, Absent, Half day, or Holiday. Use the Late attendance report
+            tab for charts and reasons for late punch-ins and punch-outs.
           </p>
           {data?.employee_name ? (
             <p className="text-gray-600 text-sm mt-1 flex flex-wrap items-center gap-2">
@@ -354,6 +369,9 @@ export const MonthlyReport = () => {
                   <span>
                     Worked days: <strong className="text-gray-900 tabular-nums">{data?.worked_days ?? 0}</strong>
                   </span>
+                  <span>
+                    Half days: <strong className="text-gray-900 tabular-nums">{data?.half_day_days ?? 0}</strong>
+                  </span>
                 </div>
               </div>
             </Card>
@@ -362,13 +380,16 @@ export const MonthlyReport = () => {
               <div className="bg-blue-600 text-white px-4 sm:px-5 py-3">
                 <h2 className="text-sm font-semibold">Attendance grid</h2>
                 <p className="text-blue-100 text-xs mt-0.5">
-                  Each row is Present, Absent, or Holiday. Login = first punch-in · Logout = last punch-out · Effective
-                  hours = total for the day (Holiday/Absent non-work days show —).
+                  Each row is Present, Absent, Half day, or Holiday. Login = first punch-in · Logout = last punch-out ·
+                  Effective hours = total for the day (Holiday/Absent/Half day non-work days show —).
                 </p>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-blue-50 leading-tight">
                   <span>
                     <span className="inline-block h-2.5 w-2.5 rounded-sm bg-white border border-blue-200/80 align-middle mr-1" />
                     Present
+                  </span>
+                  <span>
+                    <span className="inline-block h-2.5 w-2.5 rounded-sm bg-teal-200 align-middle mr-1" /> Half day
                   </span>
                   <span>
                     <span className="inline-block h-2.5 w-2.5 rounded-sm bg-rose-200 align-middle mr-1" /> Absent
@@ -381,14 +402,16 @@ export const MonthlyReport = () => {
               <div className="overflow-x-auto table-scroll p-0">
                 <table className={gridTableClass}>
                   <colgroup>
+                    <col className="w-[18%]" />
                     <col className="w-[22%]" />
-                    <col className="w-[26%]" />
-                    <col className="w-[26%]" />
-                    <col className="w-[26%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[20%]" />
                   </colgroup>
                   <thead>
                     <tr className="bg-gray-100">
                       <th className="text-left py-3 px-4 font-semibold text-gray-800">Date</th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-800">Status</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-800">Login time</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-800">Logout time</th>
                       <th className="text-right py-3 px-4 font-semibold text-gray-800">Effective hours</th>
@@ -404,6 +427,13 @@ export const MonthlyReport = () => {
                       return (
                         <tr key={row.date} className={trClass}>
                           <td className="py-3 px-4 font-mono text-gray-900 align-middle">{row.date}</td>
+                          <td className="py-3 px-4 align-middle">
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeClass(row.status)}`}
+                            >
+                              {statusLabel(row)}
+                            </span>
+                          </td>
                           <td className="py-3 px-4 font-mono text-gray-800 align-middle">{formatPunch(row.first_punch_in)}</td>
                           <td className="py-3 px-4 font-mono text-gray-800 align-middle">{formatPunch(row.last_punch_out)}</td>
                           <td className="py-3 px-4 font-mono text-right text-gray-900 font-medium tabular-nums align-middle">
@@ -416,7 +446,7 @@ export const MonthlyReport = () => {
                   {days.length > 0 && (
                     <tfoot>
                       <tr className="bg-gray-100 font-semibold text-gray-900">
-                        <td className="py-3 px-4 border border-gray-200" colSpan={3}>
+                        <td className="py-3 px-4 border border-gray-200" colSpan={4}>
                           Month total (effective hours)
                         </td>
                         <td className="py-3 px-4 border border-gray-200 text-right font-mono tabular-nums">
