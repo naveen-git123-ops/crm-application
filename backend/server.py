@@ -6462,16 +6462,44 @@ def get_employee_locations(
 
     locations.sort(key=_sort_key)
 
-    track_count = sum(1 for loc in locations if loc.get('type') == 'track')
-    punch_count = len(locations) - track_count
+    punch_events = [loc for loc in locations if loc.get('type') != 'track']
+    track_points = [loc for loc in locations if loc.get('type') == 'track']
+    track_count = len(track_points)
+    punch_count = len(punch_events)
+
+    is_today = effective_date == attendance_local_date_str()
+    is_live = is_today and _employee_is_punched_in(db, employee_id)
+
+    current_location = None
+    if locations:
+        latest = dict(locations[-1])
+        latest['label'] = 'Live now' if is_live else 'Last recorded'
+        current_location = latest
+
+    first_punch_in = next((p for p in punch_events if p.get('type') == 'punch_in'), None)
+    last_punch_out = next((p for p in reversed(punch_events) if p.get('type') == 'punch_out'), None)
+
+    emp_row = db.query(EmployeeModel).filter(EmployeeModel.employee_id == employee_id).first()
+    employee_name = emp_row.name if emp_row else None
 
     return {
         'employee_id': employee_id,
+        'employee_name': employee_name,
         'date': effective_date,
         'locations': locations,
+        'punch_events': punch_events,
+        'track_records': track_points,
+        'current_location': current_location,
+        'is_live': is_live,
         'total_locations': len(locations),
         'track_points': track_count,
         'punch_points': punch_count,
+        'summary': {
+            'punch_in_time': first_punch_in.get('time') if first_punch_in else None,
+            'punch_out_time': last_punch_out.get('time') if last_punch_out else None,
+            'first_track_time': track_points[0].get('time') if track_points else None,
+            'last_track_time': track_points[-1].get('time') if track_points else None,
+        },
     }
 
 
