@@ -20,7 +20,7 @@ jobs:
             cd /home/ec2-user/crm-application
             git pull origin main
             cd /home/ec2-user/crm-application/backend
-            grep -v "black" requirements.txt | sed 's/=.*//' > /tmp/req.txt
+            grep -v "black" requirements.txt | sed 's/==.*//' > /tmp/req.txt
             sudo pip3 install -r /tmp/req.txt || true
             sudo pkill -f uvicorn || true
             sleep 2
