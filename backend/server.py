@@ -1,4 +1,4 @@
-Auto-deploy test v1
+Auto-deploy test v2
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
