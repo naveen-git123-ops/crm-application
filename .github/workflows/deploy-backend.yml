@@ -19,7 +19,7 @@ jobs:
           script: |
             cd /home/ec2-user/crm-application
             git pull origin main
-            cd backend
+            cd /home/ec2-user/crm-application/backend
             sudo pip3 install -r requirements.txt || true
             sudo pkill -f uvicorn || true
             sudo nohup python3 -m uvicorn server:app --host 0.0.0.0 --port 80 &
