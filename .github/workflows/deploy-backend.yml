@@ -20,7 +20,11 @@ jobs:
             cd /home/ec2-user/crm-application
             git pull origin main
             cd /home/ec2-user/crm-application/backend
-            grep -v "black" requirements.txt | sudo pip3 install -r /dev/stdin || true
+            grep -v "black" requirements.txt > /tmp/req.txt
+            sudo pip3 install -r /dev/stdin || true
             sudo pkill -f uvicorn || true
             sleep 2
-            sudo nohup python3 -m uvicorn server:app --host 0.0.0.0 --port 80 &
+            sudo nohup python3 -m uvicorn server:app --host 0.0.0.0 --port 80 > /tmp/uvicorn.log 2>&1 &
+            sleep 3
+            ps aux | grep uvicorn
+            echo "Done"
