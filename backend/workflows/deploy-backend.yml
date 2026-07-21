@@ -1,0 +1,24 @@
+name: Deploy Backend to EC2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ec2-user/crm-application
+            git pull origin main
+            pip3 install -r requirements.txt
+            sudo pkill -f uvicorn || true
+            sudo nohup python3 - uvicorn server:app --host 0.0.0.0 --port 80 &
