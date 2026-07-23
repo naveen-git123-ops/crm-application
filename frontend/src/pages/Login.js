@@ -134,7 +134,7 @@ export const Login = () => {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  Sign Up
+                  Sign Up test
                 </button>
               </div>
 
