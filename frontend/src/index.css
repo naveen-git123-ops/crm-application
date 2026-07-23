@@ -7,15 +7,15 @@
 @layer base {
   :root {
     --background: 240 249 255;
-    --foreground: 30 64 175;
+    --foreground: 55 65 81;
     --card: 255 255 255;
-    --card-foreground: 30 64 175;
+    --card-foreground: 55 65 81;
     --primary: 6 182 212;
     --primary-foreground: 255 255 255;
     --secondary: 224 242 254;
-    --secondary-foreground: 30 64 175;
+    --secondary-foreground: 55 65 81;
     --muted: 224 242 254;
-    --muted-foreground: 96 125 139;
+    --muted-foreground: 75 85 99;
     --accent: 219 234 254;
     --accent-foreground: 6 182 212;
     --destructive: 239 68 68;
@@ -36,6 +36,14 @@
   html {
     font-size: 93.75%;
     background-color: rgb(248, 250, 252);
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  @media (max-width: 640px) {
+    html {
+      font-size: 100%;
+    }
   }
   
   body {
@@ -43,6 +51,11 @@
     color: rgb(15, 23, 42);
     font-family: 'Inter', sans-serif;
     min-height: 100vh;
+    min-height: 100dvh;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    overflow-x: hidden;
   }
   
   .dark body {
@@ -68,4 +81,187 @@
   .font-mono {
     font-family: 'JetBrains Mono', monospace;
   }
+
+  /* Fix text visibility in form elements */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="time"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="search"],
+  textarea,
+  select {
+    color: rgb(17, 24, 39) !important; /* text-gray-900 */
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(156, 163, 175) !important; /* text-gray-400 */
+  }
+
+  select option {
+    color: rgb(17, 24, 39) !important; /* text-gray-900 */
+    background-color: white !important;
+  }
+
+  /* Ensure select dropdowns have visible text */
+  select {
+    background-color: white !important;
+  }
+
+  /* Fix for disabled inputs */
+  input:disabled,
+  textarea:disabled,
+  select:disabled {
+    color: rgb(107, 114, 128) !important; /* text-gray-500 */
+  }
+
+  /* Ensure all buttons have visible text */
+  button {
+    color: inherit;
+  }
+
+  button[class*="bg-blue"],
+  button[class*="bg-green"],
+  button[class*="bg-red"],
+  button[class*="bg-emerald"],
+  button[class*="bg-rose"] {
+    color: white !important;
+  }
+
+  button[class*="bg-white"],
+  button[class*="bg-gray"]:not([class*="text-"]) {
+    color: rgb(17, 24, 39) !important; /* text-gray-900 */
+  }
+
+  /* Remove yellow hover states */
+  button:hover[class*="yellow"],
+  button:hover[class*="amber"]:not([class*="text-amber"]):not([class*="bg-amber"]) {
+    background-color: inherit !important;
+  }
+
+  /* Mobile: minimum touch targets (44px) */
+  @media (max-width: 768px) {
+    button:not([class*="size-"]):not(.min-h-),
+    a[role="button"],
+    .touch-target {
+      min-height: 44px;
+      min-width: 44px;
+    }
+    input, select, textarea {
+      font-size: 16px !important; /* prevents zoom on focus on iOS */
+    }
+  }
+}
+
+/* Utility: horizontal scroll wrapper for tables on mobile */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.table-scroll > * {
+  min-width: min-content;
+}
+
+/* Safe area for fixed bottom nav (notched / home indicator devices) */
+.safe-area-bottom {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0));
+}
+
+/* Fix tab button text visibility - make all tab text grey */
+[role="tablist"] {
+  color: rgb(75, 85, 99) !important;
+}
+
+[role="tab"] {
+  color: rgb(75, 85, 99) !important;
+}
+
+[role="tab"][aria-selected="true"] {
+  color: rgb(55, 65, 81) !important;
+}
+
+/* Radix UI Tabs component text color fixes */
+[class*="TabsList"] {
+  color: rgb(75, 85, 99) !important;
+}
+
+[class*="TabsTrigger"] {
+  color: rgb(75, 85, 99) !important;
+}
+
+[class*="TabsTrigger"][data-state="active"] {
+  color: rgb(55, 65, 81) !important;
+}
+
+/* Generic tab text color - grey throughout */
+.inline-flex[role="tablist"] *,
+[role="tab"] {
+  color: rgb(75, 85, 99) !important;
+}
+
+/* Ensure all button-like elements in tabs are grey */
+.rounded-md[role="tab"],
+button[role="tab"],
+[role="tab"] span {
+  color: rgb(75, 85, 99) !important;
+}
+
+[role="tab"][aria-selected="true"],
+[role="tab"][aria-selected="true"] span {
+  color: rgb(55, 65, 81) !important;
+}
+
+/* Fix text-muted-foreground to use grey */
+.text-muted-foreground {
+  color: rgb(75, 85, 99) !important;
+}
+
+.data-\[state\=active\]\:text-foreground {
+  color: rgb(55, 65, 81) !important;
+}
+
+/* Override all foreground colors to grey */
+.text-foreground {
+  color: rgb(55, 65, 81) !important;
+}
+
+/* Ensure all text in tabs buttons is visible */
+[role="tab"] button,
+[role="tab"] span,
+.h-9 button,
+.inline-flex button {
+  color: rgb(75, 85, 99) !important;
+}
+
+/* Active tab state - darker grey */
+[role="tab"][aria-selected="true"],
+[role="tab"][aria-selected="true"] *,
+button[aria-selected="true"],
+button[aria-selected="true"] * {
+  color: rgb(55, 65, 81) !important;
+}
+
+/* Fix background interactions */
+.data-\[state\=active\]\:bg-background {
+  background-color: white !important;
+}
+
+/* Override all mentions of text-white or light colors in UI elements */
+.rounded-lg.bg-muted {
+  background-color: rgb(224, 242, 254);
+}
+
+/* Ensure paragraph and span text inside tabs is grey */
+[role="tab"] p,
+[role="tab"] span {
+  color: rgb(75, 85, 99) !important;
+}
+
+[role="tab"][aria-selected="true"] p,
+[role="tab"][aria-selected="true"] span {
+  color: rgb(55, 65, 81) !important;
 }

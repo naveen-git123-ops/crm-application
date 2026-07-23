@@ -1,24 +1,117 @@
 import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { userHasPermission } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
 import { 
   LayoutDashboard, 
   Users, 
   Calendar, 
+  CalendarDays,
   FileText, 
+  FileStack,
   Settings, 
   LogOut,
   Menu,
   X,
-  CreditCard as IDCard
+  CreditCard as IDCard,
+  Receipt,
+  Shield,
+  Briefcase,
+  Target,
+  CheckSquare,
+  Fuel,
+  MapPin,
+  Droplets,
+  ChevronLeft,
+  ChevronRight,
+  BarChart3,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { PageHeaderProvider, usePageHeader, usePageHeaderActions } from '@/contexts/PageHeaderContext';
+import { EmployeeLocationTracker } from '@/components/EmployeeLocationTracker';
 
-export const Layout = ({ children }) => {
+function ClearHeaderOnNavigate() {
+  const location = useLocation();
+  const { clearPageHeader } = usePageHeaderActions();
+
+  useEffect(() => {
+    clearPageHeader();
+  }, [location.pathname, clearPageHeader]);
+
+  return null;
+}
+
+function AppHeaderBar({
+  currentPath,
+  filteredNavItems,
+  desktopSidebarCollapsed,
+  onOpenMobileMenu,
+  onToggleDesktopSidebar,
+}) {
+  const header = usePageHeader();
+  const title = filteredNavItems.find((item) => currentPath === item.path)?.label || 'Dashboard';
+
+  return (
+    <header className="min-h-12 sm:min-h-14 border-b border-gray-200 bg-white flex items-center gap-2.5 sm:gap-3 px-3 sm:px-5 py-2 sm:py-2.5 shadow-sm flex-shrink-0 pt-[env(safe-area-inset-top)]">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="lg:hidden h-10 w-10 min-h-[40px] min-w-[40px] flex-shrink-0 border border-gray-300 text-gray-700 hover:bg-gray-100"
+        onClick={onOpenMobileMenu}
+        data-testid="mobile-menu-button"
+        aria-label="Open menu"
+      >
+        <Menu className="h-5 w-5" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="hidden lg:inline-flex h-9 w-9 flex-shrink-0 border border-gray-300 text-gray-700 hover:bg-gray-100"
+        onClick={onToggleDesktopSidebar}
+        data-testid="desktop-sidebar-toggle"
+        aria-label={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        {desktopSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+      </Button>
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <h2 className="text-base sm:text-lg font-semibold tracking-tight text-gray-900 truncate">{title}</h2>
+        {header.subtitle ? (
+          <span className="hidden sm:inline text-sm text-gray-500 truncate border-l border-gray-200 pl-2.5 ml-0.5">
+            {header.subtitle}
+          </span>
+        ) : null}
+      </div>
+      {header.actions ? (
+        <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 shrink-0 max-w-[min(100%,72vw)]">
+          {header.actions}
+        </div>
+      ) : null}
+    </header>
+  );
+}
+
+export const Layout = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('desktop-sidebar-collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('desktop-sidebar-collapsed', String(desktopSidebarCollapsed));
+    } catch {
+      // ignore persistence errors (private mode/storage limitations)
+    }
+  }, [desktopSidebarCollapsed]);
 
   const handleLogout = () => {
     logout();
@@ -26,26 +119,46 @@ export const Layout = ({ children }) => {
   };
 
   const navItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: Users, label: 'Employees', path: '/employees', roles: ['Admin', 'HR', 'Manager'] },
-    { icon: Calendar, label: 'Attendance', path: '/attendance', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: FileText, label: 'Leaves', path: '/leaves', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    // { icon: FileText, label: 'Documents', path: '/documents', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
-    { icon: IDCard, label: 'ID Cards', path: '/idcards', roles: ['Admin', 'HR', 'Manager'] },
-    { icon: Settings, label: 'Settings', path: '/settings', roles: ['Admin', 'HR', 'Manager', 'Employee'] },
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', permission: 'dashboard' },
+    { icon: Target, label: 'Leads', path: '/leads', permission: 'leads' },
+    { icon: Users, label: 'Employees', path: '/employees', permission: 'employees' },
+    { icon: Users, label: 'Create Ledger', path: '/customers', permission: 'customers' },
+    { icon: Droplets, label: 'CGW Flow Metre', path: '/cgw-flow-metre', permission: 'cgw-flow-metre' },
+    { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
+    { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance' },
+    { icon: BarChart3, label: 'Monthly Report', path: '/monthly-report', permission: 'monthly-report' },
+    { icon: MapPin, label: 'Location Tracker', path: '/location-tracker', permission: 'attendance', adminOnly: true },
+    { icon: FileText, label: 'Leaves', path: '/leaves', permission: 'leaves' },
+    { icon: CalendarDays, label: 'Government Holidays', path: '/government-holidays', permission: 'holidays' },
+    { icon: Receipt, label: 'Expenses', path: '/expenses', permission: 'expenses' },
+    { icon: Fuel, label: 'Vehicle Tracking', path: '/vehicles', permission: 'vehicles' },
+    { icon: Shield, label: 'Roles', path: '/roles', permission: 'roles' },
+    { icon: Briefcase, label: 'Workspace', path: '/workspace', permission: 'workspace' },
+    { icon: FileStack, label: 'Documents', path: '/documents', permission: 'documents' },
+    { icon: IDCard, label: 'ID Cards', path: '/idcards', permission: 'idcards' },
+    { icon: Settings, label: 'Settings', path: '/settings', permission: 'settings' },
   ];
 
-  const filteredNavItems = navItems.filter(item => item.roles.includes(user?.role));
+  const filteredNavItems = navItems.filter((item) => {
+    if (item.adminOnly && user?.role !== 'Admin') return false;
+    if (Array.isArray(item.allowedRoles) && item.allowedRoles.length > 0) {
+      return item.allowedRoles.includes(user?.role);
+    }
+    return userHasPermission(user, item.permission);
+  });
+
+  const currentPath = location.pathname;
+  const bottomNavItems = filteredNavItems.slice(0, 5);
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Sidebar - Desktop */}
-      <aside className="hidden lg:flex flex-col w-64 border-r border-gray-200 bg-white">
-        <div className="p-6 border-b border-gray-200 bg-white">
+      <aside className={`hidden lg:flex flex-col border-r border-gray-200 bg-white flex-shrink-0 transition-all duration-200 ${desktopSidebarCollapsed ? 'w-20' : 'w-64'}`}>
+        <div className={`border-b border-gray-200 bg-white ${desktopSidebarCollapsed ? 'p-3 flex justify-center' : 'p-6'}`}>
           <img 
             src={`${process.env.PUBLIC_URL}/logo1.png`}
             alt="Company Logo" 
-            className="h-12 object-contain"
+            className={`${desktopSidebarCollapsed ? 'h-10' : 'h-12'} object-contain`}
           />
         </div>
         
@@ -56,83 +169,91 @@ export const Layout = ({ children }) => {
               to={item.path}
               data-testid={`nav-${item.label.toLowerCase()}`}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors text-sm ${
+                `flex items-center ${desktopSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 rounded-lg transition-colors text-sm ${
                   isActive
                     ? 'bg-blue-100 text-blue-700 font-medium'
                     : 'text-gray-700 hover:bg-gray-100'
                 }`
               }
+              title={item.label}
             >
               <item.icon className="h-5 w-5" />
-              <span>{item.label}</span>
+              {!desktopSidebarCollapsed && <span>{item.label}</span>}
             </NavLink>
           ))}
         </nav>
 
         <div className="p-4 border-t border-gray-200 space-y-2">
-          <div className="px-4 py-2">
-            <p className="text-sm font-medium text-gray-900">{user?.name}</p>
-            <p className="text-xs text-gray-600">{user?.role}</p>
-          </div>
+          {!desktopSidebarCollapsed && (
+            <div className="px-4 py-2">
+              <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+              <p className="text-xs text-gray-600">{user?.role}</p>
+            </div>
+          )}
           <Button
             variant="ghost"
-            className="w-full justify-start text-red-600 hover:bg-red-50 font-medium text-sm h-10"
+            className={`w-full ${desktopSidebarCollapsed ? 'justify-center px-2' : 'justify-start'} bg-red-50 text-red-700 border-red-200 hover:bg-red-100 font-medium text-sm h-10`}
             onClick={handleLogout}
             data-testid="logout-button"
+            title="Logout"
           >
-            <LogOut className="h-4 w-4 mr-2" />
-            Logout
+            <LogOut className={`h-4 w-4 ${desktopSidebarCollapsed ? '' : 'mr-2'}`} />
+            {!desktopSidebarCollapsed && 'Logout'}
           </Button>
         </div>
       </aside>
 
-      {/* Mobile Sidebar */}
+      {/* Mobile Sidebar overlay */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
-          <aside className="fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between bg-white">
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+          <div 
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" 
+            onClick={() => setSidebarOpen(false)} 
+            aria-hidden="true"
+          />
+          <aside className="fixed left-0 top-0 bottom-0 w-[min(280px,85vw)] max-w-full bg-white border-r border-gray-200 shadow-xl flex flex-col pt-[env(safe-area-inset-top)]">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-white">
               <img 
                 src={`${process.env.PUBLIC_URL}/logo1.png`}
                 alt="Company Logo" 
                 className="h-10 object-contain"
               />
-              <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
-                <X className="h-5 w-5 text-gray-600" />
+              <Button variant="ghost" size="icon" className="h-11 w-11 min-h-[44px] min-w-[44px] bg-gray-200 border border-gray-300 text-gray-800 hover:bg-gray-300" onClick={() => setSidebarOpen(false)}>
+                <X className="h-5 w-5" />
               </Button>
             </div>
             
-            <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+            <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
               {filteredNavItems.map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.path}
                   onClick={() => setSidebarOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors text-sm ${
+                    `flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-sm min-h-[48px] ${
                       isActive
                         ? 'bg-blue-100 text-blue-700 font-medium'
-                        : 'text-gray-700 hover:bg-gray-100'
+                        : 'text-gray-700 hover:bg-gray-100 active:bg-gray-200'
                     }`
                   }
                 >
-                  <item.icon className="h-5 w-5" />
-                  <span>{item.label}</span>
+                  <item.icon className="h-5 w-5 flex-shrink-0" />
+                  <span className="truncate">{item.label}</span>
                 </NavLink>
               ))}
             </nav>
 
-            <div className="p-4 border-t border-gray-200 space-y-2">
-              <div className="px-4 py-2">
-                <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+            <div className="p-3 border-t border-gray-200 space-y-2 pb-[env(safe-area-inset-bottom)]">
+              <div className="px-3 py-2">
+                <p className="text-sm font-medium text-gray-900 truncate">{user?.name}</p>
                 <p className="text-xs text-gray-600">{user?.role}</p>
               </div>
               <Button
                 variant="ghost"
-                className="w-full justify-start text-red-600 hover:bg-red-50 font-medium text-sm h-10"
+                className="w-full justify-start bg-red-50 text-red-700 border-red-200 hover:bg-red-100 active:bg-red-200 font-medium text-sm min-h-[48px] px-4"
                 onClick={handleLogout}
               >
-                <LogOut className="h-4 w-4 mr-2" />
+                <LogOut className="h-4 w-4 mr-2 flex-shrink-0" />
                 Logout
               </Button>
             </div>
@@ -141,27 +262,54 @@ export const Layout = ({ children }) => {
       )}
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="h-16 border-b border-gray-200 bg-white flex items-center px-6 shadow-sm">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden mr-2 text-gray-600"
-            onClick={() => setSidebarOpen(true)}
-            data-testid="mobile-menu-button"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-          <h2 className="text-lg font-semibold tracking-tight text-gray-900">
-            {filteredNavItems.find(item => window.location.pathname === item.path)?.label || 'Dashboard'}
-          </h2>
-        </header>
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <PageHeaderProvider>
+          <EmployeeLocationTracker />
+          <ClearHeaderOnNavigate />
+          <AppHeaderBar
+            currentPath={currentPath}
+            filteredNavItems={filteredNavItems}
+            desktopSidebarCollapsed={desktopSidebarCollapsed}
+            onOpenMobileMenu={() => setSidebarOpen(true)}
+            onToggleDesktopSidebar={() => setDesktopSidebarCollapsed((prev) => !prev)}
+          />
 
-        {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-6 bg-gray-50">
-          {children}
-        </main>
+          {/* Page Content - responsive padding, space for bottom nav on mobile */}
+          <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 pb-24 sm:pb-6 bg-gray-50">
+            <Outlet />
+          </main>
+        </PageHeaderProvider>
+
+        {/* Bottom navigation - mobile only */}
+        <nav 
+          className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex items-center justify-around safe-area-bottom z-40"
+          aria-label="Main navigation"
+        >
+          {bottomNavItems.map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              onClick={() => setSidebarOpen(false)}
+              className={({ isActive }) =>
+                `flex flex-col items-center justify-center gap-0.5 py-2 px-2 min-h-[56px] min-w-[56px] rounded-lg transition-colors text-xs bg-gray-100/80 border border-transparent ${
+                  isActive ? 'text-blue-600 font-medium bg-blue-50 border-blue-200' : 'text-gray-700'
+                }`
+              }
+            >
+              <item.icon className="h-6 w-6" />
+              <span className="truncate max-w-[72px]">{item.label}</span>
+            </NavLink>
+          ))}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="flex flex-col items-center justify-center gap-0.5 py-2 px-2 min-h-[56px] min-w-[56px] rounded-lg transition-colors text-xs bg-gray-100/80 text-gray-700 border border-gray-200 hover:bg-gray-200"
+            aria-label="More menu"
+          >
+            <Menu className="h-6 w-6" />
+            <span className="truncate max-w-[72px]">More</span>
+          </button>
+        </nav>
       </div>
     </div>
   );

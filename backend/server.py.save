@@ -1,0 +1,3311 @@
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
+from starlette.middleware.cors import CORSMiddleware
+from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, func, cast
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import IntegrityError
+import os
+import logging
+from pathlib import Path
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from typing import List, Optional, Literal
+from datetime import datetime, timezone, timedelta
+from calendar import monthrange
+import jwt
+import bcrypt
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+import io
+import uuid
+import json
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
+# Database Setup - MySQL or PostgreSQL
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is required")
+
+# Configure based on database type
+if DATABASE_URL.startswith('mysql'):
+    # MySQL configuration
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
+else:
+    # PostgreSQL configuration
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# JWT Configuration
+JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-in-production')
+JWT_ALGORITHM = 'HS256'
+JWT_EXPIRATION_HOURS = 168  # 7 days
+
+# Create upload directory
+UPLOAD_DIR = ROOT_DIR / 'uploads'
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    # allow_origins=[
+    #     "http://crm-resoline-bucket.s3-website.ap-south-1.amazonaws.com",
+    #     "https://crm-resoline-bucket.s3-website.ap-south-1.amazonaws.com",
+    #     "http://crm.resoline.in",
+    #     "https://crm.resoline.in",
+    #     "http://localhost:3000",
+    #     "https://localhost:3000"
+    # ],
+    allow_origins=[
+        "http://crm-resoline-bucket.s3-website.ap-south-1.amazonaws.com",
+        "https://crm-resoline-bucket.s3-website.ap-south-1.amazonaws.com",
+        "http://crm.resoline.in",
+        "https://crm.resoline.in",
+        "http://localhost:3000",
+        "https://localhost:3000"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+api_router = APIRouter(prefix="/api")
+security = HTTPBearer()
+
+# Register API router with FastAPI app
+app.include_router(api_router)
+
+# ============= DATABASE MODELS =============
+
+class UserModel(Base):
+    __tablename__ = "users"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String, unique=True, index=True)
+    password = Column(String)
+    name = Column(String)
+    role = Column(String)
+    employee_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+# Role definitions: name + which screens (permissions) the role can access. Admin is system and cannot be edited/deleted.
+class RoleModel(Base):
+    __tablename__ = "roles"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, unique=True, index=True)
+    permissions = Column(String)  # JSON array of permission keys, e.g. ["dashboard","leads","employees",...]
+    is_system = Column(Integer, default=0)  # 1 = Admin only, cannot edit/delete
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class EmployeeModel(Base):
+    __tablename__ = "employees"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String, unique=True, index=True)
+    name = Column(String)
+    email = Column(String, unique=True, index=True)
+    phone = Column(String, nullable=True)
+    department = Column(String)
+    job_role = Column(String)
+    joining_date = Column(String)
+    salary = Column(Float)
+    status = Column(String, default='Active')
+    profile_photo = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+    emergency_contact = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+class AttendanceModel(Base):
+    __tablename__ = "attendance"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String, index=True)
+    employee_name = Column(String)
+    date = Column(String, index=True)
+    punch_in = Column(String, nullable=True)
+    punch_out = Column(String, nullable=True)
+    work_hours = Column(Float, default=0.0)
+    status = Column(String, default='Present')
+    created_at = Column(DateTime, default=datetime.now)
+    # Location & tour (office vs official travel)
+    punch_in_lat = Column(Float, nullable=True)
+    punch_in_lng = Column(Float, nullable=True)
+    punch_out_lat = Column(Float, nullable=True)
+    punch_out_lng = Column(Float, nullable=True)
+    is_tour = Column(Integer, default=0)
+    tour_approval_status = Column(String, nullable=True)  # 'pending', 'approved', 'rejected'
+
+
+class SettingsModel(Base):
+    __tablename__ = "settings"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    key = Column(String, unique=True, index=True)
+    value = Column(String, nullable=True)
+
+class LeaveModel(Base):
+    __tablename__ = "leaves"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String, index=True)
+    employee_name = Column(String)
+    leave_type = Column(String)
+    start_date = Column(String)
+    end_date = Column(String)
+    days = Column(Integer)
+    reason = Column(String)
+    status = Column(String, default='Pending')
+    approver_id = Column(String, nullable=True)
+    approver_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class LeavePolicyModel(Base):
+    __tablename__ = "leave_policy"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    paid_leaves_per_year = Column(Integer, default=12)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class GovernmentHolidayModel(Base):
+    __tablename__ = "government_holidays"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    date = Column(String, index=True)  # YYYY-MM-DD
+    name = Column(String)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class DocumentModel(Base):
+    __tablename__ = "documents"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String, index=True)
+    employee_name = Column(String)
+    document_type = Column(String)
+    file_name = Column(String)
+    file_path = Column(String)
+    expiry_date = Column(String, nullable=True)
+    uploaded_at = Column(DateTime, default=datetime.now)
+
+class ExpenseModel(Base):
+    __tablename__ = "expenses"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String, index=True)
+    employee_name = Column(String)
+    amount = Column(Float)
+    category = Column(String)
+    description = Column(String)
+    receipt_path = Column(String, nullable=True)
+    status = Column(String, default='Pending')
+    approver_id = Column(String, nullable=True)
+    approver_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+class DailyWorkLogModel(Base):
+    __tablename__ = "daily_work_logs"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String, index=True)
+    employee_name = Column(String)
+    log_date = Column(String, index=True)
+    summary = Column(String)
+    created_at = Column(DateTime, default=datetime.now)
+
+class LeadModel(Base):
+    __tablename__ = "leads"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    contact_name = Column(String, index=True)
+    company = Column(String, index=True)
+    email = Column(String, index=True)
+    phone = Column(String, nullable=True)
+    source = Column(String, default='Other')
+    status = Column(String, default='New', index=True)
+    value = Column(Float, nullable=True)
+    notes = Column(String, nullable=True)
+    assigned_to_employee_id = Column(String, nullable=True, index=True)
+    assigned_to_name = Column(String, nullable=True)
+    created_by_employee_id = Column(String, nullable=True, index=True)
+    created_by_name = Column(String, nullable=True)
+    category = Column(String, nullable=True)
+    sub_category = Column(String, nullable=True)
+    contacts = Column(String, nullable=True)  # JSON string: list of {name, designation, email, number}
+    negotiation_price = Column(Float, nullable=True)  # Price during negotiation phase
+    negotiation_terms = Column(String, nullable=True)  # Terms and conditions during negotiation
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class LeadActivityModel(Base):
+    __tablename__ = "lead_activities"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id = Column(String, index=True)
+    activity_type = Column(String)
+    summary = Column(String)
+    created_by_id = Column(String, nullable=True)
+    created_by_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+class LeadStatusHistoryModel(Base):
+    __tablename__ = "lead_status_history"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id = Column(String, index=True)
+    old_status = Column(String)
+    new_status = Column(String)
+    changed_by_employee_id = Column(String, nullable=True, index=True)
+    changed_by_name = Column(String, nullable=True)
+    change_comment = Column(String, nullable=True)
+    changed_at = Column(DateTime, default=datetime.now, index=True)
+
+class LeadReminderModel(Base):
+    __tablename__ = "lead_reminders"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id = Column(String, index=True)
+    reminder_datetime = Column(DateTime, nullable=False, index=True)
+    description = Column(String, nullable=False)
+    is_completed = Column(String, default='False')
+    created_by_id = Column(String, nullable=True)
+    created_by_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+class OrderModel(Base):
+    __tablename__ = "orders"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_id = Column(String, unique=True, index=True)  # Unique order number
+    lead_id = Column(String, index=True)  # Link to the won lead
+    customer_name = Column(String, index=True)
+    contact_person = Column(String, nullable=True)
+    contact_number = Column(String, nullable=True)
+    mail_id = Column(String, nullable=True)
+    offer_no = Column(String, nullable=True)
+    offer_date = Column(DateTime, nullable=True)
+    product = Column(String, nullable=True)
+    cust_supply_po_value = Column(Float, nullable=True)
+    cust_po_no = Column(String, nullable=True)
+    po_date = Column(DateTime, nullable=True)
+    order_copy_received_date = Column(DateTime, nullable=True)
+    payment_terms = Column(String, nullable=True)
+    advance_payment = Column(Float, nullable=True)
+    delivery_committed = Column(DateTime, nullable=True)
+    vendor_po_no = Column(String, nullable=True)
+    vendor_name = Column(String, nullable=True)
+    vendor_po_date = Column(DateTime, nullable=True)
+    vendor_po_value = Column(Float, nullable=True)
+    resoline_tax_invoice_no = Column(String, nullable=True)
+    resoline_invoice_date = Column(DateTime, nullable=True)
+    invoice_amount = Column(Float, nullable=True)
+    vendor_invoice_no = Column(String, nullable=True)
+    vendor_dispatch_lr_no = Column(String, nullable=True)
+    vendor_dispatch_transport = Column(String, nullable=True)
+    material_check = Column(String, nullable=True)  # Status
+    customer_dispatch_details = Column(String, nullable=True)
+    material_received_by_cust = Column(DateTime, nullable=True)
+    installation_successful = Column(String, default='Pending')  # Pending/Completed
+    installation_service_report_no = Column(String, nullable=True)
+    service_report_date = Column(DateTime, nullable=True)
+    service_charges = Column(Float, nullable=True)
+    final_payment_due = Column(Float, nullable=True)
+    final_payment_date = Column(DateTime, nullable=True)
+    subscription_start_date = Column(DateTime, nullable=True)
+    subscription_end_date = Column(DateTime, nullable=True)
+    subscription_status = Column(String, default='Active')  # Active/Expiring Soon/Expired
+    renewal_reminder_sent = Column(String, default='False')
+    remarks = Column(String, nullable=True)  # REMARK/STATUS
+    order_status = Column(String, default='Open')  # Open/In Progress/Completed/Cancelled
+    offer_copy_path = Column(String, nullable=True)  # Path to uploaded offer copy
+    order_copy_path = Column(String, nullable=True)  # Path to uploaded order copy
+    estimation = Column(Float, nullable=True)  # Estimation value (similar to story points)
+    subscription_reminder_sent_30 = Column(String, default='False')  # 30 days before
+    subscription_reminder_sent_7 = Column(String, default='False')  # 7 days before
+    subscription_reminder_sent_1 = Column(String, default='False')  # 1 day before
+    assigned_to_employee_id = Column(String, nullable=True, index=True)
+    assigned_to_name = Column(String, nullable=True)
+    created_by_employee_id = Column(String, nullable=True)
+    created_by_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+class OrderActivityModel(Base):
+    __tablename__ = "order_activities"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_id = Column(String, index=True)  # Link to Order
+    activity_type = Column(String)  # Update/Status Change/Renewal Reminder/Note
+    summary = Column(String)
+    details = Column(String, nullable=True)  # JSON for additional details
+    created_by_id = Column(String, nullable=True)
+    created_by_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+class SubscriptionReminderModel(Base):
+    __tablename__ = "subscription_reminders"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    order_id = Column(String, index=True)
+    reminder_date = Column(DateTime, nullable=False)
+    reminder_type = Column(String)  # 30days_before/7days_before/on_expiry
+    is_sent = Column(String, default='False')
+    sent_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+# Create all tables
+Base.metadata.create_all(bind=engine)
+
+def migrate_leads_add_created_by():
+    """Add created_by_employee_id, created_by_name to leads if missing (for Sales ownership)."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            r = conn.execute(text("PRAGMA table_info(leads)"))
+            cols = [row[1] for row in r.fetchall()]
+            if 'created_by_employee_id' not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN created_by_employee_id VARCHAR"))
+            if 'created_by_name' not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN created_by_name VARCHAR"))
+            conn.commit()
+        except Exception:
+            pass
+
+migrate_leads_add_created_by()
+
+def migrate_attendance_location_and_tour():
+    """Add location and tour columns to attendance if missing."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            r = conn.execute(text("PRAGMA table_info(attendance)"))
+            cols = [row[1] for row in r.fetchall()]
+            adds = [
+                ('punch_in_lat', 'FLOAT'), ('punch_in_lng', 'FLOAT'),
+                ('punch_out_lat', 'FLOAT'), ('punch_out_lng', 'FLOAT'),
+                ('is_tour', 'INTEGER'), ('tour_approval_status', 'TEXT'),
+            ]
+            for col, typ in adds:
+                if col not in cols:
+                    conn.execute(text(f"ALTER TABLE attendance ADD COLUMN {col} {typ}"))
+            conn.commit()
+        except Exception:
+            pass
+
+migrate_attendance_location_and_tour()
+
+def migrate_leads_add_category_and_contacts():
+    """Add category, sub_category, and contacts columns to leads if missing (for new Leads UI)."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            r = conn.execute(text("PRAGMA table_info(leads)"))
+            cols = [row[1] for row in r.fetchall()]
+            if 'category' not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN category VARCHAR"))
+            if 'sub_category' not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN sub_category VARCHAR"))
+            if 'contacts' not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN contacts TEXT"))
+            conn.commit()
+        except Exception:
+            pass
+
+def migrate_leads_add_negotiation_fields():
+    """Add negotiation_price and negotiation_terms columns to leads if missing."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            r = conn.execute(text("PRAGMA table_info(leads)"))
+            cols = [row[1] for row in r.fetchall()]
+            if 'negotiation_price' not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN negotiation_price FLOAT"))
+            if 'negotiation_terms' not in cols:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN negotiation_terms TEXT"))
+            conn.commit()
+        except Exception:
+            pass
+
+def migrate_orders_add_attachments_and_estimation():
+    """Add offer_copy_path, order_copy_path, estimation and subscription reminder tracking columns to orders if missing."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            r = conn.execute(text("PRAGMA table_info(orders)"))
+            cols = [row[1] for row in r.fetchall()]
+            if 'offer_copy_path' not in cols:
+                conn.execute(text("ALTER TABLE orders ADD COLUMN offer_copy_path VARCHAR"))
+            if 'order_copy_path' not in cols:
+                conn.execute(text("ALTER TABLE orders ADD COLUMN order_copy_path VARCHAR"))
+            if 'estimation' not in cols:
+                conn.execute(text("ALTER TABLE orders ADD COLUMN estimation FLOAT"))
+            if 'subscription_reminder_sent_30' not in cols:
+                conn.execute(text("ALTER TABLE orders ADD COLUMN subscription_reminder_sent_30 VARCHAR DEFAULT 'False'"))
+            if 'subscription_reminder_sent_7' not in cols:
+                conn.execute(text("ALTER TABLE orders ADD COLUMN subscription_reminder_sent_7 VARCHAR DEFAULT 'False'"))
+            if 'subscription_reminder_sent_1' not in cols:
+                conn.execute(text("ALTER TABLE orders ADD COLUMN subscription_reminder_sent_1 VARCHAR DEFAULT 'False'"))
+            conn.commit()
+        except Exception:
+            pass
+
+migrate_leads_add_negotiation_fields()
+migrate_orders_add_attachments_and_estimation()
+
+migrate_leads_add_category_and_contacts()
+
+def migrate_lead_status_history():
+    """Create lead_status_history table if missing."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            r = conn.execute(text("PRAGMA table_info(lead_status_history)"))
+            # Table exists, no need to create
+            r.fetchall()
+        except Exception:
+            # Table doesn't exist, it will be created by Base.metadata.create_all()
+            pass
+
+migrate_lead_status_history()
+
+# Seed default roles (Admin cannot be edited/deleted; others can)
+DEFAULT_PERMISSION_KEYS = [
+    "dashboard", "leads", "employees", "attendance", "leaves", "expenses",
+    "roles", "workspace", "idcards", "documents", "settings", "holidays"
+]
+
+def seed_roles_if_needed():
+    db = SessionLocal()
+    try:
+        if db.query(RoleModel).first() is not None:
+            return
+        defaults = [
+            RoleModel(name="Admin", permissions=json.dumps(DEFAULT_PERMISSION_KEYS), is_system=1),
+            RoleModel(name="HR", permissions=json.dumps(["employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays"]), is_system=0),
+            RoleModel(name="Manager", permissions=json.dumps(["leads", "employees", "attendance", "leaves", "expenses", "workspace", "idcards", "documents", "settings", "holidays"]), is_system=0),
+            RoleModel(name="Employee", permissions=json.dumps(["attendance", "leaves", "expenses", "workspace", "documents", "settings", "holidays"]), is_system=0),
+        ]
+        for model in defaults:
+            db.add(model)
+        db.commit()
+    finally:
+        db.close()
+
+seed_roles_if_needed()
+
+# ============= PYDANTIC MODELS =============
+
+class UserRole(BaseModel):
+    role: Literal['Admin', 'HR', 'Manager', 'Employee']
+
+class User(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    email: EmailStr
+    name: str
+    role: Literal['Admin', 'HR', 'Manager', 'Employee']
+    employee_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
+    employee_id: str
+    role: str = 'Employee'
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserDetails(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    email: EmailStr
+    name: str
+    role: str
+    permissions: Optional[List[str]] = None
+    employee_id: Optional[str] = None
+    created_at: datetime
+    
+    # Employee details (only for employees)
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    job_role: Optional[str] = None
+    joining_date: Optional[str] = None
+    salary: Optional[float] = None
+    status: Optional[Literal['Active', 'Inactive']] = None
+    profile_photo: Optional[str] = None
+    address: Optional[str] = None
+    emergency_contact: Optional[str] = None
+
+class Employee(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    employee_id: str
+    name: str
+    email: EmailStr
+    phone: Optional[str] = None
+    department: str
+    job_role: str
+    joining_date: str
+    salary: float
+    status: Literal['Active', 'Inactive'] = 'Active'
+    profile_photo: Optional[str] = None
+    address: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class EmployeeCreate(BaseModel):
+    name: str
+    email: EmailStr
+    phone: Optional[str] = None
+    department: str
+    job_role: str
+    joining_date: str
+    salary: float
+    address: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    profile_photo: Optional[str] = None
+
+class EmployeeUpdateProfile(BaseModel):
+    phone: Optional[str] = None
+    profile_photo: Optional[str] = None
+
+class Attendance(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    employee_id: str
+    employee_name: str
+    date: str
+    punch_in: Optional[str] = None
+    punch_out: Optional[str] = None
+    work_hours: float = 0.0
+    status: Literal['Present', 'Absent', 'Late', 'Half Day'] = 'Present'
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    is_tour: Optional[int] = None
+    tour_approval_status: Optional[str] = None
+
+class AttendancePunch(BaseModel):
+    employee_id: str
+    action: Literal['punch_in', 'punch_out']
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+class AttendanceSummary(BaseModel):
+    employee_id: str
+    employee_name: str
+    total_days: int
+    present_days: int
+    absent_days: int
+    late_days: int
+    half_day_days: int
+
+class Leave(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    employee_id: str
+    employee_name: str
+    leave_type: Literal['Casual', 'Sick', 'Paid', 'WFH', 'Half Day']
+    start_date: str
+    end_date: str
+    days: int
+    reason: str
+    status: Literal['Pending', 'Approved', 'Rejected'] = 'Pending'
+    approver_id: Optional[str] = None
+    approver_name: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class LeaveCreate(BaseModel):
+    employee_id: str
+    employee_name: str
+    leave_type: Literal['Casual', 'Sick', 'Paid', 'WFH', 'Half Day']
+    start_date: str
+    end_date: str
+    days: int
+    reason: str
+
+class LeavePolicyUpdate(BaseModel):
+    paid_leaves_per_year: int
+
+class LeaveAction(BaseModel):
+    status: Literal['Approved', 'Rejected']
+    approver_id: str
+    approver_name: str
+
+
+class GovernmentHoliday(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    date: str
+    name: str
+    description: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class GovernmentHolidayCreate(BaseModel):
+    date: str
+    name: str
+    description: Optional[str] = None
+
+
+class Document(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    employee_id: str
+    employee_name: str
+    document_type: str
+    file_name: str
+    file_path: str
+    expiry_date: Optional[str] = None
+    uploaded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class Expense(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    employee_id: str
+    employee_name: str
+    amount: float
+    category: str
+    description: str
+    receipt_path: Optional[str] = None
+    status: Literal['Pending', 'Approved', 'Rejected'] = 'Pending'
+    approver_id: Optional[str] = None
+    approver_name: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ExpenseCreate(BaseModel):
+    employee_id: str
+    employee_name: str
+    amount: float
+    category: str
+    description: str
+
+class ExpenseAction(BaseModel):
+    status: Literal['Approved', 'Rejected']
+    approver_id: str
+    approver_name: str
+
+class DailyWorkLog(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    employee_id: str
+    employee_name: str
+    log_date: str
+    summary: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class DailyWorkLogCreate(BaseModel):
+    employee_id: str
+    employee_name: str
+    log_date: str
+    summary: str
+
+class UserRoleUpdate(BaseModel):
+    role: str  # must exist in roles table
+
+class RoleCreate(BaseModel):
+    name: str
+    permissions: List[str]
+
+class RoleUpdate(BaseModel):
+    name: Optional[str] = None
+    permissions: Optional[List[str]] = None
+
+class Lead(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    contact_name: str
+    company: str
+    email: str
+    phone: Optional[str] = None
+    source: str = 'Other'
+    status: str = 'New'
+    value: Optional[float] = None
+    notes: Optional[str] = None
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+    created_by_employee_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    category: Optional[str] = None
+    sub_category: Optional[str] = None
+    contacts: Optional[list] = None  # List of dicts: {name, designation, email, number}
+    negotiation_price: Optional[float] = None  # Price during negotiation phase
+    negotiation_terms: Optional[str] = None  # Terms and conditions during negotiation
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+
+class LeadCreate(BaseModel):
+    contact_name: str
+    company: str
+    email: EmailStr
+    phone: Optional[str] = None
+    source: Literal['Website', 'Referral', 'Cold Call', 'Social Media', 'Partner', 'Exhibition', 'Other'] = 'Other'
+    status: Literal['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'] = 'New'
+    value: Optional[float] = None
+    notes: Optional[str] = None
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+    category: Optional[str] = None
+    sub_category: Optional[str] = None
+    contacts: Optional[list] = None  # List of dicts: {name, designation, email, number}
+
+class LeadUpdate(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    contact_name: Optional[str] = None
+    company: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    source: Optional[Literal['Website', 'Referral', 'Cold Call', 'Social Media', 'Partner', 'Exhibition', 'Other']] = None
+    status: Optional[Literal['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost']] = None
+    value: Optional[float] = None
+    notes: Optional[str] = None
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+    category: Optional[str] = None
+    sub_category: Optional[str] = None
+    contacts: Optional[list] = None  # List of dicts: {name, designation, email, number}
+    negotiation_price: Optional[float] = None  # Price during negotiation phase
+    negotiation_terms: Optional[str] = None  # Terms and conditions during negotiation
+    status_change_comment: Optional[str] = None  # Comment when status changes (required if status is changing)
+
+class LeadActivity(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    lead_id: str
+    activity_type: Literal['Call', 'Email', 'Meeting', 'Note'] = 'Note'
+    summary: str
+    created_by_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class LeadActivityCreate(BaseModel):
+    activity_type: Literal['Call', 'Email', 'Meeting', 'Note'] = 'Note'
+    summary: str
+
+class LeadStatusHistory(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    lead_id: str
+    old_status: str
+    new_status: str
+    changed_by_employee_id: Optional[str] = None
+    changed_by_name: Optional[str] = None
+    change_comment: Optional[str] = None
+    changed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class LeadStatusHistoryCreate(BaseModel):
+    old_status: str
+    new_status: str
+    change_comment: str
+
+class LeadReminder(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    lead_id: str
+    reminder_datetime: datetime
+    description: str
+    is_completed: str = 'False'
+    created_by_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class LeadReminderCreate(BaseModel):
+    reminder_datetime: datetime
+    description: str
+
+class LeadStats(BaseModel):
+    total: int
+    by_status: dict
+
+class Order(BaseModel):
+    id: str
+    order_id: str
+    lead_id: str
+    customer_name: str
+    contact_person: Optional[str] = None
+    contact_number: Optional[str] = None
+    mail_id: Optional[str] = None
+    offer_no: Optional[str] = None
+    offer_date: Optional[datetime] = None
+    product: Optional[str] = None
+    cust_supply_po_value: Optional[float] = None
+    cust_po_no: Optional[str] = None
+    po_date: Optional[datetime] = None
+    order_copy_received_date: Optional[datetime] = None
+    payment_terms: Optional[str] = None
+    advance_payment: Optional[float] = None
+    delivery_committed: Optional[datetime] = None
+    vendor_po_no: Optional[str] = None
+    vendor_name: Optional[str] = None
+    vendor_po_date: Optional[datetime] = None
+    vendor_po_value: Optional[float] = None
+    resoline_tax_invoice_no: Optional[str] = None
+    resoline_invoice_date: Optional[datetime] = None
+    invoice_amount: Optional[float] = None
+    vendor_invoice_no: Optional[str] = None
+    vendor_dispatch_lr_no: Optional[str] = None
+    vendor_dispatch_transport: Optional[str] = None
+    material_check: Optional[str] = None
+    customer_dispatch_details: Optional[str] = None
+    material_received_by_cust: Optional[datetime] = None
+    installation_successful: str = 'Pending'
+    installation_service_report_no: Optional[str] = None
+    service_report_date: Optional[datetime] = None
+    service_charges: Optional[float] = None
+    final_payment_due: Optional[float] = None
+    final_payment_date: Optional[datetime] = None
+    subscription_start_date: Optional[datetime] = None
+    subscription_end_date: Optional[datetime] = None
+    subscription_status: str = 'Active'
+    renewal_reminder_sent: str = 'False'
+    remarks: Optional[str] = None
+    order_status: str = 'Open'
+    offer_copy_path: Optional[str] = None
+    order_copy_path: Optional[str] = None
+    estimation: Optional[float] = None
+    subscription_reminder_sent_30: str = 'False'
+    subscription_reminder_sent_7: str = 'False'
+    subscription_reminder_sent_1: str = 'False'
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+    created_by_employee_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class OrderCreate(BaseModel):
+    lead_id: str
+    customer_name: str
+    contact_person: Optional[str] = None
+    contact_number: Optional[str] = None
+    mail_id: Optional[str] = None
+    offer_no: Optional[str] = None
+    offer_date: Optional[datetime] = None
+    product: Optional[str] = None
+    cust_supply_po_value: Optional[float] = None
+    cust_po_no: Optional[str] = None
+    po_date: Optional[datetime] = None
+    offer_copy_path: Optional[str] = None
+    order_copy_path: Optional[str] = None
+    estimation: Optional[float] = None
+    subscription_start_date: Optional[datetime] = None
+    subscription_end_date: Optional[datetime] = None
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+
+class OrderUpdate(BaseModel):
+    customer_name: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_number: Optional[str] = None
+    mail_id: Optional[str] = None
+    offer_no: Optional[str] = None
+    offer_date: Optional[datetime] = None
+    product: Optional[str] = None
+    cust_supply_po_value: Optional[float] = None
+    cust_po_no: Optional[str] = None
+    po_date: Optional[datetime] = None
+    offer_copy_path: Optional[str] = None
+    order_copy_path: Optional[str] = None
+    estimation: Optional[float] = None
+    order_copy_received_date: Optional[datetime] = None
+    payment_terms: Optional[str] = None
+    advance_payment: Optional[float] = None
+    delivery_committed: Optional[datetime] = None
+    vendor_po_no: Optional[str] = None
+    vendor_name: Optional[str] = None
+    vendor_po_date: Optional[datetime] = None
+    vendor_po_value: Optional[float] = None
+    resoline_tax_invoice_no: Optional[str] = None
+    resoline_invoice_date: Optional[datetime] = None
+    invoice_amount: Optional[float] = None
+    vendor_invoice_no: Optional[str] = None
+    vendor_dispatch_lr_no: Optional[str] = None
+    vendor_dispatch_transport: Optional[str] = None
+    material_check: Optional[str] = None
+    customer_dispatch_details: Optional[str] = None
+    material_received_by_cust: Optional[datetime] = None
+    installation_successful: Optional[str] = None
+    installation_service_report_no: Optional[str] = None
+    service_report_date: Optional[datetime] = None
+    service_charges: Optional[float] = None
+    final_payment_due: Optional[float] = None
+    final_payment_date: Optional[datetime] = None
+    subscription_start_date: Optional[datetime] = None
+    subscription_end_date: Optional[datetime] = None
+    subscription_reminder_sent_30: Optional[str] = None
+    subscription_reminder_sent_7: Optional[str] = None
+    subscription_reminder_sent_1: Optional[str] = None
+    order_status: Optional[str] = None
+    remarks: Optional[str] = None
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+
+class OrderActivity(BaseModel):
+    id: str
+    order_id: str
+    activity_type: str
+    summary: str
+    details: Optional[str] = None
+    created_by_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class OrderActivityCreate(BaseModel):
+    order_id: str
+    activity_type: str
+    summary: str
+    details: Optional[str] = None
+
+class SubscriptionReminder(BaseModel):
+    id: str
+    order_id: str
+    reminder_date: datetime
+    reminder_type: str
+    is_sent: str
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class DashboardStats(BaseModel):
+    total_employees: int
+    present_today: int
+    absent_today: int
+    pending_leaves: int
+    total_departments: int
+
+# ============= DEPENDENCY =============
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# ============= HELPER FUNCTIONS =============
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+def create_access_token(user_id: str, email: str, role: str) -> str:
+    expiration = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
+    payload = {
+        'user_id': user_id,
+        'email': email,
+        'role': role,
+        'exp': expiration
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user = db.query(UserModel).filter(UserModel.id == payload['user_id']).first()
+        if not user:
+            raise HTTPException(status_code=401, detail='User not found')
+        return user
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail='Token expired')
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail='Invalid token')
+
+# ============= HEALTH CHECK ROUTES =============
+
+@api_router.get('/db-check')
+def db_check():
+    """Check database connectivity"""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            return {"db": "connected", "status": "ok"}
+    except Exception as e:
+        return {"db": "disconnected", "status": "error", "message": str(e)}
+
+# ============= AUTH ROUTES =============
+
+@api_router.post('/auth/register')
+def register(user_data: UserCreate, db: Session = Depends(get_db)):
+    # Check if email is already registered
+    existing_user = db.query(UserModel).filter(UserModel.email == user_data.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail='Email already registered')
+    
+    # Check if employee exists with the provided employee_id
+    employee = db.query(EmployeeModel).filter(EmployeeModel.employee_id == user_data.employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Employee ID not found. Please contact HR to get registered as an employee first.')
+    
+    # Check if this employee already has a registered user account
+    existing_employee_user = db.query(UserModel).filter(UserModel.employee_id == user_data.employee_id).first()
+    if existing_employee_user:
+        raise HTTPException(status_code=400, detail='This employee ID is already registered. Please login instead.')
+    
+    # Verify that the email matches the employee's email
+    if employee.email != user_data.email:
+        raise HTTPException(status_code=400, detail='Email does not match the registered employee email.')
+    
+    role_name = user_data.role.strip()
+    if not db.query(RoleModel).filter(RoleModel.name == role_name).first():
+        raise HTTPException(status_code=400, detail='Invalid role name.')
+
+    hashed_pw = hash_password(user_data.password)
+    new_user = UserModel(
+        email=user_data.email,
+        password=hashed_pw,
+        name=user_data.name,
+        role=role_name,
+        employee_id=user_data.employee_id
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    token = create_access_token(new_user.id, new_user.email, new_user.role)
+    
+    # Prepare complete user details
+    user_data = {
+        'id': new_user.id,
+        'email': new_user.email,
+        'name': new_user.name,
+        'role': new_user.role,
+        'employee_id': new_user.employee_id,
+        'created_at': new_user.created_at
+    }
+    
+    # If user is an employee, fetch additional employee details
+    if new_user.role == 'Employee' and new_user.employee_id:
+        employee = db.query(EmployeeModel).filter(
+            EmployeeModel.employee_id == new_user.employee_id
+        ).first()
+        
+        if employee:
+            user_data.update({
+                'phone': employee.phone,
+                'department': employee.department,
+                'job_role': employee.job_role,
+                'joining_date': employee.joining_date,
+                'salary': employee.salary,
+                'status': employee.status,
+                'profile_photo': employee.profile_photo,
+                'address': employee.address,
+                'emergency_contact': employee.emergency_contact
+            })
+    
+    user_data['permissions'] = get_permissions_for_role(db, new_user.role)
+    return {'token': token, 'user': user_data}
+
+@api_router.post('/auth/login')
+def login(credentials: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(UserModel).filter(UserModel.email == credentials.email).first()
+    if not user or not verify_password(credentials.password, user.password):
+        raise HTTPException(status_code=401, detail='Invalid credentials')
+    
+    token = create_access_token(user.id, user.email, user.role)
+    
+    # Prepare complete user details
+    user_data = {
+        'id': user.id,
+        'email': user.email,
+        'name': user.name,
+        'role': user.role,
+        'employee_id': user.employee_id,
+        'created_at': user.created_at
+    }
+    
+    # If user is an employee, fetch additional employee details
+    if user.role == 'Employee' and user.employee_id:
+        employee = db.query(EmployeeModel).filter(
+            EmployeeModel.employee_id == user.employee_id
+        ).first()
+        
+        if employee:
+            user_data.update({
+                'phone': employee.phone,
+                'department': employee.department,
+                'job_role': employee.job_role,
+                'joining_date': employee.joining_date,
+                'salary': employee.salary,
+                'status': employee.status,
+                'profile_photo': employee.profile_photo,
+                'address': employee.address,
+                'emergency_contact': employee.emergency_contact
+            })
+    
+    user_data['permissions'] = get_permissions_for_role(db, user.role)
+    return {'token': token, 'user': user_data}
+
+@api_router.get('/auth/me', response_model=UserDetails)
+async def get_me(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Base user details
+    user_data = {
+        'id': current_user.id,
+        'email': current_user.email,
+        'name': current_user.name,
+        'role': current_user.role,
+        'employee_id': current_user.employee_id,
+        'created_at': current_user.created_at
+    }
+    
+    # If user is an employee, fetch additional employee details
+    if current_user.role == 'Employee' and current_user.employee_id:
+        employee = db.query(EmployeeModel).filter(
+            EmployeeModel.employee_id == current_user.employee_id
+        ).first()
+        
+        if employee:
+            user_data.update({
+                'phone': employee.phone,
+                'department': employee.department,
+                'job_role': employee.job_role,
+                'joining_date': employee.joining_date,
+                'salary': employee.salary,
+                'status': employee.status,
+                'profile_photo': employee.profile_photo,
+                'address': employee.address,
+                'emergency_contact': employee.emergency_contact
+            })
+    
+    user_data['permissions'] = get_permissions_for_role(db, current_user.role)
+    return user_data
+
+# ============= EMPLOYEE ROUTES =============
+
+@api_router.post('/employees', response_model=Employee)
+def create_employee(emp_data: EmployeeCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    max_emp_num = db.query(
+        func.max(cast(func.substr(EmployeeModel.employee_id, 4), Integer))
+    ).scalar()
+    next_emp_num = (max_emp_num or 0) + 1
+    emp_id = f'EMP{str(next_emp_num).zfill(4)}'
+    
+    new_employee = EmployeeModel(
+        employee_id=emp_id,
+        name=emp_data.name,
+        email=emp_data.email,
+        phone=emp_data.phone,
+        department=emp_data.department,
+        job_role=emp_data.job_role,
+        joining_date=emp_data.joining_date,
+        salary=emp_data.salary,
+        address=emp_data.address,
+        emergency_contact=emp_data.emergency_contact
+    )
+    db.add(new_employee)
+    try:
+        db.commit()
+        db.refresh(new_employee)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Employee email or ID already exists')
+
+    return new_employee
+
+@api_router.get('/employees', response_model=List[Employee])
+def get_employees(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    employees = db.query(EmployeeModel).all()
+    return employees
+
+@api_router.get('/employees/{employee_id}', response_model=Employee)
+def get_employee(employee_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    employee = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Employee not found')
+    return employee
+
+@api_router.put('/employees/{employee_id}', response_model=Employee)
+def update_employee(employee_id: str, emp_data: EmployeeCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    employee = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Employee not found')
+    
+    for key, value in emp_data.model_dump().items():
+        setattr(employee, key, value)
+    db.commit()
+    db.refresh(employee)
+    
+    return employee
+
+@api_router.delete('/employees/{employee_id}')
+def delete_employee(employee_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    employee = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Employee not found')
+    
+    db.delete(employee)
+    db.commit()
+    
+    return {'message': 'Employee deleted successfully'}
+
+@api_router.post('/employees/profile/photo-upload')
+def upload_profile_photo(
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload profile photo for current employee"""
+    try:
+        # Find employee by email
+        employee = db.query(EmployeeModel).filter(EmployeeModel.email == current_user.email).first()
+        if not employee:
+            raise HTTPException(status_code=404, detail='Employee record not found')
+        
+        # Create employee folder
+        emp_folder = UPLOAD_DIR / employee.id
+        emp_folder.mkdir(exist_ok=True)
+        
+        # Save file
+        filename = f"profile_{uuid.uuid4()}{Path(file.filename).suffix}"
+        filepath = emp_folder / filename
+        
+        with open(filepath, 'wb') as f:
+            f.write(file.file.read())
+        
+        # Update employee profile_photo path
+        photo_path = f"/uploads/{employee.id}/{filename}"
+        employee.profile_photo = photo_path
+        db.commit()
+        db.refresh(employee)
+        
+        return {'photo_path': photo_path, 'message': 'Profile photo uploaded successfully'}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.put('/employees/profile/update')
+def update_employee_profile(
+    data: EmployeeUpdateProfile,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update employee profile (phone and profile photo) - self-service"""
+    employee = db.query(EmployeeModel).filter(EmployeeModel.email == current_user.email).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Employee record not found')
+    
+    if data.phone:
+        employee.phone = data.phone
+    if data.profile_photo:
+        employee.profile_photo = data.profile_photo
+    
+    db.commit()
+    db.refresh(employee)
+    
+    return employee
+
+# ============= OFFICE LOCATION & DISTANCE =============
+OFFICE_RADIUS_METRES = 50
+
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Distance in metres between two (lat, lon) points."""
+    import math
+    R = 6371000  # Earth radius in metres
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+def get_office_location(db: Session):
+    """Return (lat, lng) from settings or env. None if not configured."""
+    row_lat = db.query(SettingsModel).filter(SettingsModel.key == 'office_lat').first()
+    row_lng = db.query(SettingsModel).filter(SettingsModel.key == 'office_lng').first()
+    if row_lat and row_lng:
+        try:
+            return float(row_lat.value), float(row_lng.value)
+        except (TypeError, ValueError):
+            pass
+    lat_env = os.environ.get('OFFICE_LAT')
+    lng_env = os.environ.get('OFFICE_LNG')
+    if lat_env is not None and lng_env is not None:
+        try:
+            return float(lat_env), float(lng_env)
+        except ValueError:
+            pass
+    return None
+
+def is_within_office(db: Session, lat: float, lng: float) -> bool:
+    office = get_office_location(db)
+    if office is None:
+        return True  # No office set: allow without location check (e.g. admin override)
+    dist = _haversine_m(office[0], office[1], lat, lng)
+    return dist <= OFFICE_RADIUS_METRES
+
+# ============= ATTENDANCE ROUTES =============
+
+@api_router.post('/attendance/punch')
+def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    
+    employee = db.query(EmployeeModel).filter(EmployeeModel.employee_id == punch_data.employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Employee not found')
+    
+    existing = db.query(AttendanceModel).filter(
+        AttendanceModel.employee_id == punch_data.employee_id,
+        AttendanceModel.date == today
+    ).first()
+    
+    current_time = datetime.now(timezone.utc).strftime('%H:%M:%S')
+    office = get_office_location(db)
+    is_admin_hr = current_user.role in ['Admin', 'HR']
+    # Employees must send location when office is configured
+    if office is not None and not is_admin_hr:
+        if punch_data.latitude is None or punch_data.longitude is None:
+            raise HTTPException(
+                status_code=400,
+                detail='Location is required. Please enable location access to punch in/out.'
+            )
+    # Determine if this punch is at office or tour (only when location is provided and office is set)
+    at_office = True
+    if office is not None and punch_data.latitude is not None and punch_data.longitude is not None:
+        at_office = is_within_office(db, punch_data.latitude, punch_data.longitude)
+    
+    if punch_data.action == 'punch_in':
+        if existing:
+            raise HTTPException(status_code=400, detail='Already punched in today')
+        hour, minute = int(current_time.split(':')[0]), int(current_time.split(':')[1])
+        if hour > 10 or (hour == 10 and minute > 30):
+            status = 'Late'
+        else:
+            status = 'Present'
+        new_attendance = AttendanceModel(
+            employee_id=punch_data.employee_id,
+            employee_name=employee.name,
+            date=today,
+            punch_in=current_time,
+            status=status,
+            punch_in_lat=punch_data.latitude,
+            punch_in_lng=punch_data.longitude,
+            is_tour=1 if not at_office else 0,
+            tour_approval_status='pending' if not at_office else None,
+        )
+        db.add(new_attendance)
+        db.commit()
+        db.refresh(new_attendance)
+        return {
+            'message': 'Punched in successfully' if at_office else 'Recorded as Tour (official travel). Pending approval from Admin/Manager.',
+            'attendance': new_attendance,
+            'is_tour': not at_office,
+        }
+    
+    else:  # punch_out
+        if not existing:
+            raise HTTPException(status_code=400, detail='No punch in record found')
+        if existing.punch_out:
+            raise HTTPException(status_code=400, detail='Already punched out today')
+        punch_in_time = datetime.strptime(existing.punch_in, '%H:%M:%S')
+        punch_out_time = datetime.strptime(current_time, '%H:%M:%S')
+        work_hours = (punch_out_time - punch_in_time).total_seconds() / 3600
+        existing.punch_out = current_time
+        existing.work_hours = round(work_hours, 2)
+        existing.punch_out_lat = punch_data.latitude
+        existing.punch_out_lng = punch_data.longitude
+        # If punch out is outside office, ensure record is marked as tour if not already
+        if not at_office and existing.is_tour != 1:
+            existing.is_tour = 1
+            existing.tour_approval_status = 'pending'
+        db.commit()
+        db.refresh(existing)
+        return {
+            'message': 'Punched out successfully' if at_office else 'Punch out recorded as Tour. Pending approval from Admin/Manager.',
+            'attendance': existing,
+            'is_tour': not at_office,
+        }
+
+
+@api_router.get('/settings/office-location')
+def get_office_location_api(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Return office lat/lng if set. Admin, HR, Manager only (so employees cannot see exact coordinates)."""
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not allowed')
+    loc = get_office_location(db)
+    if loc is None:
+        return {'latitude': None, 'longitude': None, 'configured': False}
+    return {'latitude': loc[0], 'longitude': loc[1], 'configured': True}
+
+
+class OfficeLocationUpdate(BaseModel):
+    latitude: float
+    longitude: float
+
+
+@api_router.put('/settings/office-location')
+def set_office_location_api(
+    body: OfficeLocationUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Set office location (e.g. from Admin's current location). Admin only."""
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can set office location')
+    for key, val in [('office_lat', str(body.latitude)), ('office_lng', str(body.longitude))]:
+        row = db.query(SettingsModel).filter(SettingsModel.key == key).first()
+        if row:
+            row.value = val
+        else:
+            db.add(SettingsModel(key=key, value=val))
+    db.commit()
+    return {'message': 'Office location updated', 'latitude': body.latitude, 'longitude': body.longitude}
+
+
+@api_router.get('/attendance/tour-pending')
+def get_tour_pending(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List attendance records marked as tour that are pending approval. Admin and Manager only."""
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Only Admin and Manager can view tour requests')
+    records = db.query(AttendanceModel).filter(
+        AttendanceModel.is_tour == 1,
+        AttendanceModel.tour_approval_status == 'pending',
+    ).order_by(AttendanceModel.date.desc(), AttendanceModel.punch_in.desc()).all()
+    return [
+        {
+            'id': r.id,
+            'employee_id': r.employee_id,
+            'employee_name': r.employee_name,
+            'date': r.date,
+            'punch_in': r.punch_in,
+            'punch_out': r.punch_out,
+            'work_hours': r.work_hours,
+            'status': r.status,
+            'punch_in_lat': getattr(r, 'punch_in_lat', None),
+            'punch_in_lng': getattr(r, 'punch_in_lng', None),
+        }
+        for r in records
+    ]
+
+
+class TourApproveAction(BaseModel):
+    attendance_id: str
+    status: Literal['approved', 'rejected']
+
+
+@api_router.post('/attendance/tour-approve')
+def approve_tour(
+    body: TourApproveAction,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Approve or reject a tour punch. Admin and Manager only."""
+    if current_user.role not in ['Admin', 'Manager']:
+        raise HTTPException(status_code=403, detail='Only Admin and Manager can approve tour requests')
+    rec = db.query(AttendanceModel).filter(
+        AttendanceModel.id == body.attendance_id,
+        AttendanceModel.is_tour == 1,
+        AttendanceModel.tour_approval_status == 'pending',
+    ).first()
+    if not rec:
+        raise HTTPException(status_code=404, detail='Tour request not found or already processed')
+    rec.tour_approval_status = body.status
+    db.commit()
+    return {'message': f'Tour {body.status}', 'attendance_id': rec.id}
+
+
+@api_router.get('/attendance', response_model=List[Attendance])
+def get_attendance(
+    month: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(AttendanceModel)
+    if month:
+        query = query.filter(AttendanceModel.date.like(f'{month}%'))
+    if start_date:
+        query = query.filter(AttendanceModel.date >= start_date)
+    if end_date:
+        query = query.filter(AttendanceModel.date <= end_date)
+    return query.order_by(AttendanceModel.date.desc()).all()
+
+@api_router.get('/attendance/summary', response_model=List[AttendanceSummary])
+def get_attendance_summary(month: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    year, month_num = [int(part) for part in month.split('-')]
+    total_days = monthrange(year, month_num)[1]
+    today = datetime.now(timezone.utc).date()
+    if year == today.year and month_num == today.month:
+        total_days = today.day
+
+    employee_query = db.query(EmployeeModel)
+    record_query = db.query(AttendanceModel).filter(
+        AttendanceModel.date.like(f'{month}%')
+    )
+
+    if current_user.role == 'Employee':
+        if not current_user.employee_id:
+            raise HTTPException(status_code=404, detail='Employee record not found')
+        employee_query = employee_query.filter(EmployeeModel.employee_id == current_user.employee_id)
+        record_query = record_query.filter(AttendanceModel.employee_id == current_user.employee_id)
+
+    employees = employee_query.all()
+    records = record_query.all()
+
+    summary_map = {
+        emp.employee_id: {
+            'employee_id': emp.employee_id,
+            'employee_name': emp.name,
+            'total_days': total_days,
+            'present_days': 0,
+            'absent_days': 0,
+            'late_days': 0,
+            'half_day_days': 0,
+        }
+        for emp in employees
+    }
+
+    # Government holidays and Sundays in this month: exclude from absent count
+    month_start = f'{year}-{month_num:02d}-01'
+    month_end = f'{year}-{month_num:02d}-{total_days:02d}'
+    holiday_dates = set(
+        row.date for row in db.query(GovernmentHolidayModel).filter(
+            GovernmentHolidayModel.date >= month_start,
+            GovernmentHolidayModel.date <= month_end
+        ).all()
+    )
+    # Count Sundays
+    sundays = 0
+    for day in range(1, total_days + 1):
+        dt = datetime(year, month_num, day)
+        if dt.weekday() == 6:
+            sundays += 1
+    holiday_count = len(holiday_dates)
+    working_days = max(0, total_days - holiday_count - sundays)
+
+    for record in records:
+        data = summary_map.get(record.employee_id)
+        if not data:
+            continue
+        # Tour punches count as present only when approved
+        if getattr(record, 'is_tour', 0) == 1 and getattr(record, 'tour_approval_status', None) != 'approved':
+            continue  # pending or rejected tour: do not count as present
+        data['present_days'] += 1
+        if record.status == 'Late':
+            data['late_days'] += 1
+        if record.status == 'Half Day':
+            data['half_day_days'] += 1
+
+    for data in summary_map.values():
+        data['absent_days'] = max(working_days - data['present_days'], 0)
+
+    return list(summary_map.values())
+
+@api_router.get('/attendance/employee/{employee_id}', response_model=List[Attendance])
+def get_employee_attendance(employee_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    return db.query(AttendanceModel).filter(
+        AttendanceModel.employee_id == employee_id
+    ).order_by(AttendanceModel.date.desc()).all()
+
+
+# Late login threshold: 10:30
+ATTENDANCE_LATE_HOUR, ATTENDANCE_LATE_MINUTE = 10, 30
+
+
+@api_router.get('/attendance/late-details')
+def get_late_login_details(
+    start_date: str,
+    end_date: str,
+    employee_id: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all late punch-ins in date range. Admin and HR only."""
+    if current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Only Admin and HR can view late login details')
+    query = db.query(AttendanceModel).filter(
+        AttendanceModel.status == 'Late',
+        AttendanceModel.date >= start_date,
+        AttendanceModel.date <= end_date,
+        AttendanceModel.punch_in.isnot(None)
+    )
+    if employee_id:
+        query = query.filter(AttendanceModel.employee_id == employee_id)
+    records = query.order_by(AttendanceModel.date.desc()).all()
+    result = []
+    for r in records:
+        if not r.punch_in:
+            continue
+        parts = r.punch_in.split(':')
+        h, m = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+        minutes_late = (h - ATTENDANCE_LATE_HOUR) * 60 + (m - ATTENDANCE_LATE_MINUTE)
+        if minutes_late < 0:
+            minutes_late = 0
+        result.append({
+            'id': r.id,
+            'employee_id': r.employee_id,
+            'employee_name': r.employee_name,
+            'date': r.date,
+            'punch_in': r.punch_in,
+            'minutes_late': minutes_late,
+        })
+    return result
+
+
+@api_router.get('/attendance/report')
+def get_attendance_report(
+    start_date: str,
+    end_date: str,
+    employee_id: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Full attendance report: each day in range × each employee. No punch = Absent, except on government holidays = Holiday. Admin/HR see all; Employee sees self."""
+    from datetime import date as date_type
+    start = date_type(*[int(x) for x in start_date.split('-')])
+    end = date_type(*[int(x) for x in end_date.split('-')])
+    if start > end:
+        raise HTTPException(status_code=400, detail='start_date must be before or equal to end_date')
+    employees = db.query(EmployeeModel).filter(EmployeeModel.status == 'Active')
+    if current_user.role == 'Employee':
+        if not current_user.employee_id:
+            raise HTTPException(status_code=404, detail='Employee record not found')
+        employees = employees.filter(EmployeeModel.employee_id == current_user.employee_id)
+    elif employee_id:
+        employees = employees.filter(EmployeeModel.employee_id == employee_id)
+    employees = employees.all()
+    records_by_key = {}
+    for rec in db.query(AttendanceModel).filter(
+        AttendanceModel.date >= start_date,
+        AttendanceModel.date <= end_date
+    ).all():
+        key = (rec.date, rec.employee_id)
+        records_by_key[key] = rec
+    # Government holidays in range: no punch on these dates = Holiday, not Absent
+    holiday_dates = set(
+        row.date for row in db.query(GovernmentHolidayModel).filter(
+            GovernmentHolidayModel.date >= start_date,
+            GovernmentHolidayModel.date <= end_date
+        ).all()
+    )
+    report = []
+    d = start
+    while d <= end:
+        date_str = d.strftime('%Y-%m-%d')
+        is_holiday = date_str in holiday_dates
+        is_sunday = d.weekday() == 6
+        for emp in employees:
+            key = (date_str, emp.employee_id)
+            rec = records_by_key.get(key)
+            if rec:
+                report.append({
+                    'date': date_str,
+                    'employee_id': emp.employee_id,
+                    'employee_name': rec.employee_name or emp.name,
+                    'punch_in': rec.punch_in,
+                    'punch_out': rec.punch_out,
+                    'work_hours': rec.work_hours,
+                    'status': rec.status,
+                    'is_tour': getattr(rec, 'is_tour', 0) == 1,
+                    'tour_approval_status': getattr(rec, 'tour_approval_status', None),
+                })
+            else:
+                report.append({
+                    'date': date_str,
+                    'employee_id': emp.employee_id,
+                    'employee_name': emp.name,
+                    'punch_in': None,
+                    'punch_out': None,
+                    'work_hours': 0,
+                    'status': 'Holiday' if (is_holiday or is_sunday) else 'Absent',
+                })
+        d += timedelta(days=1)
+    report.sort(key=lambda x: (x['date'], x['employee_id']), reverse=True)
+    return report
+
+
+# ============= LEAVE ROUTES =============
+
+@api_router.post('/leaves', response_model=Leave)
+def create_leave(leave_data: LeaveCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    new_leave = LeaveModel(
+        employee_id=leave_data.employee_id,
+        employee_name=leave_data.employee_name,
+        leave_type=leave_data.leave_type,
+        start_date=leave_data.start_date,
+        end_date=leave_data.end_date,
+        days=leave_data.days,
+        reason=leave_data.reason
+    )
+    db.add(new_leave)
+    db.commit()
+    db.refresh(new_leave)
+    
+    return new_leave
+
+@api_router.get('/leaves', response_model=List[Leave])
+def get_leaves(
+    status: Optional[str] = None,
+    employee_id: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(LeaveModel)
+    if status:
+        query = query.filter(LeaveModel.status == status)
+    if employee_id:
+        query = query.filter(LeaveModel.employee_id == employee_id)
+    return query.order_by(LeaveModel.created_at.desc()).all()
+
+@api_router.put('/leaves/{leave_id}/action')
+def update_leave_status(
+    leave_id: str,
+    action: LeaveAction,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized')
+    
+    leave = db.query(LeaveModel).filter(LeaveModel.id == leave_id).first()
+    if not leave:
+        raise HTTPException(status_code=404, detail='Leave not found')
+    
+    leave.status = action.status
+    leave.approver_id = action.approver_id
+    leave.approver_name = action.approver_name
+    db.commit()
+    
+    return leave
+
+
+# --------------- Leave policy (admin) and balance ---------------
+def _get_or_create_policy(db: Session):
+    policy = db.query(LeavePolicyModel).first()
+    if not policy:
+        policy = LeavePolicyModel(paid_leaves_per_year=12)
+        db.add(policy)
+        db.commit()
+        db.refresh(policy)
+    return policy
+
+
+@api_router.get('/leave-policy')
+def get_leave_policy(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    policy = _get_or_create_policy(db)
+    return {"paid_leaves_per_year": policy.paid_leaves_per_year}
+
+
+@api_router.put('/leave-policy')
+def update_leave_policy(
+    body: LeavePolicyUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can update leave policy')
+    if body.paid_leaves_per_year < 0:
+        raise HTTPException(status_code=400, detail='paid_leaves_per_year must be non-negative')
+    policy = _get_or_create_policy(db)
+    policy.paid_leaves_per_year = body.paid_leaves_per_year
+    db.commit()
+    db.refresh(policy)
+    return {"paid_leaves_per_year": policy.paid_leaves_per_year}
+
+
+@api_router.get('/leave-balance')
+def get_leave_balance(
+    employee_id: Optional[str] = None,
+    year: Optional[int] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from datetime import datetime as dt
+    y = year or dt.now().year
+    eid = employee_id or current_user.employee_id
+    if not eid:
+        return {"allowed": 0, "taken": 0, "pending": 0, "balance": 0}
+    if eid != current_user.employee_id and current_user.role not in ('Admin', 'HR', 'Manager'):
+        raise HTTPException(status_code=403, detail='Not authorized to view other employee balance')
+    policy = _get_or_create_policy(db)
+    allowed = policy.paid_leaves_per_year
+    leaves = db.query(LeaveModel).filter(LeaveModel.employee_id == eid).all()
+    def in_year(d):
+        return d and (d.startswith(str(y)) if isinstance(d, str) else str(y) in str(d))
+    taken = sum(l.days or 0 for l in leaves if l.status == 'Approved' and in_year(l.start_date))
+    pending = sum(l.days or 0 for l in leaves if l.status == 'Pending' and in_year(l.start_date))
+    balance = max(0, allowed - taken)
+    return {"allowed": allowed, "taken": taken, "pending": pending, "balance": balance, "year": y}
+
+
+# ============= GOVERNMENT HOLIDAYS =============
+# All authenticated users can list; only Admin/HR can add or delete.
+
+@api_router.get('/government-holidays', response_model=List[GovernmentHoliday])
+def list_government_holidays(
+    year: Optional[int] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all government holidays. Optional year filter (YYYY)."""
+    query = db.query(GovernmentHolidayModel).order_by(GovernmentHolidayModel.date.asc())
+    if year is not None:
+        query = query.filter(GovernmentHolidayModel.date >= f'{year}-01-01', GovernmentHolidayModel.date <= f'{year}-12-31')
+    return query.all()
+
+
+@api_router.post('/government-holidays', response_model=GovernmentHoliday)
+def create_government_holiday(
+    body: GovernmentHolidayCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Add a government holiday. Admin and HR only."""
+    if current_user.role not in ('Admin', 'HR'):
+        raise HTTPException(status_code=403, detail='Only Admin and HR can add government holidays')
+    # Validate date format YYYY-MM-DD
+    if len(body.date) != 10 or body.date[4] != '-' or body.date[7] != '-':
+        raise HTTPException(status_code=400, detail='Date must be YYYY-MM-DD')
+    existing = db.query(GovernmentHolidayModel).filter(GovernmentHolidayModel.date == body.date).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f'A holiday already exists on {body.date}')
+    row = GovernmentHolidayModel(date=body.date, name=body.name.strip(), description=(body.description or '').strip() or None)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@api_router.delete('/government-holidays/{holiday_id}')
+def delete_government_holiday(
+    holiday_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a government holiday. Admin and HR only."""
+    if current_user.role not in ('Admin', 'HR'):
+        raise HTTPException(status_code=403, detail='Only Admin and HR can delete government holidays')
+    row = db.query(GovernmentHolidayModel).filter(GovernmentHolidayModel.id == holiday_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Holiday not found')
+    db.delete(row)
+    db.commit()
+    return {'message': 'Holiday deleted'}
+
+
+# ============= DOCUMENT ROUTES =============
+
+@api_router.post('/documents/upload')
+def upload_document(
+    employee_id: str,
+    employee_name: str,
+    document_type: str,
+    file: UploadFile = File(...),
+    expiry_date: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    can_upload_any = current_user.role in ['Admin', 'HR', 'Manager']
+    if not can_upload_any and str(employee_id).strip() != str(current_user.employee_id or '').strip():
+        raise HTTPException(status_code=403, detail='You can only upload documents for yourself')
+    emp_folder = UPLOAD_DIR / str(employee_id).replace('/', '_')
+    emp_folder.mkdir(parents=True, exist_ok=True)
+    safe_name = file.filename or 'document'
+    file_path = emp_folder / safe_name
+    with open(file_path, 'wb') as f:
+        f.write(file.file.read())
+    new_document = DocumentModel(
+        employee_id=str(employee_id).strip(),
+        employee_name=employee_name or '',
+        document_type=document_type,
+        file_name=safe_name,
+        file_path=str(file_path),
+        expiry_date=expiry_date
+    )
+    db.add(new_document)
+    db.commit()
+    db.refresh(new_document)
+    return new_document
+
+@api_router.get('/documents', response_model=List[Document])
+def get_documents(employee_id: Optional[str] = None, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = db.query(DocumentModel)
+    can_view_all = current_user.role in ['Admin', 'HR', 'Manager']
+    if can_view_all:
+        if employee_id:
+            query = query.filter(DocumentModel.employee_id == employee_id)
+    else:
+        if not current_user.employee_id:
+            return []
+        query = query.filter(DocumentModel.employee_id == current_user.employee_id)
+    return query.order_by(DocumentModel.uploaded_at.desc()).all()
+
+@api_router.get('/documents/{document_id}/download')
+def download_document(document_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    document = db.query(DocumentModel).filter(DocumentModel.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail='Document not found')
+    can_view_all = current_user.role in ['Admin', 'HR', 'Manager']
+    if not can_view_all and str(document.employee_id) != str(current_user.employee_id or ''):
+        raise HTTPException(status_code=403, detail='Not authorized to download this document')
+    file_path = Path(document.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail='File not found')
+    return FileResponse(file_path, filename=document.file_name)
+
+# ============= EXPENSE ROUTES =============
+
+@api_router.post('/expenses', response_model=Expense)
+def create_expense(expense_data: ExpenseCreate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    new_expense = ExpenseModel(
+        employee_id=expense_data.employee_id,
+        employee_name=expense_data.employee_name,
+        amount=expense_data.amount,
+        category=expense_data.category,
+        description=expense_data.description
+    )
+    db.add(new_expense)
+    db.commit()
+    db.refresh(new_expense)
+    return new_expense
+
+@api_router.post('/expenses/{expense_id}/receipt')
+def upload_expense_receipt(
+    expense_id: str,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    expense = db.query(ExpenseModel).filter(ExpenseModel.id == expense_id).first()
+    if not expense:
+        raise HTTPException(status_code=404, detail='Expense not found')
+    if expense.employee_id != current_user.employee_id and current_user.role not in ['Admin', 'HR']:
+        raise HTTPException(status_code=403, detail='Not authorized to upload receipt for this expense')
+    expenses_folder = UPLOAD_DIR / 'expenses'
+    expenses_folder.mkdir(exist_ok=True)
+    emp_folder = expenses_folder / (expense.employee_id or 'unknown')
+    emp_folder.mkdir(exist_ok=True)
+    filename = f"receipt_{uuid.uuid4()}{Path(file.filename).suffix or '.jpg'}"
+    filepath = emp_folder / filename
+    with open(filepath, 'wb') as f:
+        f.write(file.file.read())
+    receipt_path = f"/uploads/expenses/{expense.employee_id or 'unknown'}/{filename}"
+    expense.receipt_path = receipt_path
+    db.commit()
+    db.refresh(expense)
+    return {'receipt_path': receipt_path, 'message': 'Receipt uploaded successfully'}
+
+@api_router.get('/expenses', response_model=List[Expense])
+def get_expenses(
+    status: Optional[str] = None,
+    employee_id: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(ExpenseModel)
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        query = query.filter(ExpenseModel.employee_id == current_user.employee_id)
+    elif employee_id:
+        query = query.filter(ExpenseModel.employee_id == employee_id)
+    if status:
+        query = query.filter(ExpenseModel.status == status)
+    return query.order_by(ExpenseModel.created_at.desc()).all()
+
+@api_router.put('/expenses/{expense_id}/action', response_model=Expense)
+def update_expense_status(
+    expense_id: str,
+    action: ExpenseAction,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Only Admin, HR, Manager can approve/reject; Employee can only submit expenses
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Only Admin, HR, or Manager can approve or reject expenses')
+    expense = db.query(ExpenseModel).filter(ExpenseModel.id == expense_id).first()
+    if not expense:
+        raise HTTPException(status_code=404, detail='Expense not found')
+    expense.status = action.status
+    expense.approver_id = action.approver_id
+    expense.approver_name = action.approver_name
+    db.commit()
+    db.refresh(expense)
+    return expense
+
+
+@api_router.get('/expenses/summary-by-employee')
+def get_expenses_summary_by_employee(
+    month: Optional[int] = None,
+    year: Optional[int] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Admin only: total approved/rejected/pending expenses per employee for salary compensation."""
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can view expense summary')
+    from datetime import datetime as dt
+    now = dt.now()
+    y = year if year is not None else now.year
+    m = month if month is not None else now.month
+    all_expenses = db.query(ExpenseModel).all()
+    # Filter by created_at year/month
+    def in_month(exp):
+        if not getattr(exp, 'created_at', None):
+            return True
+        d = exp.created_at
+        return d.year == y and d.month == m
+    by_employee = {}
+    for exp in all_expenses:
+        if not in_month(exp):
+            continue
+        eid = exp.employee_id or 'unknown'
+        name = exp.employee_name or 'Unknown'
+        if eid not in by_employee:
+            by_employee[eid] = {'employee_id': eid, 'employee_name': name, 'total_approved': 0.0, 'total_rejected': 0.0, 'total_pending': 0.0}
+        amt = float(exp.amount or 0)
+        if exp.status == 'Approved':
+            by_employee[eid]['total_approved'] += amt
+        elif exp.status == 'Rejected':
+            by_employee[eid]['total_rejected'] += amt
+        else:
+            by_employee[eid]['total_pending'] += amt
+    result = list(by_employee.values())
+    result.sort(key=lambda x: (x['employee_name'].lower(), x['employee_id']))
+    return {'month': m, 'year': y, 'employees': result}
+
+
+# ============= USERS / ROLES ROUTES =============
+
+@api_router.get('/users', response_model=List[UserDetails])
+def get_users(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can access user/role management')
+    users = db.query(UserModel).all()
+    result = []
+    for u in users:
+        data = {
+            'id': u.id,
+            'email': u.email,
+            'name': u.name,
+            'role': u.role,
+            'employee_id': u.employee_id,
+            'created_at': u.created_at,
+            'phone': None,
+            'department': None,
+            'job_role': None,
+            'joining_date': None,
+            'salary': None,
+            'status': None,
+            'profile_photo': None,
+            'address': None,
+            'emergency_contact': None
+        }
+        if u.employee_id:
+            emp = db.query(EmployeeModel).filter(EmployeeModel.employee_id == u.employee_id).first()
+            if emp:
+                data.update({
+                    'phone': emp.phone,
+                    'department': emp.department,
+                    'job_role': emp.job_role,
+                    'joining_date': emp.joining_date,
+                    'salary': emp.salary,
+                    'status': emp.status,
+                    'profile_photo': emp.profile_photo,
+                    'address': emp.address,
+                    'emergency_contact': emp.emergency_contact
+                })
+        result.append(data)
+    return result
+
+@api_router.put('/users/{user_id}/role', response_model=UserDetails)
+def update_user_role(
+    user_id: str,
+    payload: UserRoleUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can change user roles')
+    role_row = db.query(RoleModel).filter(RoleModel.name == payload.role.strip()).first()
+    if not role_row:
+        raise HTTPException(status_code=400, detail='Invalid role name')
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail='User not found')
+    user.role = payload.role.strip()
+    db.commit()
+    db.refresh(user)
+    user_data = {
+        'id': user.id,
+        'email': user.email,
+        'name': user.name,
+        'role': user.role,
+        'employee_id': user.employee_id,
+        'created_at': user.created_at,
+        'phone': None,
+        'department': None,
+        'job_role': None,
+        'joining_date': None,
+        'salary': None,
+        'status': None,
+        'profile_photo': None,
+        'address': None,
+        'emergency_contact': None
+    }
+    if user.employee_id:
+        emp = db.query(EmployeeModel).filter(EmployeeModel.employee_id == user.employee_id).first()
+        if emp:
+            user_data.update({
+                'phone': emp.phone,
+                'department': emp.department,
+                'job_role': emp.job_role,
+                'joining_date': emp.joining_date,
+                'salary': emp.salary,
+                'status': emp.status,
+                'profile_photo': emp.profile_photo,
+                'address': emp.address,
+                'emergency_contact': emp.emergency_contact
+            })
+    return user_data
+
+
+# --------------- Role CRUD (create/edit/delete roles; Admin role protected) ---------------
+def get_permissions_for_role(db: Session, role_name: str) -> List[str]:
+    r = db.query(RoleModel).filter(RoleModel.name == role_name).first()
+    if not r:
+        return []
+    perms = []
+    if r.permissions:
+        try:
+            perms = json.loads(r.permissions)
+        except Exception:
+            perms = []
+    # Ensure "documents" is included for built-in roles if missing (e.g. DB seeded before documents was added)
+    if role_name in ('Admin', 'HR', 'Manager', 'Employee') and 'documents' not in perms:
+        perms.append('documents')
+    return perms
+
+
+def _role_to_dict(r: RoleModel):
+    perms = []
+    if r.permissions:
+        try:
+            perms = json.loads(r.permissions)
+        except Exception:
+            perms = []
+    return {
+        "id": r.id,
+        "name": r.name,
+        "permissions": perms,
+        "is_system": bool(r.is_system),
+    }
+
+
+@api_router.get('/roles')
+def list_roles(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can manage roles')
+    roles = db.query(RoleModel).order_by(RoleModel.name).all()
+    return [_role_to_dict(r) for r in roles]
+
+
+@api_router.get('/roles/permission-keys')
+def get_permission_keys(current_user: UserModel = Depends(get_current_user)):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can access')
+    return {"permission_keys": DEFAULT_PERMISSION_KEYS}
+
+
+@api_router.post('/roles')
+def create_role(
+    payload: RoleCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can create roles')
+    existing = db.query(RoleModel).filter(RoleModel.name == payload.name.strip()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail='Role name already exists')
+    valid = set(DEFAULT_PERMISSION_KEYS)
+    perms = [p for p in payload.permissions if p in valid]
+    role = RoleModel(
+        name=payload.name.strip(),
+        permissions=json.dumps(perms),
+        is_system=0
+    )
+    db.add(role)
+    db.commit()
+    db.refresh(role)
+    return _role_to_dict(role)
+
+
+@api_router.put('/roles/{role_id}')
+def update_role(
+    role_id: str,
+    payload: RoleUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can update roles')
+    role = db.query(RoleModel).filter(RoleModel.id == role_id).first()
+    if not role:
+        raise HTTPException(status_code=404, detail='Role not found')
+    if role.is_system or role.name == 'Admin':
+        raise HTTPException(status_code=400, detail='Admin role cannot be edited')
+    if payload.name is not None:
+        name = payload.name.strip()
+        if name != role.name:
+            other = db.query(RoleModel).filter(RoleModel.name == name).first()
+            if other:
+                raise HTTPException(status_code=400, detail='Role name already exists')
+            role.name = name
+    if payload.permissions is not None:
+        valid = set(DEFAULT_PERMISSION_KEYS)
+        role.permissions = json.dumps([p for p in payload.permissions if p in valid])
+    db.commit()
+    db.refresh(role)
+    return _role_to_dict(role)
+
+
+@api_router.delete('/roles/{role_id}')
+def delete_role(
+    role_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can delete roles')
+    role = db.query(RoleModel).filter(RoleModel.id == role_id).first()
+    if not role:
+        raise HTTPException(status_code=404, detail='Role not found')
+    if role.is_system or role.name == 'Admin':
+        raise HTTPException(status_code=400, detail='Admin role cannot be deleted')
+    count = db.query(UserModel).filter(UserModel.role == role.name).count()
+    if count > 0:
+        raise HTTPException(status_code=400, detail=f'Cannot delete: {count} user(s) have this role. Reassign them first.')
+    db.delete(role)
+    db.commit()
+    return {"message": "Role deleted"}
+
+
+# ============= DAILY WORK LOG ROUTES =============
+
+@api_router.post('/daily-work-logs', response_model=DailyWorkLog)
+def create_daily_work_log(
+    data: DailyWorkLogCreate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if data.employee_id != current_user.employee_id and current_user.role not in ['Admin', 'HR', 'Manager']:
+        raise HTTPException(status_code=403, detail='Not authorized to submit work log for another employee')
+    existing = db.query(DailyWorkLogModel).filter(
+        DailyWorkLogModel.employee_id == data.employee_id,
+        DailyWorkLogModel.log_date == data.log_date
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail='Work log already submitted for this date')
+    new_log = DailyWorkLogModel(
+        employee_id=data.employee_id,
+        employee_name=data.employee_name,
+        log_date=data.log_date,
+        summary=data.summary
+    )
+    db.add(new_log)
+    db.commit()
+    db.refresh(new_log)
+    return new_log
+
+@api_router.get('/daily-work-logs', response_model=List[DailyWorkLog])
+def get_daily_work_logs(
+    employee_id: Optional[str] = None,
+    month: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(DailyWorkLogModel)
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        query = query.filter(DailyWorkLogModel.employee_id == current_user.employee_id)
+    elif employee_id:
+        query = query.filter(DailyWorkLogModel.employee_id == employee_id)
+    if month:
+        query = query.filter(DailyWorkLogModel.log_date.like(f'{month}%'))
+    return query.order_by(DailyWorkLogModel.log_date.desc()).all()
+
+# ============= LEADS ROUTES (Admin, Manager, Sales) =============
+
+def require_leads_access(current_user: UserModel = Depends(get_current_user)):
+    """Allow Admin, Manager, or Sales to access leads (list, create, view)."""
+    if current_user.role not in ['Admin', 'Manager', 'Sales']:
+        raise HTTPException(status_code=403, detail='You do not have access to leads')
+    return current_user
+
+def can_edit_lead(lead: LeadModel, current_user: UserModel) -> bool:
+    """Admin/Manager can edit any lead; Sales can edit only leads they created."""
+    if current_user.role in ['Admin', 'Manager']:
+        return True
+    if current_user.role == 'Sales':
+        return lead.created_by_employee_id and str(lead.created_by_employee_id) == str(current_user.employee_id or '')
+    return False
+
+@api_router.get('/leads', response_model=List[Lead])
+def get_leads(
+    status: Optional[str] = None,
+    source: Optional[str] = None,
+    assigned_to_employee_id: Optional[str] = None,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    query = db.query(LeadModel)
+    if status:
+        query = query.filter(LeadModel.status == status)
+    if source:
+        query = query.filter(LeadModel.source == source)
+    if assigned_to_employee_id:
+        query = query.filter(LeadModel.assigned_to_employee_id == assigned_to_employee_id)
+    leads = query.order_by(LeadModel.updated_at.desc()).all()
+    # Deserialize contacts JSON for API response
+    for lead in leads:
+        if hasattr(lead, 'contacts') and lead.contacts:
+            try:
+                lead.contacts = json.loads(lead.contacts)
+            except Exception:
+                lead.contacts = []
+    return leads
+
+@api_router.get('/leads/stats', response_model=LeadStats)
+def get_lead_stats(
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    leads = db.query(LeadModel).all()
+    by_status = {}
+    for lead in leads:
+        by_status[lead.status] = by_status.get(lead.status, 0) + 1
+    return LeadStats(total=len(leads), by_status=by_status)
+
+
+@api_router.get('/leads/dashboard-report')
+def get_leads_dashboard_report(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Lead report for dashboard: by status, monthly trend, by assignee. Admin, HR, Manager only."""
+    if current_user.role not in ['Admin', 'HR', 'Manager']:
+        return {
+            'total': 0,
+            'by_status': {},
+            'monthly': [],
+            'by_assignee': [],
+            'total_value_won': 0,
+        }
+    leads = db.query(LeadModel).all()
+    by_status = {}
+    for lead in leads:
+        by_status[lead.status] = by_status.get(lead.status, 0) + 1
+    # Last 6 months count (newest first)
+    from datetime import date as date_type
+    today = date_type.today()
+    monthly = []
+    for i in range(6):
+        # i=0 -> current month, i=1 -> last month, ...
+        m = today.month - i
+        y = today.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        month_str = f'{y}-{m:02d}'
+        count = sum(1 for lead in leads if lead.created_at and lead.created_at.strftime('%Y-%m') == month_str)
+        monthly.append({'month': month_str, 'count': count})
+    monthly.reverse()
+    # By assignee (assigned_to_employee_id / assigned_to_name)
+    assignee_map = {}
+    for lead in leads:
+        key = (lead.assigned_to_employee_id or 'Unassigned', lead.assigned_to_name or 'Unassigned')
+        if key not in assignee_map:
+            assignee_map[key] = {'total': 0, 'Won': 0, 'Lost': 0, 'pipeline': 0}
+        assignee_map[key]['total'] += 1
+        if lead.status == 'Won':
+            assignee_map[key]['Won'] += 1
+        elif lead.status == 'Lost':
+            assignee_map[key]['Lost'] += 1
+        else:
+            assignee_map[key]['pipeline'] += 1
+    by_assignee = [
+        {
+            'employee_id': eid,
+            'employee_name': name,
+            'total': data['total'],
+            'won': data['Won'],
+            'lost': data['Lost'],
+            'pipeline': data['pipeline'],
+        }
+        for (eid, name), data in assignee_map.items()
+    ]
+    by_assignee.sort(key=lambda x: -x['total'])
+    total_value_won = sum((lead.value or 0) for lead in leads if lead.status == 'Won')
+    return {
+        'total': len(leads),
+        'by_status': by_status,
+        'monthly': monthly,
+        'by_assignee': by_assignee,
+        'total_value_won': round(total_value_won, 2),
+    }
+
+
+@api_router.post('/leads', response_model=Lead)
+def create_lead(
+    data: LeadCreate,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    new_lead = LeadModel(
+        contact_name=data.contact_name,
+        company=data.company,
+        email=data.email,
+        phone=data.phone,
+        source=data.source,
+        status=data.status,
+        value=data.value,
+        notes=data.notes,
+        assigned_to_employee_id=data.assigned_to_employee_id,
+        assigned_to_name=data.assigned_to_name,
+        created_by_employee_id=current_user.employee_id,
+        created_by_name=current_user.name,
+        category=getattr(data, 'category', None),
+        sub_category=getattr(data, 'sub_category', None),
+        contacts=json.dumps(data.contacts) if getattr(data, 'contacts', None) is not None else None
+    )
+    db.add(new_lead)
+    db.commit()
+    db.refresh(new_lead)
+    # Deserialize contacts for response
+    if new_lead.contacts:
+        try:
+            new_lead.contacts = json.loads(new_lead.contacts)
+        except Exception:
+            new_lead.contacts = []
+    return new_lead
+
+@api_router.get('/leads/{lead_id}', response_model=Lead)
+def get_lead(
+    lead_id: str,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    # Deserialize contacts JSON for API response
+    if hasattr(lead, 'contacts') and lead.contacts:
+        try:
+            lead.contacts = json.loads(lead.contacts)
+        except Exception:
+            lead.contacts = []
+    return lead
+
+@api_router.put('/leads/{lead_id}', response_model=Lead)
+def update_lead(
+    lead_id: str,
+    data: LeadUpdate,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user):
+        raise HTTPException(status_code=403, detail='You can only edit leads created by you')
+    
+    update_data = data.model_dump(exclude_unset=True)
+    
+    # Track if status is being changed
+    old_status = lead.status
+    new_status = update_data.get('status')
+    status_changed = new_status is not None and new_status != old_status
+    
+    # Require comment if status is being changed
+    if status_changed and not update_data.get('status_change_comment'):
+        raise HTTPException(status_code=400, detail='Status change comment is required')
+    
+    # Handle contacts as JSON string
+    if 'contacts' in update_data:
+        update_data['contacts'] = json.dumps(update_data['contacts']) if update_data['contacts'] is not None else None
+    
+    # Remove status_change_comment from update_data (it's not a column on LeadModel)
+    status_comment = update_data.pop('status_change_comment', None)
+    
+    for key, value in update_data.items():
+        setattr(lead, key, value)
+    lead.updated_at = datetime.now(timezone.utc)
+    
+    # Create status history record if status changed
+    if status_changed:
+        history = LeadStatusHistoryModel(
+            lead_id=lead_id,
+            old_status=old_status,
+            new_status=new_status,
+            changed_by_employee_id=current_user.employee_id,
+            changed_by_name=current_user.name,
+            change_comment=status_comment
+        )
+        db.add(history)
+    
+    db.commit()
+    db.refresh(lead)
+    # Deserialize contacts for response
+    if lead.contacts:
+        try:
+            lead.contacts = json.loads(lead.contacts)
+        except Exception:
+            lead.contacts = []
+    return lead
+
+@api_router.delete('/leads/{lead_id}')
+def delete_lead(
+    lead_id: str,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user):
+        raise HTTPException(status_code=403, detail='You can only delete leads created by you')
+    db.query(LeadActivityModel).filter(LeadActivityModel.lead_id == lead_id).delete()
+    db.delete(lead)
+    db.commit()
+    return {'message': 'Lead deleted'}
+
+@api_router.get('/leads/{lead_id}/activities', response_model=List[LeadActivity])
+def get_lead_activities(
+    lead_id: str,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    return db.query(LeadActivityModel).filter(LeadActivityModel.lead_id == lead_id).order_by(LeadActivityModel.created_at.desc()).all()
+
+@api_router.post('/leads/{lead_id}/activities', response_model=LeadActivity)
+def add_lead_activity(
+    lead_id: str,
+    data: LeadActivityCreate,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user):
+        raise HTTPException(status_code=403, detail='You can only add comments/activities to leads created by you')
+    activity = LeadActivityModel(
+        lead_id=lead_id,
+        activity_type=data.activity_type,
+        summary=data.summary,
+        created_by_id=current_user.id,
+        created_by_name=current_user.name
+    )
+    db.add(activity)
+    db.commit()
+    db.refresh(activity)
+    return activity
+
+@api_router.get('/leads/{lead_id}/status-history', response_model=List[LeadStatusHistory])
+def get_lead_status_history(
+    lead_id: str,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    """Get all status change history for a lead, ordered by most recent first."""
+    return db.query(LeadStatusHistoryModel).filter(
+        LeadStatusHistoryModel.lead_id == lead_id
+    ).order_by(LeadStatusHistoryModel.changed_at.desc()).all()
+
+@api_router.get('/leads/{lead_id}/reminders', response_model=List[LeadReminder])
+def get_lead_reminders(
+    lead_id: str,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    """Get all reminders for a lead, ordered by reminder date."""
+    return db.query(LeadReminderModel).filter(LeadReminderModel.lead_id == lead_id).order_by(LeadReminderModel.reminder_datetime.asc()).all()
+
+@api_router.post('/leads/{lead_id}/reminders', response_model=LeadReminder)
+def add_lead_reminder(
+    lead_id: str,
+    data: LeadReminderCreate,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    """Create a reminder for a lead."""
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user):
+        raise HTTPException(status_code=403, detail='You can only add reminders to leads created by you')
+    
+    reminder = LeadReminderModel(
+        lead_id=lead_id,
+        reminder_datetime=data.reminder_datetime,
+        description=data.description,
+        is_completed='False',
+        created_by_id=current_user.id,
+        created_by_name=current_user.name
+    )
+    db.add(reminder)
+    db.commit()
+    db.refresh(reminder)
+    return reminder
+
+@api_router.delete('/leads/{lead_id}/reminders/{reminder_id}')
+def delete_lead_reminder(
+    lead_id: str,
+    reminder_id: str,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    """Delete a reminder for a lead."""
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user):
+        raise HTTPException(status_code=403, detail='You can only delete reminders from leads created by you')
+    
+    reminder = db.query(LeadReminderModel).filter(
+        LeadReminderModel.id == reminder_id,
+        LeadReminderModel.lead_id == lead_id
+    ).first()
+    if not reminder:
+        raise HTTPException(status_code=404, detail='Reminder not found')
+    
+    db.delete(reminder)
+    db.commit()
+    return {'message': 'Reminder deleted'}
+
+# ============= EMAIL HELPER FUNCTIONS =============
+
+def send_email(to_email: str, subject: str, body: str, is_html: bool = False) -> bool:
+    """Send an email using SMTP configuration from environment variables."""
+    try:
+        smtp_server = os.environ.get('SMTP_SERVER', '')
+        smtp_port = int(os.environ.get('SMTP_PORT', 587))
+        smtp_username = os.environ.get('SMTP_USERNAME', '')
+        smtp_password = os.environ.get('SMTP_PASSWORD', '')
+        sender_email = os.environ.get('SENDER_EMAIL', '')
+        sender_name = os.environ.get('SENDER_NAME', 'CRM Application')
+        
+        # Check if email configuration is properly set
+        if not all([smtp_server, smtp_username, smtp_password, sender_email]):
+            missing_configs = []
+            if not smtp_server:
+                missing_configs.append('SMTP_SERVER')
+            if not smtp_username:
+                missing_configs.append('SMTP_USERNAME')
+            if not smtp_password:
+                missing_configs.append('SMTP_PASSWORD')
+            if not sender_email:
+                missing_configs.append('SENDER_EMAIL')
+            error_msg = f'Email configuration not properly set. Missing: {", ".join(missing_configs)}'
+            logging.warning(error_msg)
+            return False
+        
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['From'] = f'{sender_name} <{sender_email}>'
+        msg['To'] = to_email
+        msg['Subject'] = subject
+        
+        # Add body
+        if is_html:
+            part = MIMEText(body, 'html')
+        else:
+            part = MIMEText(body, 'plain')
+        msg.attach(part)
+        
+        # Send email
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_username, smtp_password)
+            server.send_message(msg)
+        
+        logging.info(f'Email sent successfully to {to_email}')
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        logging.error(f'SMTP Authentication Failed: Check SMTP_USERNAME and SMTP_PASSWORD in .env file. Error: {str(e)}')
+        return False
+    except smtplib.SMTPException as e:
+        logging.error(f'SMTP Error while sending email to {to_email}: {str(e)}')
+        return False
+    except Exception as e:
+        logging.error(f'Failed to send email to {to_email}: {str(e)}')
+        return False
+
+def calculate_subscription_status(subscription_end_date: Optional[datetime]) -> str:
+    """Calculate subscription status based on end date."""
+    if not subscription_end_date:
+        return 'Active'
+    
+    today = datetime.now()
+    days_until_expiry = (subscription_end_date.date() - today.date()).days
+    
+    if days_until_expiry <= 0:
+        return 'Expired'
+    elif days_until_expiry <= 60:
+        return 'Expiring Soon'
+    else:
+        return 'Active'
+
+# ============= EMAIL TEST ENDPOINT =============
+
+class TestEmailRequest(BaseModel):
+    recipient_email: EmailStr
+
+@api_router.post('/test-email')
+def test_email(
+    request: TestEmailRequest,
+    current_user: UserModel = Depends(get_current_user)
+):
+    """Test email configuration by sending a test email."""
+    test_subject = "CRM Application - Email Configuration Test"
+    test_body = f"""
+Hello {current_user.name},
+
+This is a test email from the CRM Application to verify your email configuration is working correctly.
+
+If you received this email, your SMTP settings are configured properly!
+
+Test Details:
+- Sent by: {current_user.email}
+- Recipient: {request.recipient_email}
+- Timestamp: {datetime.now().isoformat()}
+
+Best regards,
+CRM Application Team
+"""
+    
+    email_sent = send_email(request.recipient_email, test_subject, test_body, is_html=False)
+    
+    if email_sent:
+        return {
+            'status': 'success',
+            'message': f'Test email sent successfully to {request.recipient_email}',
+            'recipient': request.recipient_email
+        }
+    else:
+        return {
+            'status': 'failed',
+            'message': f'Failed to send test email. Please check .env file configuration and server logs.',
+            'recipient': request.recipient_email,
+            'help': 'Make sure SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD, and SENDER_EMAIL are properly set in .env file'
+        }
+
+# ============= ORDER ROUTES =============
+
+def _enrich_order_with_lead_info(order: OrderModel, db: Session) -> dict:
+    """Helper function to merge order with current lead contact information and calculate subscription status."""
+    # Calculate subscription status dynamically
+    subscription_status = calculate_subscription_status(order.subscription_end_date)
+    
+    order_dict = {
+        'id': order.id,
+        'order_id': order.order_id,
+        'lead_id': order.lead_id,
+        'customer_name': order.customer_name,
+        'contact_person': order.contact_person,
+        'contact_number': order.contact_number,
+        'mail_id': order.mail_id,
+        'offer_no': order.offer_no,
+        'offer_date': order.offer_date,
+        'product': order.product,
+        'cust_supply_po_value': order.cust_supply_po_value,
+        'cust_po_no': order.cust_po_no,
+        'po_date': order.po_date,
+        'order_copy_received_date': order.order_copy_received_date,
+        'payment_terms': order.payment_terms,
+        'advance_payment': order.advance_payment,
+        'delivery_committed': order.delivery_committed,
+        'vendor_po_no': order.vendor_po_no,
+        'vendor_name': order.vendor_name,
+        'vendor_po_date': order.vendor_po_date,
+        'vendor_po_value': order.vendor_po_value,
+        'resoline_tax_invoice_no': order.resoline_tax_invoice_no,
+        'resoline_invoice_date': order.resoline_invoice_date,
+        'invoice_amount': order.invoice_amount,
+        'vendor_invoice_no': order.vendor_invoice_no,
+        'vendor_dispatch_lr_no': order.vendor_dispatch_lr_no,
+        'vendor_dispatch_transport': order.vendor_dispatch_transport,
+        'material_check': order.material_check,
+        'customer_dispatch_details': order.customer_dispatch_details,
+        'material_received_by_cust': order.material_received_by_cust,
+        'installation_successful': order.installation_successful,
+        'installation_service_report_no': order.installation_service_report_no,
+        'service_report_date': order.service_report_date,
+        'service_charges': order.service_charges,
+        'final_payment_due': order.final_payment_due,
+        'final_payment_date': order.final_payment_date,
+        'subscription_start_date': order.subscription_start_date,
+        'subscription_end_date': order.subscription_end_date,
+        'subscription_status': subscription_status,  # Dynamically calculated
+        'renewal_reminder_sent': order.renewal_reminder_sent,
+        'remarks': order.remarks,
+        'order_status': order.order_status,
+        'offer_copy_path': order.offer_copy_path,
+        'order_copy_path': order.order_copy_path,
+        'estimation': order.estimation,
+        'subscription_reminder_sent_30': order.subscription_reminder_sent_30,
+        'subscription_reminder_sent_7': order.subscription_reminder_sent_7,
+        'subscription_reminder_sent_1': order.subscription_reminder_sent_1,
+        'assigned_to_employee_id': order.assigned_to_employee_id,
+        'assigned_to_name': order.assigned_to_name,
+        'created_by_employee_id': order.created_by_employee_id,
+        'created_by_name': order.created_by_name,
+        'created_at': order.created_at,
+        'updated_at': order.updated_at,
+    }
+    
+    # Fetch current lead info and override contact fields with lead's current data
+    if order.lead_id:
+        lead = db.query(LeadModel).filter(LeadModel.id == order.lead_id).first()
+        if lead:
+            order_dict['contact_person'] = lead.contact_name
+            order_dict['contact_number'] = lead.phone
+            order_dict['mail_id'] = lead.email
+    
+    return order_dict
+
+@api_router.get('/orders', response_model=List[Order])
+def get_orders(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    status: Optional[str] = None,
+    lead_id: Optional[str] = None
+):
+    """Get all orders with optional filtering."""
+    query = db.query(OrderModel)
+    
+    if status:
+        query = query.filter(OrderModel.order_status == status)
+    if lead_id:
+        query = query.filter(OrderModel.lead_id == lead_id)
+    
+    orders = query.order_by(OrderModel.created_at.desc()).all()
+    # Enrich each order with current lead contact information
+    enriched_orders = [_enrich_order_with_lead_info(order, db) for order in orders]
+    return enriched_orders
+
+@api_router.get('/orders/search/expiring', response_model=List[Order])
+def get_expiring_subscriptions(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    days: int = 30
+):
+    """Get orders with subscriptions expiring within specified days."""
+    from datetime import timedelta
+    future_date = datetime.now() + timedelta(days=days)
+    
+    orders = db.query(OrderModel).filter(
+        OrderModel.subscription_status != 'Expired',
+        OrderModel.subscription_end_date <= future_date,
+        OrderModel.subscription_end_date >= datetime.now()
+    ).all()
+    # Enrich each order with current lead contact information
+    enriched_orders = [_enrich_order_with_lead_info(order, db) for order in orders]
+    return enriched_orders
+
+@api_router.post('/orders', response_model=Order)
+def create_order(
+    order_data: OrderCreate,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    """Create a new order from a won lead."""
+    # Verify the lead exists and is won
+    lead = db.query(LeadModel).filter(LeadModel.id == order_data.lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    if lead.status != 'Won':
+        raise HTTPException(status_code=400, detail='Order can only be created for Won leads')
+    
+    # Generate unique order ID
+    order_number = f"ORD-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
+    
+    # Auto-populate contact info from lead if not provided
+    contact_person = order_data.contact_person or lead.contact_name
+    contact_number = order_data.contact_number or lead.phone
+    mail_id = order_data.mail_id or lead.email
+    
+    new_order = OrderModel(
+        order_id=order_number,
+        lead_id=order_data.lead_id,
+        customer_name=order_data.customer_name,
+        contact_person=contact_person,
+        contact_number=contact_number,
+        mail_id=mail_id,
+        offer_no=order_data.offer_no,
+        offer_date=order_data.offer_date,
+        product=order_data.product,
+        cust_supply_po_value=order_data.cust_supply_po_value,
+        cust_po_no=order_data.cust_po_no,
+        po_date=order_data.po_date,
+        offer_copy_path=order_data.offer_copy_path,
+        order_copy_path=order_data.order_copy_path,
+        estimation=order_data.estimation,
+        subscription_start_date=order_data.subscription_start_date,
+        subscription_end_date=order_data.subscription_end_date,
+        assigned_to_employee_id=order_data.assigned_to_employee_id or current_user.employee_id,
+        assigned_to_name=order_data.assigned_to_name or current_user.name,
+        created_by_employee_id=current_user.employee_id,
+        created_by_name=current_user.name
+    )
+    
+    # Calculate subscription status if subscription end date is provided
+    if order_data.subscription_end_date:
+        new_order.subscription_status = calculate_subscription_status(order_data.subscription_end_date)
+    
+    db.add(new_order)
+    db.commit()
+    db.refresh(new_order)
+    
+    # Create activity log
+    activity = OrderActivityModel(
+        order_id=new_order.id,
+        activity_type='Order Creation',
+        summary=f'Order {order_number} created',
+        created_by_id=current_user.id,
+        created_by_name=current_user.name
+    )
+    db.add(activity)
+    db.commit()
+    
+    # Return enriched order with current lead contact information
+    enriched_order = _enrich_order_with_lead_info(new_order, db)
+    return enriched_order
+
+@api_router.get('/orders/{order_id}', response_model=Order)
+def get_order(
+    order_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific order by ID."""
+    order = db.query(OrderModel).filter(OrderModel.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    # Enrich order with current lead contact information
+    enriched_order = _enrich_order_with_lead_info(order, db)
+    return enriched_order
+
+@api_router.put('/orders/{order_id}', response_model=Order)
+def update_order(
+    order_id: str,
+    order_data: OrderUpdate,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    """Update an order."""
+    order = db.query(OrderModel).filter(OrderModel.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    
+    # Update the fields that were provided
+    update_data = order_data.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(order, field, value)
+    
+    order.updated_at = datetime.now()
+    
+    # Check subscription status
+    if order.subscription_end_date:
+        today = datetime.now()
+        days_until_expiry = (order.subscription_end_date.date() - today.date()).days
+        
+        if days_until_expiry <= 0:
+            order.subscription_status = 'Expired'
+        elif days_until_expiry <= 30:
+            order.subscription_status = 'Expiring Soon'
+        else:
+            order.subscription_status = 'Active'
+    
+    db.commit()
+    db.refresh(order)
+    
+    # Create activity log
+    activity = OrderActivityModel(
+        order_id=order.id,
+        activity_type='Order Update',
+        summary='Order information updated',
+        created_by_id=current_user.id,
+        created_by_name=current_user.name
+    )
+    db.add(activity)
+    db.commit()
+    
+    # Return enriched order with current lead contact information
+    enriched_order = _enrich_order_with_lead_info(order, db)
+    return enriched_order
+
+@api_router.get('/orders/{order_id}/activities', response_model=List[OrderActivity])
+def get_order_activities(
+    order_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all activities for an order."""
+    activities = db.query(OrderActivityModel).filter(
+        OrderActivityModel.order_id == order_id
+    ).order_by(OrderActivityModel.created_at.desc()).all()
+    return activities
+
+@api_router.post('/orders/{order_id}/activities', response_model=OrderActivity)
+def add_order_activity(
+    order_id: str,
+    activity_data: OrderActivityCreate,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    """Add an activity to an order."""
+    order = db.query(OrderModel).filter(OrderModel.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    
+    new_activity = OrderActivityModel(
+        order_id=order_id,
+        activity_type=activity_data.activity_type,
+        summary=activity_data.summary,
+        details=activity_data.details,
+        created_by_id=current_user.id,
+        created_by_name=current_user.name
+    )
+    
+    db.add(new_activity)
+    db.commit()
+    db.refresh(new_activity)
+    return new_activity
+
+@api_router.post('/orders/{order_id}/send-renewal-reminder')
+def send_renewal_reminder(
+    order_id: str,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    """Send a renewal reminder for an order subscription."""
+    order = db.query(OrderModel).filter(OrderModel.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    
+    if not order.subscription_end_date:
+        raise HTTPException(status_code=400, detail='Order has no subscription end date')
+    
+    # Create activity log for renewal reminder
+    activity = OrderActivityModel(
+        order_id=order_id,
+        activity_type='Renewal Reminder',
+        summary=f'Subscription renewal reminder sent to {order.customer_name}',
+        created_by_id=current_user.id,
+        created_by_name=current_user.name
+    )
+    
+    order.renewal_reminder_sent = 'True'
+    
+    db.add(activity)
+    db.commit()
+    
+    return {'message': 'Renewal reminder sent successfully', 'order_id': order_id}
+
+@api_router.post('/orders/{order_id}/send-subscription-reminder')
+def send_subscription_reminder(
+    order_id: str,
+    reminder_data: dict,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db)
+):
+    """Send a subscription renewal reminder email with specified days before expiry."""
+    order = db.query(OrderModel).filter(OrderModel.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail='Order not found')
+    
+    if not order.subscription_end_date:
+        raise HTTPException(status_code=400, detail='Order has no subscription end date')
+    
+    days_before = reminder_data.get('days_before', 30)
+    email = reminder_data.get('email')
+    contact_name = reminder_data.get('contact_name', 'Customer')
+    end_date = reminder_data.get('end_date')
+    
+    if not email:
+        raise HTTPException(status_code=400, detail='Email is required')
+    
+    # Format the email body
+    end_date_obj = datetime.fromisoformat(end_date.split('T')[0]) if isinstance(end_date, str) else order.subscription_end_date
+    email_body = f"""
+Dear {contact_name},
+
+This is a friendly reminder that your subscription for Order {order.order_id} will expire in {days_before} days.
+
+Subscription Details:
+- Order ID: {order.order_id}
+- End Date: {end_date_obj.strftime('%Y-%m-%d')}
+- Customer: {order.customer_name}
+
+Please contact our support team if you'd like to renew your subscription.
+
+Best regards,
+Sales Team
+"""
+    
+    # Log the reminder activity
+    activity = OrderActivityModel(
+        order_id=order_id,
+        activity_type='Subscription Reminder',
+        summary=f'{days_before}-day subscription renewal reminder sent to {email}',
+        details=json.dumps({
+            'email': email,
+            'days_before': days_before,
+            'sent_at': datetime.now().isoformat()
+        }),
+        created_by_id=current_user.id,
+        created_by_name=current_user.name
+    )
+    
+    # Update the appropriate reminder_sent flag
+    if days_before == 30:
+        order.subscription_reminder_sent_30 = 'True'
+    elif days_before == 7:
+        order.subscription_reminder_sent_7 = 'True'
+    elif days_before == 1:
+        order.subscription_reminder_sent_1 = 'True'
+    
+    db.add(activity)
+    db.commit()
+    db.refresh(order)
+    
+    # Send the email
+    subject = f"Subscription Renewal Reminder - Order {order.order_id}"
+    email_sent = send_email(email, subject, email_body, is_html=False)
+    
+    if email_sent:
+        return {
+            'message': f'Subscription reminder email sent successfully to {email}',
+            'order_id': order_id,
+            'days_before': days_before,
+            'email': email,
+            'status': 'sent'
+        }
+    else:
+        return {
+            'message': f'Failed to send subscription reminder email to {email}. Please check email configuration.',
+            'order_id': order_id,
+            'days_before': days_before,
+            'email': email,
+            'status': 'failed'
+        }
+
+
+# ============= PAYROLL ROUTES =============
+
+@api_router.get('/payroll/payslip/{employee_id}')
+def generate_payslip(
+    employee_id: str,
+    month: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    employee = db.query(EmployeeModel).filter(EmployeeModel.id == employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail='Employee not found')
+    
+    attendance_records = db.query(AttendanceModel).filter(
+        AttendanceModel.employee_id == employee_id,
+        AttendanceModel.date.like(f'{month}%')
+    ).all()
+    
+    working_days = len(attendance_records)
+    total_hours = sum(rec.work_hours for rec in attendance_records)
+    
+    monthly_salary = employee.salary
+    basic = monthly_salary * 0.5
+    hra = monthly_salary * 0.2
+    allowances = monthly_salary * 0.3
+    
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    
+    p.setFont('Helvetica-Bold', 20)
+    p.drawString(50, height - 50, 'PAYSLIP')
+    
+    p.setFont('Helvetica', 12)
+    p.drawString(50, height - 80, f'Employee: {employee.name}')
+    p.drawString(50, height - 100, f'Employee ID: {employee.employee_id}')
+    p.drawString(50, height - 120, f'Department: {employee.department}')
+    p.drawString(50, height - 140, f'Month: {month}')
+    
+    y = height - 180
+    p.drawString(50, y, 'Salary Breakdown:')
+    y -= 30
+    p.drawString(70, y, f'Basic Salary: ₹{basic:.2f}')
+    y -= 20
+    p.drawString(70, y, f'HRA: ₹{hra:.2f}')
+    y -= 20
+    p.drawString(70, y, f'Allowances: ₹{allowances:.2f}')
+    y -= 30
+    p.setFont('Helvetica-Bold', 12)
+    p.drawString(70, y, f'Gross Salary: ₹{monthly_salary:.2f}')
+    
+    y -= 40
+    p.setFont('Helvetica', 12)
+    p.drawString(50, y, f'Working Days: {working_days}')
+    y -= 20
+    p.drawString(50, y, f'Total Hours: {total_hours:.2f}')
+    
+    p.showPage()
+    p.save()
+    
+    buffer.seek(0)
+    return FileResponse(
+        io.BytesIO(buffer.getvalue()),
+        media_type='application/pdf',
+        filename=f'payslip_{employee.employee_id}_{month}.pdf'
+    )
+
+# ============= DASHBOARD ROUTES =============
+
+@api_router.get('/dashboard/stats', response_model=DashboardStats)
+def get_dashboard_stats(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    
+    total_employees = db.query(EmployeeModel).filter(EmployeeModel.status == 'Active').count()
+    present_today = db.query(AttendanceModel).filter(AttendanceModel.date == today).count()
+    pending_leaves = db.query(LeaveModel).filter(LeaveModel.status == 'Pending').count()
+    
+    employees = db.query(EmployeeModel).all()
+    departments = set(emp.department for emp in employees)
+    
+    return DashboardStats(
+        total_employees=total_employees,
+        present_today=present_today,
+        absent_today=max(0, total_employees - present_today),
+        pending_leaves=pending_leaves,
+        total_departments=len(departments)
+    )
+
+# ============= MIDDLEWARE & CONFIG =============
+
+app.include_router(api_router)
+
+# Mount static files for uploads
+if UPLOAD_DIR.exists():
+    app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
