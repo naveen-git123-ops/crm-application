@@ -46,6 +46,10 @@ app = FastAPI()
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+    "http://resoline.in",
+    "http://www.resoline.in",
     "https://resoline.in",
     "https://www.resoline.in",
 ]
@@ -3258,8 +3262,10 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
 
 @api_router.post('/auth/login')
 def login(credentials: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(UserModel).filter(UserModel.email == credentials.email).first()
-    if not user or not verify_password(credentials.password, user.password):
+    email = str(credentials.email).strip().lower()
+    password = credentials.password
+    user = db.query(UserModel).filter(UserModel.email == email).first()
+    if not user or not verify_password(password, user.password):
         raise HTTPException(status_code=401, detail='Invalid credentials')
 
     # Block login for users linked to an inactive employee profile.

@@ -26,6 +26,8 @@ import {
   ChevronLeft,
   ChevronRight,
   BarChart3,
+  BookOpen,
+  Wallet,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PageHeaderProvider, usePageHeader, usePageHeaderActions } from '@/contexts/PageHeaderContext';
@@ -118,37 +120,90 @@ export const Layout = () => {
     navigate('/login');
   };
 
-  const navItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', permission: 'dashboard' },
-    { icon: Target, label: 'Leads', path: '/leads', permission: 'leads' },
-    { icon: Users, label: 'Employees', path: '/employees', permission: 'employees' },
-    { icon: Users, label: 'Create Ledger', path: '/customers', permission: 'customers' },
-    { icon: Droplets, label: 'CGW Flow Metre', path: '/cgw-flow-metre', permission: 'cgw-flow-metre' },
-    { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
-    { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance' },
-    { icon: BarChart3, label: 'Monthly Report', path: '/monthly-report', permission: 'monthly-report' },
-    { icon: MapPin, label: 'Location Tracker', path: '/location-tracker', permission: 'attendance', adminOnly: true },
-    { icon: FileText, label: 'Leaves', path: '/leaves', permission: 'leaves' },
-    { icon: CalendarDays, label: 'Government Holidays', path: '/government-holidays', permission: 'holidays' },
-    { icon: Receipt, label: 'Expenses', path: '/expenses', permission: 'expenses' },
-    { icon: Fuel, label: 'Vehicle Tracking', path: '/vehicles', permission: 'vehicles' },
-    { icon: Shield, label: 'Roles', path: '/roles', permission: 'roles' },
-    { icon: Briefcase, label: 'Workspace', path: '/workspace', permission: 'workspace' },
-    { icon: FileStack, label: 'Documents', path: '/documents', permission: 'documents' },
-    { icon: IDCard, label: 'ID Cards', path: '/idcards', permission: 'idcards' },
-    { icon: Settings, label: 'Settings', path: '/settings', permission: 'settings' },
-  ];
-
-  const filteredNavItems = navItems.filter((item) => {
+  const canSeeNavItem = (item) => {
     if (item.adminOnly && user?.role !== 'Admin') return false;
     if (Array.isArray(item.allowedRoles) && item.allowedRoles.length > 0) {
       return item.allowedRoles.includes(user?.role);
     }
+    if (!item.permission) return true;
     return userHasPermission(user, item.permission);
-  });
+  };
+
+  const navSections = [
+    {
+      id: 'overview',
+      label: null,
+      items: [
+        { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', permission: 'dashboard' },
+      ],
+    },
+    {
+      id: 'crm',
+      label: 'CRM',
+      items: [
+        { icon: Target, label: 'Leads', path: '/leads', permission: 'leads' },
+        { icon: BookOpen, label: 'Create Ledger', path: '/customers', permission: 'customers' },
+        { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
+        { icon: Droplets, label: 'CGW Flow Metre', path: '/cgw-flow-metre', permission: 'cgw-flow-metre' },
+      ],
+    },
+    {
+      id: 'employee',
+      label: 'Employee',
+      items: [
+        { icon: Calendar, label: 'Attendance', path: '/attendance', permission: 'attendance' },
+        { icon: BarChart3, label: 'Monthly Report', path: '/monthly-report', permission: 'monthly-report' },
+        { icon: FileText, label: 'Leaves', path: '/leaves', permission: 'leaves' },
+        { icon: MapPin, label: 'Location Tracker', path: '/location-tracker', permission: 'attendance', adminOnly: true },
+      ],
+    },
+    {
+      id: 'hr',
+      label: 'HR',
+      items: [
+        { icon: Users, label: 'Employees', path: '/employees', permission: 'employees' },
+        { icon: CalendarDays, label: 'Government Holidays', path: '/government-holidays', permission: 'holidays' },
+        { icon: IDCard, label: 'ID Cards', path: '/idcards', permission: 'idcards' },
+        { icon: FileStack, label: 'Documents', path: '/documents', permission: 'documents' },
+        { icon: Wallet, label: 'Payroll', path: '/payroll' },
+      ],
+    },
+    {
+      id: 'operations',
+      label: 'Operations',
+      items: [
+        { icon: Receipt, label: 'Expenses', path: '/expenses', permission: 'expenses' },
+        { icon: Fuel, label: 'Vehicle Tracking', path: '/vehicles', permission: 'vehicles' },
+        { icon: Briefcase, label: 'Workspace', path: '/workspace', permission: 'workspace' },
+      ],
+    },
+    {
+      id: 'admin',
+      label: 'Admin',
+      items: [
+        { icon: Shield, label: 'Roles', path: '/roles', permission: 'roles' },
+        { icon: Settings, label: 'Settings', path: '/settings', permission: 'settings' },
+      ],
+    },
+  ];
+
+  const filteredNavSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(canSeeNavItem),
+    }))
+    .filter((section) => section.items.length > 0);
+
+  const filteredNavItems = filteredNavSections.flatMap((section) => section.items);
 
   const currentPath = location.pathname;
-  const bottomNavItems = filteredNavItems.slice(0, 5);
+  const preferredBottomPaths = ['/dashboard', '/attendance', '/leaves', '/tasks', '/expenses'];
+  const bottomNavItems = [
+    ...preferredBottomPaths
+      .map((path) => filteredNavItems.find((item) => item.path === path))
+      .filter(Boolean),
+    ...filteredNavItems.filter((item) => !preferredBottomPaths.includes(item.path)),
+  ].slice(0, 5);
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -162,24 +217,35 @@ export const Layout = () => {
           />
         </div>
         
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto scrollbar-hide">
-          {filteredNavItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              data-testid={`nav-${item.label.toLowerCase()}`}
-              className={({ isActive }) =>
-                `flex items-center ${desktopSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 rounded-lg transition-colors text-sm ${
-                  isActive
-                    ? 'bg-blue-100 text-blue-700 font-medium'
-                    : 'text-gray-700 hover:bg-gray-100'
-                }`
-              }
-              title={item.label}
-            >
-              <item.icon className="h-5 w-5" />
-              {!desktopSidebarCollapsed && <span>{item.label}</span>}
-            </NavLink>
+        <nav className="flex-1 p-4 overflow-y-auto scrollbar-hide">
+          {filteredNavSections.map((section, sectionIndex) => (
+            <div key={section.id} className={sectionIndex > 0 ? (desktopSidebarCollapsed ? 'mt-3 pt-3 border-t border-gray-100' : 'mt-4') : ''}>
+              {section.label && !desktopSidebarCollapsed && (
+                <p className="px-4 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                  {section.label}
+                </p>
+              )}
+              <div className="space-y-1">
+                {section.items.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                    className={({ isActive }) =>
+                      `flex items-center ${desktopSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 rounded-lg transition-colors text-sm ${
+                        isActive
+                          ? 'bg-blue-100 text-blue-700 font-medium'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      }`
+                    }
+                    title={item.label}
+                  >
+                    <item.icon className="h-5 w-5 flex-shrink-0" />
+                    {!desktopSidebarCollapsed && <span>{item.label}</span>}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 
@@ -223,23 +289,34 @@ export const Layout = () => {
               </Button>
             </div>
             
-            <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
-              {filteredNavItems.map((item) => (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  onClick={() => setSidebarOpen(false)}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-sm min-h-[48px] ${
-                      isActive
-                        ? 'bg-blue-100 text-blue-700 font-medium'
-                        : 'text-gray-700 hover:bg-gray-100 active:bg-gray-200'
-                    }`
-                  }
-                >
-                  <item.icon className="h-5 w-5 flex-shrink-0" />
-                  <span className="truncate">{item.label}</span>
-                </NavLink>
+            <nav className="flex-1 p-3 overflow-y-auto overflow-x-hidden">
+              {filteredNavSections.map((section, sectionIndex) => (
+                <div key={section.id} className={sectionIndex > 0 ? 'mt-3' : ''}>
+                  {section.label && (
+                    <p className="px-4 mb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                      {section.label}
+                    </p>
+                  )}
+                  <div className="space-y-0.5">
+                    {section.items.map((item) => (
+                      <NavLink
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setSidebarOpen(false)}
+                        className={({ isActive }) =>
+                          `flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-sm min-h-[48px] ${
+                            isActive
+                              ? 'bg-blue-100 text-blue-700 font-medium'
+                              : 'text-gray-700 hover:bg-gray-100 active:bg-gray-200'
+                          }`
+                        }
+                      >
+                        <item.icon className="h-5 w-5 flex-shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                      </NavLink>
+                    ))}
+                  </div>
+                </div>
               ))}
             </nav>
 

@@ -47,6 +47,8 @@ const ENTITY_CUSTOMER = 0;
 const ENTITY_VENDOR = 1;
 
 export const Customers = () => {
+  const { user } = useAuth();
+  const canManageRecords = userCanManageAnyRecord(user) || userHasPermission(user, 'customers');
   const [activeTab, setActiveTab] = useState('customer');
   const [records, setRecords] = useState([]);
   const [filteredRecords, setFilteredRecords] = useState([]);

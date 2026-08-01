@@ -1,12 +1,23 @@
 /**
  * API Configuration
  * Centralized API endpoint management
- * 
+ *
  * Provides consistent API endpoint across all components
  */
 
-// Get backend URL from environment variable or use production endpoint
-export const BACKEND_BASE_URL = process.env.REACT_APP_BACKEND_URL || 'https://api.resoline.com';
+export const getDefaultBackendUrl = () => {
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
+      return 'http://localhost:8000';
+    }
+  }
+  // Production API host (api.resoline.com does not resolve)
+  return 'https://api.resoline.in';
+};
+
+// Prefer env override; otherwise localhost in local browser, production API elsewhere
+export const BACKEND_BASE_URL = process.env.REACT_APP_BACKEND_URL || getDefaultBackendUrl();
 
 // API endpoint for auth and general API calls
 export const API_ENDPOINT = `${BACKEND_BASE_URL}/api`;
