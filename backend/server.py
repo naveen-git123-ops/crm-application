@@ -117,18 +117,51 @@ AWS_ACCESS_KEY = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = os.environ.get('AWS_S3_REGION', os.environ.get('AWS_REGION', 'us-east-1'))
 S3_BUCKET_NAME = os.environ.get('AWS_S3_BUCKET_NAME', os.environ.get('S3_BUCKET_NAME'))
-USE_S3 = AWS_ACCESS_KEY and AWS_SECRET_KEY and S3_BUCKET_NAME
+
+
+def _clean_val(v: str) -> Optional[str]:
+    if v is None:
+        return None
+    return v.strip().strip('\"').strip("\'")
+
+
+def _normalize_region(region: Optional[str]) -> Optional[str]:
+    region = _clean_val(region)
+    if not region:
+        return region
+    # Common case: user pasted a human-readable region like
+    # "US East (N. Virginia) us-east-1" — prefer the token that looks like the AWS region code.
+    import re
+    m = re.search(r"([a-z]{2}-[a-z0-9-]+-\d)", region)
+    if m:
+        return m.group(1)
+    # Otherwise, if region contains spaces, take last token
+    if " " in region:
+        return region.split()[-1]
+    return region
+
+
+# Clean inputs from environment (trim accidental spaces/quotes)
+AWS_ACCESS_KEY = _clean_val(AWS_ACCESS_KEY)
+AWS_SECRET_KEY = _clean_val(AWS_SECRET_KEY)
+AWS_REGION = _normalize_region(AWS_REGION)
+S3_BUCKET_NAME = _clean_val(S3_BUCKET_NAME)
+
+USE_S3 = bool(AWS_ACCESS_KEY and AWS_SECRET_KEY and S3_BUCKET_NAME)
 
 # Initialize S3 client if credentials provided
+s3_client = None
 if USE_S3:
-    s3_client = boto3.client(
-        's3',
-        aws_access_key_id=AWS_ACCESS_KEY,
-        aws_secret_access_key=AWS_SECRET_KEY,
-        region_name=AWS_REGION
-    )
-else:
-    s3_client = None
+    try:
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=AWS_ACCESS_KEY,
+            aws_secret_access_key=AWS_SECRET_KEY,
+            region_name=AWS_REGION
+        )
+    except Exception as e:
+        logging.error(f"Failed to initialize S3 client: {e}")
+        s3_client = None
 
 api_router = APIRouter(prefix="/api")
 security = HTTPBearer()
@@ -3035,19 +3068,24 @@ def upload_to_s3(file_content: bytes, filename: str, folder: str = 'uploads') ->
         else:
             content_type = 'application/octet-stream'
         # Upload to S3
+        logging.info('Uploading to S3: bucket=%s, key=%s, content_type=%s', S3_BUCKET_NAME, s3_key, content_type)
         s3_client.put_object(
             Bucket=S3_BUCKET_NAME,
             Key=s3_key,
             Body=file_content,
             ContentType=content_type,
         )
-        
+
         # Generate public URL
         s3_url = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+        logging.info('S3 upload successful: %s', s3_url)
         return s3_url
-    
+
     except ClientError as e:
-        logging.error(f"S3 upload error: {str(e)}")
+        logging.exception('S3 upload ClientError')
+        return None
+    except Exception as e:
+        logging.exception('Unexpected error during S3 upload')
         return None
 
 def delete_from_s3(file_url: str) -> bool:
@@ -10604,11 +10642,14 @@ def upload_vehicle_photo(
     
     try:
         file_content = file.file.read()
+        logging.info('Received vehicle photo upload: vehicle_id=%s, filename=%s, size=%d', vehicle_id, file.filename, len(file_content) if file_content is not None else 0)
         filename = f"vehicle_{uuid.uuid4()}{Path(file.filename).suffix}"
         photo_path = upload_to_s3(file_content, filename, folder='vehicle_photos')
         
         if not photo_path:
             raise HTTPException(status_code=503, detail='File upload service unavailable')
+
+        logging.info('Vehicle photo upload result: vehicle_id=%s, photo_path=%s', vehicle_id, photo_path)
         
         vehicle.photo_path = photo_path
         db.commit()
@@ -10616,7 +10657,9 @@ def upload_vehicle_photo(
         
         return {'photo_path': photo_path, 'message': 'Vehicle photo uploaded successfully'}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logging.exception('Error uploading vehicle photo for vehicle_id=%s', vehicle_id)
+        # Return 500 so client sees a server error; details are in logs for debugging
+        raise HTTPException(status_code=500, detail='Internal server error during file upload')
 
 # ============= VEHICLE USAGE ROUTES =============
 

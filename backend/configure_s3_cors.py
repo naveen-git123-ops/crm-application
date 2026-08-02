@@ -17,6 +17,31 @@ AWS_SECRET_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = os.environ.get('AWS_S3_REGION', os.environ.get('AWS_REGION', 'us-east-1'))
 S3_BUCKET = os.environ.get('AWS_S3_BUCKET_NAME', os.environ.get('S3_BUCKET_NAME'))
 
+
+def _clean_val(v: str):
+    if v is None:
+        return None
+    return v.strip().strip('\"').strip("\'")
+
+
+def _normalize_region(region: str):
+    region = _clean_val(region)
+    if not region:
+        return region
+    import re
+    m = re.search(r"([a-z]{2}-[a-z0-9-]+-\d)", region)
+    if m:
+        return m.group(1)
+    if " " in region:
+        return region.split()[-1]
+    return region
+
+
+AWS_ACCESS_KEY = _clean_val(AWS_ACCESS_KEY)
+AWS_SECRET_KEY = _clean_val(AWS_SECRET_KEY)
+AWS_REGION = _normalize_region(AWS_REGION)
+S3_BUCKET = _clean_val(S3_BUCKET)
+
 if not all([AWS_ACCESS_KEY, AWS_SECRET_KEY, S3_BUCKET]):
     print("❌ Missing required credentials in .env file:")
     print(f"   AWS_ACCESS_KEY_ID: {bool(AWS_ACCESS_KEY)}")
@@ -29,12 +54,16 @@ print(f"Region: {AWS_REGION}")
 
 try:
     # Create S3 client
-    s3_client = boto3.client(
-        's3',
-        aws_access_key_id=AWS_ACCESS_KEY,
-        aws_secret_access_key=AWS_SECRET_KEY,
-        region_name=AWS_REGION
-    )
+    try:
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=AWS_ACCESS_KEY,
+            aws_secret_access_key=AWS_SECRET_KEY,
+            region_name=AWS_REGION
+        )
+    except Exception as e:
+        print(f"❌ Failed to initialize S3 client: {e}")
+        sys.exit(1)
     
     # Define CORS configuration
     cors_config = {

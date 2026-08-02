@@ -6,14 +6,14 @@
  */
 
 export const getDefaultBackendUrl = () => {
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') {
-      return 'http://localhost:8000';
-    }
+  // Prefer the browser's origin at runtime so built assets use the page's host
+  // (this ensures the UI will call the local backend when served locally).
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    return window.location.origin;
   }
-  // Production API host (api.resoline.com does not resolve)
-  return 'https://api.resoline.in';
+
+  // Fallback to localhost for non-browser environments
+  return 'http://localhost:8000';
 };
 
 // Prefer env override; otherwise localhost in local browser, production API elsewhere

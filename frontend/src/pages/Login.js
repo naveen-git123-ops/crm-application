@@ -76,7 +76,7 @@ export const Login = () => {
             />
             <h1 className="mt-10 text-4xl font-bold leading-tight">
               Modern HR,
-              <span className="block text-blue-200">effortless management.</span>
+              <span className="block text-blue-200">effortless management..</span>
             </h1>
             <p className="mt-4 text-sm text-blue-100 max-w-md leading-relaxed">
               Streamline attendance, leave, and employee records with a clean, unified platform.

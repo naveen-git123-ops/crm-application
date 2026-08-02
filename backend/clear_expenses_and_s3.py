@@ -22,20 +22,49 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
 Session = sessionmaker(bind=engine)
 
 # S3 Setup
+def _clean_val(v: str):
+    if v is None:
+        return None
+    return v.strip().strip('\"').strip("\'")
+
+
+def _normalize_region(region: str):
+    region = _clean_val(region)
+    if not region:
+        return region
+    import re
+    m = re.search(r"([a-z]{2}-[a-z0-9-]+-\d)", region)
+    if m:
+        return m.group(1)
+    if " " in region:
+        return region.split()[-1]
+    return region
+
+
 USE_S3 = os.environ.get('USE_S3', 'true').lower() == 'true'
 S3_BUCKET_NAME = os.environ.get('AWS_S3_BUCKET_NAME') or os.environ.get('S3_BUCKET_NAME')
 S3_REGION = os.environ.get('AWS_S3_REGION') or os.environ.get('S3_REGION', 'ap-south-1')
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 
+# Clean values
+S3_BUCKET_NAME = _clean_val(S3_BUCKET_NAME)
+S3_REGION = _normalize_region(S3_REGION)
+AWS_ACCESS_KEY_ID = _clean_val(AWS_ACCESS_KEY_ID)
+AWS_SECRET_ACCESS_KEY = _clean_val(AWS_SECRET_ACCESS_KEY)
+
 s3_client = None
 if USE_S3 and S3_BUCKET_NAME and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
-    s3_client = boto3.client(
-        's3',
-        region_name=S3_REGION,
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY
-    )
+    try:
+        s3_client = boto3.client(
+            's3',
+            region_name=S3_REGION,
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+        )
+    except Exception as e:
+        print(f"❌ Failed to initialize S3 client: {e}")
+        s3_client = None
 
 def delete_from_s3(file_url: str) -> bool:
     """Delete file from S3 bucket"""
