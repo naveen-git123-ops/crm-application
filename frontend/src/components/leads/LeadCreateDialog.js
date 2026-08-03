@@ -6,13 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-  BUSINESS_CATEGORY_OPTIONS,
-  LEAD_CATEGORY_OPTIONS,
   LEAD_SOURCES,
   LEAD_STATUSES,
   isCarryAndOrder,
   defaultLeadForm,
 } from '@/lib/leadUtils';
+import { useLeadCategories } from '@/hooks/useLeadCategories';
+import { LeadCategoryFields } from '@/components/leads/LeadCategoryFields';
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFilePicker';
 import { LEAD_ATTACHMENT_ACCEPT, LEAD_ATTACHMENT_HINT } from '@/lib/leadAttachmentAccept';
@@ -38,6 +38,7 @@ export function LeadCreateDialog({
   const [customerContacts, setCustomerContacts] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const { categories, loading: categoriesLoading } = useLeadCategories({ enabled: open });
 
   const reset = () => {
     setForm(defaultLeadForm());
@@ -226,36 +227,14 @@ export function LeadCreateDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="lead-category" className={labelClass}>Category</Label>
-              <select
-                id="lead-category"
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-                className={selectClass}
-              >
-                <option value="">Select</option>
-                {LEAD_CATEGORY_OPTIONS.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lead-business-category" className={labelClass}>Business category</Label>
-              <select
-                id="lead-business-category"
-                value={form.sub_category}
-                onChange={(e) => setForm({ ...form, sub_category: e.target.value })}
-                className={selectClass}
-              >
-                <option value="">Select</option>
-                {BUSINESS_CATEGORY_OPTIONS.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+          <LeadCategoryFields
+            form={form}
+            setForm={setForm}
+            categories={categories}
+            loading={categoriesLoading}
+            categoryId="lead-category"
+            subCategoryId="lead-sub-category"
+          />
 
           {/* {carryOrder && (
             <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/80 p-4">

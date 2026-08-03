@@ -18,4 +18,6 @@ jobs:
           script: |
             cd /home/ec2-user/crm-application
             git pull origin main
+            cd /home/ec2-user/crm-application/backend
+            pip3 install -r requirements.prod.txt --quiet
             sudo systemctl restart uvicorn

@@ -1,7 +1,5 @@
 import { eachDayOfInterval, endOfMonth, format } from 'date-fns';
-
-/** Same threshold as Attendance grid / summary tab (10:30). */
-const LATE_THRESHOLD_MINUTES = 10 * 60 + 30;
+import { LATE_THRESHOLD_MINUTES } from '@/utils/attendanceRules';
 
 /** Present-day credit: full day = 1, half day = 0.5. */
 export const presentDayCredit = (record) => {

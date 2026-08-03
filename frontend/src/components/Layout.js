@@ -25,9 +25,11 @@ import {
   Droplets,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   BarChart3,
   BookOpen,
   Wallet,
+  Terminal,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PageHeaderProvider, usePageHeader, usePageHeaderActions } from '@/contexts/PageHeaderContext';
@@ -106,6 +108,14 @@ export const Layout = () => {
       return false;
     }
   });
+  const [collapsedSections, setCollapsedSections] = useState(() => {
+    try {
+      const saved = localStorage.getItem('nav-sections-collapsed');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
 
   useEffect(() => {
     try {
@@ -114,6 +124,14 @@ export const Layout = () => {
       // ignore persistence errors (private mode/storage limitations)
     }
   }, [desktopSidebarCollapsed]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nav-sections-collapsed', JSON.stringify(collapsedSections));
+    } catch {
+      // ignore persistence errors (private mode/storage limitations)
+    }
+  }, [collapsedSections]);
 
   const handleLogout = () => {
     logout();
@@ -182,6 +200,7 @@ export const Layout = () => {
       label: 'Admin',
       items: [
         { icon: Shield, label: 'Roles', path: '/roles', permission: 'roles' },
+        { icon: Terminal, label: 'Admin Console', path: '/admin-console', allowedRoles: ['Admin'] },
         { icon: Settings, label: 'Settings', path: '/settings', permission: 'settings' },
       ],
     },
@@ -197,6 +216,100 @@ export const Layout = () => {
   const filteredNavItems = filteredNavSections.flatMap((section) => section.items);
 
   const currentPath = location.pathname;
+
+  useEffect(() => {
+    const activeSection = filteredNavSections.find((section) =>
+      section.items.some((item) => item.path === currentPath),
+    );
+    if (activeSection?.label) {
+      setCollapsedSections((prev) => {
+        if (prev[activeSection.id] === false) return prev;
+        return { ...prev, [activeSection.id]: false };
+      });
+    }
+  }, [currentPath, filteredNavSections]);
+
+  const toggleSection = (sectionId) => {
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [sectionId]: !prev[sectionId],
+    }));
+  };
+
+  const isSectionCollapsed = (section) => {
+    if (!section.label) return false;
+    return collapsedSections[section.id] === true;
+  };
+
+  const renderNavLink = (item, { onNavigate, compact = false, mobile = false } = {}) => (
+    <NavLink
+      key={item.path}
+      to={item.path}
+      onClick={onNavigate}
+      data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+      className={({ isActive }) =>
+        `flex items-center ${compact ? 'justify-center px-2' : 'gap-3 px-4'} ${
+          mobile ? 'py-3 rounded-xl min-h-[48px]' : 'py-2.5 rounded-lg'
+        } transition-colors text-sm ${
+          isActive
+            ? 'bg-blue-100 text-blue-700 font-medium'
+            : mobile
+              ? 'text-gray-700 hover:bg-gray-100 active:bg-gray-200'
+              : 'text-gray-700 hover:bg-gray-100'
+        }`
+      }
+      title={item.label}
+    >
+      <item.icon className="h-5 w-5 flex-shrink-0" />
+      {!compact && <span className={mobile ? 'truncate' : ''}>{item.label}</span>}
+    </NavLink>
+  );
+
+  const renderNavSection = (section, sectionIndex, { mobile = false } = {}) => {
+    const collapsed = isSectionCollapsed(section);
+    const compact = !mobile && desktopSidebarCollapsed;
+    const showItems = !section.label || !collapsed || compact;
+
+    return (
+      <div
+        key={section.id}
+        className={sectionIndex > 0 ? (compact ? 'mt-3 pt-3 border-t border-gray-100' : 'mt-3') : ''}
+      >
+        {section.label && !compact && (
+          <button
+            type="button"
+            onClick={() => toggleSection(section.id)}
+            className={`flex w-full items-center justify-between rounded-md px-4 py-1.5 text-left transition-colors hover:bg-gray-50 ${
+              mobile ? 'mb-1' : 'mb-1.5'
+            }`}
+            aria-expanded={!collapsed}
+            aria-controls={`nav-section-${section.id}`}
+          >
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+              {section.label}
+            </span>
+            <ChevronDown
+              className={`h-3.5 w-3.5 text-gray-400 transition-transform ${collapsed ? '-rotate-90' : ''}`}
+            />
+          </button>
+        )}
+        {showItems && (
+          <div
+            id={section.label ? `nav-section-${section.id}` : undefined}
+            className={mobile ? 'space-y-0.5' : 'space-y-1'}
+          >
+            {section.items.map((item) =>
+              renderNavLink(item, {
+                onNavigate: mobile ? () => setSidebarOpen(false) : undefined,
+                compact,
+                mobile,
+              }),
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
   const preferredBottomPaths = ['/dashboard', '/attendance', '/leaves', '/tasks', '/expenses'];
   const bottomNavItems = [
     ...preferredBottomPaths
@@ -218,35 +331,9 @@ export const Layout = () => {
         </div>
         
         <nav className="flex-1 p-4 overflow-y-auto scrollbar-hide">
-          {filteredNavSections.map((section, sectionIndex) => (
-            <div key={section.id} className={sectionIndex > 0 ? (desktopSidebarCollapsed ? 'mt-3 pt-3 border-t border-gray-100' : 'mt-4') : ''}>
-              {section.label && !desktopSidebarCollapsed && (
-                <p className="px-4 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                  {section.label}
-                </p>
-              )}
-              <div className="space-y-1">
-                {section.items.map((item) => (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
-                    className={({ isActive }) =>
-                      `flex items-center ${desktopSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 rounded-lg transition-colors text-sm ${
-                        isActive
-                          ? 'bg-blue-100 text-blue-700 font-medium'
-                          : 'text-gray-700 hover:bg-gray-100'
-                      }`
-                    }
-                    title={item.label}
-                  >
-                    <item.icon className="h-5 w-5 flex-shrink-0" />
-                    {!desktopSidebarCollapsed && <span>{item.label}</span>}
-                  </NavLink>
-                ))}
-              </div>
-            </div>
-          ))}
+          {filteredNavSections.map((section, sectionIndex) =>
+            renderNavSection(section, sectionIndex, { mobile: false }),
+          )}
         </nav>
 
         <div className="p-4 border-t border-gray-200 space-y-2">
@@ -290,34 +377,9 @@ export const Layout = () => {
             </div>
             
             <nav className="flex-1 p-3 overflow-y-auto overflow-x-hidden">
-              {filteredNavSections.map((section, sectionIndex) => (
-                <div key={section.id} className={sectionIndex > 0 ? 'mt-3' : ''}>
-                  {section.label && (
-                    <p className="px-4 mb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                      {section.label}
-                    </p>
-                  )}
-                  <div className="space-y-0.5">
-                    {section.items.map((item) => (
-                      <NavLink
-                        key={item.path}
-                        to={item.path}
-                        onClick={() => setSidebarOpen(false)}
-                        className={({ isActive }) =>
-                          `flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-sm min-h-[48px] ${
-                            isActive
-                              ? 'bg-blue-100 text-blue-700 font-medium'
-                              : 'text-gray-700 hover:bg-gray-100 active:bg-gray-200'
-                          }`
-                        }
-                      >
-                        <item.icon className="h-5 w-5 flex-shrink-0" />
-                        <span className="truncate">{item.label}</span>
-                      </NavLink>
-                    ))}
-                  </div>
-                </div>
-              ))}
+              {filteredNavSections.map((section, sectionIndex) =>
+                renderNavSection(section, sectionIndex, { mobile: true }),
+              )}
             </nav>
 
             <div className="p-3 border-t border-gray-200 space-y-2 pb-[env(safe-area-inset-bottom)]">

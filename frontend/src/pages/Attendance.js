@@ -29,34 +29,17 @@ import {
 import { format, startOfMonth, endOfMonth, subMonths, addMonths, eachDayOfInterval, getDate, isToday as isTodayDate, isWeekend, subDays } from 'date-fns';
 import { formatISTDate, formatISTDateTime } from '@/utils/date';
 import { presentDayCredit, formatDayCount } from '@/utils/attendanceGridMetrics';
+import {
+  LATE_THRESHOLD_MINUTES,
+  classifyPunchInNow,
+  isEarlyPunchOutNow,
+  isLatePunchOutNow,
+  punchReasonDialogTitle,
+  punchReasonDialogDescription,
+} from '@/utils/attendanceRules';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
-const LOGIN_START = '10:00';
-const LOGIN_END = '10:30';
-
-/** Wall-clock hour/minute in office attendance timezone (matches server default). */
-const getAttendanceWallClockHM = (date, timeZone = 'Asia/Kolkata') => {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  }).formatToParts(date);
-  const hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10);
-  const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10);
-  return { hour, minute };
-};
-
-const isLatePunchInNow = (date = new Date()) => {
-  const { hour, minute } = getAttendanceWallClockHM(date);
-  return hour > 10 || (hour === 10 && minute > 30);
-};
-
-const isLatePunchOutNow = (date = new Date()) => {
-  const { hour, minute } = getAttendanceWallClockHM(date);
-  return hour > 19 || (hour === 19 && minute > 0);
-};
 
 // Helper function to format punch times in IST (HH:MM:SS format)
 const formatPunchTime = (punchTimeStr) => {
@@ -234,8 +217,14 @@ export const Attendance = () => {
   const [latePunchInLoading, setLatePunchInLoading] = useState(false);
   const [latePunchOutRequests, setLatePunchOutRequests] = useState([]);
   const [latePunchOutLoading, setLatePunchOutLoading] = useState(false);
+  const [halfDayPunchInRequests, setHalfDayPunchInRequests] = useState([]);
+  const [halfDayPunchInLoading, setHalfDayPunchInLoading] = useState(false);
+  const [earlyPunchOutRequests, setEarlyPunchOutRequests] = useState([]);
+  const [earlyPunchOutLoading, setEarlyPunchOutLoading] = useState(false);
   const [latePunchInStatusFilter, setLatePunchInStatusFilter] = useState('Pending');
   const [latePunchOutStatusFilter, setLatePunchOutStatusFilter] = useState('Pending');
+  const [halfDayPunchInStatusFilter, setHalfDayPunchInStatusFilter] = useState('Pending');
+  const [earlyPunchOutStatusFilter, setEarlyPunchOutStatusFilter] = useState('Pending');
   const [latePunchInEmployeeFilter, setLatePunchInEmployeeFilter] = useState('');
   const [latePunchOutEmployeeFilter, setLatePunchOutEmployeeFilter] = useState('');
   const [showPunchOutWorkLogDialog, setShowPunchOutWorkLogDialog] = useState(false);
@@ -244,7 +233,7 @@ export const Attendance = () => {
   const [pendingPunchAction, setPendingPunchAction] = useState(null);
   const [showLateReasonDialog, setShowLateReasonDialog] = useState(false);
   const [lateReasonText, setLateReasonText] = useState('');
-  const [pendingLatePunch, setPendingLatePunch] = useState(null); // { action, employeeId }
+  const [pendingLatePunch, setPendingLatePunch] = useState(null); // { action, employeeId, punchType }
   const [showTourReasonDialog, setShowTourReasonDialog] = useState(false);
   const [tourPlaceText, setTourPlaceText] = useState('');
   const [tourReasonText, setTourReasonText] = useState('');
@@ -378,7 +367,7 @@ export const Attendance = () => {
         byEmployee[r.employee_id].records[r.date] = r;
       });
 
-      const lateThresholdMinutes = 10 * 60 + 30;
+      const lateThresholdMinutes = LATE_THRESHOLD_MINUTES;
       const rows = Object.values(byEmployee).map((emp) => {
         let totalDays = 0;
         let presentDays = 0;
@@ -551,6 +540,64 @@ export const Attendance = () => {
     }
   };
 
+  const fetchHalfDayPunchInRequests = async (status = halfDayPunchInStatusFilter) => {
+    if (!canManageAttendanceFull) return;
+    setHalfDayPunchInLoading(true);
+    try {
+      const res = await axios.get(`${API}/attendance/half-day-punch-in-requests?status=${encodeURIComponent(status)}`, { headers: authHeader() });
+      setHalfDayPunchInRequests(res.data || []);
+    } catch (err) {
+      console.error('Failed to load half-day punch-in requests:', err);
+      toast.error('Failed to load half-day punch-in requests');
+    } finally {
+      setHalfDayPunchInLoading(false);
+    }
+  };
+
+  const handleApproveHalfDayPunchIn = async (requestId, status, reason = '') => {
+    try {
+      const res = await axios.post(
+        `${API}/attendance/half-day-punch-in-approve`,
+        { request_id: requestId, status, reason },
+        { headers: authHeader() }
+      );
+      toast.success(res.data.message);
+      fetchHalfDayPunchInRequests(halfDayPunchInStatusFilter);
+      fetchAttendance();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to process request');
+    }
+  };
+
+  const fetchEarlyPunchOutRequests = async (status = earlyPunchOutStatusFilter) => {
+    if (!canManageAttendanceFull) return;
+    setEarlyPunchOutLoading(true);
+    try {
+      const res = await axios.get(`${API}/attendance/early-punch-out-requests?status=${encodeURIComponent(status)}`, { headers: authHeader() });
+      setEarlyPunchOutRequests(res.data || []);
+    } catch (err) {
+      console.error('Failed to load early punch-out requests:', err);
+      toast.error('Failed to load early punch-out requests');
+    } finally {
+      setEarlyPunchOutLoading(false);
+    }
+  };
+
+  const handleApproveEarlyPunchOut = async (requestId, status, reason = '') => {
+    try {
+      const res = await axios.post(
+        `${API}/attendance/early-punch-out-approve`,
+        { request_id: requestId, status, reason },
+        { headers: authHeader() }
+      );
+      toast.success(res.data.message);
+      fetchEarlyPunchOutRequests(earlyPunchOutStatusFilter);
+      fetchAttendance();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to process request');
+    }
+  };
+
   const handleApproveAllLatePunchIn = async () => {
     const pendingRows = (latePunchInRequests || []).filter(
       (req) =>
@@ -628,8 +675,8 @@ export const Attendance = () => {
         ? res.data.filter((r) => r.employee_id === user.employee_id)
         : res.data;
 
-      // Count late logins per employee for this month (punched in after 10:30 AM)
-      const lateThresholdMinutes = 10 * 60 + 30;
+      // Count late logins per employee for this month (punched in after 9:15 AM)
+      const lateThresholdMinutes = LATE_THRESHOLD_MINUTES;
       const lateLoginMap = {};
       gridRecords.forEach((record) => {
         // Tour punches are handled separately on the grid (do not count as "late logins")
@@ -716,6 +763,8 @@ export const Attendance = () => {
     if (canApproveTour && activeTab === 'tour') fetchTourPending(tourStatusFilter);
     if (canManageAttendanceFull && activeTab === 'latepunchin') fetchLatePunchInRequests(latePunchInStatusFilter);
     if (canManageAttendanceFull && activeTab === 'latepunchout') fetchLatePunchOutRequests(latePunchOutStatusFilter);
+    if (canManageAttendanceFull && activeTab === 'halfdaypunchin') fetchHalfDayPunchInRequests(halfDayPunchInStatusFilter);
+    if (canManageAttendanceFull && activeTab === 'earlypunchout') fetchEarlyPunchOutRequests(earlyPunchOutStatusFilter);
   }, [canApproveTour, canManageAttendanceFull, activeTab, user?.role, latePunchInStatusFilter, latePunchOutStatusFilter, tourStatusFilter]);
 
   // Auto-load report on tab open and whenever report filters change.
@@ -769,19 +818,35 @@ export const Attendance = () => {
       }
     }
 
-    // Late punch-in / late punch-out: require reason in a dialog before calling API (all roles)
     const now = new Date();
-    if (action === 'punch_in' && isLatePunchInNow(now)) {
-      setPendingLatePunch({ action, employeeId });
-      setLateReasonText('');
-      setShowLateReasonDialog(true);
-      return;
+    if (action === 'punch_in') {
+      const punchInKind = classifyPunchInNow(now);
+      if (punchInKind === 'late') {
+        setPendingLatePunch({ action, employeeId, punchType: 'late_in' });
+        setLateReasonText('');
+        setShowLateReasonDialog(true);
+        return;
+      }
+      if (punchInKind === 'half_day') {
+        setPendingLatePunch({ action, employeeId, punchType: 'half_day_in' });
+        setLateReasonText('');
+        setShowLateReasonDialog(true);
+        return;
+      }
     }
-    if (action === 'punch_out' && isLatePunchOutNow(now)) {
-      setPendingLatePunch({ action, employeeId });
-      setLateReasonText('');
-      setShowLateReasonDialog(true);
-      return;
+    if (action === 'punch_out') {
+      if (isEarlyPunchOutNow(now)) {
+        setPendingLatePunch({ action, employeeId, punchType: 'early_out' });
+        setLateReasonText('');
+        setShowLateReasonDialog(true);
+        return;
+      }
+      if (isLatePunchOutNow(now)) {
+        setPendingLatePunch({ action, employeeId, punchType: 'late_out' });
+        setLateReasonText('');
+        setShowLateReasonDialog(true);
+        return;
+      }
     }
 
     await executePunch(action, employeeId, '');
@@ -918,8 +983,12 @@ export const Attendance = () => {
         const employeeId = user?.employee_id;
         setPendingPunchAction(null);
         const now = new Date();
-        if (pendingPunchAction === 'punch_out' && isLatePunchOutNow(now)) {
-          setPendingLatePunch({ action: 'punch_out', employeeId });
+        if (pendingPunchAction === 'punch_out' && isEarlyPunchOutNow(now)) {
+          setPendingLatePunch({ action: 'punch_out', employeeId, punchType: 'early_out' });
+          setLateReasonText('');
+          setShowLateReasonDialog(true);
+        } else if (pendingPunchAction === 'punch_out' && isLatePunchOutNow(now)) {
+          setPendingLatePunch({ action: 'punch_out', employeeId, punchType: 'late_out' });
           setLateReasonText('');
           setShowLateReasonDialog(true);
         } else {
@@ -1084,6 +1153,8 @@ export const Attendance = () => {
               { id: 'regularize', label: 'Regularize', icon: UserCheck, show: canManageAttendanceFull },
               { id: 'tour', label: 'Tour requests', icon: Briefcase, show: canApproveTour },
               { id: 'latepunchin', label: 'Late punch-in', icon: LogIn, show: canManageAttendanceFull },
+              { id: 'halfdaypunchin', label: 'Half day in', icon: Clock, show: canManageAttendanceFull },
+              { id: 'earlypunchout', label: 'Early punch-out', icon: LogOut, show: canManageAttendanceFull },
               { id: 'latepunchout', label: 'Late punch-out', icon: LogOut, show: canManageAttendanceFull },
               { id: 'report', label: 'Reports', icon: Calendar, show: canManageAttendanceFull },
               { id: 'summary', label: 'Monthly summary', icon: TrendingDown, show: true }
@@ -1611,7 +1682,7 @@ export const Attendance = () => {
         <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
           <div className="mb-6">
             <h3 className="text-lg font-semibold text-gray-900">Regularize Attendance</h3>
-            <p className="text-sm text-gray-600 mt-1">Mark an employee as present for a specific date with standard office hours (10:00 AM - 6:00 PM)</p>
+            <p className="text-sm text-gray-600 mt-1">Mark an employee as present for a specific date with standard office hours (9:15 AM - 7:00 PM)</p>
           </div>
 
           <div className="space-y-4 max-w-md">
@@ -1662,8 +1733,8 @@ export const Attendance = () => {
               </p>
               {regularizeAction === 'present' && (
                 <ul className="text-blue-800 mt-2 list-disc list-inside space-y-1">
-                  <li>Punch In: 10:00 AM</li>
-                  <li>Punch Out: 6:00 PM</li>
+                  <li>Punch In: 9:15 AM</li>
+                  <li>Punch Out: 7:00 PM</li>
                 </ul>
               )}
             </div>
@@ -1997,7 +2068,7 @@ export const Attendance = () => {
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Late Punch-In Approval Requests</h3>
               <p className="text-sm text-gray-600">
-                Employees who punched in after 10:30 AM. Each request includes the <strong>reason</strong> they entered before punching.
+                Employees who punched in after 9:15 AM (before 10:00 AM). Each request includes the <strong>reason</strong> they entered before punching.
               </p>
             </div>
             <Button 
@@ -2151,7 +2222,7 @@ export const Attendance = () => {
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Late Punch-Out Approval Requests</h3>
               <p className="text-sm text-gray-600">
-                Employees who punched out after 7:00 PM. Each request includes the <strong>reason</strong> they entered before punching out.
+                Employees who punched out after 7:30 PM. Each request includes the <strong>reason</strong> they entered before punching out.
               </p>
             </div>
             <Button 
@@ -2289,6 +2360,144 @@ export const Attendance = () => {
                         )}
                       </td>
                     </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Half Day Punch-In Requests - Admin / HR */}
+      {canManageAttendanceFull && activeTab === 'halfdaypunchin' && (
+        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Half Day Punch-In Approval Requests</h3>
+              <p className="text-sm text-gray-600">
+                Employees who punched in after 10:00 AM. Each request includes the <strong>reason</strong> they entered before punching.
+              </p>
+            </div>
+            <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => fetchHalfDayPunchInRequests(halfDayPunchInStatusFilter)} disabled={halfDayPunchInLoading}>
+              {halfDayPunchInLoading ? 'Refreshing...' : 'Refresh'}
+            </Button>
+          </div>
+          <div className="mb-4 flex gap-2">
+            {['Pending', 'Approved', 'Rejected'].map((status) => (
+              <Button key={status} size="sm" variant={halfDayPunchInStatusFilter === status ? 'default' : 'outline'} className={halfDayPunchInStatusFilter === status ? 'bg-blue-600 text-white' : 'border-gray-300'} onClick={() => setHalfDayPunchInStatusFilter(status)}>
+                {status}
+              </Button>
+            ))}
+          </div>
+          {halfDayPunchInLoading ? (
+            <div className="flex items-center justify-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+          ) : halfDayPunchInRequests.length === 0 ? (
+            <p className="text-center py-8 text-gray-500">No {halfDayPunchInStatusFilter.toLowerCase()} half-day punch-in requests.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Date</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700 min-w-[220px]">Reason</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch In</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Min after 10 AM</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {halfDayPunchInRequests.map((req) => {
+                    const status = req.status || halfDayPunchInStatusFilter;
+                    const employeeReason = (req.employee_reason || '').trim();
+                    return (
+                      <tr key={req.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                        <td className="py-3 px-4 font-mono">{req.punch_in_date}</td>
+                        <td className="py-3 px-4"><span className="font-medium">{req.employee_name}</span><span className="text-xs text-gray-500 block">{req.employee_id}</span></td>
+                        <td className="py-3 px-4 max-w-[360px]"><div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm whitespace-pre-wrap">{employeeReason || '—'}</div></td>
+                        <td className="py-3 px-4 font-mono">{formatPunchTime(req.punch_in_time)}</td>
+                        <td className="py-3 px-4">{req.minutes_after_threshold ?? 0} min</td>
+                        <td className="py-3 px-4"><span className="inline-block px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-700">{status}</span></td>
+                        <td className="py-3 px-4">
+                          {status === 'Pending' ? (
+                            <div className="flex gap-2">
+                              <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white h-8" onClick={() => handleApproveHalfDayPunchIn(req.id, 'Approved')}><Check className="h-4 w-4 mr-1" />Approve</Button>
+                              <Button size="sm" variant="outline" className="border-red-300 text-red-700 h-8" onClick={() => handleApproveHalfDayPunchIn(req.id, 'Rejected')}><X className="h-4 w-4 mr-1" />Reject</Button>
+                            </div>
+                          ) : <span className="text-xs text-gray-500">Already processed</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Early Punch-Out Requests - Admin / HR */}
+      {canManageAttendanceFull && activeTab === 'earlypunchout' && (
+        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Early Punch-Out Approval Requests</h3>
+              <p className="text-sm text-gray-600">
+                Employees who punched out before 6:15 PM. Each request includes the <strong>reason</strong> they entered before punching out.
+              </p>
+            </div>
+            <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => fetchEarlyPunchOutRequests(earlyPunchOutStatusFilter)} disabled={earlyPunchOutLoading}>
+              {earlyPunchOutLoading ? 'Refreshing...' : 'Refresh'}
+            </Button>
+          </div>
+          <div className="mb-4 flex gap-2">
+            {['Pending', 'Approved', 'Rejected'].map((status) => (
+              <Button key={status} size="sm" variant={earlyPunchOutStatusFilter === status ? 'default' : 'outline'} className={earlyPunchOutStatusFilter === status ? 'bg-blue-600 text-white' : 'border-gray-300'} onClick={() => setEarlyPunchOutStatusFilter(status)}>
+                {status}
+              </Button>
+            ))}
+          </div>
+          {earlyPunchOutLoading ? (
+            <div className="flex items-center justify-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+          ) : earlyPunchOutRequests.length === 0 ? (
+            <p className="text-center py-8 text-gray-500">No {earlyPunchOutStatusFilter.toLowerCase()} early punch-out requests.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Date</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700 min-w-[220px]">Reason</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch Out</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Min early</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {earlyPunchOutRequests.map((req) => {
+                    const status = req.status || earlyPunchOutStatusFilter;
+                    const employeeReason = (req.employee_reason || '').trim();
+                    return (
+                      <tr key={req.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                        <td className="py-3 px-4 font-mono">{req.punch_out_date}</td>
+                        <td className="py-3 px-4"><span className="font-medium">{req.employee_name}</span><span className="text-xs text-gray-500 block">{req.employee_id}</span></td>
+                        <td className="py-3 px-4 max-w-[360px]"><div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm whitespace-pre-wrap">{employeeReason || '—'}</div></td>
+                        <td className="py-3 px-4 font-mono">{formatPunchTime(req.punch_out_time)}</td>
+                        <td className="py-3 px-4">{req.minutes_early ?? 0} min</td>
+                        <td className="py-3 px-4"><span className="inline-block px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-700">{status}</span></td>
+                        <td className="py-3 px-4">
+                          {status === 'Pending' ? (
+                            <div className="flex gap-2">
+                              <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white h-8" onClick={() => handleApproveEarlyPunchOut(req.id, 'Approved')}><Check className="h-4 w-4 mr-1" />Approve</Button>
+                              <Button size="sm" variant="outline" className="border-red-300 text-red-700 h-8" onClick={() => handleApproveEarlyPunchOut(req.id, 'Rejected')}><X className="h-4 w-4 mr-1" />Reject</Button>
+                            </div>
+                          ) : <span className="text-xs text-gray-500">Already processed</span>}
+                        </td>
+                      </tr>
                     );
                   })}
                 </tbody>
@@ -2496,10 +2705,12 @@ export const Attendance = () => {
             <DialogHeader>
               <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
                 <AlertCircle className="h-5 w-5" />
-                {pendingLatePunch?.action === 'punch_out' ? 'Late punch-out' : 'Late punch-in'}
+                {pendingLatePunch?.punchType ? punchReasonDialogTitle(pendingLatePunch.punchType) : (pendingLatePunch?.action === 'punch_out' ? 'Late punch-out' : 'Late punch-in')}
               </DialogTitle>
               <DialogDescription className="text-blue-100 text-sm mt-1">
-                Enter a reason below. Your request is sent to admin only after you submit this form.
+                {pendingLatePunch?.punchType
+                  ? punchReasonDialogDescription(pendingLatePunch.punchType)
+                  : 'Enter a reason below. Your request is sent to admin only after you submit this form.'}
               </DialogDescription>
             </DialogHeader>
           </div>

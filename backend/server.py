@@ -302,6 +302,40 @@ class LatePunchOutRequestModel(Base):
     approved_at = Column(DateTime, nullable=True)
 
 
+class EarlyPunchOutRequestModel(Base):
+    __tablename__ = "early_punch_out_requests"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    attendance_id = Column(String(36), ForeignKey('attendance.id'), index=True)
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
+    punch_out_time = Column(String(8))  # HH:MM:SS
+    minutes_early = Column(Integer)  # minutes before 6:15 PM
+    status = Column(String(50), default='Pending')  # 'Pending', 'Approved', 'Rejected'
+    employee_reason = Column(String(500), nullable=True)
+    approver_id = Column(String(50), nullable=True)
+    approver_name = Column(String(255), nullable=True)
+    approval_reason = Column(String(500), nullable=True)
+    punch_out_date = Column(String(10), index=True)
+    requested_at = Column(DateTime, default=datetime.now)
+    approved_at = Column(DateTime, nullable=True)
+
+
+class HalfDayPunchInRequestModel(Base):
+    __tablename__ = "half_day_punch_in_requests"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    attendance_id = Column(String(36), ForeignKey('attendance.id'), index=True)
+    employee_id = Column(String(50), index=True)
+    employee_name = Column(String(255))
+    punch_in_time = Column(String(8))  # HH:MM:SS
+    minutes_after_threshold = Column(Integer)  # minutes after 10:00 AM
+    status = Column(String(50), default='Pending')  # 'Pending', 'Approved', 'Rejected'
+    employee_reason = Column(String(500), nullable=True)
+    approver_id = Column(String(50), nullable=True)
+    approver_name = Column(String(255), nullable=True)
+    approval_reason = Column(String(500), nullable=True)
+    punch_in_date = Column(String(10), index=True)
+    requested_at = Column(DateTime, default=datetime.now)
+    approved_at = Column(DateTime, nullable=True)
 
 
 class SettingsModel(Base):
@@ -582,6 +616,24 @@ class LeadAttachmentModel(Base):
     uploaded_by_id = Column(String(50), nullable=True)
     uploaded_by_name = Column(String(255), nullable=True)
     uploaded_at = Column(DateTime, default=datetime.now)
+
+
+class LeadCategoryModel(Base):
+    __tablename__ = "lead_categories"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(150), unique=True, nullable=False, index=True)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class LeadSubCategoryModel(Base):
+    __tablename__ = "lead_subcategories"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    category_id = Column(String(36), ForeignKey('lead_categories.id', ondelete='CASCADE'), index=True)
+    name = Column(String(150), nullable=False)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+
 
 class OrderModel(Base):
     __tablename__ = "orders"
@@ -1166,6 +1218,49 @@ migrate_leads_carry_order_workflow()
 migrate_orders_add_attachments_and_estimation()
 
 migrate_leads_add_category_and_contacts()
+
+DEFAULT_LEAD_CATEGORIES = [
+    'Project',
+    'Automation',
+    'Instrumentation',
+    'Electrical & Electronics',
+    'ION Exchange SSD',
+    'ION Exchange Chemical',
+    'CGWA NOC',
+    'CGWA Flowmeter',
+]
+DEFAULT_LEAD_SUBCATEGORIES_BY_CATEGORY = {
+    'Project': ['carry and order', 'stock and sell', 'consultancy'],
+}
+
+
+def seed_default_lead_categories():
+    """Seed lead categories/subcategories when table is empty."""
+    db = SessionLocal()
+    try:
+        if db.query(LeadCategoryModel).count() > 0:
+            return
+        for idx, name in enumerate(DEFAULT_LEAD_CATEGORIES):
+            cat = LeadCategoryModel(id=str(uuid.uuid4()), name=name, sort_order=idx)
+            db.add(cat)
+            db.flush()
+            for sub_idx, sub_name in enumerate(DEFAULT_LEAD_SUBCATEGORIES_BY_CATEGORY.get(name, [])):
+                db.add(LeadSubCategoryModel(
+                    id=str(uuid.uuid4()),
+                    category_id=cat.id,
+                    name=sub_name,
+                    sort_order=sub_idx,
+                ))
+        db.commit()
+        print('Default lead categories seeded')
+    except Exception as e:
+        db.rollback()
+        print(f'Lead category seed skipped: {e}')
+    finally:
+        db.close()
+
+
+seed_default_lead_categories()
 
 def migrate_lead_status_history():
     """Create lead_status_history table if missing."""
@@ -5814,6 +5909,93 @@ def finalize_stale_attendance_without_punch_out(db: Session) -> None:
         db.commit()
 
 
+# Attendance punch thresholds (IST wall-clock, matches frontend attendanceRules.js)
+ATTENDANCE_PUNCH_IN_ON_TIME_END = 9 * 60 + 15   # 9:15 AM
+ATTENDANCE_PUNCH_IN_LATE_END = 10 * 60            # 10:00 AM — after = half day
+ATTENDANCE_PUNCH_OUT_EARLY_BEFORE = 18 * 60 + 15  # 6:15 PM
+ATTENDANCE_PUNCH_OUT_LATE_AFTER = 19 * 60 + 30    # 7:30 PM
+ATTENDANCE_LATE_HOUR, ATTENDANCE_LATE_MINUTE = 9, 15
+
+
+def _punch_hm_to_minutes(hour: int, minute: int) -> int:
+    return hour * 60 + minute
+
+
+def classify_punch_in_time(current_time: str) -> tuple:
+    """Return (kind, minutes) — kind: on_time | late | half_day."""
+    hour, minute = int(current_time.split(':')[0]), int(current_time.split(':')[1])
+    mins = _punch_hm_to_minutes(hour, minute)
+    if mins <= ATTENDANCE_PUNCH_IN_ON_TIME_END:
+        return 'on_time', 0
+    if mins <= ATTENDANCE_PUNCH_IN_LATE_END:
+        pt = datetime.strptime(current_time, '%H:%M:%S')
+        th = datetime.strptime('09:15:00', '%H:%M:%S')
+        return 'late', int((pt - th).total_seconds() / 60)
+    pt = datetime.strptime(current_time, '%H:%M:%S')
+    th = datetime.strptime('10:00:00', '%H:%M:%S')
+    return 'half_day', int((pt - th).total_seconds() / 60)
+
+
+def classify_punch_out_time(current_time: str) -> tuple:
+    """Return (kind, minutes) — kind: on_time | early | late."""
+    hour, minute = int(current_time.split(':')[0]), int(current_time.split(':')[1])
+    mins = _punch_hm_to_minutes(hour, minute)
+    if mins < ATTENDANCE_PUNCH_OUT_EARLY_BEFORE:
+        pt = datetime.strptime(current_time, '%H:%M:%S')
+        th = datetime.strptime('18:15:00', '%H:%M:%S')
+        return 'early', int((th - pt).total_seconds() / 60)
+    if mins <= ATTENDANCE_PUNCH_OUT_LATE_AFTER:
+        return 'on_time', 0
+    pt = datetime.strptime(current_time, '%H:%M:%S')
+    th = datetime.strptime('19:30:00', '%H:%M:%S')
+    return 'late', int((pt - th).total_seconds() / 60)
+
+
+def _punch_in_status_for_kind(kind: str) -> str:
+    if kind == 'late':
+        return 'Late'
+    if kind == 'half_day':
+        return 'Half Day'
+    return 'Incomplete'
+
+
+def _create_punch_in_approval_request(db, kind, attendance, employee, punch_data, current_time, today, minutes, reason):
+    if kind == 'late':
+        pending = db.query(LatePunchInRequestModel).filter(
+            LatePunchInRequestModel.attendance_id == attendance.id,
+            LatePunchInRequestModel.status == 'Pending',
+        ).first()
+        if pending:
+            return
+        db.add(LatePunchInRequestModel(
+            attendance_id=attendance.id,
+            employee_id=punch_data.employee_id,
+            employee_name=employee.name,
+            punch_in_time=current_time,
+            minutes_late=minutes,
+            employee_reason=reason,
+            punch_in_date=today,
+            status='Pending',
+        ))
+    elif kind == 'half_day':
+        pending = db.query(HalfDayPunchInRequestModel).filter(
+            HalfDayPunchInRequestModel.attendance_id == attendance.id,
+            HalfDayPunchInRequestModel.status == 'Pending',
+        ).first()
+        if pending:
+            return
+        db.add(HalfDayPunchInRequestModel(
+            attendance_id=attendance.id,
+            employee_id=punch_data.employee_id,
+            employee_name=employee.name,
+            punch_in_time=current_time,
+            minutes_after_threshold=minutes,
+            employee_reason=reason,
+            punch_in_date=today,
+            status='Pending',
+        ))
+
+
 @api_router.post('/attendance/punch')
 def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     finalize_stale_attendance_without_punch_out(db)
@@ -5851,16 +6033,13 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             if existing.is_active_session == 1:
                 raise HTTPException(status_code=400, detail='Already punched in today')
             # New session after a previous punch-out: update session start time and late rules
-            hour, minute = int(current_time.split(':')[0]), int(current_time.split(':')[1])
-            is_late = hour > 10 or (hour == 10 and minute > 30)
-            minutes_late = 0
-            if is_late:
-                late_threshold = datetime.strptime('10:30:00', '%H:%M:%S')
-                punch_time = datetime.strptime(current_time, '%H:%M:%S')
-                minutes_late = int((punch_time - late_threshold).total_seconds() / 60)
+            punch_in_kind, minutes_offset = classify_punch_in_time(current_time)
+            is_late = punch_in_kind == 'late'
+            is_half_day = punch_in_kind == 'half_day'
             late_reason_in = (punch_data.late_reason or '').strip()
-            if is_late and not late_reason_in:
-                raise HTTPException(status_code=400, detail='Reason is required for late punch-in before approval can be requested')
+            if punch_in_kind in ('late', 'half_day') and not late_reason_in:
+                detail = 'Reason is required for half-day punch-in before approval can be requested' if is_half_day else 'Reason is required for late punch-in before approval can be requested'
+                raise HTTPException(status_code=400, detail=detail)
             tour_place_in = (punch_data.tour_place or '').strip()
             tour_reason_in = (punch_data.tour_reason or '').strip()
             if not at_office and (not tour_place_in or not tour_reason_in):
@@ -5873,57 +6052,42 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             existing.tour_place = tour_place_in if not at_office else None
             existing.tour_reason = tour_reason_in if not at_office else None
             existing.is_active_session = 1
-            existing.status = 'Late' if is_late else 'Incomplete'
+            existing.status = _punch_in_status_for_kind(punch_in_kind)
             db.commit()
             db.refresh(existing)
-            if is_late:
-                pending_in = db.query(LatePunchInRequestModel).filter(
-                    LatePunchInRequestModel.attendance_id == existing.id,
-                    LatePunchInRequestModel.status == 'Pending',
-                ).first()
-                if not pending_in:
-                    late_request = LatePunchInRequestModel(
-                        attendance_id=existing.id,
-                        employee_id=punch_data.employee_id,
-                        employee_name=employee.name,
-                        punch_in_time=current_time,
-                        minutes_late=minutes_late,
-                        employee_reason=late_reason_in,
-                        punch_in_date=today,
-                        status='Pending'
-                    )
-                    db.add(late_request)
-                    db.commit()
+            if punch_in_kind in ('late', 'half_day'):
+                _create_punch_in_approval_request(
+                    db, punch_in_kind, existing, employee, punch_data, current_time, today, minutes_offset, late_reason_in
+                )
+                db.commit()
             return {
-                'message': 'Punched in again successfully (new session)' if at_office else 'Recorded as Tour (official travel). Pending approval from Admin/Manager.',
+                'message': (
+                    'Punched in again successfully (new session)' if at_office else 'Recorded as Tour (official travel). Pending approval from Admin/Manager.'
+                ),
                 'attendance': existing,
                 'is_tour': not at_office,
                 'is_new_session': True,
                 'is_late': is_late,
-                'minutes_late': minutes_late if is_late else None,
+                'is_half_day': is_half_day,
+                'minutes_late': minutes_offset if punch_in_kind in ('late', 'half_day') else None,
             }
         
         # First punch in of the day
-        hour, minute = int(current_time.split(':')[0]), int(current_time.split(':')[1])
-        is_late = hour > 10 or (hour == 10 and minute > 30)
-        
-        # Calculate minutes late if applicable
-        minutes_late = 0
-        if is_late:
-            late_threshold = datetime.strptime('10:30:00', '%H:%M:%S')
-            punch_time = datetime.strptime(current_time, '%H:%M:%S')
-            minutes_late = int((punch_time - late_threshold).total_seconds() / 60)
-        
+        punch_in_kind, minutes_offset = classify_punch_in_time(current_time)
+        is_late = punch_in_kind == 'late'
+        is_half_day = punch_in_kind == 'half_day'
+
         late_reason_first = (punch_data.late_reason or '').strip()
-        if is_late and not late_reason_first:
-            raise HTTPException(status_code=400, detail='Reason is required for late punch-in before approval can be requested')
+        if punch_in_kind in ('late', 'half_day') and not late_reason_first:
+            detail = 'Reason is required for half-day punch-in before approval can be requested' if is_half_day else 'Reason is required for late punch-in before approval can be requested'
+            raise HTTPException(status_code=400, detail=detail)
         tour_place_first = (punch_data.tour_place or '').strip()
         tour_reason_first = (punch_data.tour_reason or '').strip()
         if not at_office and (not tour_place_first or not tour_reason_first):
             raise HTTPException(status_code=400, detail='Tour place and reason are required for tour punch-in')
         
-        # On-time punch-in: day not complete until punch-out (before 7 PM) and approvals
-        status = 'Late' if is_late else 'Incomplete'
+        # On-time punch-in: day not complete until punch-out and approvals
+        status = _punch_in_status_for_kind(punch_in_kind)
         
         new_attendance = AttendanceModel(
             employee_id=punch_data.employee_id,
@@ -5943,28 +6107,22 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         db.commit()
         db.refresh(new_attendance)
         
-        # If late punch-in, create approval request
-        if is_late:
-            late_request = LatePunchInRequestModel(
-                attendance_id=new_attendance.id,
-                employee_id=punch_data.employee_id,
-                employee_name=employee.name,
-                punch_in_time=current_time,
-                minutes_late=minutes_late,
-                employee_reason=late_reason_first,
-                punch_in_date=today,
-                status='Pending'
+        # If late or half-day punch-in, create approval request
+        if punch_in_kind in ('late', 'half_day'):
+            _create_punch_in_approval_request(
+                db, punch_in_kind, new_attendance, employee, punch_data, current_time, today, minutes_offset, late_reason_first
             )
-            db.add(late_request)
             db.commit()
-        
+
+        approval_msg = ' Waiting for admin approval due to half-day punch-in.' if is_half_day else ' Waiting for admin approval due to late punch-in.' if is_late else ''
         return {
-            'message': 'Punched in successfully. Waiting for admin approval due to late punch-in.' if is_late else 'Punched in successfully' if at_office else 'Recorded as Tour (official travel). Pending approval from Admin/Manager.',
+            'message': ('Punched in successfully.' + approval_msg) if at_office else 'Recorded as Tour (official travel). Pending approval from Admin/Manager.',
             'attendance': new_attendance,
             'is_tour': not at_office,
             'is_new_session': False,
             'is_late': is_late,
-            'minutes_late': minutes_late if is_late else None,
+            'is_half_day': is_half_day,
+            'minutes_late': minutes_offset if punch_in_kind in ('late', 'half_day') else None,
         }
     
     else:  # punch_out
@@ -5985,17 +6143,13 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
                     detail='Work log submission is mandatory before punch out. Please submit your work summary first.'
                 )
         
-        # Check if punch-out is after 7 PM (19:00)
-        hour, minute = int(current_time.split(':')[0]), int(current_time.split(':')[1])
-        is_late_punch_out = hour > 19 or (hour == 19 and minute > 0)
-        minutes_late_out = 0
-        if is_late_punch_out:
-            late_threshold = datetime.strptime('19:00:00', '%H:%M:%S')
-            punch_out_time_parsed = datetime.strptime(current_time, '%H:%M:%S')
-            minutes_late_out = int((punch_out_time_parsed - late_threshold).total_seconds() / 60)
+        punch_out_kind, minutes_offset = classify_punch_out_time(current_time)
+        is_early_punch_out = punch_out_kind == 'early'
+        is_late_punch_out = punch_out_kind == 'late'
         late_reason_out = (punch_data.late_reason or '').strip()
-        if is_late_punch_out and not late_reason_out:
-            raise HTTPException(status_code=400, detail='Reason is required for late punch-out before approval can be requested')
+        if punch_out_kind in ('early', 'late') and not late_reason_out:
+            detail = 'Reason is required for early punch-out before approval can be requested' if is_early_punch_out else 'Reason is required for late punch-out before approval can be requested'
+            raise HTTPException(status_code=400, detail=detail)
         tour_place_out = (punch_data.tour_place or '').strip()
         tour_reason_out = (punch_data.tour_reason or '').strip()
         if not at_office and (not tour_place_out or not tour_reason_out):
@@ -6036,14 +6190,14 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         existing.punch_out_lng = punch_data.longitude
         existing.is_active_session = 0  # Mark as not active
         
-        # Late punch-out → admin approval required (any prior day status except already-absent)
-        if is_late_punch_out:
+        # Punch-out outside normal window → admin approval required
+        if punch_out_kind in ('early', 'late'):
             existing.status = 'Pending Approval'
         else:
-            # Punch-out on time: mark present only when the day was completed within rules
             if existing.status == 'Incomplete':
                 existing.status = 'Present'
-            # If status was Late (late punch-in pending), keep Late until admin approves punch-in
+            elif existing.status == 'Half Day':
+                existing.status = 'Half Day'
             elif existing.status == 'Present':
                 existing.status = 'Present'
         
@@ -6065,23 +6219,41 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         db.commit()
         db.refresh(existing)
         
-        # If late punch-out, create approval request
         if is_late_punch_out:
             late_out_request = LatePunchOutRequestModel(
                 attendance_id=existing.id,
                 employee_id=punch_data.employee_id,
                 employee_name=employee.name,
                 punch_out_time=current_time,
-                minutes_late=minutes_late_out,
+                minutes_late=minutes_offset,
                 employee_reason=late_reason_out,
                 punch_out_date=today,
                 status='Pending'
             )
             db.add(late_out_request)
             db.commit()
-        
+        elif is_early_punch_out:
+            early_out_request = EarlyPunchOutRequestModel(
+                attendance_id=existing.id,
+                employee_id=punch_data.employee_id,
+                employee_name=employee.name,
+                punch_out_time=current_time,
+                minutes_early=minutes_offset,
+                employee_reason=late_reason_out,
+                punch_out_date=today,
+                status='Pending'
+            )
+            db.add(early_out_request)
+            db.commit()
+
+        if is_late_punch_out:
+            out_msg = 'Punched out successfully. Waiting for admin approval due to late punch-out.'
+        elif is_early_punch_out:
+            out_msg = 'Punched out successfully. Waiting for admin approval due to early punch-out.'
+        else:
+            out_msg = 'Punched out successfully' if at_office else 'Punch out recorded as Tour. Pending approval from Admin/Manager.'
         return {
-            'message': 'Punched out successfully. Waiting for admin approval due to late punch-out.' if is_late_punch_out else 'Punched out successfully' if at_office else 'Punch out recorded as Tour. Pending approval from Admin/Manager.',
+            'message': out_msg,
             'attendance': existing,
             'is_tour': not at_office,
             'session_number': session_number,
@@ -6089,7 +6261,9 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             'total_work_hours': existing.total_work_hours,
             'can_punch_in_again': True,
             'is_late_punch_out': is_late_punch_out,
-            'minutes_late_out': minutes_late_out if is_late_punch_out else None,
+            'is_early_punch_out': is_early_punch_out,
+            'minutes_late_out': minutes_offset if is_late_punch_out else None,
+            'minutes_early_out': minutes_offset if is_early_punch_out else None,
         }
 
 
@@ -6720,14 +6894,178 @@ def approve_late_punch_out(
         raise HTTPException(status_code=404, detail='Attendance record not found')
     
     if status == 'Approved':
-        attendance.status = 'Present'
-        message = 'Late punch-out approved. Employee marked as Present.'
+        had_half_day_in = db.query(HalfDayPunchInRequestModel).filter(
+            HalfDayPunchInRequestModel.attendance_id == attendance.id,
+            HalfDayPunchInRequestModel.status == 'Approved',
+        ).first() is not None or attendance.status == 'Half Day'
+        attendance.status = 'Half Day' if had_half_day_in else 'Present'
+        message = 'Late punch-out approved.'
     else:
         attendance.status = 'Absent'
         message = 'Late punch-out rejected. Employee marked as Absent.'
     
     db.commit()
     
+    return {
+        'message': message,
+        'request_id': request_id,
+        'attendance_id': attendance.id,
+        'new_status': attendance.status
+    }
+
+
+def _serialize_half_day_punch_in_request(r: HalfDayPunchInRequestModel) -> dict:
+    ra = r.requested_at
+    aa = r.approved_at
+    return {
+        'id': r.id,
+        'attendance_id': r.attendance_id,
+        'employee_id': r.employee_id,
+        'employee_name': r.employee_name or '',
+        'punch_in_time': r.punch_in_time,
+        'minutes_after_threshold': r.minutes_after_threshold if r.minutes_after_threshold is not None else 0,
+        'status': r.status,
+        'employee_reason': (getattr(r, 'employee_reason', None) or '').strip() or None,
+        'approver_id': r.approver_id,
+        'approver_name': r.approver_name,
+        'approval_reason': r.approval_reason,
+        'punch_in_date': r.punch_in_date,
+        'requested_at': ra.isoformat() if hasattr(ra, 'isoformat') else ra,
+        'approved_at': aa.isoformat() if aa and hasattr(aa, 'isoformat') else aa,
+    }
+
+
+def _serialize_early_punch_out_request(r: EarlyPunchOutRequestModel) -> dict:
+    ra = r.requested_at
+    aa = r.approved_at
+    return {
+        'id': r.id,
+        'attendance_id': r.attendance_id,
+        'employee_id': r.employee_id,
+        'employee_name': r.employee_name or '',
+        'punch_out_time': r.punch_out_time,
+        'minutes_early': r.minutes_early if r.minutes_early is not None else 0,
+        'status': r.status,
+        'employee_reason': (getattr(r, 'employee_reason', None) or '').strip() or None,
+        'approver_id': r.approver_id,
+        'approver_name': r.approver_name,
+        'approval_reason': r.approval_reason,
+        'punch_out_date': r.punch_out_date,
+        'requested_at': ra.isoformat() if hasattr(ra, 'isoformat') else ra,
+        'approved_at': aa.isoformat() if aa and hasattr(aa, 'isoformat') else aa,
+    }
+
+
+@api_router.get('/attendance/half-day-punch-in-requests')
+def get_half_day_punch_in_requests(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    status: str = 'Pending'
+):
+    if current_user.role not in ('Admin', 'HR'):
+        raise HTTPException(status_code=403, detail='Only Admin or HR can view half-day punch-in requests')
+    requests = db.query(HalfDayPunchInRequestModel).filter(
+        HalfDayPunchInRequestModel.status == status
+    ).order_by(HalfDayPunchInRequestModel.requested_at.desc()).all()
+    return [_serialize_half_day_punch_in_request(r) for r in requests]
+
+
+@api_router.post('/attendance/half-day-punch-in-approve')
+def approve_half_day_punch_in(
+    body: LatePunchInApproveAction,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role not in ('Admin', 'HR'):
+        raise HTTPException(status_code=403, detail='Only Admin or HR can approve half-day punch-in requests')
+    request_id = body.request_id
+    status = body.status
+    reason = body.reason or ''
+    half_request = db.query(HalfDayPunchInRequestModel).filter(
+        HalfDayPunchInRequestModel.id == request_id
+    ).first()
+    if not half_request:
+        raise HTTPException(status_code=404, detail='Half-day punch-in request not found')
+    if half_request.status != 'Pending':
+        raise HTTPException(status_code=400, detail='Request already processed')
+    half_request.status = status
+    half_request.approver_id = current_user.id
+    half_request.approver_name = current_user.name
+    half_request.approval_reason = reason
+    half_request.approved_at = datetime.now(timezone.utc)
+    attendance = db.query(AttendanceModel).filter(
+        AttendanceModel.id == half_request.attendance_id
+    ).first()
+    if not attendance:
+        raise HTTPException(status_code=404, detail='Attendance record not found')
+    if status == 'Approved':
+        attendance.status = 'Half Day'
+        message = 'Half-day punch-in approved. Employee marked as Half Day.'
+    else:
+        attendance.status = 'Absent'
+        message = 'Half-day punch-in rejected. Employee marked as Absent.'
+    db.commit()
+    return {
+        'message': message,
+        'request_id': request_id,
+        'attendance_id': attendance.id,
+        'new_status': attendance.status
+    }
+
+
+@api_router.get('/attendance/early-punch-out-requests')
+def get_early_punch_out_requests(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    status: str = 'Pending'
+):
+    if current_user.role not in ('Admin', 'HR'):
+        raise HTTPException(status_code=403, detail='Only Admin or HR can view early punch-out requests')
+    requests = db.query(EarlyPunchOutRequestModel).filter(
+        EarlyPunchOutRequestModel.status == status
+    ).order_by(EarlyPunchOutRequestModel.requested_at.desc()).all()
+    return [_serialize_early_punch_out_request(r) for r in requests]
+
+
+@api_router.post('/attendance/early-punch-out-approve')
+def approve_early_punch_out(
+    body: LatePunchInApproveAction,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role not in ('Admin', 'HR'):
+        raise HTTPException(status_code=403, detail='Only Admin or HR can approve early punch-out requests')
+    request_id = body.request_id
+    status = body.status
+    reason = body.reason or ''
+    early_request = db.query(EarlyPunchOutRequestModel).filter(
+        EarlyPunchOutRequestModel.id == request_id
+    ).first()
+    if not early_request:
+        raise HTTPException(status_code=404, detail='Early punch-out request not found')
+    if early_request.status != 'Pending':
+        raise HTTPException(status_code=400, detail='Request already processed')
+    early_request.status = status
+    early_request.approver_id = current_user.id
+    early_request.approver_name = current_user.name
+    early_request.approval_reason = reason
+    early_request.approved_at = datetime.now(timezone.utc)
+    attendance = db.query(AttendanceModel).filter(
+        AttendanceModel.id == early_request.attendance_id
+    ).first()
+    if not attendance:
+        raise HTTPException(status_code=404, detail='Attendance record not found')
+    if status == 'Approved':
+        had_half_day_in = db.query(HalfDayPunchInRequestModel).filter(
+            HalfDayPunchInRequestModel.attendance_id == attendance.id,
+            HalfDayPunchInRequestModel.status == 'Approved',
+        ).first() is not None or attendance.status == 'Half Day'
+        attendance.status = 'Half Day' if had_half_day_in else 'Present'
+        message = 'Early punch-out approved.'
+    else:
+        attendance.status = 'Absent'
+        message = 'Early punch-out rejected. Employee marked as Absent.'
+    db.commit()
     return {
         'message': message,
         'request_id': request_id,
@@ -6768,11 +7106,11 @@ def regularize_attendance(
     if existing:
         # Update existing record
         if action == 'present':
-            existing.punch_in = '10:00:00'
-            existing.punch_out = '18:00:00'
+            existing.punch_in = '09:15:00'
+            existing.punch_out = '19:00:00'
             existing.status = 'Present'
-            existing.work_hours = 8.0
-            existing.total_work_hours = 8.0
+            existing.work_hours = 9.0
+            existing.total_work_hours = 9.0
         else:
             existing.punch_in = None
             existing.punch_out = None
@@ -6788,11 +7126,11 @@ def regularize_attendance(
     else:
         # Create new record
         if action == 'present':
-            punch_in = '10:00:00'
-            punch_out = '18:00:00'
+            punch_in = '09:15:00'
+            punch_out = '19:00:00'
             status = 'Present'
-            work_hours = 8.0
-            total_work_hours = 8.0
+            work_hours = 9.0
+            total_work_hours = 9.0
         else:
             punch_in = None
             punch_out = None
@@ -7373,8 +7711,7 @@ def get_employee_attendance(employee_id: str, current_user: UserModel = Depends(
     ).order_by(AttendanceModel.date.desc()).all()
 
 
-# Late login threshold: 10:30
-ATTENDANCE_LATE_HOUR, ATTENDANCE_LATE_MINUTE = 10, 30
+# Late login threshold: 9:15 AM (see classify_punch_in_time above)
 
 
 @api_router.get('/attendance/late-details')
@@ -8542,6 +8879,218 @@ def require_leads_access(
     if not user_has_leads_access(current_user, db):
         raise HTTPException(status_code=403, detail='You do not have access to leads')
     return current_user
+
+
+def require_admin_console(current_user: UserModel = Depends(get_current_user)):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can access admin console')
+    return current_user
+
+
+class LeadSubCategoryOut(BaseModel):
+    id: str
+    name: str
+    sort_order: int = 0
+
+
+class LeadCategoryOut(BaseModel):
+    id: str
+    name: str
+    sort_order: int = 0
+    subcategories: List[LeadSubCategoryOut] = []
+
+
+class LeadCategoryCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=150)
+
+
+class LeadSubCategoryCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=150)
+
+
+def _serialize_lead_category(cat: LeadCategoryModel, subs: List[LeadSubCategoryModel]) -> dict:
+    return {
+        'id': cat.id,
+        'name': cat.name,
+        'sort_order': cat.sort_order or 0,
+        'subcategories': [
+            {'id': s.id, 'name': s.name, 'sort_order': s.sort_order or 0}
+            for s in sorted(subs, key=lambda x: (x.sort_order or 0, x.name.lower()))
+        ],
+    }
+
+
+@api_router.get('/lead-categories', response_model=List[LeadCategoryOut])
+def list_lead_categories(
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db),
+):
+    categories = db.query(LeadCategoryModel).order_by(LeadCategoryModel.sort_order, LeadCategoryModel.name).all()
+    if not categories:
+        return []
+    cat_ids = [c.id for c in categories]
+    subs = db.query(LeadSubCategoryModel).filter(LeadSubCategoryModel.category_id.in_(cat_ids)).all()
+    subs_by_cat = {}
+    for sub in subs:
+        subs_by_cat.setdefault(sub.category_id, []).append(sub)
+    return [_serialize_lead_category(c, subs_by_cat.get(c.id, [])) for c in categories]
+
+
+@api_router.post('/lead-categories', response_model=LeadCategoryOut)
+def create_lead_category(
+    body: LeadCategoryCreate,
+    current_user: UserModel = Depends(require_admin_console),
+    db: Session = Depends(get_db),
+):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Category name is required')
+    existing = db.query(LeadCategoryModel).filter(LeadCategoryModel.name == name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail='Category already exists')
+    max_sort = db.query(func.max(LeadCategoryModel.sort_order)).scalar() or 0
+    cat = LeadCategoryModel(id=str(uuid.uuid4()), name=name, sort_order=int(max_sort) + 1)
+    db.add(cat)
+    db.commit()
+    db.refresh(cat)
+    return _serialize_lead_category(cat, [])
+
+
+@api_router.put('/lead-categories/{category_id}', response_model=LeadCategoryOut)
+def update_lead_category(
+    category_id: str,
+    body: LeadCategoryCreate,
+    current_user: UserModel = Depends(require_admin_console),
+    db: Session = Depends(get_db),
+):
+    cat = db.query(LeadCategoryModel).filter(LeadCategoryModel.id == category_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail='Category not found')
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Category name is required')
+    if name != cat.name:
+        duplicate = db.query(LeadCategoryModel).filter(
+            LeadCategoryModel.name == name,
+            LeadCategoryModel.id != category_id,
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=400, detail='Category already exists')
+        old_name = cat.name
+        cat.name = name
+        db.query(LeadModel).filter(LeadModel.category == old_name).update(
+            {LeadModel.category: name}, synchronize_session=False
+        )
+    db.commit()
+    db.refresh(cat)
+    subs = db.query(LeadSubCategoryModel).filter(LeadSubCategoryModel.category_id == category_id).all()
+    return _serialize_lead_category(cat, subs)
+
+
+@api_router.delete('/lead-categories/{category_id}')
+def delete_lead_category(
+    category_id: str,
+    current_user: UserModel = Depends(require_admin_console),
+    db: Session = Depends(get_db),
+):
+    cat = db.query(LeadCategoryModel).filter(LeadCategoryModel.id == category_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail='Category not found')
+    db.query(LeadSubCategoryModel).filter(LeadSubCategoryModel.category_id == category_id).delete()
+    db.delete(cat)
+    db.commit()
+    return {'message': 'Category deleted'}
+
+
+@api_router.post('/lead-categories/{category_id}/subcategories', response_model=LeadSubCategoryOut)
+def create_lead_subcategory(
+    category_id: str,
+    body: LeadSubCategoryCreate,
+    current_user: UserModel = Depends(require_admin_console),
+    db: Session = Depends(get_db),
+):
+    cat = db.query(LeadCategoryModel).filter(LeadCategoryModel.id == category_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail='Category not found')
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Subcategory name is required')
+    existing = db.query(LeadSubCategoryModel).filter(
+        LeadSubCategoryModel.category_id == category_id,
+        LeadSubCategoryModel.name == name,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail='Subcategory already exists for this category')
+    max_sort = db.query(func.max(LeadSubCategoryModel.sort_order)).filter(
+        LeadSubCategoryModel.category_id == category_id
+    ).scalar() or 0
+    sub = LeadSubCategoryModel(
+        id=str(uuid.uuid4()),
+        category_id=category_id,
+        name=name,
+        sort_order=int(max_sort) + 1,
+    )
+    db.add(sub)
+    db.commit()
+    db.refresh(sub)
+    return {'id': sub.id, 'name': sub.name, 'sort_order': sub.sort_order or 0}
+
+
+@api_router.put('/lead-categories/{category_id}/subcategories/{subcategory_id}', response_model=LeadSubCategoryOut)
+def update_lead_subcategory(
+    category_id: str,
+    subcategory_id: str,
+    body: LeadSubCategoryCreate,
+    current_user: UserModel = Depends(require_admin_console),
+    db: Session = Depends(get_db),
+):
+    cat = db.query(LeadCategoryModel).filter(LeadCategoryModel.id == category_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail='Category not found')
+    sub = db.query(LeadSubCategoryModel).filter(
+        LeadSubCategoryModel.id == subcategory_id,
+        LeadSubCategoryModel.category_id == category_id,
+    ).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail='Subcategory not found')
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Subcategory name is required')
+    if name != sub.name:
+        duplicate = db.query(LeadSubCategoryModel).filter(
+            LeadSubCategoryModel.category_id == category_id,
+            LeadSubCategoryModel.name == name,
+            LeadSubCategoryModel.id != subcategory_id,
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=400, detail='Subcategory already exists in this category')
+        old_name = sub.name
+        sub.name = name
+        db.query(LeadModel).filter(
+            LeadModel.category == cat.name,
+            LeadModel.sub_category == old_name,
+        ).update({LeadModel.sub_category: name}, synchronize_session=False)
+    db.commit()
+    db.refresh(sub)
+    return {'id': sub.id, 'name': sub.name, 'sort_order': sub.sort_order or 0}
+
+
+@api_router.delete('/lead-categories/{category_id}/subcategories/{subcategory_id}')
+def delete_lead_subcategory(
+    category_id: str,
+    subcategory_id: str,
+    current_user: UserModel = Depends(require_admin_console),
+    db: Session = Depends(get_db),
+):
+    sub = db.query(LeadSubCategoryModel).filter(
+        LeadSubCategoryModel.id == subcategory_id,
+        LeadSubCategoryModel.category_id == category_id,
+    ).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail='Subcategory not found')
+    db.delete(sub)
+    db.commit()
+    return {'message': 'Subcategory deleted'}
 
 
 def can_edit_lead(lead: LeadModel, current_user: UserModel, db: Session) -> bool:

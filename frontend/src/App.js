@@ -26,6 +26,7 @@ import { GovernmentHolidays } from '@/pages/GovernmentHolidays';
 import Vehicles from '@/pages/Vehicles';
 import LocationTracker from '@/pages/LocationTracker';
 import CGWFlowMetre from '@/pages/CGWFlowMetre';
+import { AdminConsole } from '@/pages/AdminConsole';
 
 function App() {
   return (
@@ -196,6 +197,15 @@ function App() {
                   element={
                     <ProtectedRoute requiredPermission="idcards">
                       <IDCards />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/admin-console"
+                  element={
+                    <ProtectedRoute allowedRoles={['Admin']}>
+                      <AdminConsole />
                     </ProtectedRoute>
                   }
                 />
