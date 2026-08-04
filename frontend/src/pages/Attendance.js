@@ -780,7 +780,7 @@ export const Attendance = () => {
     }
   }, [gridMonth, activeTab, canManageAttendanceGrid, canViewOwnAttendanceGrid]);
 
-  const getLocation = () =>
+  const getLocation = (options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }) =>
     new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
         reject(new Error('Location is not supported by your browser'));
@@ -788,10 +788,30 @@ export const Attendance = () => {
       }
       navigator.geolocation.getCurrentPosition(
         (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        (err) => reject(err),
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        (err) => {
+          const code = err?.code;
+          let message = err?.message || 'Unable to get your location';
+          if (code === 1) message = 'Location permission denied. Allow location access and try again.';
+          else if (code === 2) message = 'Location unavailable. Check GPS/network and try again.';
+          else if (code === 3) message = 'Location request timed out. Try again.';
+          reject(new Error(message));
+        },
+        options
       );
     });
+
+  /** Prefer precise GPS; fall back to coarser/cached position so punch is not blocked on desktop. */
+  const getLocationWithFallback = async () => {
+    try {
+      return await getLocation({ enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
+    } catch (firstErr) {
+      try {
+        return await getLocation({ enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
+      } catch {
+        throw firstErr;
+      }
+    }
+  };
 
   const handlePunch = async (action) => {
     const employeeId = canSelectPunchEmployee ? selectedEmployee : user?.employee_id;
@@ -878,19 +898,18 @@ export const Attendance = () => {
   const executePunch = async (action, employeeId, lateReason = '', tourPlace = '', tourReason = '') => {
     let latitude = null;
     let longitude = null;
+    setPunchLoading(true);
     if (!canSelectPunchEmployee) {
-      setPunchLoading(true);
       try {
-        const loc = await getLocation();
+        const loc = await getLocationWithFallback();
         latitude = loc.lat;
         longitude = loc.lng;
       } catch (err) {
-        setPunchLoading(false);
-        toast.error(err.message || 'Location is required to punch. Please enable location access.');
-        return;
+        // Office geofence is optional in this deployment. If GPS fails, still try punch;
+        // backend will reject only when office location is configured and required.
+        console.warn('Punch without browser location:', err?.message || err);
       }
     }
-    setPunchLoading(true);
     try {
       const payload = { employee_id: employeeId, action };
       if (latitude != null) payload.latitude = latitude;
@@ -916,7 +935,9 @@ export const Attendance = () => {
       }
     } catch (err) {
       const detail = err.response?.data?.detail || 'Punch failed';
-      if (typeof detail === 'string' && detail.toLowerCase().includes('tour place and reason are required')) {
+      if (typeof detail === 'string' && detail.toLowerCase().includes('location is required')) {
+        toast.error(detail);
+      } else if (typeof detail === 'string' && detail.toLowerCase().includes('tour place and reason are required')) {
         setPendingTourPunch({ action, employeeId, lateReason });
         setTourPlaceText('');
         setTourReasonText('');
