@@ -23,5 +23,27 @@ jobs:
             git pull origin main
             git stash pop || true
             cd backend
+
+            # Ensure Telegram bot config is present in .env (never committed to git — sourced from
+            # encrypted GitHub Actions secrets and written directly on the server on every deploy).
+            set_env_var() {
+              key="$1"
+              value="$2"
+              if [ -z "$value" ]; then
+                return
+              fi
+              if grep -q "^${key}=" .env 2>/dev/null; then
+                sed -i "s|^${key}=.*|${key}=${value}|" .env
+              else
+                echo "${key}=${value}" >> .env
+              fi
+            }
+            set_env_var TELEGRAM_BOT_TOKEN "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+            set_env_var TELEGRAM_BOT_USERNAME "${{ secrets.TELEGRAM_BOT_USERNAME }}"
+            set_env_var TELEGRAM_WEBHOOK_URL "${{ secrets.TELEGRAM_WEBHOOK_URL }}"
+            set_env_var TELEGRAM_WEBHOOK_SECRET "${{ secrets.TELEGRAM_WEBHOOK_SECRET }}"
+            set_env_var TELEGRAM_CHAT_ID "${{ secrets.TELEGRAM_CHAT_ID }}"
+            set_env_var TELEGRAM_ADMIN_CHAT_ID "${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}"
+
             pip3 install -r requirements.txt --quiet
             sudo systemctl restart uvicorn

@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { LogOut, FileText, Calendar } from 'lucide-react';
+import { todayISTDateString } from '@/utils/date';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
@@ -62,7 +63,7 @@ export const Workspace = () => {
       toast.error('Please enter your day summary');
       return;
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISTDateString();
     setSubmitting(true);
     try {
       await axios.post(
@@ -85,7 +86,7 @@ export const Workspace = () => {
     }
   };
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISTDateString();
 
   if (loading && logs.length === 0) {
     return (

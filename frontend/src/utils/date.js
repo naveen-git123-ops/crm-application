@@ -1,11 +1,23 @@
 // Shared helpers to ensure all dates/times are shown in IST (Asia/Kolkata)
+// Keep in sync with backend ATTENDANCE_TIMEZONE (default Asia/Kolkata).
+
+export const ATTENDANCE_TIMEZONE = 'Asia/Kolkata';
 
 const IST_DATE_OPTIONS = {
   year: 'numeric',
   month: 'short',
   day: 'numeric',
-  timeZone: 'Asia/Kolkata',
+  timeZone: ATTENDANCE_TIMEZONE,
 };
+
+/** YYYY-MM-DD for attendance / daily work logs (IST wall calendar, not UTC). */
+export const todayISTDateString = (date = new Date()) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: ATTENDANCE_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
 
 const IST_DATETIME_OPTIONS = {
   ...IST_DATE_OPTIONS,

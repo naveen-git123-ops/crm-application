@@ -9475,16 +9475,20 @@ def create_daily_work_log(
 ):
     if data.employee_id != current_user.employee_id and current_user.role not in ['Admin', 'HR', 'Manager']:
         raise HTTPException(status_code=403, detail='Not authorized to submit work log for another employee')
+    # Pin self-submits to attendance calendar day so UTC client dates cannot block punch-out
+    log_date = data.log_date
+    if data.employee_id == current_user.employee_id:
+        log_date = attendance_local_date_str()
     existing = db.query(DailyWorkLogModel).filter(
         DailyWorkLogModel.employee_id == data.employee_id,
-        DailyWorkLogModel.log_date == data.log_date
+        DailyWorkLogModel.log_date == log_date
     ).first()
     if existing:
         raise HTTPException(status_code=400, detail='Work log already submitted for this date')
     new_log = DailyWorkLogModel(
         employee_id=data.employee_id,
         employee_name=data.employee_name,
-        log_date=data.log_date,
+        log_date=log_date,
         summary=data.summary
     )
     db.add(new_log)
@@ -9513,8 +9517,8 @@ def check_today_work_log(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Check if user has submitted work log for today"""
-    today = datetime.now().strftime('%Y-%m-%d')
+    """Check if user has submitted work log for today (attendance timezone calendar day)."""
+    today = attendance_local_date_str()
     existing = db.query(DailyWorkLogModel).filter(
         DailyWorkLogModel.employee_id == current_user.employee_id,
         DailyWorkLogModel.log_date == today

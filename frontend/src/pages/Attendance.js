@@ -27,7 +27,7 @@ import {
   Filter
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, subMonths, addMonths, eachDayOfInterval, getDate, isToday as isTodayDate, isWeekend, subDays } from 'date-fns';
-import { formatISTDate, formatISTDateTime } from '@/utils/date';
+import { formatISTDate, formatISTDateTime, todayISTDateString } from '@/utils/date';
 import { presentDayCredit, formatDayCount } from '@/utils/attendanceGridMetrics';
 import {
   LATE_THRESHOLD_MINUTES,
@@ -921,6 +921,15 @@ export const Attendance = () => {
         setTourPlaceText('');
         setTourReasonText('');
         setShowTourReasonDialog(true);
+      } else if (
+        action === 'punch_out' &&
+        typeof detail === 'string' &&
+        (detail.toLowerCase().includes('work summary') || detail.toLowerCase().includes('work log'))
+      ) {
+        setPendingPunchAction('punch_out');
+        setWorkLogSummary('');
+        setShowPunchOutWorkLogDialog(true);
+        toast.error(detail);
       } else {
         toast.error(detail);
       }
@@ -955,6 +964,25 @@ export const Attendance = () => {
     setTourReasonText('');
   };
 
+  const continuePunchAfterWorkLog = async () => {
+    if (!pendingPunchAction) return;
+    const employeeId = user?.employee_id;
+    const action = pendingPunchAction;
+    setPendingPunchAction(null);
+    const now = new Date();
+    if (action === 'punch_out' && isEarlyPunchOutNow(now)) {
+      setPendingLatePunch({ action: 'punch_out', employeeId, punchType: 'early_out' });
+      setLateReasonText('');
+      setShowLateReasonDialog(true);
+    } else if (action === 'punch_out' && isLatePunchOutNow(now)) {
+      setPendingLatePunch({ action: 'punch_out', employeeId, punchType: 'late_out' });
+      setLateReasonText('');
+      setShowLateReasonDialog(true);
+    } else {
+      await executePunch(action, employeeId, '');
+    }
+  };
+
   const handleSubmitPunchOutWorkLog = async () => {
     if (!workLogSummary.trim()) {
       toast.error('Please enter your work summary');
@@ -963,7 +991,14 @@ export const Attendance = () => {
 
     setIsSubmittingWorkLog(true);
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      // Must match backend attendance calendar day (IST), not UTC from toISOString()
+      let today = todayISTDateString();
+      try {
+        const status = await checkTodayWorkLog();
+        if (status?.today) today = status.today;
+      } catch (_) {
+        /* use IST fallback */
+      }
       await axios.post(
         `${API}/daily-work-logs`,
         {
@@ -977,26 +1012,17 @@ export const Attendance = () => {
       toast.success('Work log submitted successfully');
       setWorkLogSummary('');
       setShowPunchOutWorkLogDialog(false);
-      
-      // Now execute the pending punch action (usually punch_out)
-      if (pendingPunchAction) {
-        const employeeId = user?.employee_id;
-        setPendingPunchAction(null);
-        const now = new Date();
-        if (pendingPunchAction === 'punch_out' && isEarlyPunchOutNow(now)) {
-          setPendingLatePunch({ action: 'punch_out', employeeId, punchType: 'early_out' });
-          setLateReasonText('');
-          setShowLateReasonDialog(true);
-        } else if (pendingPunchAction === 'punch_out' && isLatePunchOutNow(now)) {
-          setPendingLatePunch({ action: 'punch_out', employeeId, punchType: 'late_out' });
-          setLateReasonText('');
-          setShowLateReasonDialog(true);
-        } else {
-          await executePunch(pendingPunchAction, employeeId, '');
-        }
-      }
+      await continuePunchAfterWorkLog();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to submit work log');
+      const detail = error.response?.data?.detail || 'Failed to submit work log';
+      // Already logged for today — proceed with punch out
+      if (typeof detail === 'string' && detail.toLowerCase().includes('already submitted')) {
+        setWorkLogSummary('');
+        setShowPunchOutWorkLogDialog(false);
+        await continuePunchAfterWorkLog();
+      } else {
+        toast.error(detail);
+      }
     } finally {
       setIsSubmittingWorkLog(false);
     }

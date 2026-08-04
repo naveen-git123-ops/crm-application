@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { AlertCircle } from 'lucide-react';
+import { todayISTDateString } from '@/utils/date';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API = `${BACKEND_URL}/api`;
@@ -28,7 +29,7 @@ export const LogoutConfirmDialog = ({ isOpen, onClose, onLogoutConfirmed, user }
 
     setIsSubmitting(true);
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayISTDateString();
       await axios.post(
         `${API}/daily-work-logs`,
         {
