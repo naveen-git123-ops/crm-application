@@ -19,7 +19,9 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /home/ec2-user/crm-application
+            git stash
             git pull origin main
-            cd /home/ec2-user/crm-application/backend
+            git stash pop || true
+            cd backend
             pip3 install -r requirements.txt --quiet
             sudo systemctl restart uvicorn
