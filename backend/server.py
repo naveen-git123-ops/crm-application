@@ -37,7 +37,15 @@ from openpyxl import load_workbook
 import zipfile
 from urllib.parse import urlparse
 
-app = FastAPI()
+app = FastAPI(
+    title='Resoline CRM API',
+    openapi_tags=[
+        {
+            'name': 'Lead Categories',
+            'description': 'Lead category and subcategory options used in Admin Console and the New Lead form.',
+        },
+    ],
+)
 
 # CORS
 # NOTE: Browsers do NOT allow `allow_origins=["*"]` together with `allow_credentials=True`.
@@ -8888,212 +8896,6 @@ def require_admin_console(current_user: UserModel = Depends(get_current_user)):
     return current_user
 
 
-class LeadSubCategoryOut(BaseModel):
-    id: str
-    name: str
-    sort_order: int = 0
-
-
-class LeadCategoryOut(BaseModel):
-    id: str
-    name: str
-    sort_order: int = 0
-    subcategories: List[LeadSubCategoryOut] = []
-
-
-class LeadCategoryCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=150)
-
-
-class LeadSubCategoryCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=150)
-
-
-def _serialize_lead_category(cat: LeadCategoryModel, subs: List[LeadSubCategoryModel]) -> dict:
-    return {
-        'id': cat.id,
-        'name': cat.name,
-        'sort_order': cat.sort_order or 0,
-        'subcategories': [
-            {'id': s.id, 'name': s.name, 'sort_order': s.sort_order or 0}
-            for s in sorted(subs, key=lambda x: (x.sort_order or 0, x.name.lower()))
-        ],
-    }
-
-
-@api_router.get('/lead-categories', response_model=List[LeadCategoryOut])
-def list_lead_categories(
-    current_user: UserModel = Depends(require_leads_access),
-    db: Session = Depends(get_db),
-):
-    categories = db.query(LeadCategoryModel).order_by(LeadCategoryModel.sort_order, LeadCategoryModel.name).all()
-    if not categories:
-        return []
-    cat_ids = [c.id for c in categories]
-    subs = db.query(LeadSubCategoryModel).filter(LeadSubCategoryModel.category_id.in_(cat_ids)).all()
-    subs_by_cat = {}
-    for sub in subs:
-        subs_by_cat.setdefault(sub.category_id, []).append(sub)
-    return [_serialize_lead_category(c, subs_by_cat.get(c.id, [])) for c in categories]
-
-
-@api_router.post('/lead-categories', response_model=LeadCategoryOut)
-def create_lead_category(
-    body: LeadCategoryCreate,
-    current_user: UserModel = Depends(require_admin_console),
-    db: Session = Depends(get_db),
-):
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail='Category name is required')
-    existing = db.query(LeadCategoryModel).filter(LeadCategoryModel.name == name).first()
-    if existing:
-        raise HTTPException(status_code=400, detail='Category already exists')
-    max_sort = db.query(func.max(LeadCategoryModel.sort_order)).scalar() or 0
-    cat = LeadCategoryModel(id=str(uuid.uuid4()), name=name, sort_order=int(max_sort) + 1)
-    db.add(cat)
-    db.commit()
-    db.refresh(cat)
-    return _serialize_lead_category(cat, [])
-
-
-@api_router.put('/lead-categories/{category_id}', response_model=LeadCategoryOut)
-def update_lead_category(
-    category_id: str,
-    body: LeadCategoryCreate,
-    current_user: UserModel = Depends(require_admin_console),
-    db: Session = Depends(get_db),
-):
-    cat = db.query(LeadCategoryModel).filter(LeadCategoryModel.id == category_id).first()
-    if not cat:
-        raise HTTPException(status_code=404, detail='Category not found')
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail='Category name is required')
-    if name != cat.name:
-        duplicate = db.query(LeadCategoryModel).filter(
-            LeadCategoryModel.name == name,
-            LeadCategoryModel.id != category_id,
-        ).first()
-        if duplicate:
-            raise HTTPException(status_code=400, detail='Category already exists')
-        old_name = cat.name
-        cat.name = name
-        db.query(LeadModel).filter(LeadModel.category == old_name).update(
-            {LeadModel.category: name}, synchronize_session=False
-        )
-    db.commit()
-    db.refresh(cat)
-    subs = db.query(LeadSubCategoryModel).filter(LeadSubCategoryModel.category_id == category_id).all()
-    return _serialize_lead_category(cat, subs)
-
-
-@api_router.delete('/lead-categories/{category_id}')
-def delete_lead_category(
-    category_id: str,
-    current_user: UserModel = Depends(require_admin_console),
-    db: Session = Depends(get_db),
-):
-    cat = db.query(LeadCategoryModel).filter(LeadCategoryModel.id == category_id).first()
-    if not cat:
-        raise HTTPException(status_code=404, detail='Category not found')
-    db.query(LeadSubCategoryModel).filter(LeadSubCategoryModel.category_id == category_id).delete()
-    db.delete(cat)
-    db.commit()
-    return {'message': 'Category deleted'}
-
-
-@api_router.post('/lead-categories/{category_id}/subcategories', response_model=LeadSubCategoryOut)
-def create_lead_subcategory(
-    category_id: str,
-    body: LeadSubCategoryCreate,
-    current_user: UserModel = Depends(require_admin_console),
-    db: Session = Depends(get_db),
-):
-    cat = db.query(LeadCategoryModel).filter(LeadCategoryModel.id == category_id).first()
-    if not cat:
-        raise HTTPException(status_code=404, detail='Category not found')
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail='Subcategory name is required')
-    existing = db.query(LeadSubCategoryModel).filter(
-        LeadSubCategoryModel.category_id == category_id,
-        LeadSubCategoryModel.name == name,
-    ).first()
-    if existing:
-        raise HTTPException(status_code=400, detail='Subcategory already exists for this category')
-    max_sort = db.query(func.max(LeadSubCategoryModel.sort_order)).filter(
-        LeadSubCategoryModel.category_id == category_id
-    ).scalar() or 0
-    sub = LeadSubCategoryModel(
-        id=str(uuid.uuid4()),
-        category_id=category_id,
-        name=name,
-        sort_order=int(max_sort) + 1,
-    )
-    db.add(sub)
-    db.commit()
-    db.refresh(sub)
-    return {'id': sub.id, 'name': sub.name, 'sort_order': sub.sort_order or 0}
-
-
-@api_router.put('/lead-categories/{category_id}/subcategories/{subcategory_id}', response_model=LeadSubCategoryOut)
-def update_lead_subcategory(
-    category_id: str,
-    subcategory_id: str,
-    body: LeadSubCategoryCreate,
-    current_user: UserModel = Depends(require_admin_console),
-    db: Session = Depends(get_db),
-):
-    cat = db.query(LeadCategoryModel).filter(LeadCategoryModel.id == category_id).first()
-    if not cat:
-        raise HTTPException(status_code=404, detail='Category not found')
-    sub = db.query(LeadSubCategoryModel).filter(
-        LeadSubCategoryModel.id == subcategory_id,
-        LeadSubCategoryModel.category_id == category_id,
-    ).first()
-    if not sub:
-        raise HTTPException(status_code=404, detail='Subcategory not found')
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail='Subcategory name is required')
-    if name != sub.name:
-        duplicate = db.query(LeadSubCategoryModel).filter(
-            LeadSubCategoryModel.category_id == category_id,
-            LeadSubCategoryModel.name == name,
-            LeadSubCategoryModel.id != subcategory_id,
-        ).first()
-        if duplicate:
-            raise HTTPException(status_code=400, detail='Subcategory already exists in this category')
-        old_name = sub.name
-        sub.name = name
-        db.query(LeadModel).filter(
-            LeadModel.category == cat.name,
-            LeadModel.sub_category == old_name,
-        ).update({LeadModel.sub_category: name}, synchronize_session=False)
-    db.commit()
-    db.refresh(sub)
-    return {'id': sub.id, 'name': sub.name, 'sort_order': sub.sort_order or 0}
-
-
-@api_router.delete('/lead-categories/{category_id}/subcategories/{subcategory_id}')
-def delete_lead_subcategory(
-    category_id: str,
-    subcategory_id: str,
-    current_user: UserModel = Depends(require_admin_console),
-    db: Session = Depends(get_db),
-):
-    sub = db.query(LeadSubCategoryModel).filter(
-        LeadSubCategoryModel.id == subcategory_id,
-        LeadSubCategoryModel.category_id == category_id,
-    ).first()
-    if not sub:
-        raise HTTPException(status_code=404, detail='Subcategory not found')
-    db.delete(sub)
-    db.commit()
-    return {'message': 'Subcategory deleted'}
-
-
 def can_edit_lead(lead: LeadModel, current_user: UserModel, db: Session) -> bool:
     """Admin: any record. Manager: any lead. Others with leads access: created by or assigned to them."""
     if can_manage_any_record(current_user):
@@ -9917,6 +9719,255 @@ def delete_lead_reminder(
     db.delete(reminder)
     db.commit()
     return {'message': 'Reminder deleted'}
+
+
+# ============= LEAD CATEGORIES (Admin Console / New Lead form) =============
+
+class LeadSubCategoryOut(BaseModel):
+    id: str
+    name: str
+    sort_order: int = 0
+
+
+class LeadCategoryOut(BaseModel):
+    id: str
+    name: str
+    sort_order: int = 0
+    subcategories: List[LeadSubCategoryOut] = []
+
+
+class LeadCategoryCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=150)
+
+
+class LeadSubCategoryCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=150)
+
+
+def _serialize_lead_category(cat: LeadCategoryModel, subs: List[LeadSubCategoryModel]) -> dict:
+    return {
+        'id': cat.id,
+        'name': cat.name,
+        'sort_order': cat.sort_order or 0,
+        'subcategories': [
+            {'id': s.id, 'name': s.name, 'sort_order': s.sort_order or 0}
+            for s in sorted(subs, key=lambda x: (x.sort_order or 0, x.name.lower()))
+        ],
+    }
+
+
+@api_router.get(
+    '/lead-categories',
+    response_model=List[LeadCategoryOut],
+    tags=['Lead Categories'],
+    summary='List lead categories',
+)
+def list_lead_categories(
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db),
+):
+    """Return all lead categories with nested subcategories. Requires leads screen access."""
+    categories = db.query(LeadCategoryModel).order_by(LeadCategoryModel.sort_order, LeadCategoryModel.name).all()
+    if not categories:
+        return []
+    cat_ids = [c.id for c in categories]
+    subs = db.query(LeadSubCategoryModel).filter(LeadSubCategoryModel.category_id.in_(cat_ids)).all()
+    subs_by_cat = {}
+    for sub in subs:
+        subs_by_cat.setdefault(sub.category_id, []).append(sub)
+    return [_serialize_lead_category(c, subs_by_cat.get(c.id, [])) for c in categories]
+
+
+@api_router.post(
+    '/lead-categories',
+    response_model=LeadCategoryOut,
+    tags=['Lead Categories'],
+    summary='Create lead category',
+)
+def create_lead_category(
+    body: LeadCategoryCreate,
+    current_user: UserModel = Depends(require_admin_console),
+    db: Session = Depends(get_db),
+):
+    """Create a new lead category. Admin only."""
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Category name is required')
+    existing = db.query(LeadCategoryModel).filter(LeadCategoryModel.name == name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail='Category already exists')
+    max_sort = db.query(func.max(LeadCategoryModel.sort_order)).scalar() or 0
+    cat = LeadCategoryModel(id=str(uuid.uuid4()), name=name, sort_order=int(max_sort) + 1)
+    db.add(cat)
+    db.commit()
+    db.refresh(cat)
+    return _serialize_lead_category(cat, [])
+
+
+@api_router.put(
+    '/lead-categories/{category_id}',
+    response_model=LeadCategoryOut,
+    tags=['Lead Categories'],
+    summary='Update lead category',
+)
+def update_lead_category(
+    category_id: str,
+    body: LeadCategoryCreate,
+    current_user: UserModel = Depends(require_admin_console),
+    db: Session = Depends(get_db),
+):
+    """Rename a lead category. Updates existing leads using the old category name. Admin only."""
+    cat = db.query(LeadCategoryModel).filter(LeadCategoryModel.id == category_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail='Category not found')
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Category name is required')
+    if name != cat.name:
+        duplicate = db.query(LeadCategoryModel).filter(
+            LeadCategoryModel.name == name,
+            LeadCategoryModel.id != category_id,
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=400, detail='Category already exists')
+        old_name = cat.name
+        cat.name = name
+        db.query(LeadModel).filter(LeadModel.category == old_name).update(
+            {LeadModel.category: name}, synchronize_session=False
+        )
+    db.commit()
+    db.refresh(cat)
+    subs = db.query(LeadSubCategoryModel).filter(LeadSubCategoryModel.category_id == category_id).all()
+    return _serialize_lead_category(cat, subs)
+
+
+@api_router.delete(
+    '/lead-categories/{category_id}',
+    tags=['Lead Categories'],
+    summary='Delete lead category',
+)
+def delete_lead_category(
+    category_id: str,
+    current_user: UserModel = Depends(require_admin_console),
+    db: Session = Depends(get_db),
+):
+    """Delete a lead category and all of its subcategories. Admin only."""
+    cat = db.query(LeadCategoryModel).filter(LeadCategoryModel.id == category_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail='Category not found')
+    db.query(LeadSubCategoryModel).filter(LeadSubCategoryModel.category_id == category_id).delete()
+    db.delete(cat)
+    db.commit()
+    return {'message': 'Category deleted'}
+
+
+@api_router.post(
+    '/lead-categories/{category_id}/subcategories',
+    response_model=LeadSubCategoryOut,
+    tags=['Lead Categories'],
+    summary='Create lead subcategory',
+)
+def create_lead_subcategory(
+    category_id: str,
+    body: LeadSubCategoryCreate,
+    current_user: UserModel = Depends(require_admin_console),
+    db: Session = Depends(get_db),
+):
+    """Add a subcategory under a lead category. Admin only."""
+    cat = db.query(LeadCategoryModel).filter(LeadCategoryModel.id == category_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail='Category not found')
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Subcategory name is required')
+    existing = db.query(LeadSubCategoryModel).filter(
+        LeadSubCategoryModel.category_id == category_id,
+        LeadSubCategoryModel.name == name,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail='Subcategory already exists for this category')
+    max_sort = db.query(func.max(LeadSubCategoryModel.sort_order)).filter(
+        LeadSubCategoryModel.category_id == category_id
+    ).scalar() or 0
+    sub = LeadSubCategoryModel(
+        id=str(uuid.uuid4()),
+        category_id=category_id,
+        name=name,
+        sort_order=int(max_sort) + 1,
+    )
+    db.add(sub)
+    db.commit()
+    db.refresh(sub)
+    return {'id': sub.id, 'name': sub.name, 'sort_order': sub.sort_order or 0}
+
+
+@api_router.put(
+    '/lead-categories/{category_id}/subcategories/{subcategory_id}',
+    response_model=LeadSubCategoryOut,
+    tags=['Lead Categories'],
+    summary='Update lead subcategory',
+)
+def update_lead_subcategory(
+    category_id: str,
+    subcategory_id: str,
+    body: LeadSubCategoryCreate,
+    current_user: UserModel = Depends(require_admin_console),
+    db: Session = Depends(get_db),
+):
+    """Rename a lead subcategory. Updates existing leads under the parent category. Admin only."""
+    cat = db.query(LeadCategoryModel).filter(LeadCategoryModel.id == category_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail='Category not found')
+    sub = db.query(LeadSubCategoryModel).filter(
+        LeadSubCategoryModel.id == subcategory_id,
+        LeadSubCategoryModel.category_id == category_id,
+    ).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail='Subcategory not found')
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Subcategory name is required')
+    if name != sub.name:
+        duplicate = db.query(LeadSubCategoryModel).filter(
+            LeadSubCategoryModel.category_id == category_id,
+            LeadSubCategoryModel.name == name,
+            LeadSubCategoryModel.id != subcategory_id,
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=400, detail='Subcategory already exists in this category')
+        old_name = sub.name
+        sub.name = name
+        db.query(LeadModel).filter(
+            LeadModel.category == cat.name,
+            LeadModel.sub_category == old_name,
+        ).update({LeadModel.sub_category: name}, synchronize_session=False)
+    db.commit()
+    db.refresh(sub)
+    return {'id': sub.id, 'name': sub.name, 'sort_order': sub.sort_order or 0}
+
+
+@api_router.delete(
+    '/lead-categories/{category_id}/subcategories/{subcategory_id}',
+    tags=['Lead Categories'],
+    summary='Delete lead subcategory',
+)
+def delete_lead_subcategory(
+    category_id: str,
+    subcategory_id: str,
+    current_user: UserModel = Depends(require_admin_console),
+    db: Session = Depends(get_db),
+):
+    """Delete a subcategory from a lead category. Admin only."""
+    sub = db.query(LeadSubCategoryModel).filter(
+        LeadSubCategoryModel.id == subcategory_id,
+        LeadSubCategoryModel.category_id == category_id,
+    ).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail='Subcategory not found')
+    db.delete(sub)
+    db.commit()
+    return {'message': 'Subcategory deleted'}
+
 
 # ============= EMAIL HELPER FUNCTIONS =============
 
