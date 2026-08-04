@@ -3887,7 +3887,11 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
         _process_pending_telegram_punch(db, chat_id)
         return {'ok': True}
 
-    normalized = text.lower().replace(' ', '')
+    # Normalize bot commands: "/punchin@Resoline_bot" → "/punchin"
+    cmd = text.split()[0] if text else ''
+    if cmd.startswith('/'):
+        cmd = cmd.split('@', 1)[0]
+    normalized = cmd.lower().replace(' ', '')
 
     if normalized in ('/punchin', 'punchin'):
         _start_telegram_punch_flow(db, chat_id, 'punch_in')
@@ -3910,7 +3914,8 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
         _process_pending_telegram_punch(db, chat_id)
         return {'ok': True}
 
-    if normalized in ('/help', 'help', '/commands'):
+    full_normalized = text.lower().replace(' ', '')
+    if full_normalized in ('/help', 'help', '/commands') or normalized in ('/help', 'help', '/commands'):
         send_telegram_message(
             'Available commands:\n'
             '/punchin — Punch in for the day\n'
