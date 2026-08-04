@@ -27,6 +27,7 @@ import io
 import uuid
 import json
 import re
+import time
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -40,6 +41,8 @@ from urllib.parse import urlparse
 
 from telegram_notify import (
     build_telegram_connect_url,
+    delete_telegram_webhook,
+    get_telegram_updates,
     notify_telegram_targets,
     parse_user_id_from_start_payload,
     send_telegram_message,
@@ -47,6 +50,7 @@ from telegram_notify import (
     set_telegram_webhook,
     telegram_bot_username,
     telegram_enabled,
+    telegram_mode,
 )
 
 app = FastAPI(
@@ -3537,6 +3541,55 @@ def _send_leave_telegram(db: Session, leave) -> dict:
     }
 
 
+def _format_task_assigned_telegram_message(task, assigned_by_name: str) -> str:
+    lines = [
+        '📋 New task assigned to you',
+        '',
+        f'Task: {task.task_id}',
+        f'Title: {task.title}',
+        f'Due: {task.due_date}',
+        f'Status: {getattr(task, "status", None) or "Pending"}',
+        f'Assigned by: {assigned_by_name}',
+    ]
+    desc = (getattr(task, 'description', None) or '').strip()
+    if desc:
+        preview = desc if len(desc) <= 200 else desc[:197] + '...'
+        lines.extend(['', f'Details: {preview}'])
+    lines.extend(['', 'Open Tasks in Resoline CRM to view or update it.'])
+    return '\n'.join(lines)
+
+
+def _notify_task_assigned_telegram(
+    db: Session,
+    task,
+    assigned_by_name: str,
+    *,
+    previous_assignee_id: Optional[str] = None,
+) -> None:
+    """Notify the assignee on Telegram when a task is created or reassigned to them."""
+    assignee_id = getattr(task, 'assigned_to_employee_id', None)
+    if not assignee_id:
+        return
+    # Only notify when newly assigned / reassigned (not every unrelated edit)
+    if previous_assignee_id is not None and previous_assignee_id == assignee_id:
+        return
+    if not telegram_enabled():
+        return
+    chat_id = _telegram_chat_id_for_employee(db, assignee_id)
+    if not chat_id:
+        logging.info(
+            'Task assign Telegram skipped: no chat_id for employee %s',
+            assignee_id,
+        )
+        return
+    message = _format_task_assigned_telegram_message(task, assigned_by_name)
+    threading.Thread(
+        target=send_telegram_message,
+        args=(message, chat_id),
+        daemon=True,
+    ).start()
+
+
 TELEGRAM_OPENAPI_TAG = ['Telegram']
 
 
@@ -3871,9 +3924,15 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
     except Exception:
         return {'ok': True}
 
+    process_telegram_update(payload, db)
+    return {'ok': True}
+
+
+def process_telegram_update(payload: dict, db: Session) -> None:
+    """Handle one Telegram update (webhook or long-polling)."""
     message = payload.get('message') or payload.get('edited_message')
     if not message or 'chat' not in message:
-        return {'ok': True}
+        return
 
     chat_id = str(message['chat']['id'])
     text = (message.get('text') or '').strip()
@@ -3885,7 +3944,7 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
         pending['latitude'] = location.get('latitude')
         pending['longitude'] = location.get('longitude')
         _process_pending_telegram_punch(db, chat_id)
-        return {'ok': True}
+        return
 
     # Normalize bot commands: "/punchin@Resoline_bot" → "/punchin"
     cmd = text.split()[0] if text else ''
@@ -3895,11 +3954,11 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
 
     if normalized in ('/punchin', 'punchin'):
         _start_telegram_punch_flow(db, chat_id, 'punch_in')
-        return {'ok': True}
+        return
 
     if normalized in ('/punchout', 'punchout'):
         _start_telegram_punch_flow(db, chat_id, 'punch_out')
-        return {'ok': True}
+        return
 
     # Free-text reply while we're waiting for a late/tour reason to complete a punch.
     if chat_id in TELEGRAM_PUNCH_PENDING and TELEGRAM_PUNCH_PENDING[chat_id].get('need') and text and not text.startswith('/'):
@@ -3912,7 +3971,7 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
             pending['tour_place'] = parts[0] if parts else text.strip()
             pending['tour_reason'] = parts[1] if len(parts) > 1 else (parts[0] if parts else text.strip())
         _process_pending_telegram_punch(db, chat_id)
-        return {'ok': True}
+        return
 
     full_normalized = text.lower().replace(' ', '')
     if full_normalized in ('/help', 'help', '/commands') or normalized in ('/help', 'help', '/commands'):
@@ -3923,7 +3982,7 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
             '/start — Link your CRM account',
             chat_id,
         )
-        return {'ok': True}
+        return
 
     if text.startswith('/start'):
         parts = text.split(maxsplit=1)
@@ -3972,7 +4031,63 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
                         chat_id,
                     )
 
-    return {'ok': True}
+
+_telegram_poller_stop = threading.Event()
+_telegram_poller_thread = None
+
+
+def _telegram_poller_loop():
+    """Outbound long-poll — works when Telegram cannot open an inbound webhook to the API host."""
+    offset = None
+    logging.info('Telegram long-polling started (TELEGRAM_MODE=polling)')
+    while not _telegram_poller_stop.is_set():
+        try:
+            updates = get_telegram_updates(offset=offset, timeout=25)
+            if not updates:
+                continue
+            db = SessionLocal()
+            try:
+                for update in updates:
+                    update_id = update.get('update_id')
+                    if update_id is not None:
+                        offset = int(update_id) + 1
+                    try:
+                        process_telegram_update(update, db)
+                    except Exception as exc:
+                        logging.error('Telegram update handling failed: %s', exc)
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass
+            finally:
+                db.close()
+        except Exception as exc:
+            logging.error('Telegram poller loop error: %s', exc)
+            time.sleep(3)
+
+
+def _start_telegram_poller():
+    global _telegram_poller_thread
+    if not telegram_enabled():
+        return
+    if telegram_mode() != 'polling':
+        logging.info('Telegram mode=%s (webhook). Set TELEGRAM_MODE=polling if Telegram cannot reach this host.', telegram_mode())
+        return
+    try:
+        delete_telegram_webhook(drop_pending_updates=False)
+        logging.info('Telegram webhook deleted; using long-polling')
+    except Exception as exc:
+        logging.warning('Could not delete Telegram webhook before polling: %s', exc)
+    if _telegram_poller_thread and _telegram_poller_thread.is_alive():
+        return
+    _telegram_poller_stop.clear()
+    _telegram_poller_thread = threading.Thread(target=_telegram_poller_loop, name='telegram-poller', daemon=True)
+    _telegram_poller_thread.start()
+
+
+def _stop_telegram_poller():
+    _telegram_poller_stop.set()
+
 
 
 @api_router.post(
@@ -5802,7 +5917,9 @@ def create_task(task_data: TaskCreate, current_user: UserModel = Depends(get_cur
     db.add(new_task)
     db.commit()
     db.refresh(new_task)
-    
+
+    _notify_task_assigned_telegram(db, new_task, current_user.name)
+
     return new_task
 
 @api_router.post('/tasks/{task_id}/upload-attachment')
@@ -6082,6 +6199,8 @@ def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = D
     
     if not (is_admin_or_manager or is_creator or is_assignee):
         raise HTTPException(status_code=403, detail='Not authorized to update this task')
+
+    previous_assignee_id = task.assigned_to_employee_id
     
     # Update fields
     if task_data.title is not None:
@@ -6119,6 +6238,14 @@ def update_task(task_id: str, task_data: TaskUpdate, current_user: UserModel = D
     task.updated_at = datetime.now()
     db.commit()
     db.refresh(task)
+
+    if task_data.assigned_to_employee_id is not None:
+        _notify_task_assigned_telegram(
+            db,
+            task,
+            current_user.name,
+            previous_assignee_id=previous_assignee_id,
+        )
     
     return task
 
@@ -12743,11 +12870,13 @@ def _start_cgw_renewal_digest_scheduler():
 @app.on_event('startup')
 def _cgw_digest_scheduler_startup():
     _start_cgw_renewal_digest_scheduler()
+    _start_telegram_poller()
 
 
 @app.on_event('shutdown')
 def _cgw_digest_scheduler_shutdown():
     global _cgw_digest_scheduler
+    _stop_telegram_poller()
     if _cgw_digest_scheduler is not None:
         _cgw_digest_scheduler.shutdown(wait=False)
         _cgw_digest_scheduler = None

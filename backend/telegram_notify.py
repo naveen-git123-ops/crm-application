@@ -122,3 +122,49 @@ def set_telegram_webhook() -> dict:
     )
     response.raise_for_status()
     return response.json()
+
+
+def delete_telegram_webhook(drop_pending_updates: bool = False) -> dict:
+    """Remove webhook so getUpdates / long-polling can receive messages."""
+    token = _bot_token()
+    if not token:
+        raise ValueError('TELEGRAM_BOT_TOKEN is not set')
+    response = requests.post(
+        TELEGRAM_API_BASE.format(token=token, method='deleteWebhook'),
+        json={'drop_pending_updates': bool(drop_pending_updates)},
+        timeout=15,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def get_telegram_updates(offset: Optional[int] = None, timeout: int = 25) -> list:
+    """Long-poll Telegram for new updates (used when webhook is unreachable)."""
+    token = _bot_token()
+    if not token:
+        return []
+    body = {
+        'timeout': max(1, min(int(timeout), 50)),
+        'allowed_updates': ['message'],
+    }
+    if offset is not None:
+        body['offset'] = int(offset)
+    try:
+        response = requests.post(
+            TELEGRAM_API_BASE.format(token=token, method='getUpdates'),
+            json=body,
+            timeout=timeout + 10,
+        )
+        if not response.ok:
+            logger.warning('Telegram getUpdates failed: %s %s', response.status_code, response.text[:300])
+            return []
+        return response.json().get('result') or []
+    except Exception as exc:
+        logger.warning('Telegram getUpdates error: %s', exc)
+        return []
+
+
+def telegram_mode() -> str:
+    """webhook | polling — polling is more reliable when Telegram cannot reach the API host."""
+    mode = (os.environ.get('TELEGRAM_MODE') or 'polling').strip().lower()
+    return mode if mode in ('webhook', 'polling') else 'polling'
