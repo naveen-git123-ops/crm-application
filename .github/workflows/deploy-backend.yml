@@ -3,6 +3,8 @@ name: Deploy Backend to EC2
 on:
   push:
     branches: [main]
+    paths: 
+      - 'backend/**'
 
 jobs:
   deploy:
@@ -19,5 +21,5 @@ jobs:
             cd /home/ec2-user/crm-application
             git pull origin main
             cd /home/ec2-user/crm-application/backend
-            pip3 install -r requirements.prod.txt --quiet
+            pip3 install -r requirements.txt --quiet
             sudo systemctl restart uvicorn
