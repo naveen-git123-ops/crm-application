@@ -33,7 +33,8 @@ export const Employees = () => {
     salary: '',
     status: 'Active',
     address: '',
-    emergency_contact: ''
+    emergency_contact: '',
+    telegram_chat_id: '',
   });
 
   useEffect(() => {
@@ -103,7 +104,8 @@ export const Employees = () => {
       salary: employee.salary,
       status: employee.status || 'Active',
       address: employee.address || '',
-      emergency_contact: employee.emergency_contact || ''
+      emergency_contact: employee.emergency_contact || '',
+      telegram_chat_id: employee.telegram_chat_id || '',
     });
     setDialogOpen(true);
   };
@@ -119,7 +121,8 @@ export const Employees = () => {
       salary: '',
       status: 'Active',
       address: '',
-      emergency_contact: ''
+      emergency_contact: '',
+      telegram_chat_id: '',
     });
     setEditingEmployee(null);
   };
@@ -266,6 +269,20 @@ export const Employees = () => {
                       onChange={(e) => setFormData({ ...formData, emergency_contact: e.target.value })}
                       className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="telegram_chat_id" className="text-sm font-medium text-gray-700">Telegram Chat ID</Label>
+                    <Input
+                      id="telegram_chat_id"
+                      data-testid="employee-telegram-input"
+                      value={formData.telegram_chat_id}
+                      onChange={(e) => setFormData({ ...formData, telegram_chat_id: e.target.value })}
+                      placeholder="Optional — e.g. 123456789"
+                      className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Optional. Must be the numeric Chat ID (not your @username) — easiest way is Settings → Connect to Telegram, or leave empty and add later.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="status" className="text-sm font-medium text-gray-700">Status *</Label>

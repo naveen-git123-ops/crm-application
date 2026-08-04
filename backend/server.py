@@ -1,5 +1,5 @@
 from sqlalchemy import text
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status, Form, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, status, Form, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -35,7 +35,19 @@ from botocore.exceptions import ClientError
 import pandas as pd
 from openpyxl import load_workbook
 import zipfile
+import threading
 from urllib.parse import urlparse
+
+from telegram_notify import (
+    build_telegram_connect_url,
+    notify_telegram_targets,
+    parse_user_id_from_start_payload,
+    send_telegram_message,
+    send_telegram_message_verbose,
+    set_telegram_webhook,
+    telegram_bot_username,
+    telegram_enabled,
+)
 
 app = FastAPI(
     title='Resoline CRM API',
@@ -43,6 +55,10 @@ app = FastAPI(
         {
             'name': 'Lead Categories',
             'description': 'Lead category and subcategory options used in Admin Console and the New Lead form.',
+        },
+        {
+            'name': 'Telegram',
+            'description': 'Telegram bot notifications — link accounts, test messages, and leave alerts.',
         },
     ],
 )
@@ -186,6 +202,9 @@ class UserModel(Base):
     name = Column(String(255))
     role = Column(String(50))
     employee_id = Column(String(50), nullable=True)
+    telegram_chat_id = Column(String(64), nullable=True)
+    telegram_link_code = Column(String(12), nullable=True)
+    telegram_link_expires = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -214,6 +233,7 @@ class EmployeeModel(Base):
     profile_photo = Column(String(500), nullable=True)
     address = Column(String(500), nullable=True)
     emergency_contact = Column(String(500), nullable=True)
+    telegram_chat_id = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class AttendanceModel(Base):
@@ -1447,6 +1467,57 @@ def migrate_leaves_add_half_day_session():
 
 migrate_leaves_add_half_day_session()
 
+
+def migrate_users_telegram_columns():
+    """Add Telegram notification columns to users if missing."""
+    from sqlalchemy import inspect
+    try:
+        inspector = inspect(engine)
+        existing_columns = [col['name'] for col in inspector.get_columns('users')]
+        new_cols = [
+            ('telegram_chat_id', 'VARCHAR(64) NULL'),
+            ('telegram_link_code', 'VARCHAR(12) NULL'),
+            ('telegram_link_expires', 'DATETIME NULL'),
+        ]
+        with engine.connect() as conn:
+            for col_name, col_type in new_cols:
+                if col_name not in existing_columns:
+                    try:
+                        conn.execute(text(f'ALTER TABLE users ADD COLUMN {col_name} {col_type}'))
+                        conn.commit()
+                        print(f'Added column {col_name} to users table')
+                    except Exception as alter_err:
+                        print(f'Could not add column {col_name}: {alter_err}')
+                        conn.rollback()
+    except Exception as e:
+        print(f'Migration error for users telegram columns: {e}')
+
+
+migrate_users_telegram_columns()
+
+
+def migrate_employees_telegram_chat_id():
+    """Add telegram_chat_id to employees if missing (NULL for existing rows)."""
+    from sqlalchemy import inspect
+    try:
+        inspector = inspect(engine)
+        existing_columns = [col['name'] for col in inspector.get_columns('employees')]
+        if 'telegram_chat_id' not in existing_columns:
+            with engine.connect() as conn:
+                try:
+                    conn.execute(text('ALTER TABLE employees ADD COLUMN telegram_chat_id VARCHAR(64) NULL'))
+                    conn.commit()
+                    print('Added column telegram_chat_id to employees table')
+                except Exception as alter_err:
+                    print(f'Could not add column telegram_chat_id: {alter_err}')
+                    conn.rollback()
+    except Exception as e:
+        print(f'Migration error for employees telegram_chat_id: {e}')
+
+
+migrate_employees_telegram_chat_id()
+
+
 def migrate_cgw_flow_metres_product_columns():
     """Add product_code/model_no to cgw_flow_metres and backfill from telemetric_system."""
     from sqlalchemy import text, inspect
@@ -1851,6 +1922,7 @@ class UserDetails(BaseModel):
     profile_photo: Optional[str] = None
     address: Optional[str] = None
     emergency_contact: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
 
 class Employee(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1867,6 +1939,7 @@ class Employee(BaseModel):
     profile_photo: Optional[str] = None
     address: Optional[str] = None
     emergency_contact: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class EmployeeCreate(BaseModel):
@@ -1881,6 +1954,15 @@ class EmployeeCreate(BaseModel):
     address: Optional[str] = None
     emergency_contact: Optional[str] = None
     profile_photo: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+
+    @field_validator('telegram_chat_id', mode='before')
+    @classmethod
+    def normalize_telegram_chat_id(cls, value):
+        if value is None:
+            return None
+        cleaned = str(value).strip().lstrip('@')
+        return cleaned or None
 
 class EmployeeUpdateProfile(BaseModel):
     phone: Optional[str] = None
@@ -3402,6 +3484,509 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     user_data['permissions'] = get_permissions_for_role(db, new_user.role)
     return {'token': token, 'user': user_data}
 
+
+def _telegram_notify_async(message: str, user_chat_id: Optional[str] = None) -> None:
+    if not telegram_enabled():
+        logging.warning('Telegram notify skipped: TELEGRAM_BOT_TOKEN not set on server')
+        return
+    if not user_chat_id and not os.environ.get('TELEGRAM_CHAT_ID', '').strip():
+        logging.warning('Telegram notify skipped: no chat_id for user and no TELEGRAM_CHAT_ID fallback')
+        return
+    threading.Thread(
+        target=notify_telegram_targets,
+        args=(message, user_chat_id),
+        daemon=True,
+    ).start()
+
+
+def _format_leave_telegram_message(leave) -> str:
+    lines = [
+        'Leave applied successfully',
+        '',
+        f'Employee: {leave.employee_name}',
+        f'Type: {leave.leave_type}',
+        f'From: {leave.start_date}',
+        f'To: {leave.end_date}',
+        f'Days: {leave.days}',
+        f'Status: {getattr(leave, "status", None) or "Pending"}',
+    ]
+    half_day = getattr(leave, 'half_day_session', None)
+    if half_day:
+        lines.append(f'Session: {half_day}')
+    return '\n'.join(lines)
+
+
+def _send_leave_telegram(db: Session, leave) -> dict:
+    """Send leave notification to Telegram. Returns {sent, reason?, chat_id?}."""
+    if not telegram_enabled():
+        return {'sent': False, 'reason': 'TELEGRAM_BOT_TOKEN not configured on server'}
+    chat_id = _telegram_chat_id_for_employee(db, leave.employee_id)
+    if not chat_id:
+        return {
+            'sent': False,
+            'reason': 'No Telegram Chat ID on employee record or linked user account',
+        }
+    message = _format_leave_telegram_message(leave)
+    ok, error = send_telegram_message_verbose(message, chat_id)
+    if ok:
+        return {'sent': True, 'chat_id': chat_id}
+    return {
+        'sent': False,
+        'chat_id': chat_id,
+        'reason': f'Telegram rejected the message: {error}',
+    }
+
+
+TELEGRAM_OPENAPI_TAG = ['Telegram']
+
+
+class TelegramConnectLinkResponse(BaseModel):
+    url: str
+    bot_username: str = 'Resoline_bot'
+    instructions: str
+
+
+class TelegramStatusResponse(BaseModel):
+    enabled: bool
+    linked: bool
+    bot_username: str = 'Resoline_bot'
+    chat_id_configured: bool = False
+    chat_id: Optional[str] = None
+
+
+class TelegramChatIdUpdate(BaseModel):
+    chat_id: str
+
+    @field_validator('chat_id')
+    @classmethod
+    def validate_chat_id(cls, value):
+        cleaned = str(value).strip().lstrip('@')
+        if not cleaned:
+            raise ValueError('Chat ID is required')
+        if not re.fullmatch(r'-?\d+', cleaned):
+            raise ValueError('Chat ID must be numeric (e.g. 123456789) — not a @username. Get it from the bot or use "Connect to Telegram" instead.')
+        return cleaned
+
+
+def _link_telegram_chat_to_user(db: Session, user_id: str, chat_id: str) -> Optional[UserModel]:
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+    if not user:
+        return None
+    user.telegram_chat_id = chat_id
+    user.telegram_link_code = None
+    user.telegram_link_expires = None
+    if user.employee_id:
+        employee = db.query(EmployeeModel).filter(EmployeeModel.employee_id == user.employee_id).first()
+        if employee:
+            employee.telegram_chat_id = chat_id
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def _sync_employee_telegram_to_user(db: Session, employee: EmployeeModel) -> None:
+    user = db.query(UserModel).filter(UserModel.employee_id == employee.employee_id).first()
+    if user:
+        user.telegram_chat_id = employee.telegram_chat_id
+
+
+def _telegram_chat_id_for_employee(db: Session, employee_id: str) -> Optional[str]:
+    employee = db.query(EmployeeModel).filter(EmployeeModel.employee_id == employee_id).first()
+    if employee and employee.telegram_chat_id:
+        return employee.telegram_chat_id
+    user = db.query(UserModel).filter(UserModel.employee_id == employee_id).first()
+    if user and user.telegram_chat_id:
+        return user.telegram_chat_id
+    return None
+
+
+# In-memory state for the Telegram-bot punch in/out conversation flow.
+# Keyed by chat_id -> {action, employee_id, role, latitude, longitude, late_reason, tour_place, tour_reason, need}
+TELEGRAM_PUNCH_PENDING: dict = {}
+
+
+def _resolve_employee_and_role_for_chat(db: Session, chat_id: str):
+    """Find the CRM employee + effective permission role linked to a Telegram chat id."""
+    user = db.query(UserModel).filter(UserModel.telegram_chat_id == chat_id).first()
+    employee = None
+    role = 'Employee'
+    if user:
+        role = user.role or 'Employee'
+        if user.employee_id:
+            employee = db.query(EmployeeModel).filter(EmployeeModel.employee_id == user.employee_id).first()
+    if not employee:
+        employee = db.query(EmployeeModel).filter(EmployeeModel.telegram_chat_id == chat_id).first()
+        if employee and not user:
+            linked_user = db.query(UserModel).filter(UserModel.employee_id == employee.employee_id).first()
+            if linked_user:
+                role = linked_user.role or 'Employee'
+    return employee, role
+
+
+def _format_punch_telegram_message(result: dict, action: str) -> str:
+    lines = [f"✅ {result.get('message', 'Done')}"]
+    if action == 'punch_in':
+        attendance = result.get('attendance')
+        if attendance is not None:
+            lines.append(f"🕒 Punch-in time: {getattr(attendance, 'punch_in', None)}")
+    else:
+        if result.get('session_work_hours') is not None:
+            lines.append(f"⏱ This session: {result['session_work_hours']} hrs")
+        if result.get('total_work_hours') is not None:
+            lines.append(f"📊 Total today: {result['total_work_hours']} hrs")
+    return '\n'.join(lines)
+
+
+def _process_pending_telegram_punch(db: Session, chat_id: str) -> None:
+    pending = TELEGRAM_PUNCH_PENDING.get(chat_id)
+    if not pending:
+        return
+    try:
+        result = _perform_attendance_punch(
+            db,
+            employee_id=pending['employee_id'],
+            action=pending['action'],
+            latitude=pending.get('latitude'),
+            longitude=pending.get('longitude'),
+            late_reason=pending.get('late_reason'),
+            tour_place=pending.get('tour_place'),
+            tour_reason=pending.get('tour_reason'),
+            actor_role=pending.get('role', 'Employee'),
+        )
+    except HTTPException as exc:
+        detail = str(exc.detail)
+        lower = detail.lower()
+        if 'reason is required' in lower:
+            pending['need'] = 'reason'
+            send_telegram_message(f'⚠️ {detail}\n\nPlease reply with your reason as a text message.', chat_id)
+            return
+        if 'tour place and reason are required' in lower:
+            pending['need'] = 'tour'
+            send_telegram_message(f'⚠️ {detail}\n\nPlease reply in the format: Place | Reason', chat_id)
+            return
+        TELEGRAM_PUNCH_PENDING.pop(chat_id, None)
+        send_telegram_message(f'❌ {detail}', chat_id)
+        return
+    except Exception as exc:
+        TELEGRAM_PUNCH_PENDING.pop(chat_id, None)
+        logging.error('Telegram bot punch error: %s', exc)
+        send_telegram_message('Something went wrong while recording your punch. Please try again or use the CRM app.', chat_id)
+        return
+
+    action = pending['action']
+    TELEGRAM_PUNCH_PENDING.pop(chat_id, None)
+    send_telegram_message(_format_punch_telegram_message(result, action), chat_id)
+
+
+def _start_telegram_punch_flow(db: Session, chat_id: str, action: str) -> None:
+    employee, role = _resolve_employee_and_role_for_chat(db, chat_id)
+    if not employee:
+        send_telegram_message(
+            'Your Telegram is not linked to an employee record yet. Open CRM Settings → Connect to Telegram first.',
+            chat_id,
+        )
+        return
+
+    office = get_office_location(db)
+    needs_location = office is not None and role not in ('Admin', 'HR', 'Accountant')
+    TELEGRAM_PUNCH_PENDING[chat_id] = {
+        'action': action,
+        'employee_id': employee.employee_id,
+        'role': role,
+        'latitude': None,
+        'longitude': None,
+    }
+    if needs_location:
+        verb = 'punch in' if action == 'punch_in' else 'punch out'
+        send_telegram_message(
+            f'📍 Please share your current location to {verb}.\n\nTap the 📎 (attach) icon → Location → Send your current location.',
+            chat_id,
+        )
+    else:
+        _process_pending_telegram_punch(db, chat_id)
+
+
+@api_router.get(
+    '/telegram/status',
+    response_model=TelegramStatusResponse,
+    tags=TELEGRAM_OPENAPI_TAG,
+    summary='Telegram link status',
+)
+def telegram_link_status(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    chat_id = (
+        _telegram_chat_id_for_employee(db, current_user.employee_id)
+        if current_user.employee_id
+        else getattr(current_user, 'telegram_chat_id', None)
+    )
+    return TelegramStatusResponse(
+        enabled=telegram_enabled(),
+        linked=bool(chat_id),
+        bot_username=telegram_bot_username(),
+        chat_id_configured=bool(chat_id),
+        chat_id=chat_id,
+    )
+
+
+@api_router.put(
+    '/telegram/chat-id',
+    response_model=TelegramStatusResponse,
+    tags=TELEGRAM_OPENAPI_TAG,
+    summary='Set my Telegram Chat ID (self-service)',
+)
+def telegram_set_chat_id(
+    data: TelegramChatIdUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Lets the logged-in user manually set their own Telegram Chat ID, without needing an admin."""
+    current_user.telegram_chat_id = data.chat_id
+    current_user.telegram_link_code = None
+    current_user.telegram_link_expires = None
+    if current_user.employee_id:
+        employee = db.query(EmployeeModel).filter(EmployeeModel.employee_id == current_user.employee_id).first()
+        if employee:
+            employee.telegram_chat_id = data.chat_id
+    db.commit()
+
+    chat_id = (
+        _telegram_chat_id_for_employee(db, current_user.employee_id)
+        if current_user.employee_id
+        else current_user.telegram_chat_id
+    )
+    return TelegramStatusResponse(
+        enabled=telegram_enabled(),
+        linked=bool(chat_id),
+        bot_username=telegram_bot_username(),
+        chat_id_configured=bool(chat_id),
+        chat_id=chat_id,
+    )
+
+
+@api_router.post(
+    '/telegram/test-notification',
+    tags=TELEGRAM_OPENAPI_TAG,
+    summary='Send test Telegram message',
+)
+def telegram_test_notification(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Send a test message to the current user's Telegram chat id."""
+    if not telegram_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail='Telegram is not configured on the server (TELEGRAM_BOT_TOKEN missing).',
+        )
+    chat_id = (
+        _telegram_chat_id_for_employee(db, current_user.employee_id)
+        if current_user.employee_id
+        else getattr(current_user, 'telegram_chat_id', None)
+    )
+    if not chat_id:
+        raise HTTPException(
+            status_code=400,
+            detail='No Telegram Chat ID on your profile. Add it under Employees → Edit, or use Connect to Telegram.',
+        )
+    message = (
+        'Resoline CRM — test notification\n\n'
+        f'Hi {current_user.name}, your Telegram notifications are working correctly.'
+    )
+    ok, error = send_telegram_message_verbose(message, chat_id)
+    if not ok:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f'Telegram rejected the message (chat_id={chat_id}): {error}. '
+                'Common causes: you have not tapped Start on @Resoline_bot yet, '
+                'or the Chat ID is wrong.'
+            ),
+        )
+    return {'message': 'Test notification sent successfully', 'chat_id': chat_id}
+
+
+@api_router.post(
+    '/telegram/notify-leave/{leave_id}',
+    tags=TELEGRAM_OPENAPI_TAG,
+    summary='Send leave applied notification to Telegram',
+)
+def telegram_notify_leave(
+    leave_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Manually send (or re-send) the leave-applied Telegram message for a leave request."""
+    leave = db.query(LeaveModel).filter(LeaveModel.id == leave_id).first()
+    if not leave:
+        raise HTTPException(status_code=404, detail='Leave not found')
+    if current_user.role not in ('Admin', 'HR', 'Manager'):
+        if str(current_user.employee_id or '') != str(leave.employee_id):
+            raise HTTPException(status_code=403, detail='Not authorized')
+
+    result = _send_leave_telegram(db, leave)
+    if not result.get('sent'):
+        raise HTTPException(status_code=400, detail=result.get('reason') or 'Failed to send Telegram notification')
+    return {
+        'message': 'Leave notification sent to Telegram',
+        'chat_id': result.get('chat_id'),
+        'leave_id': leave_id,
+    }
+
+
+@api_router.get(
+    '/telegram/connect-link',
+    response_model=TelegramConnectLinkResponse,
+    tags=TELEGRAM_OPENAPI_TAG,
+    summary='Get Telegram deep link',
+)
+def telegram_connect_link(current_user: UserModel = Depends(get_current_user)):
+    """Deep link: opens @Resoline_bot with signed user id; /start payload links telegram_chat_id."""
+    if not telegram_enabled():
+        raise HTTPException(status_code=503, detail='Telegram notifications are not configured')
+    bot = telegram_bot_username()
+    url = build_telegram_connect_url(current_user.id, JWT_SECRET)
+    return TelegramConnectLinkResponse(
+        url=url,
+        bot_username=bot,
+        instructions='Telegram will open. Tap Start to link this CRM account to your Telegram.',
+    )
+
+
+@api_router.post(
+    '/telegram/webhook',
+    tags=TELEGRAM_OPENAPI_TAG,
+    summary='Telegram bot webhook (Telegram servers)',
+)
+async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
+    webhook_secret = os.environ.get('TELEGRAM_WEBHOOK_SECRET', '').strip()
+    if webhook_secret:
+        incoming = request.headers.get('X-Telegram-Bot-Api-Secret-Token', '')
+        if incoming != webhook_secret:
+            raise HTTPException(status_code=403, detail='Invalid webhook secret')
+
+    try:
+        payload = await request.json()
+    except Exception:
+        return {'ok': True}
+
+    message = payload.get('message') or payload.get('edited_message')
+    if not message or 'chat' not in message:
+        return {'ok': True}
+
+    chat_id = str(message['chat']['id'])
+    text = (message.get('text') or '').strip()
+    location = message.get('location')
+
+    # User shared their location in response to a pending /punchin or /punchout request.
+    if location and chat_id in TELEGRAM_PUNCH_PENDING:
+        pending = TELEGRAM_PUNCH_PENDING[chat_id]
+        pending['latitude'] = location.get('latitude')
+        pending['longitude'] = location.get('longitude')
+        _process_pending_telegram_punch(db, chat_id)
+        return {'ok': True}
+
+    normalized = text.lower().replace(' ', '')
+
+    if normalized in ('/punchin', 'punchin'):
+        _start_telegram_punch_flow(db, chat_id, 'punch_in')
+        return {'ok': True}
+
+    if normalized in ('/punchout', 'punchout'):
+        _start_telegram_punch_flow(db, chat_id, 'punch_out')
+        return {'ok': True}
+
+    # Free-text reply while we're waiting for a late/tour reason to complete a punch.
+    if chat_id in TELEGRAM_PUNCH_PENDING and TELEGRAM_PUNCH_PENDING[chat_id].get('need') and text and not text.startswith('/'):
+        pending = TELEGRAM_PUNCH_PENDING[chat_id]
+        need = pending.pop('need')
+        if need == 'reason':
+            pending['late_reason'] = text.strip()
+        elif need == 'tour':
+            parts = [p.strip() for p in text.split('|') if p.strip()]
+            pending['tour_place'] = parts[0] if parts else text.strip()
+            pending['tour_reason'] = parts[1] if len(parts) > 1 else (parts[0] if parts else text.strip())
+        _process_pending_telegram_punch(db, chat_id)
+        return {'ok': True}
+
+    if normalized in ('/help', 'help', '/commands'):
+        send_telegram_message(
+            'Available commands:\n'
+            '/punchin — Punch in for the day\n'
+            '/punchout — Punch out for the day\n'
+            '/start — Link your CRM account',
+            chat_id,
+        )
+        return {'ok': True}
+
+    if text.startswith('/start'):
+        parts = text.split(maxsplit=1)
+        if len(parts) == 2:
+            start_payload = parts[1].strip()
+            user_id = parse_user_id_from_start_payload(start_payload, JWT_SECRET)
+            if not user_id:
+                send_telegram_message(
+                    'Invalid or expired connect link. Open CRM Settings and tap "Connect to Telegram" again.',
+                    chat_id,
+                )
+            else:
+                user = _link_telegram_chat_to_user(db, user_id, chat_id)
+                if not user:
+                    send_telegram_message('CRM user not found. Please contact your administrator.', chat_id)
+                else:
+                    send_telegram_message(
+                        f'Your Telegram is linked to Resoline CRM.\nHi {user.name}, you will receive login and leave notifications here.\n\n'
+                        'You can also punch in/out right from here:\n/punchin — Punch in\n/punchout — Punch out',
+                        chat_id,
+                    )
+        else:
+            send_telegram_message(
+                'Welcome to Resoline CRM notifications.\n\n'
+                'To link your account, open Settings in the web app and tap "Connect to Telegram".',
+                chat_id,
+            )
+    elif text.upper().startswith('/LINK'):
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            send_telegram_message('Usage: /link YOUR_CODE', chat_id)
+        else:
+            code = parts[1].strip().upper()
+            user = db.query(UserModel).filter(UserModel.telegram_link_code == code).first()
+            if not user or not user.telegram_link_expires or user.telegram_link_expires < datetime.now():
+                send_telegram_message(
+                    'Invalid or expired link code. Use Settings → Connect to Telegram instead.',
+                    chat_id,
+                )
+            else:
+                linked = _link_telegram_chat_to_user(db, user.id, chat_id)
+                if linked:
+                    send_telegram_message(
+                        f'Your Telegram is linked to Resoline CRM.\nHi {linked.name}, you will receive login and leave notifications here.\n\n'
+                        'You can also punch in/out right from here:\n/punchin — Punch in\n/punchout — Punch out',
+                        chat_id,
+                    )
+
+    return {'ok': True}
+
+
+@api_router.post(
+    '/telegram/set-webhook',
+    tags=TELEGRAM_OPENAPI_TAG,
+    summary='Register Telegram webhook (Admin)',
+)
+def telegram_register_webhook(current_user: UserModel = Depends(get_current_user)):
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Admin only')
+    try:
+        return set_telegram_webhook()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logging.error('Telegram setWebhook failed: %s', exc)
+        raise HTTPException(status_code=502, detail='Failed to register Telegram webhook')
+
+
 @api_router.post('/auth/login')
 def login(credentials: UserLogin, db: Session = Depends(get_db)):
     email = str(credentials.email).strip().lower()
@@ -3451,6 +4036,25 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
             })
     
     user_data['permissions'] = get_permissions_for_role(db, user.role)
+
+    login_time = attendance_local_now().strftime('%d %b %Y, %I:%M %p')
+    user_telegram = (
+        _telegram_chat_id_for_employee(db, user.employee_id)
+        if user.employee_id
+        else getattr(user, 'telegram_chat_id', None)
+    )
+    _telegram_notify_async(
+        '\n'.join([
+            'Login successful',
+            '',
+            f'Name: {user.name}',
+            f'Email: {user.email}',
+            f'Role: {user.role}',
+            f'Time: {login_time}',
+        ]),
+        user_telegram,
+    )
+
     return {'token': token, 'user': user_data}
 
 @api_router.get('/auth/me', response_model=UserDetails)
@@ -3512,12 +4116,15 @@ def create_employee(emp_data: EmployeeCreate, current_user: UserModel = Depends(
         salary=emp_data.salary,
         status=emp_data.status,
         address=emp_data.address,
-        emergency_contact=emp_data.emergency_contact
+        emergency_contact=emp_data.emergency_contact,
+        telegram_chat_id=emp_data.telegram_chat_id,
     )
     db.add(new_employee)
     try:
         db.commit()
         db.refresh(new_employee)
+        _sync_employee_telegram_to_user(db, new_employee)
+        db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail='Employee email or ID already exists')
@@ -3547,6 +4154,7 @@ def update_employee(employee_id: str, emp_data: EmployeeCreate, current_user: Us
     
     for key, value in emp_data.model_dump().items():
         setattr(employee, key, value)
+    _sync_employee_telegram_to_user(db, employee)
     db.commit()
     db.refresh(employee)
     
@@ -5968,7 +6576,7 @@ def _punch_in_status_for_kind(kind: str) -> str:
     return 'Incomplete'
 
 
-def _create_punch_in_approval_request(db, kind, attendance, employee, punch_data, current_time, today, minutes, reason):
+def _create_punch_in_approval_request(db, kind, attendance, employee, employee_id, current_time, today, minutes, reason):
     if kind == 'late':
         pending = db.query(LatePunchInRequestModel).filter(
             LatePunchInRequestModel.attendance_id == attendance.id,
@@ -5978,7 +6586,7 @@ def _create_punch_in_approval_request(db, kind, attendance, employee, punch_data
             return
         db.add(LatePunchInRequestModel(
             attendance_id=attendance.id,
-            employee_id=punch_data.employee_id,
+            employee_id=employee_id,
             employee_name=employee.name,
             punch_in_time=current_time,
             minutes_late=minutes,
@@ -5995,7 +6603,7 @@ def _create_punch_in_approval_request(db, kind, attendance, employee, punch_data
             return
         db.add(HalfDayPunchInRequestModel(
             attendance_id=attendance.id,
-            employee_id=punch_data.employee_id,
+            employee_id=employee_id,
             employee_name=employee.name,
             punch_in_time=current_time,
             minutes_after_threshold=minutes,
@@ -6005,38 +6613,48 @@ def _create_punch_in_approval_request(db, kind, attendance, employee, punch_data
         ))
 
 
-@api_router.post('/attendance/punch')
-def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+def _perform_attendance_punch(
+    db: Session,
+    employee_id: str,
+    action: str,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    late_reason: Optional[str] = None,
+    tour_place: Optional[str] = None,
+    tour_reason: Optional[str] = None,
+    actor_role: str = 'Employee',
+) -> dict:
+    """Core punch in/out logic, shared by the HTTP endpoint and the Telegram bot handler."""
     finalize_stale_attendance_without_punch_out(db)
     today = attendance_local_date_str()
-    
-    employee = db.query(EmployeeModel).filter(EmployeeModel.employee_id == punch_data.employee_id).first()
+
+    employee = db.query(EmployeeModel).filter(EmployeeModel.employee_id == employee_id).first()
     if not employee:
         raise HTTPException(status_code=404, detail='Employee not found')
-    
+
     existing = db.query(AttendanceModel).filter(
-        AttendanceModel.employee_id == punch_data.employee_id,
+        AttendanceModel.employee_id == employee_id,
         AttendanceModel.date == today
     ).first()
-    
+
     current_time = attendance_local_now().strftime('%H:%M:%S')
     office = get_office_location(db)
     # Roles that can manage attendance from the grid (Admin, HR, Accountant)
     # should not be forced to send location for punch in/out.
-    is_admin_hr_or_accountant = current_user.role in ['Admin', 'HR', 'Accountant']
+    is_admin_hr_or_accountant = actor_role in ['Admin', 'HR', 'Accountant']
     # Employees must send location when office is configured
     if office is not None and not is_admin_hr_or_accountant:
-        if punch_data.latitude is None or punch_data.longitude is None:
+        if latitude is None or longitude is None:
             raise HTTPException(
                 status_code=400,
                 detail='Location is required. Please enable location access to punch in/out.'
             )
     # Determine if this punch is at office or tour (only when location is provided and office is set)
     at_office = True
-    if office is not None and punch_data.latitude is not None and punch_data.longitude is not None:
-        at_office = is_within_office(db, punch_data.latitude, punch_data.longitude)
-    
-    if punch_data.action == 'punch_in':
+    if office is not None and latitude is not None and longitude is not None:
+        at_office = is_within_office(db, latitude, longitude)
+
+    if action == 'punch_in':
         if existing:
             # If they already have an active session, don't allow another punch in
             if existing.is_active_session == 1:
@@ -6045,17 +6663,17 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             punch_in_kind, minutes_offset = classify_punch_in_time(current_time)
             is_late = punch_in_kind == 'late'
             is_half_day = punch_in_kind == 'half_day'
-            late_reason_in = (punch_data.late_reason or '').strip()
+            late_reason_in = (late_reason or '').strip()
             if punch_in_kind in ('late', 'half_day') and not late_reason_in:
                 detail = 'Reason is required for half-day punch-in before approval can be requested' if is_half_day else 'Reason is required for late punch-in before approval can be requested'
                 raise HTTPException(status_code=400, detail=detail)
-            tour_place_in = (punch_data.tour_place or '').strip()
-            tour_reason_in = (punch_data.tour_reason or '').strip()
+            tour_place_in = (tour_place or '').strip()
+            tour_reason_in = (tour_reason or '').strip()
             if not at_office and (not tour_place_in or not tour_reason_in):
                 raise HTTPException(status_code=400, detail='Tour place and reason are required for tour punch-in')
             existing.punch_in = current_time
-            existing.punch_in_lat = punch_data.latitude
-            existing.punch_in_lng = punch_data.longitude
+            existing.punch_in_lat = latitude
+            existing.punch_in_lng = longitude
             existing.is_tour = 1 if not at_office else 0
             existing.tour_approval_status = 'pending' if not at_office else None
             existing.tour_place = tour_place_in if not at_office else None
@@ -6066,7 +6684,8 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             db.refresh(existing)
             if punch_in_kind in ('late', 'half_day'):
                 _create_punch_in_approval_request(
-                    db, punch_in_kind, existing, employee, punch_data, current_time, today, minutes_offset, late_reason_in
+                    db, punch_in_kind, existing, employee, employee_id,
+                    current_time, today, minutes_offset, late_reason_in
                 )
                 db.commit()
             return {
@@ -6086,12 +6705,12 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         is_late = punch_in_kind == 'late'
         is_half_day = punch_in_kind == 'half_day'
 
-        late_reason_first = (punch_data.late_reason or '').strip()
+        late_reason_first = (late_reason or '').strip()
         if punch_in_kind in ('late', 'half_day') and not late_reason_first:
             detail = 'Reason is required for half-day punch-in before approval can be requested' if is_half_day else 'Reason is required for late punch-in before approval can be requested'
             raise HTTPException(status_code=400, detail=detail)
-        tour_place_first = (punch_data.tour_place or '').strip()
-        tour_reason_first = (punch_data.tour_reason or '').strip()
+        tour_place_first = (tour_place or '').strip()
+        tour_reason_first = (tour_reason or '').strip()
         if not at_office and (not tour_place_first or not tour_reason_first):
             raise HTTPException(status_code=400, detail='Tour place and reason are required for tour punch-in')
         
@@ -6099,13 +6718,13 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         status = _punch_in_status_for_kind(punch_in_kind)
         
         new_attendance = AttendanceModel(
-            employee_id=punch_data.employee_id,
+            employee_id=employee_id,
             employee_name=employee.name,
             date=today,
             punch_in=current_time,
             status=status,
-            punch_in_lat=punch_data.latitude,
-            punch_in_lng=punch_data.longitude,
+            punch_in_lat=latitude,
+            punch_in_lng=longitude,
             is_tour=1 if not at_office else 0,
             tour_approval_status='pending' if not at_office else None,
             tour_place=tour_place_first if not at_office else None,
@@ -6119,7 +6738,8 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         # If late or half-day punch-in, create approval request
         if punch_in_kind in ('late', 'half_day'):
             _create_punch_in_approval_request(
-                db, punch_in_kind, new_attendance, employee, punch_data, current_time, today, minutes_offset, late_reason_first
+                db, punch_in_kind, new_attendance, employee, employee_id,
+                current_time, today, minutes_offset, late_reason_first
             )
             db.commit()
 
@@ -6141,9 +6761,9 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             raise HTTPException(status_code=400, detail='Not currently punched in')
         
         # Check if work log has been submitted for today (for employees only, not admin)
-        if current_user.role == 'Employee':
+        if actor_role == 'Employee':
             work_log_exists = db.query(DailyWorkLogModel).filter(
-                DailyWorkLogModel.employee_id == current_user.employee_id,
+                DailyWorkLogModel.employee_id == employee_id,
                 DailyWorkLogModel.log_date == today
             ).first()
             if not work_log_exists:
@@ -6155,12 +6775,12 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         punch_out_kind, minutes_offset = classify_punch_out_time(current_time)
         is_early_punch_out = punch_out_kind == 'early'
         is_late_punch_out = punch_out_kind == 'late'
-        late_reason_out = (punch_data.late_reason or '').strip()
+        late_reason_out = (late_reason or '').strip()
         if punch_out_kind in ('early', 'late') and not late_reason_out:
             detail = 'Reason is required for early punch-out before approval can be requested' if is_early_punch_out else 'Reason is required for late punch-out before approval can be requested'
             raise HTTPException(status_code=400, detail=detail)
-        tour_place_out = (punch_data.tour_place or '').strip()
-        tour_reason_out = (punch_data.tour_reason or '').strip()
+        tour_place_out = (tour_place or '').strip()
+        tour_reason_out = (tour_reason or '').strip()
         if not at_office and (not tour_place_out or not tour_reason_out):
             raise HTTPException(status_code=400, detail='Tour place and reason are required for tour punch-out')
         
@@ -6185,8 +6805,8 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             work_hours=round(work_hours, 2),
             punch_in_lat=existing.punch_in_lat,
             punch_in_lng=existing.punch_in_lng,
-            punch_out_lat=punch_data.latitude,
-            punch_out_lng=punch_data.longitude,
+            punch_out_lat=latitude,
+            punch_out_lng=longitude,
             is_tour=existing.is_tour,
             tour_approval_status=existing.tour_approval_status,
         )
@@ -6195,8 +6815,8 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         # Update attendance record - set status based on late punch-out
         existing.punch_out = current_time
         existing.work_hours = round(work_hours, 2)
-        existing.punch_out_lat = punch_data.latitude
-        existing.punch_out_lng = punch_data.longitude
+        existing.punch_out_lat = latitude
+        existing.punch_out_lng = longitude
         existing.is_active_session = 0  # Mark as not active
         
         # Punch-out outside normal window → admin approval required
@@ -6231,7 +6851,7 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         if is_late_punch_out:
             late_out_request = LatePunchOutRequestModel(
                 attendance_id=existing.id,
-                employee_id=punch_data.employee_id,
+                employee_id=employee_id,
                 employee_name=employee.name,
                 punch_out_time=current_time,
                 minutes_late=minutes_offset,
@@ -6244,7 +6864,7 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
         elif is_early_punch_out:
             early_out_request = EarlyPunchOutRequestModel(
                 attendance_id=existing.id,
-                employee_id=punch_data.employee_id,
+                employee_id=employee_id,
                 employee_name=employee.name,
                 punch_out_time=current_time,
                 minutes_early=minutes_offset,
@@ -6274,6 +6894,21 @@ def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depe
             'minutes_late_out': minutes_offset if is_late_punch_out else None,
             'minutes_early_out': minutes_offset if is_early_punch_out else None,
         }
+
+
+@api_router.post('/attendance/punch')
+def punch_attendance(punch_data: AttendancePunch, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _perform_attendance_punch(
+        db,
+        employee_id=punch_data.employee_id,
+        action=punch_data.action,
+        latitude=punch_data.latitude,
+        longitude=punch_data.longitude,
+        late_reason=punch_data.late_reason,
+        tour_place=punch_data.tour_place,
+        tour_reason=punch_data.tour_reason,
+        actor_role=current_user.role,
+    )
 
 
 
@@ -7933,7 +8568,23 @@ def create_leave(
         db.add(new_leave)
         db.commit()
         db.refresh(new_leave)
-        
+
+        notify_result = _send_leave_telegram(db, new_leave)
+        if notify_result.get('sent'):
+            logging.info(
+                'Leave telegram sent leave_id=%s employee_id=%s chat_id=%s',
+                new_leave.id,
+                employee_id,
+                notify_result.get('chat_id'),
+            )
+        else:
+            logging.warning(
+                'Leave telegram NOT sent leave_id=%s employee_id=%s reason=%s',
+                new_leave.id,
+                employee_id,
+                notify_result.get('reason'),
+            )
+
         return Leave.model_validate(new_leave)
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, Mail, Shield, Calendar, Upload, MapPin } from 'lucide-react';
+import { User, Mail, Shield, Calendar, Upload, MapPin, Send, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -19,14 +19,88 @@ export const Settings = () => {
   const [loading, setLoading] = useState(false);
   const [officeLocation, setOfficeLocation] = useState({ configured: false, latitude: null, longitude: null });
   const [officeLoading, setOfficeLoading] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState({ enabled: false, linked: false });
+  const [telegramLoading, setTelegramLoading] = useState(false);
+  const [telegramConnectUrl, setTelegramConnectUrl] = useState(null);
+  const [manualChatId, setManualChatId] = useState('');
+  const [savingChatId, setSavingChatId] = useState(false);
+
+  const refreshTelegramStatus = () => {
+    axios
+      .get(`${API}/telegram/status`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+      .then((res) => {
+        setTelegramStatus(res.data);
+        if (res.data.linked) {
+          setTelegramConnectUrl(null);
+        }
+      })
+      .catch(() => {});
+  };
 
   useEffect(() => {
+    refreshTelegramStatus();
+
     if (user?.role === 'Admin') {
       axios.get(`${API}/settings/office-location`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
         .then((res) => setOfficeLocation({ configured: res.data.configured, latitude: res.data.latitude, longitude: res.data.longitude }))
         .catch(() => {});
     }
   }, [user?.role]);
+
+  const handleTestTelegram = async () => {
+    setTelegramLoading(true);
+    try {
+      await axios.post(
+        `${API}/telegram/test-notification`,
+        {},
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } },
+      );
+      toast.success('Test notification sent — check Telegram');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to send test notification');
+    } finally {
+      setTelegramLoading(false);
+    }
+  };
+
+  const handleConnectTelegram = async () => {
+    setTelegramLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/telegram/connect-link`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      });
+      setTelegramConnectUrl(data.url);
+      setTimeout(refreshTelegramStatus, 8000);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Could not generate Telegram connect link');
+    } finally {
+      setTelegramLoading(false);
+    }
+  };
+
+  const handleSaveChatId = async () => {
+    if (!manualChatId.trim()) {
+      toast.error('Enter your Telegram Chat ID first');
+      return;
+    }
+    setSavingChatId(true);
+    try {
+      const { data } = await axios.put(
+        `${API}/telegram/chat-id`,
+        { chat_id: manualChatId.trim() },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } },
+      );
+      setTelegramStatus(data);
+      setManualChatId('');
+      setTelegramConnectUrl(null);
+      toast.success('Telegram Chat ID saved');
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(Array.isArray(detail) ? detail[0]?.msg : (detail || 'Failed to save Chat ID'));
+    } finally {
+      setSavingChatId(false);
+    }
+  };
 
   const handlePhotoChange = (e) => {
     const file = e.target.files[0];
@@ -168,6 +242,127 @@ export const Settings = () => {
           )}
         </div>
       </Card>
+
+      {telegramStatus.enabled ? (
+        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-start gap-3 mb-4">
+            <Send className="h-6 w-6 text-blue-600 mt-0.5 shrink-0" />
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Telegram notifications</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Link @{telegramStatus.bot_username || 'Resoline_bot'} to receive login and leave alerts on Telegram.
+              </p>
+            </div>
+          </div>
+
+          {telegramStatus.linked ? (
+            <div className="space-y-3">
+              <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+                Telegram Chat ID is configured on your profile{telegramStatus.chat_id ? ` (${telegramStatus.chat_id})` : ''}.
+              </p>
+              <p className="text-sm text-gray-600">
+                You can also punch in/out via the bot: send <code className="text-xs bg-gray-100 px-1 rounded">/punchin</code> or <code className="text-xs bg-gray-100 px-1 rounded">/punchout</code> to @{telegramStatus.bot_username || 'Resoline_bot'}.
+              </p>
+              <Button
+                type="button"
+                onClick={handleTestTelegram}
+                disabled={telegramLoading}
+                className="bg-blue-600 text-white hover:bg-blue-700"
+              >
+                {telegramLoading ? 'Sending…' : 'Send test notification'}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                No Telegram Chat ID found yet. Connect automatically via the bot, or enter your Chat ID manually below.
+              </p>
+
+              {/* Option 1: One-click connect via bot deep link */}
+              <div className="space-y-2">
+                {telegramConnectUrl ? (
+                  <a
+                    href={telegramConnectUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setTimeout(refreshTelegramStatus, 8000)}
+                    className="inline-flex items-center gap-2 rounded-md bg-[#229ED9] px-4 py-2 text-sm font-medium text-white hover:bg-[#1c8ac2] transition-colors"
+                  >
+                    <Send className="h-4 w-4" />
+                    Open @{telegramStatus.bot_username || 'Resoline_bot'} to connect
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={handleConnectTelegram}
+                    disabled={telegramLoading}
+                    className="bg-[#229ED9] text-white hover:bg-[#1c8ac2]"
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    {telegramLoading ? 'Generating link…' : 'Connect to Telegram'}
+                  </Button>
+                )}
+                <p className="text-sm text-gray-600">
+                  {telegramConnectUrl
+                    ? <>Click the button above, then tap <strong>Start</strong> in Telegram to link automatically.</>
+                    : <>We'll generate a link that opens @{telegramStatus.bot_username || 'Resoline_bot'}. Tap <strong>Start</strong> there to link automatically.</>}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-gray-200" />
+                <span className="text-xs uppercase tracking-wider text-gray-400">or</span>
+                <div className="h-px flex-1 bg-gray-200" />
+              </div>
+
+              {/* Option 2: Manual self-service entry */}
+              <div className="space-y-2">
+                <Label htmlFor="manual_chat_id" className="text-sm font-medium text-gray-700">
+                  Enter your Telegram Chat ID manually
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="manual_chat_id"
+                    value={manualChatId}
+                    onChange={(e) => setManualChatId(e.target.value)}
+                    placeholder="e.g. 123456789"
+                    className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleSaveChatId}
+                    disabled={savingChatId}
+                    className="bg-blue-600 text-white hover:bg-blue-700 shrink-0"
+                  >
+                    {savingChatId ? 'Saving…' : 'Save'}
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Must be the numeric Chat ID (not your @username) — message @{telegramStatus.bot_username || 'Resoline_bot'} then check{' '}
+                  <code className="text-xs bg-gray-100 px-1 rounded">api.telegram.org/bot&lt;token&gt;/getUpdates</code> for it.
+                </p>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="border-gray-300"
+                onClick={refreshTelegramStatus}
+              >
+                Refresh connection status
+              </Button>
+            </div>
+          )}
+        </Card>
+      ) : (
+        <Card className="p-6 rounded-lg border border-amber-200 bg-amber-50 shadow-sm">
+          <h3 className="text-lg font-semibold text-gray-900">Telegram notifications</h3>
+          <p className="text-sm text-amber-900 mt-2">
+            Telegram is not configured on the server yet. Ask your admin to set <code className="text-xs bg-white px-1 rounded">TELEGRAM_BOT_TOKEN</code> in the backend environment and restart the API.
+          </p>
+        </Card>
+      )}
 
       {/* Editable Profile Information */}
       <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
