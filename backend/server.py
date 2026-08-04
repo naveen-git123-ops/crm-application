@@ -2977,6 +2977,7 @@ class CGWFlowMetreCreate(BaseModel):
     telemetry_previous_data_from: Optional[str] = None
     telemetry_previous_data_to: Optional[str] = None
     piezometer_details_json: Optional[str] = None
+    
 
 class CGWFlowMetreEquipmentLine(BaseModel):
     equipment_name: Optional[str] = None
