@@ -44,8 +44,16 @@ jobs:
             set_env_var TELEGRAM_WEBHOOK_SECRET "${{ secrets.TELEGRAM_WEBHOOK_SECRET }}"
             set_env_var TELEGRAM_CHAT_ID "${{ secrets.TELEGRAM_CHAT_ID }}"
             set_env_var TELEGRAM_ADMIN_CHAT_ID "${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}"
-            # polling: server pulls updates (fixes Telegram "Connection timed out" to webhook)
             set_env_var TELEGRAM_MODE "polling"
+            set_env_var TELEGRAM_APPROVER_EMPLOYEE_ID "${{ secrets.TELEGRAM_APPROVER_EMPLOYEE_ID }}"
+            # Default ops approver if secret not set
+            if ! grep -q '^TELEGRAM_APPROVER_EMPLOYEE_ID=' .env 2>/dev/null; then
+              echo 'TELEGRAM_APPROVER_EMPLOYEE_ID=EMP0005' >> .env
+            fi
+            # Ensure EMP0005 is set when secret was empty (set_env_var skips empty)
+            if grep -q '^TELEGRAM_APPROVER_EMPLOYEE_ID=$' .env 2>/dev/null; then
+              sed -i 's|^TELEGRAM_APPROVER_EMPLOYEE_ID=$|TELEGRAM_APPROVER_EMPLOYEE_ID=EMP0005|' .env
+            fi
 
             pip3 install -r requirements.txt --quiet
             sudo systemctl restart uvicorn

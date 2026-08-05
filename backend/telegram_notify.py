@@ -4,13 +4,14 @@ import hashlib
 import hmac
 import logging
 import os
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import requests
 
 logger = logging.getLogger(__name__)
 
 TELEGRAM_API_BASE = 'https://api.telegram.org/bot{token}/{method}'
+TELEGRAM_ALLOWED_UPDATES = ['message', 'callback_query']
 
 
 def telegram_bot_username() -> str:
@@ -50,14 +51,30 @@ def telegram_enabled() -> bool:
     return bool(_bot_token())
 
 
-def send_telegram_message(text: str, chat_id: Optional[str] = None) -> bool:
+def approve_reject_inline_keyboard(approve_data: str, reject_data: str) -> dict:
+    """Inline keyboard with Approve / Reject (callback_data max 64 bytes each)."""
+    return {
+        'inline_keyboard': [
+            [
+                {'text': '✅ Approve', 'callback_data': approve_data[:64]},
+                {'text': '❌ Reject', 'callback_data': reject_data[:64]},
+            ]
+        ]
+    }
+
+
+def send_telegram_message(text: str, chat_id: Optional[str] = None, reply_markup: Optional[dict] = None) -> bool:
     """Send a plain-text message to a Telegram chat. Returns True on success."""
-    ok, _ = send_telegram_message_verbose(text, chat_id)
+    ok, _ = send_telegram_message_verbose(text, chat_id, reply_markup=reply_markup)
     return ok
 
 
-def send_telegram_message_verbose(text: str, chat_id: Optional[str] = None) -> tuple:
-    """Send a message and return (ok, error_message). error_message is Telegram's own description on failure."""
+def send_telegram_message_verbose(
+    text: str,
+    chat_id: Optional[str] = None,
+    reply_markup: Optional[dict] = None,
+) -> tuple:
+    """Send a message and return (ok, error_message)."""
     token = _bot_token()
     if not token:
         return False, 'TELEGRAM_BOT_TOKEN is not set on the server'
@@ -68,11 +85,10 @@ def send_telegram_message_verbose(text: str, chat_id: Optional[str] = None) -> t
 
     try:
         url = TELEGRAM_API_BASE.format(token=token, method='sendMessage')
-        response = requests.post(
-            url,
-            json={'chat_id': target, 'text': text},
-            timeout=10,
-        )
+        body: Dict[str, Any] = {'chat_id': target, 'text': text}
+        if reply_markup:
+            body['reply_markup'] = reply_markup
+        response = requests.post(url, json=body, timeout=10)
         if not response.ok:
             try:
                 error_desc = response.json().get('description', response.text[:300])
@@ -84,6 +100,57 @@ def send_telegram_message_verbose(text: str, chat_id: Optional[str] = None) -> t
     except Exception as exc:
         logger.warning('Telegram sendMessage error: %s', exc)
         return False, str(exc)
+
+
+def answer_telegram_callback_query(callback_query_id: str, text: Optional[str] = None, show_alert: bool = False) -> bool:
+    token = _bot_token()
+    if not token or not callback_query_id:
+        return False
+    try:
+        body: Dict[str, Any] = {'callback_query_id': callback_query_id}
+        if text:
+            body['text'] = text[:200]
+            body['show_alert'] = bool(show_alert)
+        response = requests.post(
+            TELEGRAM_API_BASE.format(token=token, method='answerCallbackQuery'),
+            json=body,
+            timeout=10,
+        )
+        return response.ok
+    except Exception as exc:
+        logger.warning('Telegram answerCallbackQuery error: %s', exc)
+        return False
+
+
+def edit_telegram_message_text(
+    chat_id: str,
+    message_id: int,
+    text: str,
+    reply_markup: Optional[dict] = None,
+) -> bool:
+    """Edit an existing bot message (e.g. remove buttons after approval)."""
+    token = _bot_token()
+    if not token:
+        return False
+    try:
+        body: Dict[str, Any] = {
+            'chat_id': chat_id,
+            'message_id': message_id,
+            'text': text,
+        }
+        if reply_markup is not None:
+            body['reply_markup'] = reply_markup
+        else:
+            body['reply_markup'] = {'inline_keyboard': []}
+        response = requests.post(
+            TELEGRAM_API_BASE.format(token=token, method='editMessageText'),
+            json=body,
+            timeout=10,
+        )
+        return response.ok
+    except Exception as exc:
+        logger.warning('Telegram editMessageText error: %s', exc)
+        return False
 
 
 def notify_telegram_targets(message: str, user_chat_id: Optional[str] = None) -> None:
@@ -111,7 +178,7 @@ def set_telegram_webhook() -> dict:
 
     secret = os.environ.get('TELEGRAM_WEBHOOK_SECRET', '').strip()
     webhook_url = webhook_base.rstrip('/') + '/api/telegram/webhook'
-    body = {'url': webhook_url, 'allowed_updates': ['message']}
+    body = {'url': webhook_url, 'allowed_updates': TELEGRAM_ALLOWED_UPDATES}
     if secret:
         body['secret_token'] = secret
 
@@ -145,7 +212,7 @@ def get_telegram_updates(offset: Optional[int] = None, timeout: int = 25) -> lis
         return []
     body = {
         'timeout': max(1, min(int(timeout), 50)),
-        'allowed_updates': ['message'],
+        'allowed_updates': TELEGRAM_ALLOWED_UPDATES,
     }
     if offset is not None:
         body['offset'] = int(offset)

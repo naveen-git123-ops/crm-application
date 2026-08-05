@@ -250,7 +250,7 @@ export const Settings = () => {
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Telegram notifications</h3>
               <p className="text-sm text-gray-600 mt-1">
-                Link @{telegramStatus.bot_username || 'Resoline_bot'} to receive login and leave alerts on Telegram.
+                Link @{telegramStatus.bot_username || 'Resoline_bot'} to receive login, leave, task, and approval alerts on Telegram.
               </p>
             </div>
           </div>

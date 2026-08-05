@@ -40,8 +40,11 @@ import threading
 from urllib.parse import urlparse
 
 from telegram_notify import (
+    answer_telegram_callback_query,
+    approve_reject_inline_keyboard,
     build_telegram_connect_url,
     delete_telegram_webhook,
+    edit_telegram_message_text,
     get_telegram_updates,
     notify_telegram_targets,
     parse_user_id_from_start_payload,
@@ -3545,17 +3548,27 @@ def _format_task_assigned_telegram_message(task, assigned_by_name: str) -> str:
     lines = [
         '📋 New task assigned to you',
         '',
-        f'Task: {task.task_id}',
+        f'Task ID: {task.task_id}',
         f'Title: {task.title}',
-        f'Due: {task.due_date}',
+        f'Assigned to: {getattr(task, "assigned_to_name", None) or "-"}',
+        f'Due date: {task.due_date}',
         f'Status: {getattr(task, "status", None) or "Pending"}',
+        f'Priority: {getattr(task, "priority", None) or "Medium"}',
         f'Assigned by: {assigned_by_name}',
     ]
+    est = getattr(task, 'estimated_time_minutes', None)
+    if est is not None:
+        hours = est / 60
+        if hours == int(hours):
+            lines.append(f'Estimated time: {int(hours)} hr' + ('' if int(hours) == 1 else 's'))
+        else:
+            lines.append(f'Estimated time: {hours:.1f} hrs')
     desc = (getattr(task, 'description', None) or '').strip()
     if desc:
-        preview = desc if len(desc) <= 200 else desc[:197] + '...'
-        lines.extend(['', f'Details: {preview}'])
-    lines.extend(['', 'Open Tasks in Resoline CRM to view or update it.'])
+        # Telegram message limit is generous; keep a readable chunk of the description
+        preview = desc if len(desc) <= 1500 else desc[:1497] + '...'
+        lines.extend(['', 'Description:', preview])
+    lines.extend(['', 'Open Tasks in Resoline CRM to update progress.'])
     return '\n'.join(lines)
 
 
@@ -3574,20 +3587,380 @@ def _notify_task_assigned_telegram(
     if previous_assignee_id is not None and previous_assignee_id == assignee_id:
         return
     if not telegram_enabled():
+        logging.warning('Task assign Telegram skipped: bot token not configured')
         return
     chat_id = _telegram_chat_id_for_employee(db, assignee_id)
     if not chat_id:
-        logging.info(
-            'Task assign Telegram skipped: no chat_id for employee %s',
+        logging.warning(
+            'Task assign Telegram skipped: no chat_id for employee %s (task %s)',
             assignee_id,
+            getattr(task, 'task_id', None),
         )
         return
     message = _format_task_assigned_telegram_message(task, assigned_by_name)
-    threading.Thread(
-        target=send_telegram_message,
-        args=(message, chat_id),
-        daemon=True,
-    ).start()
+
+    def _send():
+        ok, err = send_telegram_message_verbose(message, chat_id)
+        if ok:
+            logging.info(
+                'Task assign Telegram sent task=%s employee=%s chat=%s',
+                getattr(task, 'task_id', None),
+                assignee_id,
+                chat_id,
+            )
+        else:
+            logging.warning(
+                'Task assign Telegram failed task=%s employee=%s: %s',
+                getattr(task, 'task_id', None),
+                assignee_id,
+                err,
+            )
+
+    threading.Thread(target=_send, daemon=True).start()
+
+
+# Primary operations approver for Telegram (default: Subhashree Sahoo)
+TELEGRAM_APPROVER_EMPLOYEE_ID = (os.environ.get('TELEGRAM_APPROVER_EMPLOYEE_ID') or 'EMP0005').strip()
+
+
+def _telegram_approver_chat_ids(db: Session) -> List[str]:
+    """Chat IDs that receive approval requests (primary approver + optional admin env)."""
+    chats: List[str] = []
+    seen = set()
+    primary = _telegram_chat_id_for_employee(db, TELEGRAM_APPROVER_EMPLOYEE_ID)
+    if primary:
+        chats.append(str(primary))
+        seen.add(str(primary))
+    for key in ('TELEGRAM_ADMIN_CHAT_ID', 'TELEGRAM_CHAT_ID'):
+        extra = (os.environ.get(key) or '').strip()
+        if extra and extra not in seen:
+            chats.append(extra)
+            seen.add(extra)
+    return chats
+
+
+def _telegram_approver_user(db: Session) -> Optional[UserModel]:
+    """CRM user for the primary Telegram approver (used as approver_id/name)."""
+    user = db.query(UserModel).filter(UserModel.employee_id == TELEGRAM_APPROVER_EMPLOYEE_ID).first()
+    if user:
+        return user
+    emp = db.query(EmployeeModel).filter(EmployeeModel.employee_id == TELEGRAM_APPROVER_EMPLOYEE_ID).first()
+    if not emp:
+        return None
+    return db.query(UserModel).filter(UserModel.employee_id == emp.employee_id).first()
+
+
+def _is_telegram_approver_chat(db: Session, chat_id: str) -> bool:
+    return str(chat_id) in set(_telegram_approver_chat_ids(db))
+
+
+def _approval_callback_data(action: str, kind: str, record_id: str) -> str:
+    """Compact callback_data: A|li|<uuid> or R|lv|<uuid> (Telegram max 64 bytes)."""
+    return f'{action}|{kind}|{record_id}'[:64]
+
+
+def _notify_approvers_telegram(db: Session, title: str, lines: List[str], kind: str, record_id: str) -> None:
+    """Send an approval request with Approve/Reject buttons to the operations approver."""
+    if not telegram_enabled():
+        return
+    chats = _telegram_approver_chat_ids(db)
+    if not chats:
+        logging.warning(
+            'Approval Telegram skipped: no chat for approver %s (and no TELEGRAM_ADMIN_CHAT_ID)',
+            TELEGRAM_APPROVER_EMPLOYEE_ID,
+        )
+        return
+    text = '\n'.join([title, ''] + lines + ['', 'Tap a button below to approve or reject.'])
+    markup = approve_reject_inline_keyboard(
+        _approval_callback_data('A', kind, record_id),
+        _approval_callback_data('R', kind, record_id),
+    )
+
+    def _send_all():
+        for chat_id in chats:
+            ok, err = send_telegram_message_verbose(text, chat_id, reply_markup=markup)
+            if not ok:
+                logging.warning('Approval Telegram failed chat=%s kind=%s: %s', chat_id, kind, err)
+
+    threading.Thread(target=_send_all, daemon=True).start()
+
+
+def _notify_late_punch_in_approval(db: Session, req: LatePunchInRequestModel) -> None:
+    _notify_approvers_telegram(
+        db,
+        '⏰ Late punch-in request',
+        [
+            f'Employee: {req.employee_name} ({req.employee_id})',
+            f'Date: {req.punch_in_date}',
+            f'Time: {req.punch_in_time}',
+            f'Minutes late: {req.minutes_late}',
+            f'Reason: {(req.employee_reason or "-").strip() or "-"}',
+        ],
+        'li',
+        req.id,
+    )
+
+
+def _notify_half_day_punch_in_approval(db: Session, req: HalfDayPunchInRequestModel) -> None:
+    _notify_approvers_telegram(
+        db,
+        '🕐 Half-day punch-in request',
+        [
+            f'Employee: {req.employee_name} ({req.employee_id})',
+            f'Date: {req.punch_in_date}',
+            f'Time: {req.punch_in_time}',
+            f'Minutes after 10:00: {req.minutes_after_threshold}',
+            f'Reason: {(req.employee_reason or "-").strip() or "-"}',
+        ],
+        'hd',
+        req.id,
+    )
+
+
+def _notify_late_punch_out_approval(db: Session, req: LatePunchOutRequestModel) -> None:
+    _notify_approvers_telegram(
+        db,
+        '🌙 Late punch-out request',
+        [
+            f'Employee: {req.employee_name} ({req.employee_id})',
+            f'Date: {req.punch_out_date}',
+            f'Time: {req.punch_out_time}',
+            f'Minutes late: {req.minutes_late}',
+            f'Reason: {(req.employee_reason or "-").strip() or "-"}',
+        ],
+        'lo',
+        req.id,
+    )
+
+
+def _notify_early_punch_out_approval(db: Session, req: EarlyPunchOutRequestModel) -> None:
+    _notify_approvers_telegram(
+        db,
+        '🚪 Early punch-out request',
+        [
+            f'Employee: {req.employee_name} ({req.employee_id})',
+            f'Date: {req.punch_out_date}',
+            f'Time: {req.punch_out_time}',
+            f'Minutes early: {req.minutes_early}',
+            f'Reason: {(req.employee_reason or "-").strip() or "-"}',
+        ],
+        'eo',
+        req.id,
+    )
+
+
+def _notify_tour_approval(db: Session, attendance: AttendanceModel) -> None:
+    _notify_approvers_telegram(
+        db,
+        '✈️ Tour request',
+        [
+            f'Employee: {attendance.employee_name} ({attendance.employee_id})',
+            f'Date: {attendance.date}',
+            f'Punch in: {attendance.punch_in or "-"}',
+            f'Punch out: {attendance.punch_out or "-"}',
+            f'Place: {(attendance.tour_place or "-").strip() or "-"}',
+            f'Reason: {(attendance.tour_reason or "-").strip() or "-"}',
+        ],
+        'tr',
+        attendance.id,
+    )
+
+
+def _notify_leave_approval(db: Session, leave: LeaveModel) -> None:
+    lines = [
+        f'Employee: {leave.employee_name} ({leave.employee_id})',
+        f'Type: {leave.leave_type}',
+        f'From: {leave.start_date}',
+        f'To: {leave.end_date}',
+        f'Days: {leave.days}',
+    ]
+    if getattr(leave, 'half_day_session', None):
+        lines.append(f'Session: {leave.half_day_session}')
+    lines.append(f'Reason: {(leave.reason or "-").strip() or "-"}')
+    _notify_approvers_telegram(db, '📝 Leave request', lines, 'lv', leave.id)
+
+
+def _apply_telegram_approval(
+    db: Session,
+    kind: str,
+    approve: bool,
+    record_id: str,
+    approver: UserModel,
+) -> str:
+    """Apply approve/reject from Telegram. Returns human message."""
+    status_cap = 'Approved' if approve else 'Rejected'
+    status_tour = 'approved' if approve else 'rejected'
+    reason = 'Via Telegram'
+
+    if kind == 'li':
+        req = db.query(LatePunchInRequestModel).filter(LatePunchInRequestModel.id == record_id).first()
+        if not req:
+            return 'Late punch-in request not found'
+        if req.status != 'Pending':
+            return f'Already {req.status}'
+        req.status = status_cap
+        req.approver_id = approver.id
+        req.approver_name = approver.name
+        req.approval_reason = reason
+        req.approved_at = datetime.now(timezone.utc)
+        att = db.query(AttendanceModel).filter(AttendanceModel.id == req.attendance_id).first()
+        if att:
+            att.status = 'Present' if approve else 'Absent'
+        db.commit()
+        return f'Late punch-in {status_cap.lower()} for {req.employee_name}'
+
+    if kind == 'hd':
+        req = db.query(HalfDayPunchInRequestModel).filter(HalfDayPunchInRequestModel.id == record_id).first()
+        if not req:
+            return 'Half-day punch-in request not found'
+        if req.status != 'Pending':
+            return f'Already {req.status}'
+        req.status = status_cap
+        req.approver_id = approver.id
+        req.approver_name = approver.name
+        req.approval_reason = reason
+        req.approved_at = datetime.now(timezone.utc)
+        att = db.query(AttendanceModel).filter(AttendanceModel.id == req.attendance_id).first()
+        if att:
+            att.status = 'Half Day' if approve else 'Absent'
+        db.commit()
+        return f'Half-day punch-in {status_cap.lower()} for {req.employee_name}'
+
+    if kind == 'lo':
+        req = db.query(LatePunchOutRequestModel).filter(LatePunchOutRequestModel.id == record_id).first()
+        if not req:
+            return 'Late punch-out request not found'
+        if req.status != 'Pending':
+            return f'Already {req.status}'
+        req.status = status_cap
+        req.approver_id = approver.id
+        req.approver_name = approver.name
+        req.approval_reason = reason
+        req.approved_at = datetime.now(timezone.utc)
+        att = db.query(AttendanceModel).filter(AttendanceModel.id == req.attendance_id).first()
+        if att:
+            if approve:
+                had_half = (
+                    db.query(HalfDayPunchInRequestModel)
+                    .filter(
+                        HalfDayPunchInRequestModel.attendance_id == att.id,
+                        HalfDayPunchInRequestModel.status == 'Approved',
+                    )
+                    .first()
+                    is not None
+                    or att.status == 'Half Day'
+                )
+                att.status = 'Half Day' if had_half else 'Present'
+            else:
+                att.status = 'Absent'
+        db.commit()
+        return f'Late punch-out {status_cap.lower()} for {req.employee_name}'
+
+    if kind == 'eo':
+        req = db.query(EarlyPunchOutRequestModel).filter(EarlyPunchOutRequestModel.id == record_id).first()
+        if not req:
+            return 'Early punch-out request not found'
+        if req.status != 'Pending':
+            return f'Already {req.status}'
+        req.status = status_cap
+        req.approver_id = approver.id
+        req.approver_name = approver.name
+        req.approval_reason = reason
+        req.approved_at = datetime.now(timezone.utc)
+        att = db.query(AttendanceModel).filter(AttendanceModel.id == req.attendance_id).first()
+        if att:
+            if approve:
+                had_half = (
+                    db.query(HalfDayPunchInRequestModel)
+                    .filter(
+                        HalfDayPunchInRequestModel.attendance_id == att.id,
+                        HalfDayPunchInRequestModel.status == 'Approved',
+                    )
+                    .first()
+                    is not None
+                    or att.status == 'Half Day'
+                )
+                att.status = 'Half Day' if had_half else 'Present'
+            else:
+                att.status = 'Absent'
+        db.commit()
+        return f'Early punch-out {status_cap.lower()} for {req.employee_name}'
+
+    if kind == 'tr':
+        rec = db.query(AttendanceModel).filter(
+            AttendanceModel.id == record_id,
+            AttendanceModel.is_tour == 1,
+        ).first()
+        if not rec:
+            return 'Tour request not found'
+        if rec.tour_approval_status != 'pending':
+            return f'Already {rec.tour_approval_status or "processed"}'
+        rec.tour_approval_status = status_tour
+        db.commit()
+        return f'Tour {status_tour} for {rec.employee_name}'
+
+    if kind == 'lv':
+        leave = db.query(LeaveModel).filter(LeaveModel.id == record_id).first()
+        if not leave:
+            return 'Leave request not found'
+        if (leave.status or '').lower() not in ('pending',):
+            return f'Already {leave.status}'
+        leave.status = status_cap
+        leave.approver_id = approver.id
+        leave.approver_name = approver.name
+        db.commit()
+        return f'Leave {status_cap.lower()} for {leave.employee_name}'
+
+    return f'Unknown approval type: {kind}'
+
+
+def _handle_telegram_callback_query(payload: dict, db: Session) -> None:
+    cq = payload.get('callback_query') or {}
+    data = (cq.get('data') or '').strip()
+    cq_id = cq.get('id')
+    from_user = cq.get('from') or {}
+    message = cq.get('message') or {}
+    chat = message.get('chat') or {}
+    chat_id = str(chat.get('id') or '')
+    message_id = message.get('message_id')
+    original_text = message.get('text') or ''
+
+    if not data or '|' not in data:
+        answer_telegram_callback_query(cq_id, 'Invalid action', show_alert=True)
+        return
+    if not _is_telegram_approver_chat(db, chat_id):
+        answer_telegram_callback_query(cq_id, 'You are not authorized to approve', show_alert=True)
+        return
+
+    parts = data.split('|', 2)
+    if len(parts) != 3:
+        answer_telegram_callback_query(cq_id, 'Invalid action', show_alert=True)
+        return
+    action, kind, record_id = parts[0], parts[1], parts[2]
+    if action not in ('A', 'R') or not kind or not record_id:
+        answer_telegram_callback_query(cq_id, 'Invalid action', show_alert=True)
+        return
+
+    approver = _telegram_approver_user(db)
+    if not approver:
+        # Fallback: resolve by telegram chat on users table
+        approver = db.query(UserModel).filter(UserModel.telegram_chat_id == chat_id).first()
+    if not approver:
+        answer_telegram_callback_query(cq_id, 'Approver CRM user not found', show_alert=True)
+        return
+
+    try:
+        result_msg = _apply_telegram_approval(db, kind, action == 'A', record_id, approver)
+    except Exception as exc:
+        logging.error('Telegram approval failed: %s', exc)
+        answer_telegram_callback_query(cq_id, 'Failed to process', show_alert=True)
+        return
+
+    answer_telegram_callback_query(cq_id, result_msg)
+    if message_id is not None:
+        stamp = attendance_local_now().strftime('%d %b %Y %I:%M %p')
+        edited = f'{original_text}\n\n———\n✅ {result_msg}\nBy: {approver.name}\nAt: {stamp}'
+        edit_telegram_message_text(chat_id, int(message_id), edited)
 
 
 TELEGRAM_OPENAPI_TAG = ['Telegram']
@@ -3930,6 +4303,10 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
 
 def process_telegram_update(payload: dict, db: Session) -> None:
     """Handle one Telegram update (webhook or long-polling)."""
+    if payload.get('callback_query'):
+        _handle_telegram_callback_query(payload, db)
+        return
+
     message = payload.get('message') or payload.get('edited_message')
     if not message or 'chat' not in message:
         return
@@ -6715,8 +7092,8 @@ def _create_punch_in_approval_request(db, kind, attendance, employee, employee_i
             LatePunchInRequestModel.status == 'Pending',
         ).first()
         if pending:
-            return
-        db.add(LatePunchInRequestModel(
+            return pending
+        req = LatePunchInRequestModel(
             attendance_id=attendance.id,
             employee_id=employee_id,
             employee_name=employee.name,
@@ -6725,15 +7102,18 @@ def _create_punch_in_approval_request(db, kind, attendance, employee, employee_i
             employee_reason=reason,
             punch_in_date=today,
             status='Pending',
-        ))
+        )
+        db.add(req)
+        db.flush()
+        return req
     elif kind == 'half_day':
         pending = db.query(HalfDayPunchInRequestModel).filter(
             HalfDayPunchInRequestModel.attendance_id == attendance.id,
             HalfDayPunchInRequestModel.status == 'Pending',
         ).first()
         if pending:
-            return
-        db.add(HalfDayPunchInRequestModel(
+            return pending
+        req = HalfDayPunchInRequestModel(
             attendance_id=attendance.id,
             employee_id=employee_id,
             employee_name=employee.name,
@@ -6742,7 +7122,11 @@ def _create_punch_in_approval_request(db, kind, attendance, employee, employee_i
             employee_reason=reason,
             punch_in_date=today,
             status='Pending',
-        ))
+        )
+        db.add(req)
+        db.flush()
+        return req
+    return None
 
 
 def _perform_attendance_punch(
@@ -6815,11 +7199,18 @@ def _perform_attendance_punch(
             db.commit()
             db.refresh(existing)
             if punch_in_kind in ('late', 'half_day'):
-                _create_punch_in_approval_request(
+                created_req = _create_punch_in_approval_request(
                     db, punch_in_kind, existing, employee, employee_id,
                     current_time, today, minutes_offset, late_reason_in
                 )
                 db.commit()
+                if created_req is not None:
+                    if punch_in_kind == 'late':
+                        _notify_late_punch_in_approval(db, created_req)
+                    else:
+                        _notify_half_day_punch_in_approval(db, created_req)
+            if not at_office and existing.tour_approval_status == 'pending':
+                _notify_tour_approval(db, existing)
             return {
                 'message': (
                     'Punched in again successfully (new session)' if at_office else 'Recorded as Tour (official travel). Pending approval from Admin/Manager.'
@@ -6869,11 +7260,19 @@ def _perform_attendance_punch(
         
         # If late or half-day punch-in, create approval request
         if punch_in_kind in ('late', 'half_day'):
-            _create_punch_in_approval_request(
+            created_req = _create_punch_in_approval_request(
                 db, punch_in_kind, new_attendance, employee, employee_id,
                 current_time, today, minutes_offset, late_reason_first
             )
             db.commit()
+            if created_req is not None:
+                if punch_in_kind == 'late':
+                    _notify_late_punch_in_approval(db, created_req)
+                else:
+                    _notify_half_day_punch_in_approval(db, created_req)
+
+        if not at_office and new_attendance.tour_approval_status == 'pending':
+            _notify_tour_approval(db, new_attendance)
 
         approval_msg = ' Waiting for admin approval due to half-day punch-in.' if is_half_day else ' Waiting for admin approval due to late punch-in.' if is_late else ''
         return {
@@ -6993,6 +7392,8 @@ def _perform_attendance_punch(
             )
             db.add(late_out_request)
             db.commit()
+            db.refresh(late_out_request)
+            _notify_late_punch_out_approval(db, late_out_request)
         elif is_early_punch_out:
             early_out_request = EarlyPunchOutRequestModel(
                 attendance_id=existing.id,
@@ -7006,6 +7407,11 @@ def _perform_attendance_punch(
             )
             db.add(early_out_request)
             db.commit()
+            db.refresh(early_out_request)
+            _notify_early_punch_out_approval(db, early_out_request)
+
+        if not at_office and existing.tour_approval_status == 'pending':
+            _notify_tour_approval(db, existing)
 
         if is_late_punch_out:
             out_msg = 'Punched out successfully. Waiting for admin approval due to late punch-out.'
@@ -8716,6 +9122,8 @@ def create_leave(
                 employee_id,
                 notify_result.get('reason'),
             )
+
+        _notify_leave_approval(db, new_leave)
 
         return Leave.model_validate(new_leave)
     except ValueError as ve:
