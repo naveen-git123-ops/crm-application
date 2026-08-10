@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, EmailStr, ConfigDict, field_validator
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, field_validator, AliasChoices
 from typing import List, Optional, Literal, Any, Dict, Tuple
 from collections import Counter, defaultdict
 from datetime import datetime, timezone, timedelta, date
@@ -589,7 +589,7 @@ class LeadModel(Base):
     source = Column(String(100), default='Other')
     status = Column(String(50), default='New', index=True)
     value = Column(Float, nullable=True)
-    notes = Column(String(1000), nullable=True)
+    brief_of_enquiry = Column('notes', String(1000), nullable=True)
     assigned_to_employee_id = Column(String(50), nullable=True, index=True)
     assigned_to_name = Column(String(255), nullable=True)
     created_by_employee_id = Column(String(50), nullable=True, index=True)
@@ -897,6 +897,31 @@ class AppSettingModel(Base):
     __tablename__ = 'app_settings'
     key = Column(String(100), primary_key=True)
     value = Column(String(2000), nullable=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class StockItemModel(Base):
+    """Manual stock master (Tally-style stock items maintained in CRM)."""
+    __tablename__ = 'stock_items'
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(255), index=True, nullable=False)
+    alias = Column(String(255), nullable=True)
+    item_code = Column(String(100), nullable=True, index=True)
+    stock_group = Column(String(255), nullable=True, index=True)
+    unit = Column(String(50), nullable=False, default='Nos')
+    hsn_code = Column(String(50), nullable=True)
+    godown = Column(String(255), nullable=True, index=True)
+    opening_qty = Column(Float, default=0)
+    quantity = Column(Float, default=0)  # current / closing qty
+    rate = Column(Float, default=0)
+    value = Column(Float, default=0)  # usually quantity * rate
+    reorder_level = Column(Float, nullable=True)
+    notes = Column(String(1000), nullable=True)
+    created_by_employee_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    updated_by_employee_id = Column(String(50), nullable=True)
+    updated_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
@@ -1820,7 +1845,8 @@ migrate_cgw_flow_metres_wizard_draft_json()
 # Seed default roles (Admin cannot be edited/deleted; others can)
 DEFAULT_PERMISSION_KEYS = [
     "dashboard", "leads", "employees", "attendance", "monthly-report", "leaves", "expenses",
-    "roles", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers", "cgw-flow-metre", "vehicles"
+    "roles", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers",
+    "cgw-flow-metre", "vehicles", "stock-management",
 ]
 
 def seed_roles_if_needed():
@@ -2418,6 +2444,60 @@ class GovernmentHolidayCreate(BaseModel):
     description: Optional[str] = None
 
 
+class StockItem(BaseModel):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+    id: str
+    name: str
+    alias: Optional[str] = None
+    item_code: Optional[str] = None
+    stock_group: Optional[str] = None
+    unit: str = 'Nos'
+    hsn_code: Optional[str] = None
+    godown: Optional[str] = None
+    opening_qty: float = 0
+    quantity: float = 0
+    rate: float = 0
+    value: float = 0
+    reorder_level: Optional[float] = None
+    notes: Optional[str] = None
+    created_by_employee_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    updated_by_employee_id: Optional[str] = None
+    updated_by_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class StockItemCreate(BaseModel):
+    name: str
+    alias: Optional[str] = None
+    item_code: Optional[str] = None
+    stock_group: Optional[str] = None
+    unit: str = 'Nos'
+    hsn_code: Optional[str] = None
+    godown: Optional[str] = None
+    opening_qty: float = 0
+    quantity: Optional[float] = None  # defaults to opening_qty when omitted
+    rate: float = 0
+    reorder_level: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class StockItemUpdate(BaseModel):
+    name: Optional[str] = None
+    alias: Optional[str] = None
+    item_code: Optional[str] = None
+    stock_group: Optional[str] = None
+    unit: Optional[str] = None
+    hsn_code: Optional[str] = None
+    godown: Optional[str] = None
+    opening_qty: Optional[float] = None
+    quantity: Optional[float] = None
+    rate: Optional[float] = None
+    reorder_level: Optional[float] = None
+    notes: Optional[str] = None
+
+
 class Document(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -2507,7 +2587,7 @@ class RoleUpdate(BaseModel):
     permissions: Optional[List[str]] = None
 
 class Lead(BaseModel):
-    model_config = ConfigDict(extra="ignore", from_attributes=True)
+    model_config = ConfigDict(extra="ignore", from_attributes=True, populate_by_name=True)
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     contact_name: str = ''
     company: str = ''
@@ -2516,7 +2596,10 @@ class Lead(BaseModel):
     source: str = 'Other'
     status: str = 'New'
     value: Optional[float] = None
-    notes: Optional[str] = None
+    brief_of_enquiry: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices('brief_of_enquiry', 'notes'),
+    )
     assigned_to_employee_id: Optional[str] = None
     assigned_to_name: Optional[str] = None
     created_by_employee_id: Optional[str] = None
@@ -2543,7 +2626,7 @@ LEAD_SOURCE_VALUES = (
 
 
 class LeadCreate(BaseModel):
-    model_config = ConfigDict(extra='ignore')
+    model_config = ConfigDict(extra='ignore', populate_by_name=True)
 
     contact_name: str
     company: str
@@ -2552,7 +2635,10 @@ class LeadCreate(BaseModel):
     source: str = Field(default='Other', max_length=120)
     status: Literal['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'] = 'New'
     value: Optional[float] = None
-    notes: Optional[str] = None
+    brief_of_enquiry: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices('brief_of_enquiry', 'notes'),
+    )
     assigned_to_employee_id: Optional[str] = None
     assigned_to_name: Optional[str] = None
     category: Optional[str] = None
@@ -2580,7 +2666,7 @@ class LeadCreate(BaseModel):
         return str(v).strip()
 
 class LeadUpdate(BaseModel):
-    model_config = ConfigDict(extra='ignore')
+    model_config = ConfigDict(extra='ignore', populate_by_name=True)
     contact_name: Optional[str] = None
     company: Optional[str] = None
     email: Optional[EmailStr] = None
@@ -2588,7 +2674,10 @@ class LeadUpdate(BaseModel):
     source: Optional[str] = Field(default=None, max_length=120)
     status: Optional[Literal['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost']] = None
     value: Optional[float] = None
-    notes: Optional[str] = None
+    brief_of_enquiry: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices('brief_of_enquiry', 'notes'),
+    )
     assigned_to_employee_id: Optional[str] = None
     assigned_to_name: Optional[str] = None
     category: Optional[str] = None
@@ -9284,6 +9373,168 @@ def delete_government_holiday(
 
 # ============= DOCUMENT ROUTES =============
 
+
+# ============= STOCK MANAGEMENT =============
+
+def require_stock_management(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if is_admin_user(current_user):
+        return current_user
+    perms = get_permissions_for_role(db, current_user.role)
+    if 'stock-management' not in perms:
+        raise HTTPException(status_code=403, detail='You do not have access to Stock Management')
+    return current_user
+
+
+def _stock_item_value(quantity: float, rate: float) -> float:
+    try:
+        return round(float(quantity or 0) * float(rate or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+@api_router.get('/stock-items', response_model=List[StockItem])
+def list_stock_items(
+    q: Optional[str] = None,
+    stock_group: Optional[str] = None,
+    godown: Optional[str] = None,
+    current_user: UserModel = Depends(require_stock_management),
+    db: Session = Depends(get_db),
+):
+    query = db.query(StockItemModel)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        query = query.filter(
+            (StockItemModel.name.ilike(like))
+            | (StockItemModel.alias.ilike(like))
+            | (StockItemModel.item_code.ilike(like))
+            | (StockItemModel.hsn_code.ilike(like))
+        )
+    if stock_group and stock_group.strip():
+        query = query.filter(StockItemModel.stock_group == stock_group.strip())
+    if godown and godown.strip():
+        query = query.filter(StockItemModel.godown == godown.strip())
+    return query.order_by(StockItemModel.name.asc()).all()
+
+
+@api_router.get('/stock-items/meta/filters')
+def stock_item_filter_options(
+    current_user: UserModel = Depends(require_stock_management),
+    db: Session = Depends(get_db),
+):
+    groups = [
+        r[0] for r in db.query(StockItemModel.stock_group)
+        .filter(StockItemModel.stock_group.isnot(None), StockItemModel.stock_group != '')
+        .distinct().order_by(StockItemModel.stock_group.asc()).all()
+    ]
+    godowns = [
+        r[0] for r in db.query(StockItemModel.godown)
+        .filter(StockItemModel.godown.isnot(None), StockItemModel.godown != '')
+        .distinct().order_by(StockItemModel.godown.asc()).all()
+    ]
+    return {'stock_groups': groups, 'godowns': godowns}
+
+
+@api_router.get('/stock-items/{item_id}', response_model=StockItem)
+def get_stock_item(
+    item_id: str,
+    current_user: UserModel = Depends(require_stock_management),
+    db: Session = Depends(get_db),
+):
+    row = db.query(StockItemModel).filter(StockItemModel.id == item_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Stock item not found')
+    return row
+
+
+@api_router.post('/stock-items', response_model=StockItem)
+def create_stock_item(
+    body: StockItemCreate,
+    current_user: UserModel = Depends(require_stock_management),
+    db: Session = Depends(get_db),
+):
+    name = (body.name or '').strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Item name is required')
+    unit = (body.unit or 'Nos').strip() or 'Nos'
+    opening = float(body.opening_qty or 0)
+    qty = float(body.quantity) if body.quantity is not None else opening
+    rate = float(body.rate or 0)
+    row = StockItemModel(
+        name=name,
+        alias=(body.alias or '').strip() or None,
+        item_code=(body.item_code or '').strip() or None,
+        stock_group=(body.stock_group or '').strip() or None,
+        unit=unit,
+        hsn_code=(body.hsn_code or '').strip() or None,
+        godown=(body.godown or '').strip() or None,
+        opening_qty=opening,
+        quantity=qty,
+        rate=rate,
+        value=_stock_item_value(qty, rate),
+        reorder_level=body.reorder_level,
+        notes=(body.notes or '').strip() or None,
+        created_by_employee_id=current_user.employee_id,
+        created_by_name=current_user.name,
+        updated_by_employee_id=current_user.employee_id,
+        updated_by_name=current_user.name,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@api_router.put('/stock-items/{item_id}', response_model=StockItem)
+def update_stock_item(
+    item_id: str,
+    body: StockItemUpdate,
+    current_user: UserModel = Depends(require_stock_management),
+    db: Session = Depends(get_db),
+):
+    row = db.query(StockItemModel).filter(StockItemModel.id == item_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Stock item not found')
+    data = body.model_dump(exclude_unset=True)
+    if 'name' in data:
+        name = (data['name'] or '').strip()
+        if not name:
+            raise HTTPException(status_code=400, detail='Item name is required')
+        row.name = name
+    for field in ('alias', 'item_code', 'stock_group', 'hsn_code', 'godown', 'notes'):
+        if field in data:
+            val = data[field]
+            setattr(row, field, (val or '').strip() or None if isinstance(val, str) else val)
+    if 'unit' in data:
+        row.unit = (data['unit'] or 'Nos').strip() or 'Nos'
+    for field in ('opening_qty', 'quantity', 'rate', 'reorder_level'):
+        if field in data:
+            setattr(row, field, data[field])
+    row.value = _stock_item_value(row.quantity, row.rate)
+    row.updated_by_employee_id = current_user.employee_id
+    row.updated_by_name = current_user.name
+    row.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@api_router.delete('/stock-items/{item_id}')
+def delete_stock_item(
+    item_id: str,
+    current_user: UserModel = Depends(require_stock_management),
+    db: Session = Depends(get_db),
+):
+    row = db.query(StockItemModel).filter(StockItemModel.id == item_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Stock item not found')
+    db.delete(row)
+    db.commit()
+    return {'message': 'Stock item deleted'}
+
+
 @api_router.post('/documents/upload')
 def upload_document(
     employee_id: str = Form(...),
@@ -10171,6 +10422,23 @@ def _default_carry_order_workflow_payload() -> dict:
         'bom_attachments': [],
         'otx_date_from': '',
         'otx_date_to': '',
+        'opportunity_assessment': {
+            'business_category': '',
+            'product_categories': [],
+            'technical_datas_required': None,
+            'site_visit_required': None,
+            'expected_enquiry_closing_date': '',
+            'site_visit_date': '',
+            'site_visit_assignee_employee_id': '',
+            'site_visit_assignee_name': '',
+            'site_visit_other': {
+                'name': '',
+                'mobile': '',
+                'email': '',
+                'address': '',
+                'id_proof': None,
+            },
+        },
         'bom': {
             'materials': [],
             'install_cost': 0,
@@ -10202,6 +10470,326 @@ def _default_carry_order_workflow_payload() -> dict:
         },
     }
 
+
+def _opportunity_assessment_complete(payload: dict) -> bool:
+    oa = payload.get('opportunity_assessment') or {}
+    cats = oa.get('product_categories') or []
+    base_ok = bool(
+        str(oa.get('business_category') or '').strip()
+        and isinstance(cats, list)
+        and len(cats) > 0
+        and isinstance(oa.get('technical_datas_required'), bool)
+        and isinstance(oa.get('site_visit_required'), bool)
+        and str(oa.get('expected_enquiry_closing_date') or '').strip()
+    )
+    if not base_ok:
+        return False
+    if oa.get('site_visit_required') is not True:
+        return True
+    if not str(oa.get('site_visit_date') or '').strip():
+        return False
+    assignee_id = str(oa.get('site_visit_assignee_employee_id') or '').strip()
+    if not assignee_id:
+        return False
+    if assignee_id != 'other':
+        return True
+    other = oa.get('site_visit_other') or {}
+    id_proof = other.get('id_proof') or {}
+    return bool(
+        str(other.get('name') or '').strip()
+        and str(other.get('mobile') or '').strip()
+        and str(other.get('email') or '').strip()
+        and str(other.get('address') or '').strip()
+        and (id_proof.get('id') or id_proof.get('file_url') or id_proof.get('url'))
+    )
+
+# Site-visit Telegram: morning notice at 06:00, then 3 hourly reminders (07/08/09).
+SITE_VISIT_TELEGRAM_SLOTS = {
+    6: 'morning',
+    7: 'reminder_1',
+    8: 'reminder_2',
+    9: 'reminder_3',
+}
+
+
+def _parse_workflow_payload_raw(raw) -> Optional[dict]:
+    if raw is None or raw == '':
+        return None
+    if isinstance(raw, dict):
+        return raw
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _format_site_visit_telegram_message(lead: LeadModel, oa: dict, slot_key: str) -> str:
+    visit_date = str(oa.get('site_visit_date') or '').strip()
+    assignee = str(oa.get('site_visit_assignee_name') or '').strip() or 'you'
+    company = (getattr(lead, 'company', None) or '').strip() or '—'
+    contact = (getattr(lead, 'contact_name', None) or '').strip() or '—'
+    if slot_key == 'morning':
+        header = '📍 Site visit scheduled today'
+    elif slot_key == 'reminder_1':
+        header = '⏰ Site visit reminder (1/3)'
+    elif slot_key == 'reminder_2':
+        header = '⏰ Site visit reminder (2/3)'
+    else:
+        header = '⏰ Site visit reminder (3/3)'
+    lines = [
+        header,
+        '',
+        f'Company: {company}',
+        f'Contact: {contact}',
+        f'Visit date: {visit_date}',
+        f'Assigned to: {assignee}',
+    ]
+    brief = (getattr(lead, 'brief_of_enquiry', None) or '').strip()
+    if brief:
+        preview = brief if len(brief) <= 400 else brief[:397] + '...'
+        lines.extend(['', 'Brief of enquiry:', preview])
+    lines.extend(['', 'Open the lead in Resoline CRM for details.'])
+    return '\n'.join(lines)
+
+
+def run_site_visit_telegram_reminders_job(force_hour: Optional[int] = None) -> Dict[str, Any]:
+    """Notify company assignees on Telegram for site visits due today.
+
+    Runs at 06:00 (initial) and 07/08/09 (three hourly reminders) in ATTENDANCE_TIMEZONE.
+    Skips 'Other' assignees (external people without CRM Telegram links).
+    """
+    out: Dict[str, Any] = {
+        'slot': None,
+        'checked': 0,
+        'sent': 0,
+        'skipped': 0,
+        'errors': 0,
+        'details': [],
+    }
+    if not telegram_enabled():
+        out['skipped_reason'] = 'telegram_disabled'
+        logging.info('Site visit Telegram reminders skipped: bot token not configured')
+        return out
+
+    now = attendance_local_now()
+    hour = int(force_hour) if force_hour is not None else now.hour
+    slot_key = SITE_VISIT_TELEGRAM_SLOTS.get(hour)
+    if not slot_key:
+        out['skipped_reason'] = 'outside_notify_hours'
+        return out
+    out['slot'] = slot_key
+    today = now.strftime('%Y-%m-%d')
+
+    db = SessionLocal()
+    try:
+        leads = (
+            db.query(LeadModel)
+            .filter(LeadModel.workflow_payload.isnot(None))
+            .filter(LeadModel.status.notin_(['Lost', 'Won']))
+            .all()
+        )
+        for lead in leads:
+            out['checked'] += 1
+            payload = _parse_workflow_payload_raw(lead.workflow_payload)
+            if not payload:
+                continue
+            oa = payload.get('opportunity_assessment') or {}
+            if oa.get('site_visit_required') is not True:
+                continue
+            visit_date = str(oa.get('site_visit_date') or '').strip()
+            if visit_date != today:
+                continue
+            assignee_id = str(oa.get('site_visit_assignee_employee_id') or '').strip()
+            if not assignee_id or assignee_id.lower() == 'other':
+                continue
+
+            notices = oa.get('site_visit_telegram_notices') or {}
+            if not isinstance(notices, dict):
+                notices = {}
+            if str(notices.get('date') or '') != today:
+                notices = {'date': today, 'sent_slots': []}
+            sent_slots = notices.get('sent_slots') or []
+            if not isinstance(sent_slots, list):
+                sent_slots = []
+            if slot_key in sent_slots:
+                out['skipped'] += 1
+                continue
+
+            chat_id = _telegram_chat_id_for_employee(db, assignee_id)
+            if not chat_id:
+                out['skipped'] += 1
+                out['details'].append({
+                    'lead_id': lead.id,
+                    'employee_id': assignee_id,
+                    'status': 'no_telegram_chat_id',
+                })
+                logging.warning(
+                    'Site visit Telegram skipped: no chat_id for employee %s (lead %s)',
+                    assignee_id,
+                    lead.id,
+                )
+                continue
+
+            message = _format_site_visit_telegram_message(lead, oa, slot_key)
+            ok, error = send_telegram_message_verbose(message, chat_id)
+            if not ok:
+                out['errors'] += 1
+                out['details'].append({
+                    'lead_id': lead.id,
+                    'employee_id': assignee_id,
+                    'status': 'send_failed',
+                    'error': error,
+                })
+                logging.warning(
+                    'Site visit Telegram failed for lead %s employee %s: %s',
+                    lead.id,
+                    assignee_id,
+                    error,
+                )
+                continue
+
+            sent_slots = list(sent_slots) + [slot_key]
+            oa['site_visit_telegram_notices'] = {'date': today, 'sent_slots': sent_slots}
+            payload['opportunity_assessment'] = oa
+            lead.workflow_payload = _serialize_workflow_payload(payload)
+            out['sent'] += 1
+            out['details'].append({
+                'lead_id': lead.id,
+                'employee_id': assignee_id,
+                'status': 'sent',
+                'slot': slot_key,
+            })
+
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        out['errors'] += 1
+        out['skipped_reason'] = f'job_error: {exc}'
+        logging.exception('Site visit Telegram reminder job failed')
+    finally:
+        db.close()
+
+    logging.info(
+        'Site visit Telegram job slot=%s sent=%s skipped=%s errors=%s checked=%s',
+        slot_key,
+        out['sent'],
+        out['skipped'],
+        out['errors'],
+        out['checked'],
+    )
+    return out
+
+
+def _next_task_number_id(db: Session) -> str:
+    max_task_num = db.query(
+        func.max(cast(func.substr(TaskModel.task_id, 5), Integer))
+    ).scalar()
+    next_task_num = (max_task_num or 0) + 1
+    return f'TASK{str(next_task_num).zfill(5)}'
+
+
+def _ensure_site_visit_task_for_lead(
+    db: Session,
+    lead: LeadModel,
+    payload: dict,
+    current_user: UserModel,
+) -> dict:
+    """Create/update a Tasks-screen task when site visit is assigned to a company employee."""
+    if not isinstance(payload, dict):
+        return payload
+    oa = payload.get('opportunity_assessment') or {}
+    if not isinstance(oa, dict):
+        return payload
+
+    site_visit_required = oa.get('site_visit_required') is True
+    visit_date = str(oa.get('site_visit_date') or '').strip()
+    assignee_id = str(oa.get('site_visit_assignee_employee_id') or '').strip()
+    assignee_name = str(oa.get('site_visit_assignee_name') or '').strip()
+    existing_task_id = str(oa.get('site_visit_task_id') or '').strip()
+
+    if (
+        not site_visit_required
+        or not visit_date
+        or not assignee_id
+        or assignee_id.lower() == 'other'
+    ):
+        return payload
+
+    employee = db.query(EmployeeModel).filter(
+        (EmployeeModel.employee_id == assignee_id) | (EmployeeModel.id == assignee_id)
+    ).first()
+    if not employee:
+        logging.warning(
+            'Site visit task skipped: employee %s not found (lead %s)',
+            assignee_id,
+            getattr(lead, 'id', None),
+        )
+        return payload
+
+    company = (getattr(lead, 'company', None) or '').strip() or '—'
+    contact = (getattr(lead, 'contact_name', None) or '').strip() or '—'
+    title = f'Site visit: {company}'
+    if len(title) > 255:
+        title = title[:252] + '...'
+    brief = (getattr(lead, 'brief_of_enquiry', None) or '').strip()
+    desc_parts = [
+        f'Lead site visit for {company} ({contact}).',
+        f'Visit date: {visit_date}',
+        f'Assigned to: {assignee_name or employee.name}',
+        f'Lead ID: {lead.id}',
+    ]
+    if brief:
+        desc_parts.extend(['', f'Brief of enquiry: {brief[:700]}'])
+    description = '\n'.join(desc_parts)
+    if len(description) > 1000:
+        description = description[:997] + '...'
+
+    task = None
+    previous_assignee_id = None
+    if existing_task_id:
+        task = db.query(TaskModel).filter(TaskModel.task_id == existing_task_id).first()
+
+    if task:
+        previous_assignee_id = task.assigned_to_employee_id
+        task.title = title
+        task.description = description
+        task.assigned_to_employee_id = employee.employee_id
+        task.assigned_to_name = employee.name
+        task.due_date = visit_date
+        task.updated_at = datetime.now(timezone.utc)
+        if task.status in ('Completed',):
+            # Keep completed tasks as-is for status; still refresh metadata above.
+            pass
+        db.add(task)
+        _notify_task_assigned_telegram(
+            db,
+            task,
+            current_user.name or 'System',
+            previous_assignee_id=previous_assignee_id,
+        )
+    else:
+        task = TaskModel(
+            task_id=_next_task_number_id(db),
+            title=title,
+            description=description,
+            priority='High',
+            assigned_to_employee_id=employee.employee_id,
+            assigned_to_name=employee.name,
+            created_by_employee_id=getattr(current_user, 'employee_id', None),
+            created_by_name=getattr(current_user, 'name', None) or 'System',
+            due_date=visit_date,
+            status='Pending',
+        )
+        db.add(task)
+        db.flush()
+        _notify_task_assigned_telegram(db, task, current_user.name or 'System')
+
+    oa['site_visit_task_id'] = task.task_id
+    oa['site_visit_assignee_employee_id'] = employee.employee_id
+    oa['site_visit_assignee_name'] = employee.name
+    payload['opportunity_assessment'] = oa
+    return payload
 
 def _deserialize_lead_workflow(lead: LeadModel) -> None:
     raw = getattr(lead, 'workflow_payload', None)
@@ -10353,7 +10941,7 @@ def create_lead(
         source=data.source,
         status=data.status,
         value=data.value,
-        notes=data.notes,
+        brief_of_enquiry=data.brief_of_enquiry,
         assigned_to_employee_id=data.assigned_to_employee_id,
         assigned_to_name=data.assigned_to_name,
         created_by_employee_id=current_user.employee_id,
@@ -10500,6 +11088,7 @@ def _allocate_rtb_offer_base(db: Session, lead: LeadModel) -> str:
 
 CARRY_ORDER_STAGES = [
     'enquiry_logged',
+    'opportunity_assessment',
     'technical_clearance',
     'bom_costing',
     'offer_revision',
@@ -10540,11 +11129,19 @@ def _validate_lead_workflow_transition(
     if (
         _is_carry_and_order_subcategory(lead.sub_category)
         and not lead.vendor_id
-        and new_stage != 'enquiry_logged'
+        and new_stage not in ('enquiry_logged', 'opportunity_assessment')
     ):
         raise HTTPException(
             status_code=400,
-            detail='Assign a vendor before advancing past enquiry (open the lead to complete setup)',
+            detail='Assign a vendor before advancing past opportunity assessment (open the lead to complete setup)',
+        )
+    if (
+        new_idx > _workflow_stage_index('opportunity_assessment')
+        and not _opportunity_assessment_complete(payload)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail='Complete Opportunity & Assessment before proceeding',
         )
     if new_stage in ('bom_costing', 'offer_revision', 'follow_up', 'closed_won', 'closed_lost'):
         if not _vendor_selection_stage_complete(payload):
@@ -10641,7 +11238,9 @@ def update_lead_workflow(
     new_stage = data.workflow_stage
     _validate_lead_workflow_transition(lead, old_stage, new_stage, data.workflow_payload)
     lead.workflow_stage = new_stage
-    lead.workflow_payload = _serialize_workflow_payload(data.workflow_payload)
+    workflow_payload = data.workflow_payload if isinstance(data.workflow_payload, dict) else {}
+    workflow_payload = _ensure_site_visit_task_for_lead(db, lead, workflow_payload, current_user)
+    lead.workflow_payload = _serialize_workflow_payload(workflow_payload)
     if new_stage == 'closed_won':
         lead.status = 'Won'
         ow = data.workflow_payload.get('closed_won') or {}
@@ -10653,6 +11252,8 @@ def update_lead_workflow(
         lead.status = 'Negotiation'
     elif new_stage == 'technical_clearance':
         lead.status = 'Qualified'
+    elif new_stage == 'opportunity_assessment':
+        lead.status = 'Contacted'
     lead.updated_at = datetime.now(timezone.utc)
     if new_stage != old_stage:
         comment = data.status_change_comment or f'Workflow: {old_stage} → {new_stage}'
@@ -13248,8 +13849,16 @@ logger = logging.getLogger(__name__)
 _cgw_digest_scheduler = None
 
 
+def _attendance_scheduler_tz():
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(ATTENDANCE_TZ_NAME)
+    except Exception:
+        return timezone(timedelta(hours=5, minutes=30))
+
+
 def _start_cgw_renewal_digest_scheduler():
-    """Fire `run_cgw_renewal_digest_job` every day at 09:00 in ATTENDANCE_TIMEZONE."""
+    """Fire CGW digest at 09:00 and site-visit Telegram reminders at 06-09 hourly."""
     global _cgw_digest_scheduler
     if _cgw_digest_scheduler is not None:
         return
@@ -13257,13 +13866,9 @@ def _start_cgw_renewal_digest_scheduler():
         from apscheduler.schedulers.background import BackgroundScheduler
         from apscheduler.triggers.cron import CronTrigger
     except ImportError:
-        logger.warning('APScheduler is not installed; CGW renewal morning digest is disabled')
+        logger.warning('APScheduler is not installed; CGW / site-visit schedulers are disabled')
         return
-    try:
-        from zoneinfo import ZoneInfo
-        sched_tz = ZoneInfo(ATTENDANCE_TZ_NAME)
-    except Exception:
-        sched_tz = timezone(timedelta(hours=5, minutes=30))
+    sched_tz = _attendance_scheduler_tz()
     _cgw_digest_scheduler = BackgroundScheduler(timezone=sched_tz)
     _cgw_digest_scheduler.add_job(
         run_cgw_renewal_digest_job,
@@ -13271,8 +13876,18 @@ def _start_cgw_renewal_digest_scheduler():
         id='cgw_renewal_digest_daily',
         replace_existing=True,
     )
+    _cgw_digest_scheduler.add_job(
+        run_site_visit_telegram_reminders_job,
+        CronTrigger(hour='6-9', minute=0, timezone=sched_tz),
+        id='site_visit_telegram_reminders',
+        replace_existing=True,
+    )
     _cgw_digest_scheduler.start()
     logger.info('CGW past-due renewal digest scheduled daily at 09:00 (%s)', ATTENDANCE_TZ_NAME)
+    logger.info(
+        'Site visit Telegram reminders scheduled at 06:00 + hourly reminders 07/08/09 (%s)',
+        ATTENDANCE_TZ_NAME,
+    )
 
 
 @app.on_event('startup')

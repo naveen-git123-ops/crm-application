@@ -7,12 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   LEAD_SOURCES,
-  LEAD_STATUSES,
-  isCarryAndOrder,
   defaultLeadForm,
 } from '@/lib/leadUtils';
-import { useLeadCategories } from '@/hooks/useLeadCategories';
-import { LeadCategoryFields } from '@/components/leads/LeadCategoryFields';
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFilePicker';
 import { LEAD_ATTACHMENT_ACCEPT, LEAD_ATTACHMENT_HINT } from '@/lib/leadAttachmentAccept';
@@ -37,8 +33,8 @@ export function LeadCreateDialog({
   const [vendorId, setVendorId] = useState('');
   const [customerContacts, setCustomerContacts] = useState([]);
   const [attachments, setAttachments] = useState([]);
+  const [customSource, setCustomSource] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const { categories, loading: categoriesLoading } = useLeadCategories({ enabled: open });
 
   const reset = () => {
     setForm(defaultLeadForm());
@@ -46,6 +42,7 @@ export function LeadCreateDialog({
     setVendorId('');
     setCustomerContacts([]);
     setAttachments([]);
+    setCustomSource('');
   };
 
   const handleClose = (isOpen) => {
@@ -62,30 +59,38 @@ export function LeadCreateDialog({
     }
   };
 
-  const vendorName = vendors.find((v) => v.id === vendorId)?.company_name || '';
-  const carryOrder = isCarryAndOrder(form.sub_category);
-
   const submitLead = async () => {
+    const resolvedSource =
+      form.source === 'Other' ? customSource.trim() : (form.source || '').trim();
+    if (form.source === 'Other' && !resolvedSource) {
+      toast.error('Please enter the source');
+      return;
+    }
     setSubmitting(true);
     try {
       const valueRaw = form.value;
       const payload = {
-        ...form,
         contact_name: (form.contact_name || '').trim() || form.company,
+        company: form.company,
+        email: form.email,
+        phone: form.phone || null,
+        source: resolvedSource,
+        status: 'New',
         value:
           valueRaw === '' || valueRaw == null || Number.isNaN(Number(valueRaw))
             ? null
             : Number(valueRaw),
-        category: form.category || null,
-        sub_category: form.sub_category || null,
+        brief_of_enquiry: form.brief_of_enquiry || form.notes || null,
         assigned_to_employee_id: form.assigned_to_employee_id || null,
         assigned_to_name: form.assigned_to_name || null,
         enquiry_date: form.enquiry_date || null,
         otx_date_from: form.otx_date_from || form.enquiry_date || null,
         otx_date_to: form.otx_date_to || null,
         customer_id: customerId || null,
-        vendor_id: carryOrder && vendorId ? vendorId : null,
-        vendor_name: carryOrder && vendorName ? vendorName : null,
+        category: null,
+        sub_category: null,
+        vendor_id: null,
+        vendor_name: null,
         contacts: [],
       };
       const { data: created } = await axios.post(`${apiBase}/leads`, payload, { headers: authHeader() });
@@ -99,15 +104,11 @@ export function LeadCreateDialog({
           });
         }
       }
-      if (carryOrder && !vendorId) {
-        toast.success('Lead created — assign vendor from the list below to continue', { duration: 6000 });
-      } else {
-        toast.success('Lead created');
-      }
+      toast.success('Enquiry created');
       handleClose(false);
       onCreated?.(created);
     } catch (err) {
-      toast.error(getApiErrorMessage(err, 'Failed to create lead'));
+      toast.error(getApiErrorMessage(err, 'Failed to create enquiry'));
     } finally {
       setSubmitting(false);
     }
@@ -118,7 +119,7 @@ export function LeadCreateDialog({
       <DialogContent className="max-w-lg bg-white rounded-xl border shadow-xl p-0 max-h-[90vh] overflow-y-auto">
         <div className="bg-gradient-to-r from-slate-900 to-indigo-900 text-white px-6 py-5 rounded-t-xl">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-white tracking-tight">New lead</DialogTitle>
+            <DialogTitle className="text-xl font-bold text-white tracking-tight">New enquiry</DialogTitle>
             <p className="text-slate-300 text-sm mt-1">Link a customer and capture enquiry details</p>
           </DialogHeader>
         </div>
@@ -227,66 +228,32 @@ export function LeadCreateDialog({
             </div>
           </div>
 
-          <LeadCategoryFields
-            form={form}
-            setForm={setForm}
-            categories={categories}
-            loading={categoriesLoading}
-            categoryId="lead-category"
-            subCategoryId="lead-sub-category"
-          />
-
-          {/* {carryOrder && (
-            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/80 p-4">
-              <Label htmlFor="lead-vendor" className={labelClass}>
-                Vendor <span className="font-normal text-amber-800">(optional now)</span>
-              </Label>
-              <p className="text-xs text-amber-900/90 -mt-1">
-                You can skip this and assign a vendor after creating the lead. The lead will show as pending until then.
-              </p>
-              <select
-                id="lead-vendor"
-                value={vendorId}
-                onChange={(e) => setVendorId(e.target.value)}
-                className={selectClass}
-              >
-                <option value="">Assign later</option>
-                {vendors.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.company_name} {v.customer_id ? `(${v.customer_id})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )} */}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="lead-source" className={labelClass}>Source</Label>
-              <select
-                id="lead-source"
-                value={form.source}
-                onChange={(e) => setForm({ ...form, source: e.target.value })}
-                className={selectClass}
-              >
-                {LEAD_SOURCES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lead-status" className={labelClass}>Status</Label>
-              <select
-                id="lead-status"
-                value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value })}
-                className={selectClass}
-              >
-                {LEAD_STATUSES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="lead-source" className={labelClass}>Source</Label>
+            <select
+              id="lead-source"
+              value={form.source}
+              onChange={(e) => {
+                const next = e.target.value;
+                setForm({ ...form, source: next });
+                if (next !== 'Other') setCustomSource('');
+              }}
+              className={selectClass}
+            >
+              {LEAD_SOURCES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            {form.source === 'Other' && (
+              <Input
+                id="lead-source-other"
+                value={customSource}
+                onChange={(e) => setCustomSource(e.target.value)}
+                placeholder="Type source"
+                className="h-11 mt-2"
+                required
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -324,11 +291,11 @@ export function LeadCreateDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="lead-notes" className={labelClass}>Enquiry details</Label>
+            <Label htmlFor="lead-notes" className={labelClass}>Brief Of Enquiry</Label>
             <textarea
               id="lead-notes"
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              value={form.brief_of_enquiry}
+              onChange={(e) => setForm({ ...form, brief_of_enquiry: e.target.value })}
               rows={3}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm resize-none"
             />
@@ -379,7 +346,7 @@ export function LeadCreateDialog({
               Cancel
             </Button>
             <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white" disabled={submitting}>
-              Create lead
+              Add enquiry
             </Button>
           </div>
         </form>

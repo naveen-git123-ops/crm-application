@@ -39,6 +39,9 @@ import {
   isVendorSelectionComplete,
   isStageComplete,
   stageIncompleteMessage,
+  OPPORTUNITY_BUSINESS_CATEGORIES,
+  isOpportunityAssessmentComplete,
+  defaultOpportunityAssessment,
 } from '@/lib/carryOrderWorkflow';
 import {
   CheckCircle2,
@@ -54,10 +57,11 @@ import {
   Lock,
   Check,
 } from 'lucide-react';
-import { isCarryAndOrder, leadNeedsVendor } from '@/lib/leadUtils';
+import { isCarryAndOrder, leadNeedsVendor, LEAD_CATEGORY_OPTIONS } from '@/lib/leadUtils';
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFilePicker';
 import { LEAD_ATTACHMENT_ACCEPT, LEAD_ATTACHMENT_HINT } from '@/lib/leadAttachmentAccept';
+import { useLeadCategories } from '@/hooks/useLeadCategories';
 
 const inputClass = 'h-9 rounded-lg border-slate-200 bg-white text-sm text-slate-900';
 const selectClass =
@@ -111,8 +115,13 @@ export function CarryOrderWorkspace({
   }, [payload.bom, payload.offer_revisions, payload.offer_profit_margin_pct]);
 
   const saveWorkflow = async (nextStage, nextPayload, comment, successMessage) => {
-    if (isCarryAndOrder(lead) && leadNeedsVendor(lead) && nextStage !== 'enquiry_logged') {
-      toast.error('Assign a vendor before moving past enquiry');
+    if (
+      isCarryAndOrder(lead)
+      && leadNeedsVendor(lead)
+      && nextStage !== 'enquiry_logged'
+      && nextStage !== 'opportunity_assessment'
+    ) {
+      toast.error('Assign a vendor before moving past opportunity assessment');
       onAssignVendor?.(lead);
       return;
     }
@@ -558,6 +567,17 @@ export function CarryOrderWorkspace({
         {canOpenStage(activeTab) && activeTab === 'enquiry_logged' && (
           <ModuleEnquiry lead={lead} attachments={attachments} payload={payload} setPayload={setPayload} canEdit={editActive} />
         )}
+        {canOpenStage(activeTab) && activeTab === 'opportunity_assessment' && (
+          <ModuleOpportunityAssessment
+            payload={payload}
+            setPayload={setPayload}
+            canEdit={editActive}
+            saving={saving}
+            uploadLeadFile={uploadLeadAttachmentFile}
+            apiBase={apiBase}
+            authHeader={authHeader}
+          />
+        )}
         {canOpenStage(activeTab) && activeTab === 'technical_clearance' && (
           <ModuleVendorSelection
             payload={payload}
@@ -623,6 +643,8 @@ export function CarryOrderWorkspace({
             {onCurrentStep
               ? stepComplete
                 ? 'Step requirements met — continue when ready.'
+                : activeTab === 'opportunity_assessment' && !isOpportunityAssessmentComplete(payload)
+                  ? 'Fill all Opportunity & Assessment fields to continue.'
                 : activeTab === 'technical_clearance' && !isVendorSelectionComplete(payload)
                   ? 'Complete vendor details and set technical clearance from vendor to YES for at least one vendor.'
                   : stageIncompleteMessage(activeTab, lead, stageCtx)
@@ -676,8 +698,10 @@ function ModuleEnquiry({ lead, attachments, payload, setPayload, canEdit }) {
       <SectionTitle title="Module 1 — Enquiry details" subtitle="Client parameters captured at lead creation" />
       <div className="rounded-xl border border-slate-200 p-4 bg-white space-y-3 text-slate-900">
         <div>
-          <Label className={labelClass}>Enquiry details</Label>
-          <p className={`${readOnlyValueClass} whitespace-pre-wrap`}>{lead.notes || '—'}</p>
+          <Label className={labelClass}>Brief Of Enquiry</Label>
+          <p className={`${readOnlyValueClass} whitespace-pre-wrap`}>
+            {lead.brief_of_enquiry || lead.notes || '—'}
+          </p>
         </div>
         <div>
           <Label className={labelClass}>Customer enquiry attachments</Label>
@@ -729,6 +753,331 @@ function ModuleEnquiry({ lead, attachments, payload, setPayload, canEdit }) {
               onChange={(e) => setPayload({ ...payload, otx_date_to: e.target.value })}
             />
           </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ModuleOpportunityAssessment({
+  payload,
+  setPayload,
+  canEdit,
+  saving,
+  uploadLeadFile,
+  apiBase,
+  authHeader,
+}) {
+  const { categories, loading: categoriesLoading } = useLeadCategories({ enabled: true });
+  const [employees, setEmployees] = useState([]);
+  const [uploadingIdProof, setUploadingIdProof] = useState(false);
+  const oa = payload.opportunity_assessment || defaultOpportunityAssessment();
+  const other = oa.site_visit_other || defaultOpportunityAssessment().site_visit_other;
+  const productOptions = (categories || []).map((c) => c.name).filter(Boolean);
+  const options = productOptions.length ? productOptions : LEAD_CATEGORY_OPTIONS;
+  const selected = Array.isArray(oa.product_categories) ? oa.product_categories : [];
+  const siteVisitYes = oa.site_visit_required === true;
+  const assigneeIsOther = String(oa.site_visit_assignee_employee_id || '') === 'other';
+
+  useEffect(() => {
+    axios
+      .get(`${apiBase}/employees`, { headers: authHeader() })
+      .then((r) => setEmployees(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setEmployees([]));
+  }, [apiBase, authHeader]);
+
+  const updateOa = (patch) => {
+    setPayload({
+      ...payload,
+      opportunity_assessment: {
+        ...defaultOpportunityAssessment(),
+        ...oa,
+        ...patch,
+        site_visit_other: {
+          ...defaultOpportunityAssessment().site_visit_other,
+          ...(oa.site_visit_other || {}),
+          ...(patch.site_visit_other || {}),
+        },
+      },
+    });
+  };
+
+  const toggleProduct = (name) => {
+    if (!canEdit) return;
+    const next = selected.includes(name)
+      ? selected.filter((n) => n !== name)
+      : [...selected, name];
+    updateOa({ product_categories: next });
+  };
+
+  const onAssigneeChange = (value) => {
+    if (value === 'other') {
+      updateOa({
+        site_visit_assignee_employee_id: 'other',
+        site_visit_assignee_name: 'Other',
+      });
+      return;
+    }
+    const emp = employees.find((e) => String(e.employee_id || e.id) === String(value));
+    updateOa({
+      site_visit_assignee_employee_id: value,
+      site_visit_assignee_name: emp?.name || '',
+      site_visit_other: defaultOpportunityAssessment().site_visit_other,
+    });
+  };
+
+  const updateOther = (patch) => {
+    updateOa({
+      site_visit_other: {
+        ...other,
+        ...patch,
+      },
+    });
+  };
+
+  const onIdProofFiles = async (files) => {
+    const list = normalizeFileList(files);
+    if (!list.length || !uploadLeadFile) return;
+    setUploadingIdProof(true);
+    try {
+      const ref = await uploadLeadFile(list[0]);
+      updateOther({ id_proof: ref });
+      toast.success('ID proof uploaded');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to upload ID proof'));
+    } finally {
+      setUploadingIdProof(false);
+    }
+  };
+
+  return (
+    <section className="space-y-4">
+      <SectionTitle
+        title="Module 2 — Opportunity & Assessment"
+        subtitle="Qualify the enquiry before vendor and costing steps"
+      />
+      <div className="rounded-xl border border-slate-200 p-4 bg-white space-y-4 text-slate-900">
+        <div className="space-y-2">
+          <Label className={labelClass}>Business category</Label>
+          <select
+            className={selectClass}
+            disabled={!canEdit}
+            value={oa.business_category || ''}
+            onChange={(e) => updateOa({ business_category: e.target.value })}
+          >
+            <option value="">Select business category</option>
+            {OPPORTUNITY_BUSINESS_CATEGORIES.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <Label className={labelClass}>Product category</Label>
+          <p className="text-xs text-slate-500 normal-case font-normal">Select one or more</p>
+          <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 max-h-48 overflow-y-auto space-y-2">
+            {categoriesLoading && !options.length ? (
+              <p className="text-sm text-slate-500">Loading categories…</p>
+            ) : (
+              options.map((name) => (
+                <label key={name} className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300"
+                    disabled={!canEdit}
+                    checked={selected.includes(name)}
+                    onChange={() => toggleProduct(name)}
+                  />
+                  <span>{name}</span>
+                </label>
+              ))
+            )}
+          </div>
+          {selected.length > 0 && (
+            <p className="text-xs text-slate-600">Selected: {selected.join(', ')}</p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className={labelClass}>Technical datas required</Label>
+            <select
+              className={selectClass}
+              disabled={!canEdit}
+              value={oa.technical_datas_required === true ? 'yes' : oa.technical_datas_required === false ? 'no' : ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                updateOa({
+                  technical_datas_required: v === 'yes' ? true : v === 'no' ? false : null,
+                });
+              }}
+            >
+              <option value="">Select</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label className={labelClass}>Site visit required</Label>
+            <select
+              className={selectClass}
+              disabled={!canEdit}
+              value={oa.site_visit_required === true ? 'yes' : oa.site_visit_required === false ? 'no' : ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                const yes = v === 'yes';
+                const no = v === 'no';
+                updateOa({
+                  site_visit_required: yes ? true : no ? false : null,
+                  ...(yes
+                    ? {}
+                    : {
+                        site_visit_date: '',
+                        site_visit_assignee_employee_id: '',
+                        site_visit_assignee_name: '',
+                        site_visit_other: defaultOpportunityAssessment().site_visit_other,
+                      }),
+                });
+              }}
+            >
+              <option value="">Select</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+        </div>
+
+        {siteVisitYes && (
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-4 space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Site visit details</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className={labelClass}>Site visit date</Label>
+                <Input
+                  type="date"
+                  className={inputClass}
+                  disabled={!canEdit}
+                  value={oa.site_visit_date || ''}
+                  onChange={(e) => updateOa({ site_visit_date: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className={labelClass}>Assign person for site visit</Label>
+                <select
+                  className={selectClass}
+                  disabled={!canEdit}
+                  value={oa.site_visit_assignee_employee_id || ''}
+                  onChange={(e) => onAssigneeChange(e.target.value)}
+                >
+                  <option value="">Select employee</option>
+                  {employees.map((emp) => {
+                    const id = emp.employee_id || emp.id;
+                    return (
+                      <option key={id} value={id}>
+                        {emp.name} ({id})
+                      </option>
+                    );
+                  })}
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
+
+            {assigneeIsOther && (
+              <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Other person details</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className={labelClass}>Name</Label>
+                    <Input
+                      className={inputClass}
+                      disabled={!canEdit}
+                      value={other.name || ''}
+                      onChange={(e) => updateOther({ name: e.target.value })}
+                      placeholder="Full name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className={labelClass}>Mobile number</Label>
+                    <Input
+                      className={inputClass}
+                      disabled={!canEdit}
+                      value={other.mobile || ''}
+                      onChange={(e) => updateOther({ mobile: e.target.value })}
+                      placeholder="Mobile number"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className={labelClass}>Email</Label>
+                    <Input
+                      type="email"
+                      className={inputClass}
+                      disabled={!canEdit}
+                      value={other.email || ''}
+                      onChange={(e) => updateOther({ email: e.target.value })}
+                      placeholder="Email"
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label className={labelClass}>Address</Label>
+                    <textarea
+                      disabled={!canEdit}
+                      value={other.address || ''}
+                      onChange={(e) => updateOther({ address: e.target.value })}
+                      rows={2}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none"
+                      placeholder="Address"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className={labelClass}>ID proof</Label>
+                  {other.id_proof?.file_name || other.id_proof?.name ? (
+                    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                      <span className="truncate text-indigo-800">
+                        <FileText className="h-4 w-4 inline mr-1.5 -mt-0.5" />
+                        {other.id_proof.file_name || other.id_proof.name}
+                      </span>
+                      {canEdit && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          disabled={saving || uploadingIdProof}
+                          onClick={() => updateOther({ id_proof: null })}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
+                  {canEdit && (
+                    <CgwMultiFilePicker
+                      label=""
+                      accept={LEAD_ATTACHMENT_ACCEPT}
+                      hint={LEAD_ATTACHMENT_HINT}
+                      files={[]}
+                      onChange={onIdProofFiles}
+                      addLabel={uploadingIdProof ? 'Uploading…' : 'Attach ID proof'}
+                      disabled={uploadingIdProof || saving}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-2 max-w-sm">
+          <Label className={labelClass}>Expected Enquiry closing date</Label>
+          <Input
+            type="date"
+            className={inputClass}
+            disabled={!canEdit}
+            value={oa.expected_enquiry_closing_date || ''}
+            onChange={(e) => updateOa({ expected_enquiry_closing_date: e.target.value })}
+          />
         </div>
       </div>
     </section>

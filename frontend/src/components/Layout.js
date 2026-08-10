@@ -29,7 +29,7 @@ import {
   BarChart3,
   BookOpen,
   Wallet,
-  Terminal,
+  Package,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PageHeaderProvider, usePageHeader, usePageHeaderActions } from '@/contexts/PageHeaderContext';
@@ -191,6 +191,7 @@ export const Layout = () => {
       label: 'Operations',
       items: [
         { icon: Receipt, label: 'Expenses', path: '/expenses', permission: 'expenses' },
+        { icon: Package, label: 'Stock Management', path: '/stock-management', permission: 'stock-management' },
         { icon: Fuel, label: 'Vehicle Tracking', path: '/vehicles', permission: 'vehicles' },
         { icon: Briefcase, label: 'Workspace', path: '/workspace', permission: 'workspace' },
       ],
@@ -200,7 +201,6 @@ export const Layout = () => {
       label: 'Admin',
       items: [
         { icon: Shield, label: 'Roles', path: '/roles', permission: 'roles' },
-        { icon: Terminal, label: 'Admin Console', path: '/admin-console', allowedRoles: ['Admin'] },
         { icon: Settings, label: 'Settings', path: '/settings', permission: 'settings' },
       ],
     },

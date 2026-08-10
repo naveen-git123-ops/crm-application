@@ -116,12 +116,10 @@ export const defaultLeadForm = () => ({
   source: 'Other',
   status: 'New',
   value: '',
-  notes: '',
+  brief_of_enquiry: '',
   assigned_to_employee_id: '',
   assigned_to_name: '',
   enquiry_date: todayIsoDate(),
   otx_date_from: '',
   otx_date_to: '',
-  category: '',
-  sub_category: '',
 });

@@ -22,11 +22,12 @@ import { Expenses } from '@/pages/Expenses';
 import { Roles } from '@/pages/Roles';
 import { Workspace } from '@/pages/Workspace';
 import { Leads } from '@/pages/Leads';
+import ViewLead from '@/pages/ViewLead';
 import { GovernmentHolidays } from '@/pages/GovernmentHolidays';
 import Vehicles from '@/pages/Vehicles';
 import LocationTracker from '@/pages/LocationTracker';
 import CGWFlowMetre from '@/pages/CGWFlowMetre';
-import { AdminConsole } from '@/pages/AdminConsole';
+import StockManagement from '@/pages/StockManagement';
 
 function App() {
   return (
@@ -58,6 +59,15 @@ function App() {
                 />
 
                 <Route
+                  path="/viewlead/:leadId"
+                  element={
+                    <ProtectedRoute requiredPermission="leads">
+                      <ViewLead />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
                   path="/employees"
                   element={
                     <ProtectedRoute requiredPermission="employees">
@@ -80,6 +90,15 @@ function App() {
                   element={
                     <ProtectedRoute requiredPermission="cgw-flow-metre">
                       <CGWFlowMetre />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/stock-management"
+                  element={
+                    <ProtectedRoute requiredPermission="stock-management">
+                      <StockManagement />
                     </ProtectedRoute>
                   }
                 />
@@ -197,15 +216,6 @@ function App() {
                   element={
                     <ProtectedRoute requiredPermission="idcards">
                       <IDCards />
-                    </ProtectedRoute>
-                  }
-                />
-
-                <Route
-                  path="/admin-console"
-                  element={
-                    <ProtectedRoute allowedRoles={['Admin']}>
-                      <AdminConsole />
                     </ProtectedRoute>
                   }
                 />

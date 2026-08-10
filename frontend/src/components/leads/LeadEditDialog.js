@@ -7,10 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   LEAD_SOURCES,
-  isCarryAndOrder,
 } from '@/lib/leadUtils';
-import { useLeadCategories } from '@/hooks/useLeadCategories';
-import { LeadCategoryFields } from '@/components/leads/LeadCategoryFields';
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFilePicker';
 import { LEAD_ATTACHMENT_ACCEPT, LEAD_ATTACHMENT_HINT } from '@/lib/leadAttachmentAccept';
@@ -22,14 +19,17 @@ const labelClass = 'text-sm font-semibold text-gray-700';
 
 function leadToForm(lead) {
   if (!lead) return null;
+  const rawSource = lead.source || 'Other';
+  const isPreset = LEAD_SOURCES.includes(rawSource);
   return {
     contact_name: lead.contact_name || '',
     company: lead.company || '',
     email: lead.email || '',
     phone: lead.phone || '',
-    source: lead.source || 'Other',
+    source: isPreset ? rawSource : 'Other',
+    customSource: isPreset && rawSource !== 'Other' ? '' : (isPreset ? '' : rawSource),
     value: lead.value ?? '',
-    notes: lead.notes || '',
+    brief_of_enquiry: lead.brief_of_enquiry || lead.notes || '',
     assigned_to_employee_id: lead.assigned_to_employee_id || '',
     assigned_to_name: lead.assigned_to_name || '',
     enquiry_date: lead.enquiry_date || '',
@@ -57,7 +57,6 @@ export function LeadEditDialog({
   const [customerContacts, setCustomerContacts] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [submitting, setSubmitting] = useState(false);
-  const { categories, loading: categoriesLoading } = useLeadCategories({ enabled: open });
 
   useEffect(() => {
     if (!open || !lead) return;
@@ -92,31 +91,34 @@ export function LeadEditDialog({
     }
   };
 
-  const vendorName = vendors.find((v) => v.id === vendorId)?.company_name || '';
-  const carryOrder = isCarryAndOrder(form?.sub_category);
-
   const saveLead = async () => {
     if (!lead?.id || !form) return;
+    const resolvedSource =
+      form.source === 'Other' ? (form.customSource || '').trim() : (form.source || '').trim();
+    if (form.source === 'Other' && !resolvedSource) {
+      toast.error('Please enter the source');
+      return;
+    }
     setSubmitting(true);
     try {
       const valueRaw = form.value;
       const payload = {
-        ...form,
         contact_name: (form.contact_name || '').trim() || form.company,
+        company: form.company,
+        email: form.email,
+        phone: form.phone || null,
+        source: resolvedSource,
         value:
           valueRaw === '' || valueRaw == null || Number.isNaN(Number(valueRaw))
             ? null
             : Number(valueRaw),
-        category: form.category || null,
-        sub_category: form.sub_category || null,
+        brief_of_enquiry: form.brief_of_enquiry || null,
         assigned_to_employee_id: form.assigned_to_employee_id || null,
         assigned_to_name: form.assigned_to_name || null,
         enquiry_date: form.enquiry_date || null,
         otx_date_from: form.otx_date_from || form.enquiry_date || null,
         otx_date_to: form.otx_date_to || null,
         customer_id: customerId || null,
-        vendor_id: carryOrder && vendorId ? vendorId : null,
-        vendor_name: carryOrder && vendorName ? vendorName : null,
       };
       const { data: updated } = await axios.put(`${apiBase}/leads/${lead.id}`, payload, { headers: authHeader() });
       const filesToUpload = normalizeFileList(attachments);
@@ -228,47 +230,36 @@ export function LeadEditDialog({
             </div>
           </div>
 
-          <LeadCategoryFields
-            form={form}
-            setForm={setForm}
-            categories={categories}
-            loading={categoriesLoading}
-            categoryId="edit-lead-category"
-            subCategoryId="edit-lead-sub-category"
-          />
-
-          {carryOrder && (
-            <div className="space-y-2">
-              <Label htmlFor="edit-lead-vendor" className={labelClass}>Vendor</Label>
-              <select
-                id="edit-lead-vendor"
-                value={vendorId}
-                onChange={(e) => setVendorId(e.target.value)}
-                className={selectClass}
-              >
-                <option value="">No vendor</option>
-                {vendors.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.company_name} {v.customer_id ? `(${v.customer_id})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="edit-lead-source" className={labelClass}>Source</Label>
               <select
                 id="edit-lead-source"
                 value={form.source}
-                onChange={(e) => setForm({ ...form, source: e.target.value })}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setForm({
+                    ...form,
+                    source: next,
+                    customSource: next === 'Other' ? (form.customSource || '') : '',
+                  });
+                }}
                 className={selectClass}
               >
                 {LEAD_SOURCES.map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
+              {form.source === 'Other' && (
+                <Input
+                  id="edit-lead-source-other"
+                  value={form.customSource || ''}
+                  onChange={(e) => setForm({ ...form, customSource: e.target.value })}
+                  placeholder="Type source"
+                  className="h-11 mt-2"
+                  required
+                />
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-lead-value" className={labelClass}>Value (₹)</Label>
@@ -319,11 +310,11 @@ export function LeadEditDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="edit-lead-notes" className={labelClass}>Enquiry details</Label>
+            <Label htmlFor="edit-lead-notes" className={labelClass}>Brief Of Enquiry</Label>
             <textarea
               id="edit-lead-notes"
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              value={form.brief_of_enquiry || ''}
+              onChange={(e) => setForm({ ...form, brief_of_enquiry: e.target.value })}
               rows={3}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm resize-none"
             />

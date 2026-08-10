@@ -32,6 +32,7 @@ const PERMISSION_LABELS = {
   documents: 'Documents',
   settings: 'Settings',
   holidays: 'Government Holidays',
+  'stock-management': 'Stock Management',
 };
 
 const PERMISSION_KEYS = Object.keys(PERMISSION_LABELS);

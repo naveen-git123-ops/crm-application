@@ -1,9 +1,10 @@
 export const CARRY_ORDER_STAGES = [
   { id: 'enquiry_logged', label: 'Enquiry', short: '1' },
-  { id: 'technical_clearance', label: 'Vendor selection', short: '2' },
-  { id: 'bom_costing', label: 'BOM & costing', short: '3' },
-  { id: 'offer_revision', label: 'Offer & revision', short: '4' },
-  { id: 'follow_up', label: 'Follow-up', short: '5' },
+  { id: 'opportunity_assessment', label: 'Opportunity & Assessment', short: '2' },
+  { id: 'technical_clearance', label: 'Vendor selection', short: '3' },
+  { id: 'bom_costing', label: 'BOM & costing', short: '4' },
+  { id: 'offer_revision', label: 'Offer & revision', short: '5' },
+  { id: 'follow_up', label: 'Follow-up', short: '6' },
   { id: 'closed_won', label: 'Won', short: 'W' },
   { id: 'closed_lost', label: 'Lost', short: 'L' },
 ];
@@ -11,11 +12,69 @@ export const CARRY_ORDER_STAGES = [
 /** Ordered pipeline (excludes Won/Lost). */
 export const WORKFLOW_PIPELINE_IDS = [
   'enquiry_logged',
+  'opportunity_assessment',
   'technical_clearance',
   'bom_costing',
   'offer_revision',
   'follow_up',
 ];
+
+export const OPPORTUNITY_BUSINESS_CATEGORIES = [
+  'Trading',
+  'Consultancy',
+  'Project',
+  'Service & Maintenance',
+];
+
+export function defaultOpportunityAssessment() {
+  return {
+    business_category: '',
+    product_categories: [],
+    technical_datas_required: null,
+    site_visit_required: null,
+    expected_enquiry_closing_date: '',
+    site_visit_date: '',
+    site_visit_assignee_employee_id: '',
+    site_visit_assignee_name: '',
+    site_visit_task_id: '',
+    site_visit_other: {
+      name: '',
+      mobile: '',
+      email: '',
+      address: '',
+      id_proof: null,
+    },
+  };
+}
+
+export function isOpportunityAssessmentComplete(payload) {
+  const oa = payload?.opportunity_assessment || {};
+  const baseOk = Boolean(
+    String(oa.business_category || '').trim()
+    && Array.isArray(oa.product_categories)
+    && oa.product_categories.length > 0
+    && typeof oa.technical_datas_required === 'boolean'
+    && typeof oa.site_visit_required === 'boolean'
+    && String(oa.expected_enquiry_closing_date || '').trim(),
+  );
+  if (!baseOk) return false;
+  if (oa.site_visit_required !== true) return true;
+
+  const hasDate = Boolean(String(oa.site_visit_date || '').trim());
+  const assigneeId = String(oa.site_visit_assignee_employee_id || '').trim();
+  if (!hasDate || !assigneeId) return false;
+  if (assigneeId !== 'other') return true;
+
+  const other = oa.site_visit_other || {};
+  return Boolean(
+    String(other.name || '').trim()
+    && String(other.mobile || '').trim()
+    && String(other.email || '').trim()
+    && String(other.address || '').trim()
+    && other.id_proof
+    && (other.id_proof.id || other.id_proof.file_url || other.id_proof.url),
+  );
+}
 
 export const WORKFLOW_TERMINAL_IDS = ['closed_won', 'closed_lost'];
 
@@ -84,6 +143,8 @@ export function isStageComplete(stageId, payload, lead, { isCarryAndOrder, leadN
     case 'enquiry_logged':
       if (isCarryAndOrder?.(lead)) return !leadNeedsVendor?.(lead);
       return true;
+    case 'opportunity_assessment':
+      return isOpportunityAssessmentComplete(payload);
     case 'technical_clearance':
       return isVendorSelectionComplete(payload);
     case 'bom_costing':
@@ -104,6 +165,8 @@ export function stageIncompleteMessage(stageId, lead, { isCarryAndOrder, leadNee
         return 'Assign a vendor to complete enquiry';
       }
       return 'Complete enquiry details';
+    case 'opportunity_assessment':
+      return 'Fill business category, product category, technical/site visit answers, expected closing date, and site visit details when required';
     case 'technical_clearance':
       return 'Add at least one vendor with details filled and technical clearance from vendor set to YES';
     case 'bom_costing':
@@ -199,6 +262,7 @@ export function defaultWorkflowPayload() {
     bom_attachments: [],
     otx_date_from: '',
     otx_date_to: '',
+    opportunity_assessment: defaultOpportunityAssessment(),
     bom: {
       materials: [],
       install_cost: 0,
@@ -237,6 +301,17 @@ export function mergeWorkflowPayload(stored) {
   return {
     ...base,
     ...stored,
+    opportunity_assessment: {
+      ...base.opportunity_assessment,
+      ...(stored.opportunity_assessment || {}),
+      product_categories: Array.isArray(stored.opportunity_assessment?.product_categories)
+        ? stored.opportunity_assessment.product_categories
+        : base.opportunity_assessment.product_categories,
+      site_visit_other: {
+        ...base.opportunity_assessment.site_visit_other,
+        ...(stored.opportunity_assessment?.site_visit_other || {}),
+      },
+    },
     bom: { ...base.bom, ...(stored.bom || {}) },
     closed_won: { ...base.closed_won, ...(stored.closed_won || {}) },
     closed_lost: { ...base.closed_lost, ...(stored.closed_lost || {}) },

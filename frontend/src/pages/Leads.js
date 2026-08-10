@@ -5,15 +5,14 @@ import { Button } from '@/components/ui/button';
 import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Edit2, Trash2 } from 'lucide-react';
-import { LeadKpiStrip } from '@/components/leads/LeadKpiStrip';
+import { Plus } from 'lucide-react';
 import { LeadCrmHub } from '@/components/leads/LeadCrmHub';
 import { LeadCreateDialog } from '@/components/leads/LeadCreateDialog';
 import { LeadEditDialog } from '@/components/leads/LeadEditDialog';
 import { LeadVendorDialog } from '@/components/leads/LeadVendorDialog';
 import { LeadStatusDialog } from '@/components/leads/LeadStatusDialog';
 import { LeadProfileSheet } from '@/components/leads/LeadProfileSheet';
-import { LeadWorkflowDialog } from '@/components/leads/LeadWorkflowDialog';
+import { openViewLeadTab } from '@/pages/ViewLead';
 import { canManageAllLeads, userHasPermission } from '@/lib/permissions';
 import {
   LEAD_SOURCES,
@@ -53,7 +52,6 @@ export const Leads = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editLead, setEditLead] = useState(null);
-  const [workflowOpen, setWorkflowOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
   const [vendorOpen, setVendorOpen] = useState(false);
@@ -160,7 +158,7 @@ export const Leads = () => {
   useEffect(() => {
     if (location.state?.highlightLeadId && leads.length > 0) {
       const lead = leads.find((l) => l.id === location.state.highlightLeadId);
-      if (lead) selectLead(lead, { openProfile: true });
+      if (lead) openViewLeadTab(lead.id);
     }
   }, [location.state?.highlightLeadId, leads]);
 
@@ -188,38 +186,10 @@ export const Leads = () => {
     });
   }, [leads, searchQuery, filterStatus, filterSource, filterAssigned]);
 
-  const carryOrderPendingVendor = useMemo(
-    () => filteredLeads.filter((l) => leadNeedsVendor(l)).length,
-    [filteredLeads],
-  );
-
-  const pipelineValue = useMemo(
-    () => filteredLeads
-      .filter((l) => !['Won', 'Lost'].includes(l.status))
-      .reduce((sum, l) => sum + (Number(l.value) || 0), 0),
-    [filteredLeads],
-  );
-
-  const selectLead = async (lead, { openProfile = false, openWorkflow = true } = {}) => {
+  const selectLead = async (lead) => {
+    if (!lead?.id) return;
     setSelectedLead(lead);
-    await loadLeadDetails(lead.id);
-    if (openProfile) {
-      setWorkflowOpen(false);
-      setProfileOpen(true);
-    } else if (openWorkflow) {
-      setProfileOpen(false);
-      setWorkflowOpen(true);
-    }
-  };
-
-  const closeWorkflow = (open) => {
-    setWorkflowOpen(open);
-    if (!open) setSelectedLead(null);
-  };
-
-  const openLeadRecord = (lead) => {
-    if (lead) setSelectedLead(lead);
-    setProfileOpen(true);
+    openViewLeadTab(lead.id);
   };
 
   const openEditLead = (lead) => {
@@ -236,7 +206,6 @@ export const Leads = () => {
       toast.success('Lead deleted');
       if (selectedLead?.id === lead.id) {
         setSelectedLead(null);
-        setWorkflowOpen(false);
         setProfileOpen(false);
       }
       fetchLeads();
@@ -324,39 +293,17 @@ export const Leads = () => {
   const pageHeaderActions = useMemo(
     () => (
       <div className="flex flex-wrap items-center gap-2">
-        {workflowOpen && selectedLead && canManageEveryLead && (
-          <>
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-slate-300"
-              onClick={() => openEditLead(selectedLead)}
-            >
-              <Edit2 className="h-4 w-4 mr-1" />
-              Edit lead
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-red-200 text-red-600 hover:bg-red-50"
-              onClick={() => handleDeleteLead(selectedLead)}
-            >
-              <Trash2 className="h-4 w-4 mr-1" />
-              Delete lead
-            </Button>
-          </>
-        )}
         <Button
           size="sm"
           className="bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
           onClick={() => setCreateOpen(true)}
         >
           <Plus className="h-4 w-4 mr-1" />
-          Add lead
+          Add enquiry
         </Button>
       </div>
     ),
-    [workflowOpen, selectedLead, canManageEveryLead, openEditLead, handleDeleteLead],
+    [],
   );
 
   useRegisterPageHeader({
@@ -375,12 +322,6 @@ export const Leads = () => {
 
   return (
     <div className="space-y-5 pb-6" data-testid="leads-page">
-      <LeadKpiStrip
-        stats={stats}
-        pipelineValue={pipelineValue}
-        carryOrderPendingVendor={carryOrderPendingVendor}
-      />
-
       <LeadCrmHub
         filteredLeads={filteredLeads}
         selectedLead={selectedLead}
@@ -399,7 +340,7 @@ export const Leads = () => {
         sources={LEAD_SOURCES}
         assigneeOptions={assigneeOptions}
         statusColors={STATUS_COLORS}
-        onSelectLead={(lead, opts) => selectLead(lead, opts)}
+        onSelectLead={(lead) => selectLead(lead)}
         onAssignVendor={(lead) => openVendorDialog(lead)}
         canEditLead={canEditLead}
         canManageAllLeads={canManageEveryLead}
@@ -408,22 +349,6 @@ export const Leads = () => {
         isCarryAndOrder={isCarryAndOrder}
         leadNeedsVendor={leadNeedsVendor}
         getLeadInitials={getLeadInitials}
-      />
-
-      <LeadWorkflowDialog
-        open={workflowOpen && !!selectedLead}
-        onOpenChange={closeWorkflow}
-        lead={selectedLead}
-        apiBase={API}
-        authHeader={authHeader}
-        vendors={vendors}
-        leadAttachments={leadAttachments}
-        canEdit={canManageEveryLead || (selectedLead ? canEditLead(selectedLead) : false)}
-        onLeadRefresh={refreshLead}
-        onAssignVendor={(lead) => openVendorDialog(lead)}
-        onOpenRecord={openLeadRecord}
-        onEditLead={() => selectedLead && openEditLead(selectedLead)}
-        onDeleteLead={() => selectedLead && handleDeleteLead(selectedLead)}
       />
 
       <LeadEditDialog
@@ -457,7 +382,7 @@ export const Leads = () => {
           fetchLeads();
           fetchStats();
           if (created?.id) {
-            selectLead(created);
+            openViewLeadTab(created.id);
           }
         }}
       />
