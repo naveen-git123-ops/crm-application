@@ -102,7 +102,7 @@ pytest==9.0.2
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
 python-jose==3.5.0
-python-multipart==0.0.21
+python-multipart==0.0.20
 psycopg2-binary==2.9.9
 pytokens==0.3.0
 pytz==2025.2
