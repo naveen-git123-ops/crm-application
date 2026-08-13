@@ -59,7 +59,9 @@ jobs:
               sed -i 's|^TELEGRAM_APPROVER_EMPLOYEE_ID=$|TELEGRAM_APPROVER_EMPLOYEE_ID=EMP0005|' .env
             fi
 
-            pip3 install -r requirements.txt --quiet
+            pip3 install -r requirements-prod.txt --quiet
+            # Fail fast with a clear import error before restarting the service.
+            python3 -c "import server; print('server_import_ok')"
             sudo systemctl restart uvicorn
             # Bring nginx back if a previous deploy stopped it. Do NOT restart nginx
             # (restarting it has left production stuck on 502 before).
