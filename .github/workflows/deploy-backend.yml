@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths: 
       - 'backend/**'
-      - '.github/workflows/deploy-backend.yml'
 
 jobs:
   deploy:
@@ -18,14 +17,11 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          command_timeout: 20m
           script: |
-            set -e
             cd /home/ec2-user/crm-application
-            # FETCH_HEAD is the commit we just fetched (origin/main ref can lag).
-            # Hard reset drops leftover stash conflict markers that crash uvicorn.
-            git fetch origin main
-            git reset --hard FETCH_HEAD
+            git stash
+            git pull origin main
+            git stash pop || true
             cd backend
 
             # Ensure Telegram bot config is present in .env (never committed to git — sourced from
@@ -59,35 +55,5 @@ jobs:
               sed -i 's|^TELEGRAM_APPROVER_EMPLOYEE_ID=$|TELEGRAM_APPROVER_EMPLOYEE_ID=EMP0005|' .env
             fi
 
-            # Same install as the last working deploys. Do not abort if pip
-            # warns about leftover host packages (litellm/awscli) — uvicorn
-            # already ran with those site-packages.
-            pip3 install -r requirements.txt --quiet || echo "pip install reported errors; continuing with packages already on this host"
+            pip3 install -r requirements.txt --quiet
             sudo systemctl restart uvicorn
-            # Bring nginx back if a previous deploy stopped it. Do NOT restart nginx
-            # (restarting it has left production stuck on 502 before).
-            sudo systemctl start nginx 2>/dev/null || sudo service nginx start 2>/dev/null || true
-            sleep 5
-            healthy=0
-            for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
-              if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 || curl -fsS http://127.0.0.1:8000/docs >/dev/null 2>&1; then
-                echo "uvicorn healthy"
-                healthy=1
-                break
-              fi
-              echo "waiting for uvicorn ($i)"
-              sleep 5
-            done
-            if [ "$healthy" -ne 1 ]; then
-              echo "uvicorn failed health check — dumping logs and retrying once"
-              sudo systemctl status uvicorn --no-pager || true
-              sudo journalctl -u uvicorn -n 120 --no-pager || true
-              sudo systemctl restart uvicorn
-              sleep 10
-              if ! curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 && ! curl -fsS http://127.0.0.1:8000/docs >/dev/null 2>&1; then
-                sudo systemctl status uvicorn --no-pager || true
-                sudo journalctl -u uvicorn -n 120 --no-pager || true
-                exit 1
-              fi
-            fi
-            echo "deploy ok: $(git rev-parse --short HEAD)"

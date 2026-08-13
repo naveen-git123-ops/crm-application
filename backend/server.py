@@ -70,18 +70,11 @@ app = FastAPI(
     ],
 )
 
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
-
 # CORS
-# Frontend is on S3 / custom domains and calls https://api.resoline.in.
-# When uvicorn is down, nginx returns 502 WITHOUT CORS headers — browsers report that as a CORS error.
-_cors_from_env = [
-    origin.strip()
-    for origin in os.environ.get('CORS_ORIGINS', '').split(',')
-    if origin.strip() and origin.strip() != '*'
-]
-ALLOWED_ORIGINS = list(dict.fromkeys(_cors_from_env + [
+# NOTE: Browsers do NOT allow `allow_origins=["*"]` together with `allow_credentials=True`.
+# We use Authorization headers (Bearer tokens), so we can safely allow credentials while
+# specifying explicit origins.
+ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
@@ -90,28 +83,22 @@ ALLOWED_ORIGINS = list(dict.fromkeys(_cors_from_env + [
     "http://www.resoline.in",
     "https://resoline.in",
     "https://www.resoline.in",
-    "http://crm.resoline.in",
-    "https://crm.resoline.in",
-    "http://api.resoline.in",
-    "https://api.resoline.in",
-    "http://crm-resoline-bucket.s3-website.ap-south-1.amazonaws.com",
-    "https://crm-resoline-bucket.s3-website.ap-south-1.amazonaws.com",
-]))
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    # Any http(s) Origin (S3 / CloudFront / Amplify / new subdomains).
-    allow_origin_regex=r"^https?://.*",
-    # Auth is Bearer token in Authorization header — credentials not required.
+    # Allow any resoline.in subdomain (e.g. crm.resoline.in, staging.resoline.in)
+    allow_origin_regex=r"^https?://([a-z0-9-]+\.)*resoline\.in$",
+    # We authenticate via Authorization headers (Bearer tokens), not cookies.
+    # Keeping credentials disabled avoids wildcard/credential pitfalls and is sufficient.
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
 
-@app.get('/health')
-def health():
-    return {'ok': True}
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
 
 # Attendance business rules use local wall-clock time (default: India).
 # Set ATTENDANCE_TIMEZONE in .env e.g. Asia/Kolkata, Asia/Dubai
@@ -942,11 +929,8 @@ class StockItemModel(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
-# Create all tables (must not crash process — a hard fail here 502s nginx and browsers show CORS)
-try:
-    Base.metadata.create_all(bind=engine)
-except Exception as e:
-    logging.error('Base.metadata.create_all failed (API will still start): %s', e)
+# Create all tables
+Base.metadata.create_all(bind=engine)
 
 SETTING_CGW_DIGEST_EMAIL = 'cgw_renewal_digest_email'
 SETTING_CGW_DIGEST_ENABLED = 'cgw_renewal_digest_enabled'
@@ -4583,20 +4567,15 @@ def _start_telegram_poller():
     if telegram_mode() != 'polling':
         logging.info('Telegram mode=%s (webhook). Set TELEGRAM_MODE=polling if Telegram cannot reach this host.', telegram_mode())
         return
+    try:
+        delete_telegram_webhook(drop_pending_updates=False)
+        logging.info('Telegram webhook deleted; using long-polling')
+    except Exception as exc:
+        logging.warning('Could not delete Telegram webhook before polling: %s', exc)
     if _telegram_poller_thread and _telegram_poller_thread.is_alive():
         return
     _telegram_poller_stop.clear()
-
-    def _run():
-        # Never block uvicorn startup on Telegram — a hung deleteWebhook used to 502 every API.
-        try:
-            delete_telegram_webhook(drop_pending_updates=False)
-            logging.info('Telegram webhook deleted; using long-polling')
-        except Exception as exc:
-            logging.warning('Could not delete Telegram webhook before polling: %s', exc)
-        _telegram_poller_loop()
-
-    _telegram_poller_thread = threading.Thread(target=_run, name='telegram-poller', daemon=True)
+    _telegram_poller_thread = threading.Thread(target=_telegram_poller_loop, name='telegram-poller', daemon=True)
     _telegram_poller_thread.start()
 
 
@@ -13970,14 +13949,8 @@ def _start_cgw_renewal_digest_scheduler():
 
 @app.on_event('startup')
 def _cgw_digest_scheduler_startup():
-    try:
-        _start_cgw_renewal_digest_scheduler()
-    except Exception:
-        logging.exception('CGW / site-visit scheduler failed to start')
-    try:
-        _start_telegram_poller()
-    except Exception:
-        logging.exception('Telegram poller failed to start')
+    _start_cgw_renewal_digest_scheduler()
+    _start_telegram_poller()
 
 
 @app.on_event('shutdown')
