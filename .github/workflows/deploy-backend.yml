@@ -42,32 +42,14 @@ jobs:
             if [ -f /tmp/crm-backend.env.bak ]; then
               cp /tmp/crm-backend.env.bak backend/.env
             fi
-            # systemd EnvironmentFile rejects a UTF-8 BOM on the first line
-            # (logs: Ignoring invalid environment assignment for DB_NAME).
-            python3 - <<'PY'
-from pathlib import Path
-p = Path('backend/.env')
-if p.exists():
-    data = p.read_bytes()
-    if data.startswith(b'\xef\xbb\xbf'):
-        data = data[3:]
-        p.write_bytes(data)
-    text = data.decode('utf-8', errors='replace')
-    if '<<<<<<<' in text:
-        lines, skip = [], False
-        for line in text.splitlines(True):
-            if line.startswith('<<<<<<< '):
-                continue
-            if line.startswith('======='):
-                skip = True
-                continue
-            if line.startswith('>>>>>>> '):
-                skip = False
-                continue
-            if not skip:
-                lines.append(line)
-        p.write_text(''.join(lines), encoding='utf-8')
-PY
+            # systemd EnvironmentFile rejects a UTF-8 BOM on the first line.
+            if [ -f backend/.env ]; then
+              sed -i '1s/^\xEF\xBB\xBF//' backend/.env || true
+              if grep -q '^<<<<<<<' backend/.env; then
+                awk '/^<<<<<<< /{next} /^=======/{skip=1; next} /^>>>>>>> /{skip=0; next} !skip{print}' backend/.env > /tmp/crm-backend.env.clean
+                mv /tmp/crm-backend.env.clean backend/.env
+              fi
+            fi
             cd backend
 
             # Ensure Telegram bot config is present in .env (never committed to git — sourced from
