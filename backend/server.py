@@ -56,6 +56,9 @@ from telegram_notify import (
     telegram_mode,
 )
 
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
 app = FastAPI(
     title='Resoline CRM API',
     openapi_tags=[
@@ -70,11 +73,14 @@ app = FastAPI(
     ],
 )
 
-# CORS
-# NOTE: Browsers do NOT allow `allow_origins=["*"]` together with `allow_credentials=True`.
-# We use Authorization headers (Bearer tokens), so we can safely allow credentials while
-# specifying explicit origins.
-ALLOWED_ORIGINS = [
+# CORS — S3 website + resoline.in frontends call https://api.resoline.in.
+# Auth is Bearer tokens (Authorization header), not cookies.
+_cors_from_env = [
+    origin.strip()
+    for origin in os.environ.get('CORS_ORIGINS', '').split(',')
+    if origin.strip() and origin.strip() != '*'
+]
+ALLOWED_ORIGINS = list(dict.fromkeys(_cors_from_env + [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
@@ -83,22 +89,25 @@ ALLOWED_ORIGINS = [
     "http://www.resoline.in",
     "https://resoline.in",
     "https://www.resoline.in",
-]
+    "http://crm.resoline.in",
+    "https://crm.resoline.in",
+    "http://crm-resoline-bucket.s3-website.ap-south-1.amazonaws.com",
+    "https://crm-resoline-bucket.s3-website.ap-south-1.amazonaws.com",
+]))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    # Allow any resoline.in subdomain (e.g. crm.resoline.in, staging.resoline.in)
-    allow_origin_regex=r"^https?://([a-z0-9-]+\.)*resoline\.in$",
-    # We authenticate via Authorization headers (Bearer tokens), not cookies.
-    # Keeping credentials disabled avoids wildcard/credential pitfalls and is sufficient.
+    allow_origin_regex=(
+        r"^https?://("
+        r"([a-z0-9-]+\.)*resoline\.in"
+        r"|([a-z0-9.-]+\.)?s3-website[.-][a-z0-9-]+\.amazonaws\.com"
+        r")$"
+    ),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
-
-
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
 
 # Attendance business rules use local wall-clock time (default: India).
 # Set ATTENDANCE_TIMEZONE in .env e.g. Asia/Kolkata, Asia/Dubai
@@ -9685,7 +9694,6 @@ def download_document(document_id: str, current_user: UserModel = Depends(get_cu
                 headers={
                     'Content-Disposition': f'inline; filename="{document.file_name or "document"}"',
                     'Cache-Control': 'no-store',
-                    'Access-Control-Allow-Origin': '*',
                 },
             )
         except HTTPException:
@@ -9746,7 +9754,6 @@ def stream_file(file_url: str, current_user: UserModel = Depends(get_current_use
             headers={
                 "Content-Disposition": f"inline; filename=\"{filename}\"",
                 "Cache-Control": "public, max-age=3600",
-                "Access-Control-Allow-Origin": "*"
             }
         )
     
