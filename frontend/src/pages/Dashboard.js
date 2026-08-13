@@ -8,9 +8,10 @@ import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
-const API = `${BACKEND_URL}/api`;
+const BACKEND_URL = BACKEND_BASE_URL;
+const API = API_ENDPOINT;
 
 const STATUS_COLORS = {
   New: '#94a3b8',

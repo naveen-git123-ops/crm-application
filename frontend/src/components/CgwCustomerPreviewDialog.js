@@ -477,7 +477,7 @@ export function CgwCustomerPreviewDialog({
               <DialogTitle className="text-lg font-bold text-white flex flex-wrap items-center gap-2">
                 Customer details
                 <span className="font-mono text-sm font-normal text-blue-100 bg-white/10 px-2 py-0.5 rounded">
-                  {model.customerCode || '—'}
+                  {model.inventoryIds.length ? model.inventoryIds.join(' · ') : '—'}
                 </span>
               </DialogTitle>
               <p className="text-blue-100 text-sm mt-1.5">
@@ -517,7 +517,11 @@ export function CgwCustomerPreviewDialog({
                     <SubSection title="Contact & location">
                       <FieldGrid>
                         <PreviewField label="Customer name" value={previewDisplay(fd.customer_name)} />
-                        <PreviewField label="Customer ID" value={previewDisplay(model.customerCode)} mono />
+                        <PreviewField
+                          label="CGWA ID"
+                          value={previewDisplay(model.inventoryIds.length ? model.inventoryIds.join(' · ') : '')}
+                          mono
+                        />
                         <PreviewField label="Location" value={previewDisplay(fd.location)} />
                         <PreviewField label="Contact person" value={previewDisplay(fd.contact_person)} />
                         <PreviewField label="System mobile" value={previewDisplay(fd.system_mobile_number)} mono />

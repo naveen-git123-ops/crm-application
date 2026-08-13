@@ -86,13 +86,38 @@ function App() {
                 />
 
                 <Route
-                  path="/cgw-flow-metre"
+                  path="/create-cgwa/:id"
                   element={
                     <ProtectedRoute requiredPermission="cgw-flow-metre">
-                      <CGWFlowMetre />
+                      <CGWFlowMetre mode="create" />
                     </ProtectedRoute>
                   }
                 />
+                <Route
+                  path="/create-cgwa"
+                  element={
+                    <ProtectedRoute requiredPermission="cgw-flow-metre">
+                      <CGWFlowMetre mode="create" />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/my-cgwa-drafts"
+                  element={
+                    <ProtectedRoute requiredPermission="cgw-flow-metre">
+                      <CGWFlowMetre mode="drafts" />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/view-cgwa"
+                  element={
+                    <ProtectedRoute requiredPermission="cgw-flow-metre">
+                      <CGWFlowMetre mode="view" />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="/cgw-flow-metre" element={<Navigate to="/view-cgwa" replace />} />
 
                 <Route
                   path="/stock-management"

@@ -13,8 +13,9 @@ import { canManageAllLeads, userHasPermission } from '@/lib/permissions';
 import { isCarryAndOrder, leadNeedsVendor } from '@/lib/leadUtils';
 import { workflowStageLabel } from '@/lib/carryOrderWorkflow';
 import { getApiErrorMessage } from '@/lib/apiErrors';
+import { API_ENDPOINT } from '@/lib/apiConfig';
 
-const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
+const API = API_ENDPOINT;
 
 /** Open enquiry details in a new browser tab. */
 export function openViewLeadTab(leadId) {

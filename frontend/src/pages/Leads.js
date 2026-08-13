@@ -24,8 +24,9 @@ import {
   getLeadInitials,
 } from '@/lib/leadUtils';
 import { getApiErrorMessage } from '@/lib/apiErrors';
+import { API_ENDPOINT } from '@/lib/apiConfig';
 
-const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
+const API = API_ENDPOINT;
 
 export const Leads = () => {
   const { user } = useAuth();

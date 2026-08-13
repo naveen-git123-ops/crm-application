@@ -8,12 +8,13 @@ import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 
 const Vehicles = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
-  const API = `${BACKEND_URL}/api`;
+  const BACKEND_URL = BACKEND_BASE_URL;
+  const API = API_ENDPOINT;
 
   // STATE - VEHICLES
   const [vehicles, setVehicles] = useState([]);

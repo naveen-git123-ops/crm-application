@@ -9,9 +9,10 @@ import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 import { getApiErrorMessage } from '@/lib/apiErrors';
-import { userCanDeleteCgw, userCanManageCgw } from '@/lib/permissions';
+import { userCanDeleteCgw, userCanManageCgw, isAdminUser } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import PiezometerAddWizardStep, {
   EMPTY_PIEZO_ROW,
@@ -22,6 +23,34 @@ import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFile
 import { CgwCustomerPreviewDialog } from '@/components/CgwCustomerPreviewDialog';
 
 const API = API_ENDPOINT;
+export const VIEW_CGWA_PATH = '/view-cgwa';
+export const CREATE_CGWA_PATH = '/create-cgwa';
+export const DRAFTS_CGWA_PATH = '/my-cgwa-drafts';
+
+function parseCgwWizardDraft(item) {
+  try {
+    const raw = item?.wizard_draft_json;
+    if (!raw) return null;
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    return null;
+  }
+}
+
+const DRAFT_STEP_TITLES = {
+  1: 'Customer',
+  2: 'NOC',
+  3: 'Flow metre',
+  4: 'Piezometer',
+  5: 'Additional attachment',
+};
+
+function cgwDraftProgressLabel(item) {
+  const snap = parseCgwWizardDraft(item);
+  const step = Math.max(1, Number(snap?.addStep) || 1);
+  const title = DRAFT_STEP_TITLES[step] || `Step ${step}`;
+  return `Step ${step} · ${title}`;
+}
 
 /** Categories persisted in cgw_attachments_json (aligned with server CGW_MEDIA_ATTACHMENT_KEYS). */
 const CGW_MEDIA_KEYS = [
@@ -71,9 +100,51 @@ const CGW_MEDIA_LABELS = {
   additional_doc: 'Additional document',
 };
 
+function cgwUploadCategoryLabel(category) {
+  if (category === 'noc') return 'NOC PDF';
+  return CGW_MEDIA_LABELS[category] || category || 'File';
+}
+
+function cgwIdSortParts(id) {
+  const match = String(id || '').trim().toUpperCase().match(/^CGWA(\d+)(?:-(\d+))?$/);
+  if (!match) return [Number.MAX_SAFE_INTEGER, String(id || '')];
+  return [parseInt(match[1], 10), match[2] ? parseInt(match[2], 10) : 0];
+}
+
+function compareCgwaIds(a, b) {
+  const [aRoot, aSuffix] = cgwIdSortParts(a);
+  const [bRoot, bSuffix] = cgwIdSortParts(b);
+  if (aRoot !== bRoot) return aRoot - bRoot;
+  if (typeof aSuffix === 'number' && typeof bSuffix === 'number' && aSuffix !== bSuffix) {
+    return aSuffix - bSuffix;
+  }
+  return String(a || '').localeCompare(String(b || ''));
+}
+
+/** Record save succeeded; list any files that did not upload so the user can retry on the record. */
+function notifyCgwSaveWithUploads(successMsg, failures) {
+  const list = Array.isArray(failures) ? failures.filter(Boolean) : [];
+  if (!list.length) {
+    toast.success(successMsg);
+    return;
+  }
+  toast.success(`${successMsg} Open the record to upload the failed file(s) again.`);
+  const seen = new Set();
+  const unique = list.filter((f) => {
+    const key = `${f.category || ''}::${f.fileName || 'file'}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const listed = unique
+    .map((f) => `${cgwUploadCategoryLabel(f.category)}: "${f.fileName || 'file'}"`)
+    .join('; ');
+  toast.error(`File upload failed — ${listed}`, { duration: 14000 });
+}
+
 /** Wizard-aligned grid sections: colspan when expanded vs collapsed (single summary column). */
 const CGW_GRID_SECTION_COLSPANS = {
-  /** Includes leading CUSTOMER ID (business code from customers list). */
+  /** Includes leading CGWA unique ID (inventory_id), then customer fields. */
   customer: { open: 7, collapsed: 1 },
   noc: { open: 8, collapsed: 1 },
   flowMetre: { open: 23, collapsed: 1 },
@@ -649,20 +720,16 @@ function TelemValidToCell({ value }) {
 }
 
 /** Stacked NOC validity dates per equipment row (same customer group). */
-function NocValidUptoColumnCell({ groupRows = [], customerLineIdBase = '' }) {
-  const base = String(customerLineIdBase || '').trim();
+function NocValidUptoColumnCell({ groupRows = [] }) {
   return (
     <div className="space-y-1.5 min-w-[112px]">
-      {(groupRows || []).map((r, i) => {
+      {(groupRows || []).map((r) => {
         const v = r.noc_valid_upto;
         const nu = v ? nocValidUrgency(v) : 'empty';
-        const label =
-          base && base !== '—'
-            ? `${base}-${i + 1}`
-            : (r.equipment_name || r.inventory_id || '—').slice(0, 22);
+        const label = (r.inventory_id || r.equipment_name || '—').slice(0, 22);
         return (
           <div key={r.id} className="rounded border border-gray-100 bg-gray-50/60 px-1.5 py-1">
-            <p className="text-[9px] text-gray-500 truncate mb-0.5" title={r.inventory_id}>
+            <p className="text-[9px] text-gray-500 truncate mb-0.5 font-mono" title={r.inventory_id}>
               {label}
             </p>
             {v ? (
@@ -787,15 +854,22 @@ function formatTelemetryPriorLine(item) {
   return bits.join(' · ');
 }
 
-const CGWFlowMetre = () => {
+const CGWFlowMetre = ({ mode = 'view' }) => {
   const { user, refreshUser } = useAuth();
+  const navigate = useNavigate();
+  const { id: routeEditId } = useParams();
+  const isCreateScreen = mode === 'create';
+  const isViewScreen = mode === 'view';
+  const isDraftsScreen = mode === 'drafts';
+  const isListScreen = isViewScreen || isDraftsScreen;
+  const wizardActive = isCreateScreen;
   const hasCgwAccess = userCanManageCgw(user);
   const [items, setItems] = useState([]);
   const [filteredItems, setFilteredItems] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [loading, setLoading] = useState(mode !== 'create');
+  const [editHydrating, setEditHydrating] = useState(mode === 'create');
   const [editMode, setEditMode] = useState(false);
   const [editingItemId, setEditingItemId] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
@@ -1023,8 +1097,12 @@ const CGWFlowMetre = () => {
   useEffect(() => {
     refreshUser?.();
     fetchCustomers();
-    fetchItems();
-  }, []);
+    if (isListScreen) {
+      fetchItems();
+    } else {
+      setLoading(false);
+    }
+  }, [isListScreen]);
 
   useEffect(() => {
     return () => {
@@ -1069,7 +1147,7 @@ const CGWFlowMetre = () => {
   }, [needsPiezometerWizardStep, addStep]);
 
   useEffect(() => {
-    if (!dialogOpen || piezometerWizardCount <= 0) return;
+    if (!wizardActive || piezometerWizardCount <= 0) return;
     setPiezometerRows((prev) => {
       if (prev.length === piezometerWizardCount) return prev;
       const next = prev.slice(0, piezometerWizardCount);
@@ -1082,10 +1160,10 @@ const CGWFlowMetre = () => {
       while (next.length < piezometerWizardCount) next.push(EMPTY_PIEZO_FILES());
       return next;
     });
-  }, [dialogOpen, piezometerWizardCount]);
+  }, [wizardActive, piezometerWizardCount]);
 
   useEffect(() => {
-    if (!dialogOpen || addStep < 3 || addStep > 4 || !formData.customer_id) {
+    if (!wizardActive || addStep < 3 || addStep > 4 || !formData.customer_id) {
       setTelemetrySerialOptions([]);
       return undefined;
     }
@@ -1104,7 +1182,7 @@ const CGWFlowMetre = () => {
     return () => {
       cancelled = true;
     };
-  }, [dialogOpen, addStep, formData.customer_id]);
+  }, [wizardActive, addStep, formData.customer_id]);
 
   useEffect(() => {
     if (!nocDialogOpen) {
@@ -1188,7 +1266,10 @@ const CGWFlowMetre = () => {
       }
       map.get(key).rows.push(item);
     }
-    return Array.from(map.values());
+    return Array.from(map.values()).map((group) => ({
+      ...group,
+      rows: [...group.rows].sort((a, b) => compareCgwaIds(a.inventory_id, b.inventory_id)),
+    }));
   }, [filteredItems]);
 
   const customerCodeById = useMemo(() => {
@@ -1202,6 +1283,18 @@ const CGWFlowMetre = () => {
   useEffect(() => {
     const term = searchTerm.trim().toLowerCase();
     const filtered = items.filter((item) => {
+      const isDraft = String(item?.status || '').toLowerCase() === 'draft';
+      if (isDraftsScreen) {
+        if (!isDraft) return false;
+        if (!isAdminUser(user)) {
+          const owner = (item.created_by_name || '').trim().toLowerCase();
+          const me = (user?.name || '').trim().toLowerCase();
+          if (owner && me && owner !== me) return false;
+        }
+      } else if (isViewScreen && isDraft) {
+        return false;
+      }
+
       const customerBizId = (customerCodeById.get(item.customer_id) || '').toString().toLowerCase();
       const matchesGlobal =
         !term ||
@@ -1225,8 +1318,11 @@ const CGWFlowMetre = () => {
 
       return matchesGlobal && matchesColumns && matchesNocValidity && matchesTelemValidity;
     });
+    if (isDraftsScreen) {
+      filtered.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+    }
     setFilteredItems(filtered);
-  }, [searchTerm, columnFilters, nocValidUptoFilter, telemValidToFilter, items, customerCodeById]);
+  }, [searchTerm, columnFilters, nocValidUptoFilter, telemValidToFilter, items, customerCodeById, isDraftsScreen, isViewScreen, user]);
 
   const totalGroups = groupedItems.length;
   const totalPages = Math.max(1, Math.ceil(totalGroups / pageSize));
@@ -1358,14 +1454,24 @@ const CGWFlowMetre = () => {
 
   const uploadCgwRowAttachments = async (inventoryRowId, category, fileList) => {
     const list = normalizeFileList(fileList);
-    if (!list.length) return;
+    const failures = [];
+    if (!list.length) return failures;
     for (const raw of list) {
-      const prepared = await prepareFileForUpload(raw);
-      const fd = new FormData();
-      fd.append('category', category);
-      fd.append('file', prepared);
-      await postCgwMediaFormData(inventoryRowId, fd);
+      try {
+        const prepared = await prepareFileForUpload(raw);
+        const fd = new FormData();
+        fd.append('category', category);
+        fd.append('file', prepared);
+        await postCgwMediaFormData(inventoryRowId, fd);
+      } catch (err) {
+        failures.push({
+          category,
+          fileName: raw?.name || 'file',
+          reason: getApiErrorMessage(err, 'upload failed'),
+        });
+      }
     }
+    return failures;
   };
 
   const uploadCgwRowAttachment = async (inventoryRowId, category, file) =>
@@ -1373,15 +1479,20 @@ const CGWFlowMetre = () => {
 
   const uploadEquipmentFlowBundle = async (inventoryRowId, bundle, equipmentRow) => {
     const b = bundle || {};
-    await uploadCgwRowAttachments(inventoryRowId, 'calibration_certificate', b.calibration_cert);
-    await uploadCgwRowAttachments(inventoryRowId, 'service_report', b.service_report);
-    await uploadCgwRowAttachments(inventoryRowId, 'telemetry_service_report', b.telemetry_service_report);
-    await uploadCgwRowAttachments(inventoryRowId, 'water_quality_certificate', b.water_quality_certificate);
-    await uploadCgwRowAttachments(inventoryRowId, 'cte', b.cte);
-    await uploadCgwRowAttachments(inventoryRowId, 'cto', b.cto);
-    await uploadCgwRowAttachments(inventoryRowId, 'rwss_watco_phed_noc', b.rwss_watco_phed_noc);
-    await uploadCgwRowAttachments(inventoryRowId, 'approval_letter', b.approval_letter);
-    await uploadCgwRowAttachments(inventoryRowId, 'rain_water_harvesting_data', b.rain_water_harvesting_data);
+    const failures = [];
+    const run = async (category, files) => {
+      const result = await uploadCgwRowAttachments(inventoryRowId, category, files);
+      if (result?.length) failures.push(...result);
+    };
+    await run('calibration_certificate', b.calibration_cert);
+    await run('service_report', b.service_report);
+    await run('telemetry_service_report', b.telemetry_service_report);
+    await run('water_quality_certificate', b.water_quality_certificate);
+    await run('cte', b.cte);
+    await run('cto', b.cto);
+    await run('rwss_watco_phed_noc', b.rwss_watco_phed_noc);
+    await run('approval_letter', b.approval_letter);
+    await run('rain_water_harvesting_data', b.rain_water_harvesting_data);
     const addDocs = normalizeFileList(b.additional_doc);
     const typed = (equipmentRow?.additional_document_type || '').trim();
     const renamed = typed
@@ -1392,22 +1503,29 @@ const CGWFlowMetre = () => {
             }),
         )
       : addDocs;
-    await uploadCgwRowAttachments(inventoryRowId, 'additional_doc', renamed);
-    await uploadCgwRowAttachments(inventoryRowId, 'telemetry_excel_prior', b.telemetry_excel);
-    await uploadCgwRowAttachments(inventoryRowId, 'telemetry_service_prior', b.telemetry_service);
-    await uploadCgwRowAttachments(inventoryRowId, 'bw_geo_flowmeter', b.bwGeoPhotos);
-    await uploadCgwRowAttachments(inventoryRowId, 'telemetry', b.telemetryPhotoFiles);
+    await run('additional_doc', renamed);
+    await run('telemetry_excel_prior', b.telemetry_excel);
+    await run('telemetry_service_prior', b.telemetry_service);
+    await run('bw_geo_flowmeter', b.bwGeoPhotos);
+    await run('telemetry', b.telemetryPhotoFiles);
+    return failures;
   };
 
   const uploadPiezometerFlowBundle = async (inventoryRowId, pb) => {
     const bundle = pb || {};
-    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_bw', bundle.bwPhotos);
-    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_calibration', bundle.calibrationCert);
-    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_telemetry', bundle.telemetryPhotos);
-    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_excel_prior', bundle.telemetryExcel);
-    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_service_report', bundle.priorTelemetryService);
-    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_service', bundle.serviceReport);
-    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_telemetry_service', bundle.telemetryServiceReport);
+    const failures = [];
+    const run = async (category, files) => {
+      const result = await uploadCgwRowAttachments(inventoryRowId, category, files);
+      if (result?.length) failures.push(...result);
+    };
+    await run('piezometer_bw', bundle.bwPhotos);
+    await run('piezometer_calibration', bundle.calibrationCert);
+    await run('piezometer_telemetry', bundle.telemetryPhotos);
+    await run('piezometer_excel_prior', bundle.telemetryExcel);
+    await run('piezometer_service_report', bundle.priorTelemetryService);
+    await run('piezometer_service', bundle.serviceReport);
+    await run('piezometer_telemetry_service', bundle.telemetryServiceReport);
+    return failures;
   };
 
   const isDraftRecord = (item) => String(item?.status || '').toLowerCase() === 'draft';
@@ -1459,6 +1577,11 @@ const CGWFlowMetre = () => {
       toast.error('Select a customer before saving a draft.');
       return;
     }
+    const continuingDraft = editMode && isDraftRecord(editingItem);
+    if (continuingDraft && addStep === addWizardFinalStep) {
+      await handleSubmit();
+      return;
+    }
     setDraftSaving(true);
     try {
       const wizard = buildWizardSnapshot({
@@ -1486,12 +1609,15 @@ const CGWFlowMetre = () => {
         setEditMode(true);
       }
       setEditingItem(saved);
+      const uploadFailures = [];
       if (saved?.id) {
         for (let i = 0; i < equipmentRows.length; i += 1) {
-          await uploadEquipmentFlowBundle(saved.id, equipmentFlowFiles[i] || {}, equipmentRows[i]);
+          uploadFailures.push(
+            ...(await uploadEquipmentFlowBundle(saved.id, equipmentFlowFiles[i] || {}, equipmentRows[i])),
+          );
         }
         for (let pi = 0; pi < (piezometerFiles || []).length; pi += 1) {
-          await uploadPiezometerFlowBundle(saved.id, piezometerFiles[pi] || {});
+          uploadFailures.push(...(await uploadPiezometerFlowBundle(saved.id, piezometerFiles[pi] || {})));
         }
         const fresh = await axios.get(`${API}/cgw-flow-metres/${saved.id}`, { headers: authHeaders() });
         setEditingItem(fresh.data);
@@ -1500,8 +1626,13 @@ const CGWFlowMetre = () => {
         setPiezometerFiles(Array.from({ length: piezometerRows.length }, () => EMPTY_PIEZO_FILES()));
         setAddNocFile(null);
       }
-      toast.success('Draft saved. Open it from the grid to continue later.');
-      fetchItems();
+      const continuingDraft = editMode && isDraftRecord(editingItem || saved);
+      notifyCgwSaveWithUploads(
+        continuingDraft ? 'Draft saved' : 'Draft saved. Open My Drafts to continue later.',
+        uploadFailures,
+      );
+      resetForm();
+      navigate(continuingDraft ? VIEW_CGWA_PATH : DRAFTS_CGWA_PATH);
     } catch (err) {
       toast.error(getApiErrorMessage(err, 'Failed to save draft'));
     } finally {
@@ -1587,10 +1718,37 @@ const CGWFlowMetre = () => {
         }, { headers: authHeaders() });
 
         const bundle = equipmentFlowFiles[0] || {};
-        await uploadEquipmentFlowBundle(editingItemId, bundle, row);
+        const uploadFailures = [];
+        uploadFailures.push(...(await uploadEquipmentFlowBundle(editingItemId, bundle, row)));
         for (const pb of piezometerFiles || []) {
-          await uploadPiezometerFlowBundle(editingItemId, pb);
+          uploadFailures.push(...(await uploadPiezometerFlowBundle(editingItemId, pb)));
         }
+
+        const nocMetaPut = {
+          noc_bhuneer_user_id: addNocForm.bhuneer_user_id || null,
+          noc_bhuneer_password: addNocForm.bhuneer_password || null,
+          noc_nocap_user_id: (addNocForm.nocap_user_id || '').trim().toLowerCase() || null,
+          noc_nocap_password: addNocForm.nocap_password || null,
+          noc_project_name: addNocForm.project_name || '',
+          noc_project_address: addNocForm.project_address || '',
+          noc_communication_address: addNocForm.communication_address || '',
+          noc_no: addNocForm.noc_no || '',
+          noc_application_no: addNocForm.application_no || '',
+          noc_project_status: addNocForm.project_status || '',
+          noc_type: addNocForm.noc_type || '',
+          noc_valid_from: addNocForm.valid_from || '',
+          noc_valid_upto: addNocForm.valid_upto || '',
+          noc_permitted_m3_per_day: addNocForm.permitted_m3_per_day || '',
+          noc_permitted_m3_per_year: addNocForm.permitted_m3_per_year || '',
+          noc_existing_bw_count: addNocForm.existing_bw_count || '',
+          noc_total_proposed_bw_count: addNocForm.total_proposed_bw_count || '',
+          noc_flowmeter_applicable: addNocForm.flowmeter_applicable || '',
+          noc_flowmeter_count: addNocForm.flowmeter_applicable === 'yes' ? (addNocForm.flowmeter_count || '') : '',
+          noc_piezometer_applicable: addNocForm.piezometer_applicable || '',
+          noc_piezometer_count: addNocForm.piezometer_applicable === 'yes' ? String(piezometerWizardCount || addNocForm.piezometer_count || '') : '',
+          status: submittingDraft ? 'Active' : finalStatus,
+          ...(submittingDraft ? { wizard_draft_json: null } : {}),
+        };
 
         if (addNocFile) {
           const fd = new FormData();
@@ -1616,39 +1774,30 @@ const CGWFlowMetre = () => {
           fd.append('bhuneer_password', addNocForm.bhuneer_password || '');
           fd.append('nocap_user_id', addNocForm.nocap_user_id || '');
           fd.append('nocap_password', addNocForm.nocap_password || '');
-          await axios.post(`${API}/cgw-flow-metres/${editingItemId}/noc`, fd, { headers: authHeaders() });
+          try {
+            await axios.post(`${API}/cgw-flow-metres/${editingItemId}/noc`, fd, { headers: authHeaders() });
+          } catch (nocErr) {
+            uploadFailures.push({
+              category: 'noc',
+              fileName: addNocFile.name || 'NOC PDF',
+              reason: getApiErrorMessage(nocErr, 'upload failed'),
+            });
+            try {
+              await axios.put(`${API}/cgw-flow-metres/${editingItemId}`, nocMetaPut, { headers: authHeaders() });
+            } catch (_metaErr) {
+              /* record already saved; user can edit NOC after opening it */
+            }
+          }
         } else {
-          await axios.put(`${API}/cgw-flow-metres/${editingItemId}`, {
-            noc_bhuneer_user_id: addNocForm.bhuneer_user_id || null,
-            noc_bhuneer_password: addNocForm.bhuneer_password || null,
-            noc_nocap_user_id: (addNocForm.nocap_user_id || '').trim().toLowerCase() || null,
-            noc_nocap_password: addNocForm.nocap_password || null,
-            noc_project_name: addNocForm.project_name || '',
-            noc_project_address: addNocForm.project_address || '',
-            noc_communication_address: addNocForm.communication_address || '',
-            noc_no: addNocForm.noc_no || '',
-            noc_application_no: addNocForm.application_no || '',
-            noc_project_status: addNocForm.project_status || '',
-            noc_type: addNocForm.noc_type || '',
-            noc_valid_from: addNocForm.valid_from || '',
-            noc_valid_upto: addNocForm.valid_upto || '',
-            noc_permitted_m3_per_day: addNocForm.permitted_m3_per_day || '',
-            noc_permitted_m3_per_year: addNocForm.permitted_m3_per_year || '',
-            noc_existing_bw_count: addNocForm.existing_bw_count || '',
-            noc_total_proposed_bw_count: addNocForm.total_proposed_bw_count || '',
-            noc_flowmeter_applicable: addNocForm.flowmeter_applicable || '',
-            noc_flowmeter_count: addNocForm.flowmeter_applicable === 'yes' ? (addNocForm.flowmeter_count || '') : '',
-            noc_piezometer_applicable: addNocForm.piezometer_applicable || '',
-            noc_piezometer_count: addNocForm.piezometer_applicable === 'yes' ? String(piezometerWizardCount || addNocForm.piezometer_count || '') : '',
-            status: submittingDraft ? 'Active' : finalStatus,
-            ...(submittingDraft ? { wizard_draft_json: null } : {}),
-          }, { headers: authHeaders() });
+          await axios.put(`${API}/cgw-flow-metres/${editingItemId}`, nocMetaPut, { headers: authHeaders() });
         }
 
-        toast.success(submittingDraft ? 'Draft submitted successfully' : 'Inventory item updated successfully');
-        setDialogOpen(false);
+        notifyCgwSaveWithUploads(
+          submittingDraft ? 'Draft submitted successfully' : 'Inventory item updated successfully',
+          uploadFailures,
+        );
         resetForm();
-        fetchItems();
+        navigate(VIEW_CGWA_PATH);
         return;
       }
 
@@ -1811,18 +1960,13 @@ const CGWFlowMetre = () => {
       });
 
       const createdRows = Array.isArray(createdRes.data) ? createdRes.data : [];
+      const uploadFailures = [];
 
       for (let i = 0; i < createdRows.length; i += 1) {
         const inv = createdRows[i];
         const bundle = rowsForSubmit[i]?.files;
         if (!inv?.id || !bundle) continue;
-        try {
-          await uploadEquipmentFlowBundle(inv.id, bundle, equipmentRows[i]);
-        } catch (uploadErr) {
-          toast.error(getApiErrorMessage(uploadErr, 'Saved row but an attachment upload failed'));
-          fetchItems();
-          return;
-        }
+        uploadFailures.push(...(await uploadEquipmentFlowBundle(inv.id, bundle, equipmentRows[i])));
       }
 
       if (needsPiezometerWizardStep && createdRows.length && piezometerRows.length) {
@@ -1830,13 +1974,7 @@ const CGWFlowMetre = () => {
           const inv = createdRows[Math.min(pi, createdRows.length - 1)];
           if (!inv?.id) continue;
           const pb = piezometerFiles[pi] || {};
-          try {
-            await uploadPiezometerFlowBundle(inv.id, pb);
-          } catch (pzErr) {
-            toast.error(getApiErrorMessage(pzErr, 'Piezometer file upload failed'));
-            fetchItems();
-            return;
-          }
+          uploadFailures.push(...(await uploadPiezometerFlowBundle(inv.id, pb)));
         }
       }
 
@@ -1898,12 +2036,52 @@ const CGWFlowMetre = () => {
             fd.append('bhuneer_password', addNocForm.bhuneer_password || '');
             fd.append('nocap_user_id', addNocForm.nocap_user_id || '');
             fd.append('nocap_password', addNocForm.nocap_password || '');
-            await axios.post(`${API}/cgw-flow-metres/${row.id}/noc`, fd, {
-              headers: authHeaders(),
-              timeout: 120000,
-              maxBodyLength: Infinity,
-              maxContentLength: Infinity,
-            });
+            try {
+              await axios.post(`${API}/cgw-flow-metres/${row.id}/noc`, fd, {
+                headers: authHeaders(),
+                timeout: 120000,
+                maxBodyLength: Infinity,
+                maxContentLength: Infinity,
+              });
+            } catch (nocErr) {
+              uploadFailures.push({
+                category: 'noc',
+                fileName: addNocFile.name || 'NOC PDF',
+                reason: getApiErrorMessage(nocErr, 'upload failed'),
+              });
+              try {
+                await axios.put(`${API}/cgw-flow-metres/${row.id}`, {
+                  noc_bhuneer_user_id: addNocForm.bhuneer_user_id || null,
+                  noc_bhuneer_password: addNocForm.bhuneer_password || null,
+                  noc_nocap_user_id: (addNocForm.nocap_user_id || '').trim().toLowerCase() || null,
+                  noc_nocap_password: addNocForm.nocap_password || null,
+                  noc_project_name: addNocForm.project_name || '',
+                  noc_project_address: addNocForm.project_address || '',
+                  noc_communication_address: addNocForm.communication_address || '',
+                  noc_no: addNocForm.noc_no || '',
+                  noc_application_no: addNocForm.application_no || '',
+                  noc_project_status: addNocForm.project_status || '',
+                  noc_type: addNocForm.noc_type || '',
+                  noc_valid_from: addNocForm.valid_from || '',
+                  noc_valid_upto: addNocForm.valid_upto || '',
+                  noc_permitted_m3_per_day: addNocForm.permitted_m3_per_day || '',
+                  noc_permitted_m3_per_year: addNocForm.permitted_m3_per_year || '',
+                  noc_existing_bw_count: addNocForm.existing_bw_count || '',
+                  noc_total_proposed_bw_count: addNocForm.total_proposed_bw_count || '',
+                  noc_flowmeter_applicable: addNocForm.flowmeter_applicable || '',
+                  noc_flowmeter_count: addNocForm.flowmeter_applicable === 'yes' ? (addNocForm.flowmeter_count || '') : '',
+                  noc_piezometer_applicable: addNocForm.piezometer_applicable || '',
+                  noc_piezometer_count:
+                    addNocForm.piezometer_applicable === 'yes'
+                      ? needsPiezometerWizardStep
+                        ? String(piezometerWizardCount)
+                        : addNocForm.piezometer_count || ''
+                      : '',
+                }, { headers: authHeaders() });
+              } catch (_metaErr) {
+                /* record already saved; user can edit NOC after opening it */
+              }
+            }
           } else {
             await axios.put(`${API}/cgw-flow-metres/${row.id}`, {
               noc_bhuneer_user_id: addNocForm.bhuneer_user_id || null,
@@ -1947,10 +2125,12 @@ const CGWFlowMetre = () => {
         }
       }
 
-      toast.success(submittingDraft ? 'Draft submitted successfully' : 'Inventory items added successfully');
-      setDialogOpen(false);
+      notifyCgwSaveWithUploads(
+        submittingDraft ? 'Draft submitted successfully' : 'Inventory items added successfully',
+        uploadFailures,
+      );
       resetForm();
-      fetchItems();
+      navigate(VIEW_CGWA_PATH);
     } catch (error) {
       toast.error(getApiErrorMessage(error, 'Operation failed'));
     } finally {
@@ -1959,16 +2139,19 @@ const CGWFlowMetre = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!canDeleteCgw) return;
-    if (!window.confirm('Are you sure you want to delete this item?')) return;
+    const row = items.find((it) => it.id === id);
+    const isDraft = String(row?.status || '').toLowerCase() === 'draft';
+    const canDeleteThis = userCanDeleteCgw(user) || (isDraftsScreen && isDraft && hasCgwAccess);
+    if (!canDeleteThis) return;
+    if (!window.confirm(isDraft ? 'Delete this draft? You cannot continue it after this.' : 'Are you sure you want to delete this item?')) return;
     try {
       await axios.delete(`${API}/cgw-flow-metres/${id}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
-      toast.success('Inventory item deleted successfully');
+      toast.success(isDraft ? 'Draft deleted' : 'Inventory item deleted successfully');
       fetchItems();
     } catch (error) {
-      toast.error('Failed to delete item');
+      toast.error(getApiErrorMessage(error, 'Failed to delete item'));
     }
   };
 
@@ -2002,28 +2185,50 @@ const CGWFlowMetre = () => {
     setHistoryDialogOpen(true);
   };
 
-  const handleEdit = async (item) => {
-    setEditMode(true);
-    setEditingItemId(item.id);
-    let full = item;
-    try {
-      const res = await axios.get(`${API}/cgw-flow-metres/${item.id}`, { headers: authHeaders() });
-      full = res.data;
-    } catch (_e) {
-      /* use list row */
-    }
-    setEditingItem(full);
-    let snapshot = null;
-    if (full.wizard_draft_json) {
-      try {
-        snapshot = JSON.parse(full.wizard_draft_json);
-      } catch (_e) {
-        snapshot = null;
-      }
-    }
-    populateWizardFromItem(full, snapshot);
-    setDialogOpen(true);
+  const handleEdit = (item) => {
+    if (!item?.id) return;
+    navigate(`${CREATE_CGWA_PATH}/${item.id}`);
   };
+
+  useEffect(() => {
+    if (!isCreateScreen) return undefined;
+    if (!routeEditId) {
+      resetForm();
+      setEditHydrating(false);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      setEditHydrating(true);
+      try {
+        const res = await axios.get(`${API}/cgw-flow-metres/${routeEditId}`, { headers: authHeaders() });
+        if (cancelled) return;
+        const full = res.data;
+        setEditMode(true);
+        setEditingItemId(full.id);
+        setEditingItem(full);
+        let snapshot = null;
+        if (full.wizard_draft_json) {
+          try {
+            snapshot = JSON.parse(full.wizard_draft_json);
+          } catch (_e) {
+            snapshot = null;
+          }
+        }
+        populateWizardFromItem(full, snapshot);
+      } catch (err) {
+        if (!cancelled) {
+          toast.error(getApiErrorMessage(err, 'Failed to load CGWA record'));
+          navigate(VIEW_CGWA_PATH);
+        }
+      } finally {
+        if (!cancelled) setEditHydrating(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isCreateScreen, routeEditId]);
 
   const handleInlineChange = (field, value) => {
     setInlineEditData(prev => ({ ...prev, [field]: value }));
@@ -2297,11 +2502,23 @@ const CGWFlowMetre = () => {
     const list = Array.from(files);
     setMediaUploading(true);
     try {
-      await uploadCgwRowAttachments(mediaDialogItem.id, cat, list);
-      toast.success(list.length > 1 ? `${list.length} files uploaded` : 'File uploaded');
+      const failures = await uploadCgwRowAttachments(mediaDialogItem.id, cat, list);
       const res = await axios.get(`${API}/cgw-flow-metres/${mediaDialogItem.id}`, { headers: authHeaders() });
       setMediaDialogItem(res.data);
       fetchItems();
+      if (failures.length === list.length) {
+        toast.error(
+          `File upload failed — ${cgwUploadCategoryLabel(cat)}: ${failures.map((f) => `"${f.fileName || 'file'}"`).join(', ')}`,
+        );
+      } else if (failures.length) {
+        toast.success(`${list.length - failures.length} file(s) uploaded. Open the record to retry failed uploads.`);
+        toast.error(
+          `File upload failed — ${failures.map((f) => `"${f.fileName || 'file'}"`).join(', ')}`,
+          { duration: 14000 },
+        );
+      } else {
+        toast.success(list.length > 1 ? `${list.length} files uploaded` : 'File uploaded');
+      }
     } catch (err) {
       toast.error(getApiErrorMessage(err, 'Upload failed'));
     } finally {
@@ -2448,15 +2665,26 @@ const CGWFlowMetre = () => {
   };
 
   const pageHeaderSubtitle = useMemo(() => {
+    if (isCreateScreen) {
+      return editMode && isDraftRecord(editingItem)
+        ? 'Continue a saved draft'
+        : editMode
+          ? 'Update the CGWA record'
+          : 'Create a new CGWA record';
+    }
+    if (isDraftsScreen) {
+      const n = filteredItems.length;
+      return `${n} saved ${n === 1 ? 'draft' : 'drafts'}`;
+    }
     const base = `${items.length} total ${items.length === 1 ? 'row' : 'rows'}`;
     if (filteredItems.length !== items.length) {
       return `${base} · ${filteredItems.length} ${filteredItems.length === 1 ? 'match' : 'matches'}`;
     }
     return base;
-  }, [items.length, filteredItems.length]);
+  }, [isCreateScreen, isDraftsScreen, editMode, editingItem, items.length, filteredItems.length]);
 
   const pageHeaderActions = useMemo(() => {
-    if (!canManage) return null;
+    if (!isViewScreen || !canManage) return null;
     return (
       <>
         <select
@@ -2553,21 +2781,10 @@ const CGWFlowMetre = () => {
             </Card>
           )}
         </div>
-        <Button
-          className="bg-blue-600 text-white hover:bg-blue-700 h-9 sm:h-10 text-xs sm:text-sm"
-          data-testid="add-item-button"
-          onClick={() => {
-            resetForm();
-            setDialogOpen(true);
-          }}
-        >
-          <Plus className="h-4 w-4 mr-1.5" />
-          <span className="hidden sm:inline">Add Flow Meter Details</span>
-          <span className="sm:hidden">Add</span>
-        </Button>
       </>
     );
   }, [
+    isViewScreen,
     canManage,
     nocValidUptoFilter,
     telemValidToFilter,
@@ -2576,7 +2793,6 @@ const CGWFlowMetre = () => {
     selectedFilterValue,
     handleClearColumnFilter,
     handleApplyColumnFilter,
-    resetForm,
   ]);
 
   useRegisterPageHeader({
@@ -2585,7 +2801,7 @@ const CGWFlowMetre = () => {
     enabled: !loading,
   });
 
-  if (loading) {
+  if (loading || (isCreateScreen && editHydrating)) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
@@ -2594,41 +2810,12 @@ const CGWFlowMetre = () => {
   }
 
   return (
-    <div className="space-y-6" data-testid="cgw-flow-metre-page">
-      {canManage && (
-        <Dialog open={dialogOpen} onOpenChange={(open) => {
-          setDialogOpen(open);
-          if (!open) resetForm();
-        }}>
-          <DialogContent
-            className="flex h-[min(96vh,100dvh)] max-h-[min(96vh,100dvh)] w-[min(1600px,98vw)] max-w-[min(1600px,98vw)] flex-col overflow-hidden bg-white rounded-lg border border-gray-200 shadow-xl p-0"
-            onPointerDownOutside={(e) => {
-              if (e.target instanceof Element && e.target.closest('[data-cgw-file-picker]')) {
-                e.preventDefault();
-              }
-            }}
-          >
-              <div className="bg-blue-600 text-white p-6 rounded-t-lg shrink-0">
-                <DialogHeader>
-                  <DialogTitle className="text-xl font-bold text-white">
-                    {editMode && isDraftRecord(editingItem)
-                      ? 'Continue draft'
-                      : editMode
-                        ? 'Edit Flow Metre'
-                        : 'Add New Flow Metre'}
-                  </DialogTitle>
-                  <p className="text-blue-100 text-sm mt-1">
-                    {editMode && isDraftRecord(editingItem)
-                      ? 'Resume your saved draft — submit when ready'
-                      : editMode
-                        ? 'View or update all details and attachments'
-                        : 'Create a new inventory item'}
-                  </p>
-                </DialogHeader>
-              </div>
+    <div className="space-y-6" data-testid={isCreateScreen ? 'create-cgwa-page' : isDraftsScreen ? 'my-cgwa-drafts-page' : 'view-cgwa-page'}>
+      {isCreateScreen && canManage && (
+        <Card className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
               <form
                 onSubmit={(e) => e.preventDefault()}
-                className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6"
+                className="space-y-6 p-6"
               >
                 <div className="flex items-center justify-between gap-2">
                   {addWizardStepDefs.map((step, si) => (
@@ -3607,7 +3794,10 @@ const CGWFlowMetre = () => {
                       <Save className="h-4 w-4 mr-2" />
                       {draftSaving ? 'Saving draft…' : 'Save draft'}
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-300 text-gray-700 hover:bg-gray-50">
+                    <Button type="button" variant="outline" onClick={() => {
+                      resetForm();
+                      navigate(editMode && isDraftRecord(editingItem) ? DRAFTS_CGWA_PATH : VIEW_CGWA_PATH);
+                    }} className="border-gray-300 text-gray-700 hover:bg-gray-50">
                       Cancel
                     </Button>
                     {addStep < addWizardFinalStep ? (
@@ -3627,16 +3817,17 @@ const CGWFlowMetre = () => {
                             ? 'Submit'
                             : editMode
                               ? 'Update Item'
-                              : 'Add Item'}
+                              : 'Create CGWA'}
                       </Button>
                     )}
                   </div>
                 </div>
               </form>
-          </DialogContent>
-        </Dialog>
+        </Card>
       )}
 
+      {isViewScreen && (
+        <>
       <Card className="p-4 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
@@ -3774,7 +3965,7 @@ const CGWFlowMetre = () => {
                 <tr className="border-b border-gray-200 bg-gray-50/90">
                   {cgwGridSectionsOpen.customer ? (
                     <>
-                      <th className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">CUSTOMER ID</th>
+                      <th className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">CGWA ID</th>
                       <th className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">CUSTOMER NAME</th>
                       <th className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">LOCATION</th>
                       <th className="text-left py-3 px-4 font-semibold text-sky-900 bg-sky-50 whitespace-nowrap">CONTACT PERSON</th>
@@ -3871,36 +4062,23 @@ const CGWFlowMetre = () => {
                         ? 'border-b border-amber-100 hover:bg-amber-50/35 bg-amber-50/12'
                         : 'border-b border-gray-100 hover:bg-gray-50/50';
 
-                  const customerLineIdBase = String(
-                    customerCodeById.get(groupAnchor.customer_id) || groupAnchor.customer_id || ''
-                  ).trim();
-
                   return group.rows.map((item, rowIndex) => (
                     <tr key={item.id} className={`${rowRenewalClass} align-top`}>
                       {cgwGridSectionsOpen.customer ? (
                         <>
-                          {/* Customer ID on every sub-row (no rowspan) so line 2+ still shows id + CUST…-n */}
                           <td className="py-3 px-4 text-gray-800 whitespace-nowrap bg-sky-50/40 font-mono text-[11px] align-top">
-                            <div className="flex flex-col gap-0.5">
+                            {item.inventory_id ? (
                               <button
                                 type="button"
                                 className="font-semibold text-left text-blue-700 hover:text-blue-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
-                                title="View full customer details"
+                                title="View CGWA details"
                                 onClick={() => openCustomerPreview(group)}
                               >
-                                {customerCodeById.get(groupAnchor.customer_id) || groupAnchor.customer_id || '—'}
+                                {item.inventory_id}
                               </button>
-                              {group.rows.length > 1 ? (
-                                <span
-                                  className="text-[9px] font-medium text-sky-950/80 tabular-nums"
-                                  title="Sub-line within this customer"
-                                >
-                                  {customerLineIdBase && customerLineIdBase !== '—'
-                                    ? `${customerLineIdBase}-${rowIndex + 1}`
-                                    : `Line ${rowIndex + 1}`}
-                                </span>
-                              ) : null}
-                            </div>
+                            ) : (
+                              <span className="font-semibold text-gray-900">—</span>
+                            )}
                           </td>
                           {rowIndex === 0 && (
                             <td rowSpan={group.rows.length} className="py-3 px-4 font-medium text-gray-900 whitespace-nowrap bg-sky-50/40">
@@ -3953,19 +4131,12 @@ const CGWFlowMetre = () => {
                         <td rowSpan={group.rows.length} className="py-3 px-3 text-gray-800 bg-sky-50/40 align-top max-w-[200px]">
                           <button
                             type="button"
-                            className="text-[11px] font-mono font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
-                            title="View full customer details"
+                            className="text-[11px] font-mono font-semibold text-left text-blue-700 hover:text-blue-900 hover:underline leading-snug focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
+                            title="View CGWA details"
                             onClick={() => openCustomerPreview(group)}
                           >
-                            {customerCodeById.get(groupAnchor.customer_id) || groupAnchor.customer_id || '—'}
+                            {group.rows.map((r) => r.inventory_id).filter(Boolean).join(' · ') || '—'}
                           </button>
-                          {group.rows.length > 1 ? (
-                            <p className="text-[9px] font-mono text-sky-900/90 mt-1 leading-snug">
-                              {customerLineIdBase && customerLineIdBase !== '—'
-                                ? group.rows.map((_, i) => `${customerLineIdBase}-${i + 1}`).join(' · ')
-                                : `${group.rows.length} lines`}
-                            </p>
-                          ) : null}
                           <p className="text-xs font-medium text-gray-900 truncate mt-1" title={groupAnchor.customer_name || ''}>
                             {groupAnchor.customer_name || '—'}
                           </p>
@@ -3980,21 +4151,13 @@ const CGWFlowMetre = () => {
                           {rowIndex === 0 && (
                             <td rowSpan={group.rows.length} className="py-3 px-4 align-top min-w-[108px] border-r border-cyan-100 bg-cyan-50/35">
                               <div className="space-y-2">
-                                {group.rows.map((inv, invIdx) => {
-                                  const subLineId =
-                                    customerLineIdBase && customerLineIdBase !== '—'
-                                      ? `${customerLineIdBase}-${invIdx + 1}`
-                                      : inv.inventory_id || `—`;
+                                {group.rows.map((inv) => {
+                                  const cgwaId = inv.inventory_id || '—';
                                   return (
                                   <div key={inv.id} className="rounded border border-gray-200 bg-gray-50/80 p-1.5">
-                                    <p className="text-[9px] font-mono font-semibold text-gray-800 mb-0.5 truncate" title={subLineId}>
-                                      {subLineId}
+                                    <p className="text-[9px] font-mono font-semibold text-gray-800 mb-1 truncate" title={cgwaId}>
+                                      {cgwaId}
                                     </p>
-                                    {customerLineIdBase && inv.inventory_id ? (
-                                      <p className="text-[8px] font-mono text-gray-400 mb-1 truncate" title={inv.inventory_id}>
-                                        {inv.inventory_id}
-                                      </p>
-                                    ) : null}
                                     {canManage ? (
                                       <div className="flex flex-col gap-1">
                                         <Button
@@ -4056,7 +4219,7 @@ const CGWFlowMetre = () => {
                           )}
                           {rowIndex === 0 && (
                             <td rowSpan={group.rows.length} className="py-3 px-4 align-top bg-cyan-50/35">
-                              <NocValidUptoColumnCell groupRows={group.rows} customerLineIdBase={customerLineIdBase} />
+                              <NocValidUptoColumnCell groupRows={group.rows} />
                             </td>
                           )}
                           {rowIndex === 0 && (
@@ -4220,66 +4383,25 @@ const CGWFlowMetre = () => {
                       {canManage && (
                         <td className="py-3 px-4">
                           <div className="flex gap-1.5">
-                            {inlineEditId === item.id ? (
-                              <>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 px-2 border-gray-200 text-xs text-green-700 hover:bg-green-50"
-                                  onClick={() => handleInlineSave(item.id)}
-                                >
-                                  Save
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 px-2 border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
-                                  onClick={handleInlineCancel}
-                                >
-                                  Cancel
-                                </Button>
-                              </>
-                            ) : (
-                              <>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 border-gray-200 text-xs text-slate-700 hover:bg-slate-50"
-                                  title="History"
-                                  onClick={() => openHistoryDialog(item)}
-                                >
-                                  <History className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
-                                  title={isDraftRecord(item) ? 'Continue draft' : 'Edit'}
-                                  onClick={() => handleEdit(item)}
-                                >
-                                  <Edit className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 border-gray-200 text-xs text-blue-700 hover:bg-blue-50"
-                                  title="Download attachments ZIP"
-                                  onClick={() => handleDownloadAttachmentsZip(item)}
-                                >
-                                  <Download className="h-3 w-3" />
-                                </Button>
-                                {canDeleteCgw && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7 w-7 p-0 border-gray-200 text-xs text-red-600 hover:bg-red-50"
-                                    title="Delete"
-                                    onClick={() => handleDelete(item.id)}
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                )}
-                              </>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 w-7 p-0 border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
+                              title={isDraftRecord(item) ? 'Continue draft' : 'Edit'}
+                              onClick={() => handleEdit(item)}
+                            >
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            {canDeleteCgw && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 w-7 p-0 border-gray-200 text-xs text-red-600 hover:bg-red-50"
+                                title="Delete"
+                                onClick={() => handleDelete(item.id)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
                             )}
                           </div>
                         </td>
@@ -4336,6 +4458,97 @@ const CGWFlowMetre = () => {
         <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
           <p className="text-gray-600">No inventory items found</p>
         </Card>
+      )}
+        </>
+      )}
+
+      {isDraftsScreen && (
+        <>
+          <Card className="p-4 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+              <Input
+                placeholder="Search drafts by customer, location, or ID…"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 border border-gray-300 h-10 rounded-lg text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+              />
+            </div>
+          </Card>
+          {filteredItems.length > 0 ? (
+            <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50">
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Customer</th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">CGWA ID</th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Progress</th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Last saved</th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Saved by</th>
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredItems.map((item) => (
+                      <tr key={item.id} className="border-b border-gray-100 hover:bg-slate-50/80">
+                        <td className="py-3 px-4">
+                          <p className="font-medium text-gray-900">{item.customer_name || '—'}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{item.location || item.contact_person || '—'}</p>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-xs text-gray-700">{item.inventory_id || item.id}</td>
+                        <td className="py-3 px-4">
+                          <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                            {cgwDraftProgressLabel(item)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-gray-700">{formatHistoryDateTime(item.updated_at || item.created_at)}</td>
+                        <td className="py-3 px-4 text-gray-700">{item.last_modified_by_name || item.created_by_name || '—'}</td>
+                        <td className="py-3 px-4">
+                          <div className="flex gap-1.5">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2.5 border-gray-200 text-xs text-blue-700 hover:bg-blue-50"
+                              onClick={() => handleEdit(item)}
+                            >
+                              <Edit className="h-3 w-3 mr-1" />
+                              Continue
+                            </Button>
+                            {(canDeleteCgw || canManage) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 w-8 p-0 border-gray-200 text-xs text-red-600 hover:bg-red-50"
+                                title="Delete draft"
+                                onClick={() => handleDelete(item.id)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          ) : (
+            <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
+              <p className="text-gray-800 font-medium">No saved drafts</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Use Create CGWA and click Save draft to leave the form mid-way. You can continue from here later.
+              </p>
+              <Button
+                className="mt-4 bg-blue-600 text-white hover:bg-blue-700"
+                onClick={() => navigate(CREATE_CGWA_PATH)}
+              >
+                Create CGWA
+              </Button>
+            </Card>
+          )}
+        </>
       )}
 
       <Dialog

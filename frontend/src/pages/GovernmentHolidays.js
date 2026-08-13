@@ -11,8 +11,10 @@ import { toast } from 'sonner';
 import { Plus, Calendar, Trash2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
-const API = `${BACKEND_URL}/api`;
+import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
+
+const BACKEND_URL = BACKEND_BASE_URL;
+const API = API_ENDPOINT;
 
 const authHeader = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
 

@@ -22,8 +22,10 @@ import { toast } from 'sonner';
 import { Plus, Check, X, Receipt, Image as ImageIcon, Calculator, Loader, Paperclip, ChevronDown, ChevronRight, User, Upload, ArrowRight } from 'lucide-react';
 import { FilePreviewSimple } from '@/components/FilePreviewSimple';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
-const API = `${BACKEND_URL}/api`;
+import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
+
+const BACKEND_URL = BACKEND_BASE_URL;
+const API = API_ENDPOINT;
 
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
 

@@ -23,6 +23,8 @@ import {
   Fuel,
   MapPin,
   Droplets,
+  Eye,
+  FileClock,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -54,7 +56,15 @@ function AppHeaderBar({
   onToggleDesktopSidebar,
 }) {
   const header = usePageHeader();
-  const title = filteredNavItems.find((item) => currentPath === item.path)?.label || 'Dashboard';
+  const title = (() => {
+    if (currentPath.startsWith('/create-cgwa/')) return 'Edit CGWA';
+    const exact = filteredNavItems.find((item) => currentPath === item.path);
+    if (exact) return exact.label;
+    const nested = filteredNavItems.find(
+      (item) => item.path !== '/' && currentPath.startsWith(`${item.path}/`),
+    );
+    return nested?.label || 'Dashboard';
+  })();
 
   return (
     <header className="min-h-12 sm:min-h-14 border-b border-gray-200 bg-white flex items-center gap-2.5 sm:gap-3 px-3 sm:px-5 py-2 sm:py-2.5 shadow-sm flex-shrink-0 pt-[env(safe-area-inset-top)]">
@@ -162,7 +172,9 @@ export const Layout = () => {
         { icon: Target, label: 'Leads', path: '/leads', permission: 'leads' },
         { icon: BookOpen, label: 'Create Ledger', path: '/customers', permission: 'customers' },
         { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
-        { icon: Droplets, label: 'CGW Flow Metre', path: '/cgw-flow-metre', permission: 'cgw-flow-metre' },
+        { icon: Droplets, label: 'Create CGWA', path: '/create-cgwa', permission: 'cgw-flow-metre' },
+        { icon: FileClock, label: 'My Drafts', path: '/my-cgwa-drafts', permission: 'cgw-flow-metre' },
+        { icon: Eye, label: 'View CGWA', path: '/view-cgwa', permission: 'cgw-flow-metre' },
       ],
     },
     {
@@ -219,7 +231,7 @@ export const Layout = () => {
 
   useEffect(() => {
     const activeSection = filteredNavSections.find((section) =>
-      section.items.some((item) => item.path === currentPath),
+      section.items.some((item) => currentPath === item.path || currentPath.startsWith(`${item.path}/`)),
     );
     if (activeSection?.label) {
       setCollapsedSections((prev) => {
@@ -241,14 +253,17 @@ export const Layout = () => {
     return collapsedSections[section.id] === true;
   };
 
+  const pathIsActive = (path) => currentPath === path || currentPath.startsWith(`${path}/`);
+
   const renderNavLink = (item, { onNavigate, compact = false, mobile = false } = {}) => (
     <NavLink
       key={item.path}
       to={item.path}
       onClick={onNavigate}
       data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
-      className={({ isActive }) =>
-        `flex items-center ${compact ? 'justify-center px-2' : 'gap-3 px-4'} ${
+      className={() => {
+        const isActive = pathIsActive(item.path);
+        return `flex items-center ${compact ? 'justify-center px-2' : 'gap-3 px-4'} ${
           mobile ? 'py-3 rounded-xl min-h-[48px]' : 'py-2.5 rounded-lg'
         } transition-colors text-sm ${
           isActive
@@ -256,8 +271,8 @@ export const Layout = () => {
             : mobile
               ? 'text-gray-700 hover:bg-gray-100 active:bg-gray-200'
               : 'text-gray-700 hover:bg-gray-100'
-        }`
-      }
+        }`;
+      }}
       title={item.label}
     >
       <item.icon className="h-5 w-5 flex-shrink-0" />

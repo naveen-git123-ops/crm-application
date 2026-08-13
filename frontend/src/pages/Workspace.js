@@ -8,8 +8,10 @@ import { toast } from 'sonner';
 import { LogOut, FileText, Calendar } from 'lucide-react';
 import { todayISTDateString } from '@/utils/date';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
-const API = `${BACKEND_URL}/api`;
+import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
+
+const BACKEND_URL = BACKEND_BASE_URL;
+const API = API_ENDPOINT;
 
 export const Workspace = () => {
   const { user } = useAuth();

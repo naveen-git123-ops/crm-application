@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
-const API = `${BACKEND_URL}/api`;
+const BACKEND_URL = BACKEND_BASE_URL;
+const API = API_ENDPOINT;
 
 const MIN_INTERVAL_MS = 3 * 60 * 1000;
 const MIN_DISTANCE_M = 35;

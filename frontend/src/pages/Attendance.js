@@ -38,8 +38,10 @@ import {
   punchReasonDialogDescription,
 } from '@/utils/attendanceRules';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
-const API = `${BACKEND_URL}/api`;
+import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
+
+const BACKEND_URL = BACKEND_BASE_URL;
+const API = API_ENDPOINT;
 
 // Helper function to format punch times in IST (HH:MM:SS format)
 const formatPunchTime = (punchTimeStr) => {

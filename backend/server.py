@@ -5356,6 +5356,106 @@ def _cgw_read_attachment_bytes(url: str) -> bytes:
     raise HTTPException(status_code=400, detail='Unsupported file URL')
 
 
+CGWA_INVENTORY_ID_RE = re.compile(r'^CGWA(\d+)(?:-(\d+))?$', re.IGNORECASE)
+
+
+def _parse_cgwa_inventory_id(value: Optional[str]) -> Optional[Tuple[int, int]]:
+    """Return (root_number, suffix) where suffix 0 is the parent id CGWA001."""
+    match = CGWA_INVENTORY_ID_RE.match((value or '').strip())
+    if not match:
+        return None
+    root = int(match.group(1))
+    suffix = int(match.group(2)) if match.group(2) is not None else 0
+    return root, suffix
+
+
+def _format_cgwa_inventory_id(root_num: int, suffix: int = 0) -> str:
+    base = f'CGWA{int(root_num):03d}'
+    if suffix and int(suffix) > 0:
+        return f'{base}-{int(suffix)}'
+    return base
+
+
+def _is_cgw_draft_inventory_id(inventory_id: Optional[str]) -> bool:
+    return (inventory_id or '').strip().upper().startswith('DRAFT')
+
+
+def _cgwa_ids_from_rows(rows, extra_ids: Optional[List[str]] = None) -> List[str]:
+    ids = [inv for inv in rows if inv]
+    if extra_ids:
+        ids.extend([x for x in extra_ids if x])
+    return ids
+
+
+def _next_global_cgwa_root_num(db: Session, extra_ids: Optional[List[str]] = None) -> int:
+    rows = [r[0] for r in db.query(CGWFlowMetreModel.inventory_id).all()]
+    max_root = 0
+    for inv in _cgwa_ids_from_rows(rows, extra_ids):
+        parsed = _parse_cgwa_inventory_id(inv)
+        if parsed:
+            max_root = max(max_root, parsed[0])
+    return max_root + 1
+
+
+def _cgwa_family_for_customer(
+    db: Session,
+    customer_id: Optional[str],
+    extra_ids: Optional[List[str]] = None,
+) -> Tuple[Optional[int], int]:
+    """Return (root_number, max_suffix) for this customer's CGWA family, or (None, 0)."""
+    rows = []
+    if customer_id:
+        rows = db.query(CGWFlowMetreModel.inventory_id, CGWFlowMetreModel.status).filter(
+            CGWFlowMetreModel.customer_id == customer_id
+        ).all()
+    ids = []
+    for inv, status in rows:
+        if str(status or '').lower() == 'draft':
+            continue
+        if inv:
+            ids.append(inv)
+    if extra_ids:
+        ids.extend([x for x in extra_ids if x])
+
+    families: Dict[int, int] = {}
+    for inv in ids:
+        parsed = _parse_cgwa_inventory_id(inv)
+        if not parsed:
+            continue
+        root, suffix = parsed
+        families[root] = max(families.get(root, -1), suffix)
+    if not families:
+        return None, 0
+    root_num = min(families)
+    return root_num, max(families[root_num], 0)
+
+
+def _allocate_cgwa_inventory_ids(
+    db: Session,
+    customer_id: Optional[str],
+    count: int,
+    extra_customer_ids: Optional[List[str]] = None,
+    extra_all_ids: Optional[List[str]] = None,
+) -> List[str]:
+    """First record for a customer is CGWA001; later records are CGWA001-1, CGWA001-2, ..."""
+    if count < 1:
+        return []
+    extra_customer_ids = extra_customer_ids or []
+    extra_all_ids = extra_all_ids or []
+    allocated: List[str] = []
+    root_num, max_suffix = _cgwa_family_for_customer(db, customer_id, extra_ids=extra_customer_ids)
+    if root_num is None:
+        root_num = _next_global_cgwa_root_num(db, extra_ids=extra_all_ids)
+        allocated.append(_format_cgwa_inventory_id(root_num, 0))
+        for i in range(1, count):
+            allocated.append(_format_cgwa_inventory_id(root_num, i))
+        return allocated
+    start = max_suffix + 1
+    for i in range(count):
+        allocated.append(_format_cgwa_inventory_id(root_num, start + i))
+    return allocated
+
+
 @api_router.post('/cgw-flow-metres/bulk', response_model=List[CGWFlowMetre])
 def create_cgw_flow_metres_bulk(
     data: CGWFlowMetreBulkCreate,
@@ -5368,21 +5468,15 @@ def create_cgw_flow_metres_bulk(
     if not data.equipments:
         raise HTTPException(status_code=400, detail='At least one equipment row is required')
 
-    max_inv_num = db.query(
-        func.max(cast(func.substr(CGWFlowMetreModel.inventory_id, 4), Integer))
-    ).scalar()
-    next_inv_num = (max_inv_num or 0) + 1
-
     # Draft rows should only be created via the explicit draft endpoints.
     normalized_status = (data.status or 'Active').strip()
     if normalized_status.lower() == 'draft':
         normalized_status = 'Active'
 
-    new_items: List[CGWFlowMetreModel] = []
-    for eq in data.equipments:
-        inv_id = f'INV{str(next_inv_num).zfill(4)}'
-        next_inv_num += 1
+    allocated_ids = _allocate_cgwa_inventory_ids(db, data.customer_id, len(data.equipments))
 
+    new_items: List[CGWFlowMetreModel] = []
+    for eq, inv_id in zip(data.equipments, allocated_ids):
         new_items.append(CGWFlowMetreModel(
             inventory_id=inv_id,
             customer_id=data.customer_id,
@@ -5457,12 +5551,7 @@ def create_cgw_flow_metre(data: CGWFlowMetreCreate, current_user: UserModel = De
     if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
     
-    # Generate inventory_id
-    max_inv_num = db.query(
-        func.max(cast(func.substr(CGWFlowMetreModel.inventory_id, 4), Integer))
-    ).scalar()
-    next_inv_num = (max_inv_num or 0) + 1
-    inv_id = f'INV{str(next_inv_num).zfill(4)}'
+    inv_id = _allocate_cgwa_inventory_ids(db, data.customer_id, 1)[0]
     
     normalized_status = (data.status or 'Active').strip()
     if normalized_status.lower() == 'draft':
@@ -5607,9 +5696,12 @@ def update_cgw_flow_metre(inventory_id: str, data: CGWFlowMetreUpdate, current_u
     item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
     if not item:
         raise HTTPException(status_code=404, detail='Inventory item not found')
-    
+
+    needs_cgwa_id = _is_cgw_draft_inventory_id(item.inventory_id)
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(item, key, value)
+    if needs_cgwa_id and str(item.status or '').lower() != 'draft':
+        item.inventory_id = _allocate_cgwa_inventory_ids(db, item.customer_id, 1)[0]
     item.last_modified_by_name = current_user.name
     item.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -6073,16 +6165,24 @@ def download_cgw_attachments_zip(
 
 @api_router.delete('/cgw-flow-metres/{inventory_id}')
 def delete_cgw_flow_metre(inventory_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    if not can_delete_cgw(current_user):
-        raise HTTPException(status_code=403, detail='Not authorized')
-    
     item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
     if not item:
         raise HTTPException(status_code=404, detail='Inventory item not found')
-    
+
+    is_draft = str(item.status or '').strip().lower() == 'draft'
+    owner_name = (item.created_by_name or '').strip().lower()
+    my_name = (current_user.name or '').strip().lower()
+    can_delete_own_draft = (
+        is_draft
+        and can_manage_cgw(current_user, db)
+        and (not owner_name or owner_name == my_name)
+    )
+    if not can_delete_cgw(current_user) and not can_delete_own_draft:
+        raise HTTPException(status_code=403, detail='Not authorized')
+
     db.delete(item)
     db.commit()
-    
+
     return {'message': 'Inventory item deleted successfully'}
 
 
@@ -6275,16 +6375,13 @@ def import_cgw_from_excel(
                 return 'Active'
             return str(value).strip() or 'Active'
 
-        max_inv_num = db.query(
-            func.max(cast(func.substr(CGWFlowMetreModel.inventory_id, 4), Integer))
-        ).scalar()
-        next_inv_num = (max_inv_num or 0) + 1
-
         max_cust_num = db.query(
             func.max(cast(func.substr(CustomerModel.customer_id, 5), Integer))
         ).scalar()
         next_cust_num = (max_cust_num or 0) + 1
-        
+        import_ids_by_customer: Dict[str, List[str]] = {}
+        import_all_ids: List[str] = []
+
         imported_count = 0
         failed_count = 0
         errors = []
@@ -6316,9 +6413,18 @@ def import_cgw_from_excel(
                     db.add(customer)
                     db.flush()
 
-                inv_id = f'INV{str(next_inv_num).zfill(4)}'
-                next_inv_num += 1
-                
+                cust_key = customer.id
+                extra_for_cust = import_ids_by_customer.get(cust_key, [])
+                inv_id = _allocate_cgwa_inventory_ids(
+                    db,
+                    cust_key,
+                    1,
+                    extra_customer_ids=extra_for_cust,
+                    extra_all_ids=import_all_ids,
+                )[0]
+                import_ids_by_customer.setdefault(cust_key, []).append(inv_id)
+                import_all_ids.append(inv_id)
+
                 data = {
                     'inventory_id': inv_id,
                     'customer_id': customer.id,
@@ -11976,7 +12082,7 @@ def run_cgw_renewal_digest_job(
         ]
         for r in past:
             body_lines.append('---')
-            body_lines.append(f'Inventory ID: {r.inventory_id or "—"}')
+            body_lines.append(f'CGWA ID: {r.inventory_id or "—"}')
             body_lines.append(f'Customer: {r.customer_name or "—"}')
             body_lines.append(f'Contact person: {r.contact_person or "—"}')
             body_lines.append(f'Person mobile: {r.person_mobile_number or "—"}')

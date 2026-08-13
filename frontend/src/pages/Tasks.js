@@ -45,8 +45,10 @@ import {
   X,
 } from 'lucide-react';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
+
+const BACKEND_URL = BACKEND_BASE_URL;
+const API = API_ENDPOINT;
 
 const PRIORITY_STYLES = {
   Low: { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-800' },

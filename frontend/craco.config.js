@@ -1,6 +1,11 @@
 // craco.config.js
 const path = require("path");
-require("dotenv").config();
+require("dotenv").config({ path: path.resolve(__dirname, ".env") });
+require("dotenv").config({ path: path.resolve(__dirname, ".env.local") });
+// Local UI → production API (ignore leftover localhost env values).
+if (process.env.REACT_APP_USE_LOCAL_API !== "true") {
+  process.env.REACT_APP_BACKEND_URL = "https://api.resoline.in";
+}
 
 // Check if we're in development/preview mode (not production build)
 // Craco sets NODE_ENV=development for start, NODE_ENV=production for build

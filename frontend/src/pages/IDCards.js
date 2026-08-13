@@ -9,8 +9,10 @@ import { toast } from 'sonner';
 import { Download, Printer, Search, CreditCard, AlertCircle } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
+
+const BACKEND_URL = BACKEND_BASE_URL;
+const API = API_ENDPOINT;
 
 // Company contact - update as needed
 const COMPANY_NAME = 'RESOLINE TECHBIS';

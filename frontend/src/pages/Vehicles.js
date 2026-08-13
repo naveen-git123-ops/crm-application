@@ -8,11 +8,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
+import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 
 const Vehicles = () => {
   const { user } = useAuth();
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
-  const API = `${BACKEND_URL}/api`;
+  const BACKEND_URL = BACKEND_BASE_URL;
+  const API = API_ENDPOINT;
 
   // STATE - VEHICLES
   const [vehicles, setVehicles] = useState([]);
