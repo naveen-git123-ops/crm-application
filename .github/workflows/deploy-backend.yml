@@ -35,7 +35,6 @@ jobs:
             git rebase --abort 2>/dev/null || true
             git reset --merge 2>/dev/null || true
             git reset --hard HEAD
-            git stash drop 2>/dev/null || true
             # Hard reset to origin/main. Do not stash/pull/pop — leftover conflict
             # markers crash uvicorn and nginx returns 502 on OPTIONS /api/auth/login.
             git fetch origin main
@@ -43,6 +42,32 @@ jobs:
             if [ -f /tmp/crm-backend.env.bak ]; then
               cp /tmp/crm-backend.env.bak backend/.env
             fi
+            # systemd EnvironmentFile rejects a UTF-8 BOM on the first line
+            # (logs: Ignoring invalid environment assignment for DB_NAME).
+            python3 - <<'PY'
+from pathlib import Path
+p = Path('backend/.env')
+if p.exists():
+    data = p.read_bytes()
+    if data.startswith(b'\xef\xbb\xbf'):
+        data = data[3:]
+        p.write_bytes(data)
+    text = data.decode('utf-8', errors='replace')
+    if '<<<<<<<' in text:
+        lines, skip = [], False
+        for line in text.splitlines(True):
+            if line.startswith('<<<<<<< '):
+                continue
+            if line.startswith('======='):
+                skip = True
+                continue
+            if line.startswith('>>>>>>> '):
+                skip = False
+                continue
+            if not skip:
+                lines.append(line)
+        p.write_text(''.join(lines), encoding='utf-8')
+PY
             cd backend
 
             # Ensure Telegram bot config is present in .env (never committed to git — sourced from
@@ -59,6 +84,7 @@ jobs:
                 echo "${key}=${value}" >> .env
               fi
             }
+            set_env_var DATABASE_URL "${{ secrets.DATABASE_URL }}"
             set_env_var TELEGRAM_BOT_TOKEN "${{ secrets.TELEGRAM_BOT_TOKEN }}"
             set_env_var TELEGRAM_BOT_USERNAME "${{ secrets.TELEGRAM_BOT_USERNAME }}"
             set_env_var TELEGRAM_WEBHOOK_URL "${{ secrets.TELEGRAM_WEBHOOK_URL }}"

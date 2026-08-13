@@ -951,6 +951,14 @@ try:
 except Exception as e:
     print(f'Base.metadata.create_all failed (API will still start): {e}')
 
+
+def _safe_migrate(fn):
+    """Import-time migrations must not take down uvicorn (nginx 502)."""
+    try:
+        fn()
+    except Exception as e:
+        print(f'Startup migration {fn.__name__} skipped (API will still start): {e}')
+
 SETTING_CGW_DIGEST_EMAIL = 'cgw_renewal_digest_email'
 SETTING_CGW_DIGEST_ENABLED = 'cgw_renewal_digest_enabled'
 
@@ -1018,8 +1026,7 @@ def migrate_leads_add_created_by():
         except Exception:
             pass
 
-migrate_leads_add_created_by()
-
+_safe_migrate(migrate_leads_add_created_by)
 def migrate_attendance_location_and_tour():
     """Add location and tour columns to attendance if missing."""
     from sqlalchemy import text
@@ -1039,8 +1046,7 @@ def migrate_attendance_location_and_tour():
         except Exception:
             pass
 
-migrate_attendance_location_and_tour()
-
+_safe_migrate(migrate_attendance_location_and_tour)
 def migrate_attendance_sessions_table():
     """Create attendance_sessions table if missing."""
     from sqlalchemy import text
@@ -1099,9 +1105,7 @@ def migrate_attendance_sessions_table():
         except Exception as e:
             print(f"Migration error for attendance_sessions: {e}")
 
-migrate_attendance_sessions_table()
-
-
+_safe_migrate(migrate_attendance_sessions_table)
 def migrate_employee_location_logs_table():
     """Create employee_location_logs table for continuous GPS tracking."""
     from sqlalchemy import text, inspect
@@ -1114,8 +1118,7 @@ def migrate_employee_location_logs_table():
         print(f"Migration error for employee_location_logs: {e}")
 
 
-migrate_employee_location_logs_table()
-
+_safe_migrate(migrate_employee_location_logs_table)
 def migrate_attendance_new_columns():
     """Add new columns to attendance if missing."""
     from sqlalchemy import text
@@ -1146,8 +1149,7 @@ def migrate_attendance_new_columns():
         except Exception as e:
             print(f"Migration error for attendance new columns: {e}")
 
-migrate_attendance_new_columns()
-
+_safe_migrate(migrate_attendance_new_columns)
 def migrate_late_punch_reason_columns():
     """Add employee_reason column to late punch request tables if missing."""
     from sqlalchemy import text, inspect
@@ -1165,8 +1167,7 @@ def migrate_late_punch_reason_columns():
         except Exception:
             pass
 
-migrate_late_punch_reason_columns()
-
+_safe_migrate(migrate_late_punch_reason_columns)
 def migrate_tour_reason_columns():
     """Add tour_place and tour_reason columns to attendance if missing."""
     from sqlalchemy import text, inspect
@@ -1182,8 +1183,7 @@ def migrate_tour_reason_columns():
         except Exception:
             pass
 
-migrate_tour_reason_columns()
-
+_safe_migrate(migrate_tour_reason_columns)
 def migrate_leads_add_category_and_contacts():
     """Add category, sub_category, and contacts columns to leads if missing (for new Leads UI)."""
     from sqlalchemy import text
@@ -1275,11 +1275,9 @@ def migrate_leads_add_customer_vendor():
         print(f'Migration error for leads customer/vendor: {e}')
 
 
-migrate_leads_add_negotiation_fields()
-migrate_leads_add_enquiry_date()
-migrate_leads_add_customer_vendor()
-
-
+_safe_migrate(migrate_leads_add_negotiation_fields)
+_safe_migrate(migrate_leads_add_enquiry_date)
+_safe_migrate(migrate_leads_add_customer_vendor)
 def migrate_leads_carry_order_workflow():
     """Add workflow_stage and workflow_payload for carry-and-order PRD pipeline."""
     from sqlalchemy import text, inspect
@@ -1297,11 +1295,9 @@ def migrate_leads_carry_order_workflow():
         print(f'Migration error for leads workflow: {e}')
 
 
-migrate_leads_carry_order_workflow()
-migrate_orders_add_attachments_and_estimation()
-
-migrate_leads_add_category_and_contacts()
-
+_safe_migrate(migrate_leads_carry_order_workflow)
+_safe_migrate(migrate_orders_add_attachments_and_estimation)
+_safe_migrate(migrate_leads_add_category_and_contacts)
 DEFAULT_LEAD_CATEGORIES = [
     'Project',
     'Automation',
@@ -1357,8 +1353,7 @@ def migrate_lead_status_history():
             # Table doesn't exist, it will be created by Base.metadata.create_all()
             pass
 
-migrate_lead_status_history()
-
+_safe_migrate(migrate_lead_status_history)
 def migrate_customers():
     """Create customers table if missing."""
     from sqlalchemy import text
@@ -1371,9 +1366,7 @@ def migrate_customers():
             # Table doesn't exist, it will be created by Base.metadata.create_all()
             pass
 
-migrate_customers()
-
-
+_safe_migrate(migrate_customers)
 def migrate_customers_entity_type():
     """Add entity_type (0=customer, 1=vendor) and mark all existing rows as customers."""
     from sqlalchemy import text, inspect
@@ -1415,10 +1408,8 @@ def migrate_customer_attachments_json():
         print(f'Migration error for customer attachments_json: {e}')
 
 
-migrate_customer_attachments_json()
-migrate_customers_entity_type()
-
-
+_safe_migrate(migrate_customer_attachments_json)
+_safe_migrate(migrate_customers_entity_type)
 def migrate_vehicle_usage_is_claimed():
     """Add is_claimed column to vehicle_usage if missing."""
     from sqlalchemy import text, inspect
@@ -1433,8 +1424,7 @@ def migrate_vehicle_usage_is_claimed():
     except Exception as e:
         print(f"Migration error for vehicle_usage is_claimed: {e}")
 
-migrate_vehicle_usage_is_claimed()
-
+_safe_migrate(migrate_vehicle_usage_is_claimed)
 def migrate_vehicle_usage_own_vehicle():
     """Add own_vehicle_type and own_vehicle_milage columns to vehicle_usage if missing."""
     from sqlalchemy import text, inspect
@@ -1450,8 +1440,7 @@ def migrate_vehicle_usage_own_vehicle():
     except Exception as e:
         print(f"Migration error for vehicle_usage own vehicle fields: {e}")
 
-migrate_vehicle_usage_own_vehicle()
-
+_safe_migrate(migrate_vehicle_usage_own_vehicle)
 def migrate_expenses_add_attachments():
     """Add attachment_path_1 and attachment_path_2 columns to expenses if missing."""
     from sqlalchemy import text, inspect
@@ -1479,8 +1468,7 @@ def migrate_expenses_add_attachments():
     except Exception as e:
         print(f"Migration error for expenses attachments: {e}")
 
-migrate_expenses_add_attachments()
-
+_safe_migrate(migrate_expenses_add_attachments)
 def migrate_leaves_add_attachment():
     """Add attachment_path column to leaves if missing."""
     from sqlalchemy import text, inspect
@@ -1500,8 +1488,7 @@ def migrate_leaves_add_attachment():
     except Exception as e:
         print(f"Migration error for leaves attachment: {e}")
 
-migrate_leaves_add_attachment()
-
+_safe_migrate(migrate_leaves_add_attachment)
 def migrate_leaves_add_half_day_session():
     """Add half_day_session column to leaves if missing."""
     from sqlalchemy import text, inspect
@@ -1520,9 +1507,7 @@ def migrate_leaves_add_half_day_session():
     except Exception as e:
         print(f'Migration error for leaves half_day_session: {e}')
 
-migrate_leaves_add_half_day_session()
-
-
+_safe_migrate(migrate_leaves_add_half_day_session)
 def migrate_users_telegram_columns():
     """Add Telegram notification columns to users if missing."""
     from sqlalchemy import inspect
@@ -1548,9 +1533,7 @@ def migrate_users_telegram_columns():
         print(f'Migration error for users telegram columns: {e}')
 
 
-migrate_users_telegram_columns()
-
-
+_safe_migrate(migrate_users_telegram_columns)
 def migrate_employees_telegram_chat_id():
     """Add telegram_chat_id to employees if missing (NULL for existing rows)."""
     from sqlalchemy import inspect
@@ -1570,9 +1553,7 @@ def migrate_employees_telegram_chat_id():
         print(f'Migration error for employees telegram_chat_id: {e}')
 
 
-migrate_employees_telegram_chat_id()
-
-
+_safe_migrate(migrate_employees_telegram_chat_id)
 def migrate_cgw_flow_metres_product_columns():
     """Add product_code/model_no to cgw_flow_metres and backfill from telemetric_system."""
     from sqlalchemy import text, inspect
@@ -1614,9 +1595,7 @@ def migrate_cgw_flow_metres_product_columns():
     except Exception as e:
         print(f"Migration error for cgw_flow_metres product columns: {e}")
 
-migrate_cgw_flow_metres_product_columns()
-
-
+_safe_migrate(migrate_cgw_flow_metres_product_columns)
 def migrate_cgw_flow_metres_noc_columns():
     """Add NOC PDF + metadata columns to cgw_flow_metres if missing."""
     from sqlalchemy import text, inspect
@@ -1662,9 +1641,7 @@ def migrate_cgw_flow_metres_noc_columns():
         print(f'Migration error for cgw_flow_metres NOC columns: {e}')
 
 
-migrate_cgw_flow_metres_noc_columns()
-
-
+_safe_migrate(migrate_cgw_flow_metres_noc_columns)
 def migrate_cgw_flow_metres_attachments_json():
     """Add cgw_attachments_json for multi-file S3 attachments per inventory row."""
     from sqlalchemy import text, inspect
@@ -1684,9 +1661,7 @@ def migrate_cgw_flow_metres_attachments_json():
         print(f'Migration error for cgw_flow_metres cgw_attachments_json: {e}')
 
 
-migrate_cgw_flow_metres_attachments_json()
-
-
+_safe_migrate(migrate_cgw_flow_metres_attachments_json)
 def migrate_cgw_flow_metres_flow_metre_details_columns():
     """Add flow metre / calibration / telemetry detail columns to cgw_flow_metres if missing."""
     from sqlalchemy import text, inspect
@@ -1737,9 +1712,7 @@ def migrate_cgw_flow_metres_flow_metre_details_columns():
         print(f'Migration error for cgw_flow_metres flow metre details: {e}')
 
 
-migrate_cgw_flow_metres_flow_metre_details_columns()
-
-
+_safe_migrate(migrate_cgw_flow_metres_flow_metre_details_columns)
 def migrate_cgw_flow_metres_piezometer_details_json():
     """Add piezometer_details_json to cgw_flow_metres if missing."""
     from sqlalchemy import text, inspect
@@ -1757,9 +1730,7 @@ def migrate_cgw_flow_metres_piezometer_details_json():
         print(f'Migration error for piezometer_details_json: {e}')
 
 
-migrate_cgw_flow_metres_piezometer_details_json()
-
-
+_safe_migrate(migrate_cgw_flow_metres_piezometer_details_json)
 def migrate_cgw_flow_metres_telemetry_portal_columns():
     """Add telemetry portal URL / login columns to cgw_flow_metres if missing."""
     from sqlalchemy import text, inspect
@@ -1786,9 +1757,7 @@ def migrate_cgw_flow_metres_telemetry_portal_columns():
         print(f'Migration error for telemetry portal columns: {e}')
 
 
-migrate_cgw_flow_metres_telemetry_portal_columns()
-
-
+_safe_migrate(migrate_cgw_flow_metres_telemetry_portal_columns)
 def migrate_cgw_flow_metres_audit_columns():
     """Add created_by_name / last_modified_by_name to cgw_flow_metres if missing."""
     from sqlalchemy import text, inspect
@@ -1805,9 +1774,7 @@ def migrate_cgw_flow_metres_audit_columns():
         print(f'Migration error for cgw_flow_metres audit columns: {e}')
 
 
-migrate_cgw_flow_metres_audit_columns()
-
-
+_safe_migrate(migrate_cgw_flow_metres_audit_columns)
 def _cgw_sql_type_for_column(col) -> str:
     """Best-effort SQL type mapping for dynamic CGW column backfill."""
     t = col.type
@@ -1848,9 +1815,7 @@ def migrate_cgw_flow_metres_model_columns():
         print(f'Migration error for cgw_flow_metres model column sync: {e}')
 
 
-migrate_cgw_flow_metres_model_columns()
-
-
+_safe_migrate(migrate_cgw_flow_metres_model_columns)
 def migrate_cgw_flow_metres_wizard_draft_json():
     """Add wizard_draft_json to cgw_flow_metres if missing."""
     from sqlalchemy import text, inspect
@@ -1867,8 +1832,7 @@ def migrate_cgw_flow_metres_wizard_draft_json():
         print(f'Migration error for cgw_flow_metres wizard_draft_json: {e}')
 
 
-migrate_cgw_flow_metres_wizard_draft_json()
-
+_safe_migrate(migrate_cgw_flow_metres_wizard_draft_json)
 # Seed default roles (Admin cannot be edited/deleted; others can)
 DEFAULT_PERMISSION_KEYS = [
     "dashboard", "leads", "employees", "attendance", "monthly-report", "leaves", "expenses",
@@ -1934,8 +1898,7 @@ def migrate_grant_monthly_report_to_employee_role():
         db.close()
 
 
-migrate_grant_monthly_report_to_employee_role()
-
+_safe_migrate(migrate_grant_monthly_report_to_employee_role)
 # ============= PYDANTIC MODELS =============
 
 class UserRole(BaseModel):
