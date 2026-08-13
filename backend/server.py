@@ -1875,8 +1875,8 @@ def ensure_admin_has_all_permissions():
     finally:
         db.close()
 
-seed_roles_if_needed()
-ensure_admin_has_all_permissions()
+_safe_migrate(seed_roles_if_needed)
+_safe_migrate(ensure_admin_has_all_permissions)
 
 
 def migrate_grant_monthly_report_to_employee_role():
