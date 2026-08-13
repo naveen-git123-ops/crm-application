@@ -9,6 +9,7 @@ export const EMPTY_PIEZO_ROW = {
   piezometer_make: '',
   piezometer_serial: '',
   sensor_cable_length: '',
+  commissioning_date: '',
   calibration_valid_from: '',
   calibration_valid_to: '',
   telemetry_applicable: '',
@@ -22,6 +23,9 @@ export const EMPTY_PIEZO_ROW = {
   telemetry_sim_valid_to: '',
   telemetry_product_code: '',
   telemetry_serial_number: '',
+  telemetry_commissioning_date: '',
+  telemetry_sim_changed_count: '',
+  telemetry_recharge_count: '',
   telemetry_portal_url: '',
   telemetry_username: '',
   telemetry_password: '',
@@ -41,6 +45,8 @@ export const EMPTY_PIEZO_FILES = () => ({
   telemetryPhotos: [],
   telemetryExcel: [],
   priorTelemetryService: [],
+  serviceReport: [],
+  telemetryServiceReport: [],
 });
 
 export function piezoRowToPersist(r) {
@@ -57,6 +63,8 @@ const PIEZO_FILE_CATEGORIES = {
   telemetryPhotos: 'piezometer_telemetry',
   telemetryExcel: 'piezometer_excel_prior',
   priorTelemetryService: 'piezometer_service_report',
+  serviceReport: 'piezometer_service',
+  telemetryServiceReport: 'piezometer_telemetry_service',
 };
 
 function PiezometerAddWizardStep({
@@ -70,6 +78,7 @@ function PiezometerAddWizardStep({
   submitting,
   editingItem = null,
   onPreviewSaved = null,
+  onRemoveSaved = null,
 }) {
   return (
     <div className="space-y-4">
@@ -92,6 +101,7 @@ function PiezometerAddWizardStep({
             return {
               existingAttachments: editingItem?.cgw_attachments?.[cat] || [],
               onPreviewExisting: (att) => onPreviewSaved?.(att, cat),
+              onRemoveExisting: onRemoveSaved ? (att) => onRemoveSaved(att, cat) : null,
             };
           };
           return (
@@ -125,7 +135,25 @@ function PiezometerAddWizardStep({
                       className="h-11 border border-gray-300"
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-700">Commissioning date</Label>
+                    <Input
+                      type="date"
+                      value={row.commissioning_date}
+                      onChange={(e) => patchRow({ commissioning_date: e.target.value })}
+                      className="h-11 border border-gray-300"
+                    />
+                  </div>
                 </div>
+                <CgwMultiFilePicker
+                  label="Service Report"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                  files={bundle.serviceReport}
+                  onChange={(serviceReport) => patchBundle({ serviceReport })}
+                  hint="Optional; uploads after save (S3)."
+                  className="border-t border-gray-200 pt-3"
+                  {...pzSaved('serviceReport')}
+                />
                 <CgwMultiFilePicker
                   label="BW with piezometer photo"
                   accept="image/*,.jpg,.jpeg,.png,.webp,.gif"
@@ -301,7 +329,45 @@ function PiezometerAddWizardStep({
                         className="h-11"
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-gray-700">Commissioning date of telemetry</Label>
+                      <Input
+                        type="date"
+                        value={row.telemetry_commissioning_date}
+                        onChange={(e) => patchRow({ telemetry_commissioning_date: e.target.value })}
+                        className="h-11"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-gray-700">How many telemetry SIM changed?</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={row.telemetry_sim_changed_count}
+                        onChange={(e) => patchRow({ telemetry_sim_changed_count: e.target.value })}
+                        className="h-11"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-gray-700">How many times recharge done?</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={row.telemetry_recharge_count}
+                        onChange={(e) => patchRow({ telemetry_recharge_count: e.target.value })}
+                        className="h-11"
+                      />
+                    </div>
                   </div>
+
+                  <CgwMultiFilePicker
+                    label="Telemetry Service Report"
+                    accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                    files={bundle.telemetryServiceReport}
+                    onChange={(telemetryServiceReport) => patchBundle({ telemetryServiceReport })}
+                    hint="Optional; uploads after save (S3)."
+                    {...pzSaved('telemetryServiceReport')}
+                  />
 
                   <CgwMultiFilePicker
                     label="Upload telemetry photo"

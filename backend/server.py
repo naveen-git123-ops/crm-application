@@ -835,6 +835,7 @@ class CGWFlowMetreModel(Base):
     flow_meter_make = Column(String(100), nullable=True)
     flow_meter_size = Column(String(200), nullable=True)
     flow_meter_serial = Column(String(200), nullable=True)
+    flow_meter_commissioning_date = Column(String(10), nullable=True)  # YYYY-MM-DD
     calibration_valid_from = Column(String(10), nullable=True)
     calibration_valid_to = Column(String(10), nullable=True)
     telemetry_applicable = Column(String(10), nullable=True)
@@ -848,6 +849,9 @@ class CGWFlowMetreModel(Base):
     telemetry_sim_valid_to = Column(String(10), nullable=True)
     telemetry_product_code = Column(String(100), nullable=True)
     telemetry_serial_number = Column(String(200), nullable=True)
+    telemetry_commissioning_date = Column(String(10), nullable=True)  # YYYY-MM-DD
+    telemetry_sim_changed_count = Column(String(50), nullable=True)
+    telemetry_recharge_count = Column(String(50), nullable=True)
     telemetry_portal_url = Column(String(500), nullable=True)
     telemetry_username = Column(String(200), nullable=True)
     telemetry_password = Column(String(255), nullable=True)
@@ -1674,6 +1678,7 @@ def migrate_cgw_flow_metres_flow_metre_details_columns():
             ('flow_meter_make', 'VARCHAR(100) NULL'),
             ('flow_meter_size', 'VARCHAR(200) NULL'),
             ('flow_meter_serial', 'VARCHAR(200) NULL'),
+            ('flow_meter_commissioning_date', 'VARCHAR(10) NULL'),
             ('calibration_valid_from', 'VARCHAR(10) NULL'),
             ('calibration_valid_to', 'VARCHAR(10) NULL'),
             ('telemetry_applicable', 'VARCHAR(10) NULL'),
@@ -1687,6 +1692,9 @@ def migrate_cgw_flow_metres_flow_metre_details_columns():
             ('telemetry_sim_valid_to', 'VARCHAR(10) NULL'),
             ('telemetry_product_code', 'VARCHAR(100) NULL'),
             ('telemetry_serial_number', 'VARCHAR(200) NULL'),
+            ('telemetry_commissioning_date', 'VARCHAR(10) NULL'),
+            ('telemetry_sim_changed_count', 'VARCHAR(50) NULL'),
+            ('telemetry_recharge_count', 'VARCHAR(50) NULL'),
             ('telemetry_valid_from', 'VARCHAR(10) NULL'),
             ('telemetry_valid_to', 'VARCHAR(10) NULL'),
             ('telemetry_uploaded_previous_year', 'VARCHAR(10) NULL'),
@@ -3008,8 +3016,9 @@ class FuelExpenseClaimAction(BaseModel):
 class CgwFileAttachment(BaseModel):
     model_config = ConfigDict(extra='ignore')
     id: str
-    file_name: str
+    file_name: str = 'File'
     url: str
+    mime_type: Optional[str] = None
 
 
 CGW_MEDIA_ATTACHMENT_KEYS = (
@@ -3021,11 +3030,14 @@ CGW_MEDIA_ATTACHMENT_KEYS = (
     'tax_invoice',
     'telemetry_excel_prior',
     'telemetry_service_prior',
+    'telemetry_service_report',
     'piezometer_bw',
     'piezometer_calibration',
     'piezometer_telemetry',
     'piezometer_excel_prior',
     'piezometer_service_report',
+    'piezometer_service',
+    'piezometer_telemetry_service',
     'water_quality_certificate',
     'cte',
     'cto',
@@ -3062,6 +3074,7 @@ class CGWFlowMetre(BaseModel):
     flow_meter_make: Optional[str] = None
     flow_meter_size: Optional[str] = None
     flow_meter_serial: Optional[str] = None
+    flow_meter_commissioning_date: Optional[str] = None
     calibration_valid_from: Optional[str] = None
     calibration_valid_to: Optional[str] = None
     telemetry_applicable: Optional[str] = None
@@ -3075,6 +3088,9 @@ class CGWFlowMetre(BaseModel):
     telemetry_sim_valid_to: Optional[str] = None
     telemetry_product_code: Optional[str] = None
     telemetry_serial_number: Optional[str] = None
+    telemetry_commissioning_date: Optional[str] = None
+    telemetry_sim_changed_count: Optional[str] = None
+    telemetry_recharge_count: Optional[str] = None
     telemetry_portal_url: Optional[str] = None
     telemetry_username: Optional[str] = None
     telemetry_password: Optional[str] = None
@@ -3139,6 +3155,7 @@ class CGWFlowMetreCreate(BaseModel):
     flow_meter_make: Optional[str] = None
     flow_meter_size: Optional[str] = None
     flow_meter_serial: Optional[str] = None
+    flow_meter_commissioning_date: Optional[str] = None
     calibration_valid_from: Optional[str] = None
     calibration_valid_to: Optional[str] = None
     telemetry_applicable: Optional[str] = None
@@ -3152,6 +3169,9 @@ class CGWFlowMetreCreate(BaseModel):
     telemetry_sim_valid_to: Optional[str] = None
     telemetry_product_code: Optional[str] = None
     telemetry_serial_number: Optional[str] = None
+    telemetry_commissioning_date: Optional[str] = None
+    telemetry_sim_changed_count: Optional[str] = None
+    telemetry_recharge_count: Optional[str] = None
     telemetry_portal_url: Optional[str] = None
     telemetry_username: Optional[str] = None
     telemetry_password: Optional[str] = None
@@ -3173,6 +3193,7 @@ class CGWFlowMetreEquipmentLine(BaseModel):
     flow_meter_make: Optional[str] = None
     flow_meter_size: Optional[str] = None
     flow_meter_serial: Optional[str] = None
+    flow_meter_commissioning_date: Optional[str] = None
     calibration_valid_from: Optional[str] = None
     calibration_valid_to: Optional[str] = None
     telemetry_applicable: Optional[str] = None
@@ -3186,6 +3207,9 @@ class CGWFlowMetreEquipmentLine(BaseModel):
     telemetry_sim_valid_to: Optional[str] = None
     telemetry_product_code: Optional[str] = None
     telemetry_serial_number: Optional[str] = None
+    telemetry_commissioning_date: Optional[str] = None
+    telemetry_sim_changed_count: Optional[str] = None
+    telemetry_recharge_count: Optional[str] = None
     telemetry_portal_url: Optional[str] = None
     telemetry_username: Optional[str] = None
     telemetry_password: Optional[str] = None
@@ -3269,6 +3293,7 @@ class CGWFlowMetreUpdate(BaseModel):
     flow_meter_make: Optional[str] = None
     flow_meter_size: Optional[str] = None
     flow_meter_serial: Optional[str] = None
+    flow_meter_commissioning_date: Optional[str] = None
     calibration_valid_from: Optional[str] = None
     calibration_valid_to: Optional[str] = None
     telemetry_applicable: Optional[str] = None
@@ -3282,6 +3307,9 @@ class CGWFlowMetreUpdate(BaseModel):
     telemetry_sim_valid_to: Optional[str] = None
     telemetry_product_code: Optional[str] = None
     telemetry_serial_number: Optional[str] = None
+    telemetry_commissioning_date: Optional[str] = None
+    telemetry_sim_changed_count: Optional[str] = None
+    telemetry_recharge_count: Optional[str] = None
     telemetry_portal_url: Optional[str] = None
     telemetry_username: Optional[str] = None
     telemetry_password: Optional[str] = None
@@ -5225,7 +5253,21 @@ def _cgw_media_buckets_from_stored_json(item: CGWFlowMetreModel) -> Dict[str, Li
             for k in CGW_MEDIA_ATTACHMENT_KEYS:
                 v = data.get(k)
                 if isinstance(v, list):
-                    buckets[k] = [x for x in v if isinstance(x, dict) and x.get('id') and x.get('url')]
+                    cleaned = []
+                    for x in v:
+                        if not isinstance(x, dict):
+                            continue
+                        url = (x.get('url') or x.get('file_url') or '').strip()
+                        att_id = (x.get('id') or '').strip() or url
+                        if not url:
+                            continue
+                        cleaned.append({
+                            'id': att_id,
+                            'file_name': (x.get('file_name') or x.get('name') or x.get('filename') or 'File'),
+                            'url': url,
+                            **({'mime_type': x['mime_type']} if x.get('mime_type') else {}),
+                        })
+                    buckets[k] = cleaned
     except Exception:
         pass
     return buckets
@@ -5287,11 +5329,15 @@ def _cgw_attachment_suffix_for_category(category: str) -> str:
         'piezometer_bw': 'PIEZOMETER_BW',
         'piezometer_calibration': 'PIEZOMETER_CALIBRATION',
         'telemetry_photo': 'TELEMETRY_PHOTO',
-        'telemetry_excel_prior': 'TELEMETRY_EXCEL_PRIOR',
         'telemetry_service_report': 'TELEMETRY_SERVICE_REPORT',
+        'telemetry_excel_prior': 'TELEMETRY_EXCEL_PRIOR',
+        'telemetry_service_report_prior': 'TELEMETRY_SERVICE_REPORT',
+        'telemetry_service_prior': 'TELEMETRY_SERVICE_PRIOR',
         'piezometer_telemetry': 'PIEZOMETER_TELEMETRY',
         'piezometer_excel_prior': 'PIEZOMETER_EXCEL_PRIOR',
         'piezometer_service_report': 'PIEZOMETER_SERVICE_REPORT',
+        'piezometer_service': 'PIEZOMETER_SERVICE',
+        'piezometer_telemetry_service': 'PIEZOMETER_TELEMETRY_SERVICE',
         'water_quality_certificate': 'WATER_QUALITY_CERTIFICATE',
         'cte': 'CTE',
         'cto': 'CTO',
@@ -5368,6 +5414,7 @@ def create_cgw_flow_metres_bulk(
             flow_meter_make=eq.flow_meter_make,
             flow_meter_size=eq.flow_meter_size,
             flow_meter_serial=eq.flow_meter_serial,
+            flow_meter_commissioning_date=eq.flow_meter_commissioning_date,
             calibration_valid_from=eq.calibration_valid_from,
             calibration_valid_to=eq.calibration_valid_to,
             telemetry_applicable=eq.telemetry_applicable,
@@ -5381,6 +5428,9 @@ def create_cgw_flow_metres_bulk(
             telemetry_sim_valid_to=eq.telemetry_sim_valid_to,
             telemetry_product_code=eq.telemetry_product_code,
             telemetry_serial_number=eq.telemetry_serial_number,
+            telemetry_commissioning_date=eq.telemetry_commissioning_date,
+            telemetry_sim_changed_count=eq.telemetry_sim_changed_count,
+            telemetry_recharge_count=eq.telemetry_recharge_count,
             telemetry_portal_url=eq.telemetry_portal_url,
             telemetry_username=eq.telemetry_username,
             telemetry_password=eq.telemetry_password,
@@ -5450,6 +5500,7 @@ def create_cgw_flow_metre(data: CGWFlowMetreCreate, current_user: UserModel = De
         flow_meter_make=data.flow_meter_make,
         flow_meter_size=data.flow_meter_size,
         flow_meter_serial=data.flow_meter_serial,
+        flow_meter_commissioning_date=data.flow_meter_commissioning_date,
         calibration_valid_from=data.calibration_valid_from,
         calibration_valid_to=data.calibration_valid_to,
         telemetry_applicable=data.telemetry_applicable,
@@ -5463,6 +5514,9 @@ def create_cgw_flow_metre(data: CGWFlowMetreCreate, current_user: UserModel = De
         telemetry_sim_valid_to=data.telemetry_sim_valid_to,
         telemetry_product_code=data.telemetry_product_code,
         telemetry_serial_number=data.telemetry_serial_number,
+        telemetry_commissioning_date=data.telemetry_commissioning_date,
+        telemetry_sim_changed_count=data.telemetry_sim_changed_count,
+        telemetry_recharge_count=data.telemetry_recharge_count,
         telemetry_portal_url=data.telemetry_portal_url,
         telemetry_username=data.telemetry_username,
         telemetry_password=data.telemetry_password,
@@ -5605,11 +5659,14 @@ def _cgw_apply_draft_wizard_to_row(item: CGWFlowMetreModel, data: CGWFlowMetreDr
         for key in (
             'equipment_name', 'flowmeter_details', 'product_code', 'model_no',
             'flow_meter_make', 'flow_meter_size', 'flow_meter_serial',
+            'flow_meter_commissioning_date',
             'calibration_valid_from', 'calibration_valid_to',
             'telemetry_applicable', 'telemetry_company', 'telemetry_company_other',
             'telemetry_communication_via', 'telemetry_sim_provider', 'telemetry_sim_provider_other',
             'telemetry_sim_number', 'telemetry_sim_valid_from', 'telemetry_sim_valid_to',
-            'telemetry_product_code', 'telemetry_serial_number', 'telemetry_portal_url',
+            'telemetry_product_code', 'telemetry_serial_number',
+            'telemetry_commissioning_date', 'telemetry_sim_changed_count', 'telemetry_recharge_count',
+            'telemetry_portal_url',
             'telemetry_username', 'telemetry_password', 'telemetry_valid_from', 'telemetry_valid_to',
             'telemetry_uploaded_previous_year', 'telemetry_previous_serial',
             'telemetry_previous_data_available', 'telemetry_previous_data_from', 'telemetry_previous_data_to',

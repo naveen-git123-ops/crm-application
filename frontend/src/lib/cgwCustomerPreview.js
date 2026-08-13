@@ -5,6 +5,7 @@ export const PREVIEW_FLOW_ATTACHMENT_KEYS = [
   { key: 'calibration_certificate', label: 'Calibration certificate' },
   { key: 'service_report', label: 'Service report' },
   { key: 'telemetry', label: 'Telemetry device photos' },
+  { key: 'telemetry_service_report', label: 'Telemetry service report' },
   { key: 'telemetry_excel_prior', label: 'Telemetry Excel (prior year)' },
   { key: 'telemetry_service_prior', label: 'Telemetry service (prior year)' },
 ];
@@ -21,10 +22,12 @@ export const PREVIEW_LIFECYCLE_ATTACHMENT_KEYS = [
 
 export const PREVIEW_PIEZO_ATTACHMENT_KEYS = [
   { key: 'piezometer_bw', label: 'Piezometer BW photos' },
+  { key: 'piezometer_service', label: 'Piezometer service report' },
   { key: 'piezometer_calibration', label: 'Piezometer calibration' },
   { key: 'piezometer_telemetry', label: 'Piezometer telemetry photos' },
+  { key: 'piezometer_telemetry_service', label: 'Piezometer telemetry service report' },
   { key: 'piezometer_excel_prior', label: 'Piezometer Excel (prior year)' },
-  { key: 'piezometer_service_report', label: 'Piezometer service report' },
+  { key: 'piezometer_service_report', label: 'Piezometer prior-year service report' },
 ];
 
 const EMPTY_EQUIPMENT_ROW = {
@@ -35,6 +38,7 @@ const EMPTY_EQUIPMENT_ROW = {
   flow_meter_make: 'UPC',
   flow_meter_size: '',
   flow_meter_serial: '',
+  flow_meter_commissioning_date: '',
   calibration_valid_from: '',
   calibration_valid_to: '',
   telemetry_applicable: '',
@@ -48,6 +52,9 @@ const EMPTY_EQUIPMENT_ROW = {
   telemetry_sim_valid_to: '',
   telemetry_product_code: '',
   telemetry_serial_number: '',
+  telemetry_commissioning_date: '',
+  telemetry_sim_changed_count: '',
+  telemetry_recharge_count: '',
   telemetry_portal_url: '',
   telemetry_username: '',
   telemetry_password: '',
@@ -119,6 +126,7 @@ export function equipmentRowFromItem(item) {
     flow_meter_make: item?.flow_meter_make || 'UPC',
     flow_meter_size: item?.flow_meter_size || '',
     flow_meter_serial: item?.flow_meter_serial || '',
+    flow_meter_commissioning_date: item?.flow_meter_commissioning_date || '',
     calibration_valid_from: item?.calibration_valid_from || '',
     calibration_valid_to: item?.calibration_valid_to || '',
     telemetry_applicable: item?.telemetry_applicable || '',
@@ -132,6 +140,9 @@ export function equipmentRowFromItem(item) {
     telemetry_sim_valid_to: item?.telemetry_sim_valid_to || '',
     telemetry_product_code: item?.telemetry_product_code || '',
     telemetry_serial_number: item?.telemetry_serial_number || '',
+    telemetry_commissioning_date: item?.telemetry_commissioning_date || '',
+    telemetry_sim_changed_count: item?.telemetry_sim_changed_count || '',
+    telemetry_recharge_count: item?.telemetry_recharge_count || '',
     telemetry_portal_url: item?.telemetry_portal_url || '',
     telemetry_username: item?.telemetry_username || '',
     telemetry_password: item?.telemetry_password || '',
@@ -160,6 +171,65 @@ function parseWizardSnapshot(rows) {
   return null;
 }
 
+/** Normalize attachment map from API / list payloads (ignore empty buckets). */
+export function normalizeCgwAttachments(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const out = {};
+  for (const [key, list] of Object.entries(raw)) {
+    if (!Array.isArray(list) || !list.length) continue;
+    const cleaned = list
+      .filter((a) => a && (a.url || a.file_url))
+      .map((a) => ({
+        id: a.id || a.url || a.file_url,
+        file_name: a.file_name || a.name || a.filename || 'File',
+        url: a.url || a.file_url || '',
+        mime_type: a.mime_type || a.content_type || '',
+      }))
+      .filter((a) => a.url);
+    if (cleaned.length) out[key] = cleaned;
+  }
+  return out;
+}
+
+/** Merge attachment maps from multiple inventory rows (dedupe by id/url). */
+export function mergeCgwAttachments(...maps) {
+  const out = {};
+  for (const raw of maps) {
+    const m = normalizeCgwAttachments(raw);
+    for (const [key, list] of Object.entries(m)) {
+      const existing = out[key] || [];
+      const seen = new Set(existing.map((a) => a.id || a.url));
+      const next = [...existing];
+      for (const att of list) {
+        const token = att.id || att.url;
+        if (seen.has(token)) continue;
+        seen.add(token);
+        next.push(att);
+      }
+      if (next.length) out[key] = next;
+    }
+  }
+  return out;
+}
+
+const ALL_PREVIEW_ATTACHMENT_KEYS = [
+  ...PREVIEW_FLOW_ATTACHMENT_KEYS,
+  ...PREVIEW_LIFECYCLE_ATTACHMENT_KEYS,
+  ...PREVIEW_PIEZO_ATTACHMENT_KEYS,
+];
+
+/** Known labels plus any extra categories present on the row (so uploads never disappear). */
+export function attachmentKeyGroupsForMap(attachments) {
+  const known = new Set(ALL_PREVIEW_ATTACHMENT_KEYS.map((x) => x.key));
+  const groups = [...ALL_PREVIEW_ATTACHMENT_KEYS];
+  const map = normalizeCgwAttachments(attachments);
+  for (const key of Object.keys(map)) {
+    if (known.has(key)) continue;
+    groups.push({ key, label: key.replace(/_/g, ' ') });
+  }
+  return groups;
+}
+
 function piezometersFromRows(rows) {
   const merged = [];
   rows.forEach((row) => {
@@ -182,12 +252,18 @@ function piezometersFromRows(rows) {
   return merged;
 }
 
+function isDraftStatus(row) {
+  return String(row?.status || '').toLowerCase() === 'draft';
+}
+
 export function buildCustomerPreviewModel(rows, customerCode = '') {
   const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
   if (!list.length) return null;
 
   const anchor = list[0];
-  const snapshot = parseWizardSnapshot(list);
+  // Only prefer wizard draft field overlays for Draft records. For Active/submitted
+  // rows, live inventory data (including cgw_attachments) must win so uploaded docs show.
+  const snapshot = list.every(isDraftStatus) ? parseWizardSnapshot(list) : null;
 
   const formData = snapshot?.formData
     ? { ...formDataFromItem(anchor), ...snapshot.formData }
@@ -197,28 +273,53 @@ export function buildCustomerPreviewModel(rows, customerCode = '') {
     ? { ...nocFormFromItem(anchor), ...snapshot.addNocForm }
     : nocFormFromItem(anchor);
 
-  const equipmentLines = snapshot?.equipmentRows?.length
-    ? snapshot.equipmentRows.map((r, i) => ({
-        inventoryRow: list[i] || anchor,
+  let equipmentLines;
+  if (snapshot?.equipmentRows?.length) {
+    equipmentLines = snapshot.equipmentRows.map((r, i) => {
+      const inventoryRow = list[i] || anchor;
+      return {
+        inventoryRow: {
+          ...inventoryRow,
+          cgw_attachments: normalizeCgwAttachments(inventoryRow?.cgw_attachments),
+        },
         equipment: { ...EMPTY_EQUIPMENT_ROW, ...r },
-      }))
-    : list.map((row) => ({
-        inventoryRow: row,
-        equipment: equipmentRowFromItem(row),
-      }));
+      };
+    });
+  } else {
+    equipmentLines = list.map((row) => ({
+      inventoryRow: {
+        ...row,
+        cgw_attachments: normalizeCgwAttachments(row?.cgw_attachments),
+      },
+      equipment: equipmentRowFromItem(row),
+    }));
+  }
 
   let piezometerLines = [];
   if (snapshot?.piezometerRows?.length) {
-    piezometerLines = snapshot.piezometerRows.map((pz, i) => ({
-      inventoryRow: list[i] || anchor,
-      label: list[i]?.inventory_id || `Piezometer ${i + 1}`,
-      data: { ...EMPTY_PIEZO_ROW, ...pz },
-    }));
+    piezometerLines = snapshot.piezometerRows.map((pz, i) => {
+      const inventoryRow = list[i] || anchor;
+      return {
+        inventoryRow: {
+          ...inventoryRow,
+          cgw_attachments: normalizeCgwAttachments(inventoryRow?.cgw_attachments),
+        },
+        label: list[i]?.inventory_id || `Piezometer ${i + 1}`,
+        data: { ...EMPTY_PIEZO_ROW, ...pz },
+      };
+    });
   } else {
-    piezometerLines = piezometersFromRows(list);
+    piezometerLines = piezometersFromRows(list).map((line) => ({
+      ...line,
+      inventoryRow: {
+        ...line.row,
+        cgw_attachments: normalizeCgwAttachments(line.row?.cgw_attachments),
+      },
+    }));
   }
 
   const needsPiezometer = String(nocForm.piezometer_applicable || '').toLowerCase() === 'yes';
+  const allAttachments = mergeCgwAttachments(...list.map((r) => r?.cgw_attachments));
 
   return {
     customerCode: customerCode || anchor.customer_id || '',
@@ -229,6 +330,7 @@ export function buildCustomerPreviewModel(rows, customerCode = '') {
     needsPiezometer,
     nocDocumentUrl: anchor.noc_document_url || list.find((r) => r.noc_document_url)?.noc_document_url || '',
     inventoryIds: list.map((r) => r.inventory_id).filter(Boolean),
+    allAttachments,
   };
 }
 

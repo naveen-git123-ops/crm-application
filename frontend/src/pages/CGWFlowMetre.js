@@ -31,11 +31,14 @@ const CGW_MEDIA_KEYS = [
   'telemetry',
   'telemetry_excel_prior',
   'telemetry_service_prior',
+  'telemetry_service_report',
   'piezometer_bw',
   'piezometer_calibration',
   'piezometer_telemetry',
   'piezometer_excel_prior',
   'piezometer_service_report',
+  'piezometer_service',
+  'piezometer_telemetry_service',
   'water_quality_certificate',
   'cte',
   'cto',
@@ -51,11 +54,14 @@ const CGW_MEDIA_LABELS = {
   telemetry: 'Telemetry device photos',
   telemetry_excel_prior: 'Telemetry Excel (prior year)',
   telemetry_service_prior: 'Telemetry service (prior year)',
+  telemetry_service_report: 'Telemetry service report',
   piezometer_bw: 'Piezometer BW photos',
   piezometer_calibration: 'Piezometer calibration',
   piezometer_telemetry: 'Piezometer telemetry photos',
   piezometer_excel_prior: 'Piezometer Excel (prior)',
-  piezometer_service_report: 'Piezometer service report',
+  piezometer_service_report: 'Piezometer prior-year service report',
+  piezometer_service: 'Piezometer service report',
+  piezometer_telemetry_service: 'Piezometer telemetry service report',
   water_quality_certificate: 'Water quality certificate',
   cte: 'CTE',
   cto: 'CTO',
@@ -86,6 +92,7 @@ const EMPTY_EQUIPMENT_ROW = {
   flow_meter_make: 'UPC',
   flow_meter_size: '',
   flow_meter_serial: '',
+  flow_meter_commissioning_date: '',
   calibration_valid_from: '',
   calibration_valid_to: '',
   telemetry_applicable: '',
@@ -99,6 +106,9 @@ const EMPTY_EQUIPMENT_ROW = {
   telemetry_sim_valid_to: '',
   telemetry_product_code: '',
   telemetry_serial_number: '',
+  telemetry_commissioning_date: '',
+  telemetry_sim_changed_count: '',
+  telemetry_recharge_count: '',
   telemetry_portal_url: '',
   telemetry_username: '',
   telemetry_password: '',
@@ -225,6 +235,7 @@ const EMPTY_EQUIPMENT_FLOW_FILES = () => ({
   telemetryPhotoFiles: [],
   calibration_cert: [],
   service_report: [],
+  telemetry_service_report: [],
   telemetry_excel: [],
   telemetry_service: [],
   water_quality_certificate: [],
@@ -241,6 +252,7 @@ const FLOW_BUNDLE_TO_API_CATEGORY = {
   bwGeoPhotos: 'bw_geo_flowmeter',
   calibration_cert: 'calibration_certificate',
   service_report: 'service_report',
+  telemetry_service_report: 'telemetry_service_report',
   telemetryPhotoFiles: 'telemetry',
   telemetry_excel: 'telemetry_excel_prior',
   telemetry_service: 'telemetry_service_prior',
@@ -259,6 +271,8 @@ const PIEZO_BUNDLE_TO_API_CATEGORY = {
   telemetryPhotos: 'piezometer_telemetry',
   telemetryExcel: 'piezometer_excel_prior',
   priorTelemetryService: 'piezometer_service_report',
+  serviceReport: 'piezometer_service',
+  telemetryServiceReport: 'piezometer_telemetry_service',
 };
 
 const WIZARD_DRAFT_VERSION = 1;
@@ -291,6 +305,7 @@ function equipmentRowFromItem(item) {
     flow_meter_make: item?.flow_meter_make || 'UPC',
     flow_meter_size: item?.flow_meter_size || '',
     flow_meter_serial: item?.flow_meter_serial || '',
+    flow_meter_commissioning_date: item?.flow_meter_commissioning_date || '',
     calibration_valid_from: item?.calibration_valid_from || '',
     calibration_valid_to: item?.calibration_valid_to || '',
     telemetry_applicable: item?.telemetry_applicable || '',
@@ -304,6 +319,9 @@ function equipmentRowFromItem(item) {
     telemetry_sim_valid_to: item?.telemetry_sim_valid_to || '',
     telemetry_product_code: item?.telemetry_product_code || '',
     telemetry_serial_number: item?.telemetry_serial_number || '',
+    telemetry_commissioning_date: item?.telemetry_commissioning_date || '',
+    telemetry_sim_changed_count: item?.telemetry_sim_changed_count || '',
+    telemetry_recharge_count: item?.telemetry_recharge_count || '',
     telemetry_portal_url: item?.telemetry_portal_url || '',
     telemetry_username: item?.telemetry_username || '',
     telemetry_password: item?.telemetry_password || '',
@@ -1357,6 +1375,7 @@ const CGWFlowMetre = () => {
     const b = bundle || {};
     await uploadCgwRowAttachments(inventoryRowId, 'calibration_certificate', b.calibration_cert);
     await uploadCgwRowAttachments(inventoryRowId, 'service_report', b.service_report);
+    await uploadCgwRowAttachments(inventoryRowId, 'telemetry_service_report', b.telemetry_service_report);
     await uploadCgwRowAttachments(inventoryRowId, 'water_quality_certificate', b.water_quality_certificate);
     await uploadCgwRowAttachments(inventoryRowId, 'cte', b.cte);
     await uploadCgwRowAttachments(inventoryRowId, 'cto', b.cto);
@@ -1387,6 +1406,8 @@ const CGWFlowMetre = () => {
     await uploadCgwRowAttachments(inventoryRowId, 'piezometer_telemetry', bundle.telemetryPhotos);
     await uploadCgwRowAttachments(inventoryRowId, 'piezometer_excel_prior', bundle.telemetryExcel);
     await uploadCgwRowAttachments(inventoryRowId, 'piezometer_service_report', bundle.priorTelemetryService);
+    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_service', bundle.serviceReport);
+    await uploadCgwRowAttachments(inventoryRowId, 'piezometer_telemetry_service', bundle.telemetryServiceReport);
   };
 
   const isDraftRecord = (item) => String(item?.status || '').toLowerCase() === 'draft';
@@ -1474,6 +1495,10 @@ const CGWFlowMetre = () => {
         }
         const fresh = await axios.get(`${API}/cgw-flow-metres/${saved.id}`, { headers: authHeaders() });
         setEditingItem(fresh.data);
+        // Pending local picks are now on the server — show as saved files with preview/delete.
+        setEquipmentFlowFiles(equipmentRows.map(() => EMPTY_EQUIPMENT_FLOW_FILES()));
+        setPiezometerFiles(Array.from({ length: piezometerRows.length }, () => EMPTY_PIEZO_FILES()));
+        setAddNocFile(null);
       }
       toast.success('Draft saved. Open it from the grid to continue later.');
       fetchItems();
@@ -1525,6 +1550,7 @@ const CGWFlowMetre = () => {
           flow_meter_make: (apiRow.flow_meter_make || '').trim() || null,
           flow_meter_size: (apiRow.flow_meter_size || '').trim() || null,
           flow_meter_serial: (apiRow.flow_meter_serial || '').trim() || null,
+          flow_meter_commissioning_date: apiRow.flow_meter_commissioning_date || null,
           calibration_valid_from: apiRow.calibration_valid_from || null,
           calibration_valid_to: apiRow.calibration_valid_to || null,
           telemetry_applicable: apiRow.telemetry_applicable || null,
@@ -1538,6 +1564,9 @@ const CGWFlowMetre = () => {
           telemetry_sim_valid_to: apiRow.telemetry_sim_valid_to || null,
           telemetry_product_code: (apiRow.telemetry_product_code || '').trim() || null,
           telemetry_serial_number: (apiRow.telemetry_serial_number || '').trim() || null,
+          telemetry_commissioning_date: apiRow.telemetry_commissioning_date || null,
+          telemetry_sim_changed_count: (apiRow.telemetry_sim_changed_count || '').trim() || null,
+          telemetry_recharge_count: (apiRow.telemetry_recharge_count || '').trim() || null,
           telemetry_portal_url: (apiRow.telemetry_portal_url || '').trim() || null,
           telemetry_username: (apiRow.telemetry_username || '').trim() || null,
           telemetry_password: (apiRow.telemetry_password || '').trim() || null,
@@ -1684,6 +1713,7 @@ const CGWFlowMetre = () => {
             flow_meter_make: (apiRow.flow_meter_make || '').trim() || null,
             flow_meter_size: (apiRow.flow_meter_size || '').trim() || null,
             flow_meter_serial: (apiRow.flow_meter_serial || '').trim() || null,
+            flow_meter_commissioning_date: apiRow.flow_meter_commissioning_date || null,
             calibration_valid_from: apiRow.calibration_valid_from || null,
             calibration_valid_to: apiRow.calibration_valid_to || null,
             telemetry_applicable: apiRow.telemetry_applicable || null,
@@ -1697,6 +1727,9 @@ const CGWFlowMetre = () => {
             telemetry_sim_valid_to: apiRow.telemetry_sim_valid_to || null,
             telemetry_product_code: (apiRow.telemetry_product_code || '').trim() || null,
             telemetry_serial_number: (apiRow.telemetry_serial_number || '').trim() || null,
+            telemetry_commissioning_date: apiRow.telemetry_commissioning_date || null,
+            telemetry_sim_changed_count: (apiRow.telemetry_sim_changed_count || '').trim() || null,
+            telemetry_recharge_count: (apiRow.telemetry_recharge_count || '').trim() || null,
             telemetry_portal_url: (apiRow.telemetry_portal_url || '').trim() || null,
             telemetry_username: (apiRow.telemetry_username || '').trim() || null,
             telemetry_password: (apiRow.telemetry_password || '').trim() || null,
@@ -1721,6 +1754,7 @@ const CGWFlowMetre = () => {
             flow_meter_make: null,
             flow_meter_size: null,
             flow_meter_serial: null,
+            flow_meter_commissioning_date: null,
             calibration_valid_from: null,
             calibration_valid_to: null,
             telemetry_applicable: null,
@@ -1734,6 +1768,9 @@ const CGWFlowMetre = () => {
             telemetry_sim_valid_to: null,
             telemetry_product_code: null,
             telemetry_serial_number: null,
+            telemetry_commissioning_date: null,
+            telemetry_sim_changed_count: null,
+            telemetry_recharge_count: null,
             telemetry_portal_url: null,
             telemetry_username: null,
             telemetry_password: null,
@@ -2212,6 +2249,22 @@ const CGWFlowMetre = () => {
   const handlePreviewSavedAttachment = (att, apiCategory) => {
     if (!editingItem || !att) return;
     openMediaDialog(editingItem, apiCategory || cgwFirstAttachmentCategory(editingItem), att.id);
+  };
+
+  const handleRemoveSavedAttachment = async (att, apiCategory) => {
+    if (!editingItem?.id || !att?.id || !apiCategory || !canManage) return;
+    if (!window.confirm(`Delete "${att.file_name || 'this file'}"? You can upload a replacement after.`)) return;
+    try {
+      const res = await axios.delete(
+        `${API}/cgw-flow-metres/${editingItem.id}/media-attachments/${apiCategory}/${encodeURIComponent(att.id)}`,
+        { headers: authHeaders() },
+      );
+      setEditingItem(res.data);
+      toast.success('File deleted. Use Add to upload again.');
+      fetchItems();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to delete file'));
+    }
   };
 
   const closeMediaDialog = () => {
@@ -2960,6 +3013,9 @@ const CGWFlowMetre = () => {
                           const rowSaved = (apiCategory) => ({
                             existingAttachments: editMode && idx === 0 ? getSavedAttachments(apiCategory) : [],
                             onPreviewExisting: (att) => handlePreviewSavedAttachment(att, apiCategory),
+                            onRemoveExisting: canManage
+                              ? (att) => handleRemoveSavedAttachment(att, apiCategory)
+                              : null,
                           });
                           return (
                             <Card key={idx} className="p-4 border border-gray-200 bg-white shadow-none rounded-lg">
@@ -2990,6 +3046,15 @@ const CGWFlowMetre = () => {
                                         <Input
                                           value={row.flow_meter_serial}
                                           onChange={(e) => patchRow({ flow_meter_serial: e.target.value })}
+                                          className="border border-gray-300 h-11"
+                                        />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label className="text-sm font-medium text-gray-700">Commissioning date</Label>
+                                        <Input
+                                          type="date"
+                                          value={row.flow_meter_commissioning_date}
+                                          onChange={(e) => patchRow({ flow_meter_commissioning_date: e.target.value })}
                                           className="border border-gray-300 h-11"
                                         />
                                       </div>
@@ -3181,7 +3246,45 @@ const CGWFlowMetre = () => {
                                             className="h-11"
                                           />
                                         </div>
+                                        <div className="space-y-2">
+                                          <Label className="text-sm font-medium text-gray-700">Commissioning date of telemetry</Label>
+                                          <Input
+                                            type="date"
+                                            value={row.telemetry_commissioning_date}
+                                            onChange={(e) => patchRow({ telemetry_commissioning_date: e.target.value })}
+                                            className="h-11"
+                                          />
+                                        </div>
+                                        <div className="space-y-2">
+                                          <Label className="text-sm font-medium text-gray-700">How many telemetry SIM changed?</Label>
+                                          <Input
+                                            type="number"
+                                            min="0"
+                                            value={row.telemetry_sim_changed_count}
+                                            onChange={(e) => patchRow({ telemetry_sim_changed_count: e.target.value })}
+                                            className="h-11"
+                                          />
+                                        </div>
+                                        <div className="space-y-2">
+                                          <Label className="text-sm font-medium text-gray-700">How many times recharge done?</Label>
+                                          <Input
+                                            type="number"
+                                            min="0"
+                                            value={row.telemetry_recharge_count}
+                                            onChange={(e) => patchRow({ telemetry_recharge_count: e.target.value })}
+                                            className="h-11"
+                                          />
+                                        </div>
                                       </div>
+
+                                      <CgwMultiFilePicker
+                                        label="Telemetry Service Report"
+                                        accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
+                                        files={flowFiles.telemetry_service_report}
+                                        onChange={(telemetry_service_report) => patchFlowFiles({ telemetry_service_report })}
+                                        hint="Optional; uploads after save (S3)."
+                                        {...rowSaved('telemetry_service_report')}
+                                      />
 
                                       <CgwMultiFilePicker
                                         label="Telemetry device photos"
@@ -3376,6 +3479,7 @@ const CGWFlowMetre = () => {
                       countLabel={`${piezometerWizardCount} piezometer${piezometerWizardCount !== 1 ? 's' : ''} (NOC count ${String(addNocForm.piezometer_count || '').trim() || '—'})`}
                       editingItem={editingItem}
                       onPreviewSaved={handlePreviewSavedAttachment}
+                      onRemoveSaved={canManage ? handleRemoveSavedAttachment : null}
                     />
                   </div>
                 ) : null}
@@ -3407,6 +3511,9 @@ const CGWFlowMetre = () => {
                         const attachSaved = (cat) => ({
                           existingAttachments: editMode && idx === 0 ? getSavedAttachments(cat) : [],
                           onPreviewExisting: (att) => handlePreviewSavedAttachment(att, cat),
+                          onRemoveExisting: canManage
+                            ? (att) => handleRemoveSavedAttachment(att, cat)
+                            : null,
                         });
                         return (
                           <div key={`add-attach-${idx}`} className="rounded-md border border-gray-200 bg-white p-3 space-y-3">
