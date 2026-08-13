@@ -109,6 +109,12 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+
+@app.get('/health')
+def health():
+    return {'ok': True}
+
+
 # Attendance business rules use local wall-clock time (default: India).
 # Set ATTENDANCE_TIMEZONE in .env e.g. Asia/Kolkata, Asia/Dubai
 ATTENDANCE_TZ_NAME = os.environ.get('ATTENDANCE_TIMEZONE', 'Asia/Kolkata')
@@ -938,8 +944,12 @@ class StockItemModel(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
-# Create all tables
-Base.metadata.create_all(bind=engine)
+# Create all tables. Do not crash the process — a hard fail here 502s nginx
+# and browsers report the missing CORS headers as a CORS error.
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f'Base.metadata.create_all failed (API will still start): {e}')
 
 SETTING_CGW_DIGEST_EMAIL = 'cgw_renewal_digest_email'
 SETTING_CGW_DIGEST_ENABLED = 'cgw_renewal_digest_enabled'

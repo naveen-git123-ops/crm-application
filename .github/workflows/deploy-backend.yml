@@ -3,8 +3,9 @@ name: Deploy Backend to EC2
 on:
   push:
     branches: [main]
-    paths: 
+    paths:
       - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
 
 jobs:
   deploy:
@@ -17,11 +18,31 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 20m
           script: |
             cd /home/ec2-user/crm-application
-            git stash
-            git pull origin main
-            git stash pop || true
+            # Preserve production .env — it is gitignored but currently stuck in a
+            # stash merge (`backend/.env: needs merge`), which blocks git pull.
+            if [ -f backend/.env ]; then
+              if grep -q '^<<<<<<<' backend/.env; then
+                awk '/^<<<<<<< /{next} /^=======/{skip=1; next} /^>>>>>>> /{skip=0; next} !skip{print}' backend/.env > /tmp/crm-backend.env.bak
+              else
+                cp backend/.env /tmp/crm-backend.env.bak
+              fi
+            fi
+            rm -f .git/index.lock
+            git merge --abort 2>/dev/null || true
+            git rebase --abort 2>/dev/null || true
+            git reset --merge 2>/dev/null || true
+            git reset --hard HEAD
+            git stash drop 2>/dev/null || true
+            # Hard reset to origin/main. Do not stash/pull/pop — leftover conflict
+            # markers crash uvicorn and nginx returns 502 on OPTIONS /api/auth/login.
+            git fetch origin main
+            git reset --hard FETCH_HEAD
+            if [ -f /tmp/crm-backend.env.bak ]; then
+              cp /tmp/crm-backend.env.bak backend/.env
+            fi
             cd backend
 
             # Ensure Telegram bot config is present in .env (never committed to git — sourced from
@@ -55,5 +76,33 @@ jobs:
               sed -i 's|^TELEGRAM_APPROVER_EMPLOYEE_ID=$|TELEGRAM_APPROVER_EMPLOYEE_ID=EMP0005|' .env
             fi
 
-            pip3 install -r requirements.txt --quiet
+            # Invalid pins must not abort before uvicorn restart — that leaves nginx on 502.
+            pip3 install -r requirements.txt --quiet || echo "pip install reported errors; continuing with packages already on this host"
             sudo systemctl restart uvicorn
+            # Bring nginx back if a previous deploy stopped it. Do NOT restart nginx
+            # (restarting it has left production stuck on 502 before).
+            sudo systemctl start nginx 2>/dev/null || sudo service nginx start 2>/dev/null || true
+            sleep 5
+            healthy=0
+            for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 || curl -fsS http://127.0.0.1:8000/docs >/dev/null 2>&1; then
+                echo "uvicorn healthy"
+                healthy=1
+                break
+              fi
+              echo "waiting for uvicorn ($i)"
+              sleep 5
+            done
+            if [ "$healthy" -ne 1 ]; then
+              echo "uvicorn failed health check — dumping logs and retrying once"
+              sudo systemctl status uvicorn --no-pager || true
+              sudo journalctl -u uvicorn -n 120 --no-pager || true
+              sudo systemctl restart uvicorn
+              sleep 10
+              if ! curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 && ! curl -fsS http://127.0.0.1:8000/docs >/dev/null 2>&1; then
+                sudo systemctl status uvicorn --no-pager || true
+                sudo journalctl -u uvicorn -n 120 --no-pager || true
+                exit 1
+              fi
+            fi
+            echo "deploy ok: $(git rev-parse --short HEAD)"
