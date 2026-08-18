@@ -801,6 +801,13 @@ export function defaultWorkflowPayload() {
 
 export function mergeWorkflowPayload(stored) {
   const base = defaultWorkflowPayload();
+  if (typeof stored === 'string') {
+    try {
+      stored = JSON.parse(stored);
+    } catch {
+      stored = null;
+    }
+  }
   if (!stored || typeof stored !== 'object') return base;
   const offer_revisions = normalizeOfferRevisions(stored);
   const lead_offer_no =

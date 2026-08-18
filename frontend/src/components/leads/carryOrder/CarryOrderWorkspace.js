@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   CARRY_ORDER_STAGES,
   WORKFLOW_PIPELINE_IDS,
@@ -84,6 +85,7 @@ import {
 } from 'lucide-react';
 import { isCarryAndOrder, leadNeedsVendor, LEAD_CATEGORY_OPTIONS } from '@/lib/leadUtils';
 import { getApiErrorMessage } from '@/lib/apiErrors';
+import { useAuth } from '@/contexts/AuthContext';
 import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFilePicker';
 import { LEAD_ATTACHMENT_ACCEPT, LEAD_ATTACHMENT_HINT } from '@/lib/leadAttachmentAccept';
 import { useLeadCategories } from '@/hooks/useLeadCategories';
@@ -630,6 +632,7 @@ export function CarryOrderWorkspace({
         )}
         {canOpenStage(activeTab) && activeTab === 'technical_clearance' && (
           <ModuleVendorSelection
+            lead={lead}
             payload={payload}
             setPayload={setPayload}
             vendors={vendors}
@@ -2344,6 +2347,7 @@ function inquiryStatusLabel(status) {
 }
 
 function ModuleVendorSelection({
+  lead,
   payload,
   setPayload,
   vendors = [],
@@ -2353,9 +2357,15 @@ function ModuleVendorSelection({
   apiBase,
   authHeader,
 }) {
+  const { user } = useAuth();
   const [vendorList, setVendorList] = useState(Array.isArray(vendors) ? vendors : []);
   const [vendorLoading, setVendorLoading] = useState(false);
   const [uploadingField, setUploadingField] = useState('');
+  const [inquiryDialog, setInquiryDialog] = useState(null);
+  const [sendingInquiry, setSendingInquiry] = useState(false);
+  const [draftTo, setDraftTo] = useState('');
+  const [draftSubject, setDraftSubject] = useState('');
+  const [draftRemarks, setDraftRemarks] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -2518,7 +2528,73 @@ function ModuleVendorSelection({
       inquiry_date: inquiryForVendor(payload, group.vendor_id, group.vendor_name)?.inquiry_date
         || new Date().toISOString().slice(0, 10),
     });
-    toast.success('Marked as sent. Application email will be wired next.');
+    toast.success('Marked as sent without email');
+  };
+
+  const openInquiryDialog = (group) => {
+    const master = vendorList.find((v) => v.id === group.vendor_id);
+    const inquiry = inquiryForVendor(payload, group.vendor_id, group.vendor_name);
+    const to = inquiry?.vendor_email || vendorMasterEmail(master);
+    const company = lead?.company || lead?.contact_name || 'enquiry';
+    setDraftTo(to);
+    setDraftSubject(`Inquiry for supply — ${company} — ${group.items.length} item(s)`);
+    setDraftRemarks(inquiry?.remarks || '');
+    setInquiryDialog(group);
+  };
+
+  const sendInquiryEmail = async () => {
+    const group = inquiryDialog;
+    if (!group || !lead?.id) return;
+    const to = String(draftTo || '').trim();
+    if (!to || !to.includes('@')) {
+      toast.error('Enter a valid vendor email');
+      return;
+    }
+    setSendingInquiry(true);
+    try {
+      upsertInquiry(group, {
+        vendor_email: to,
+        remarks: draftRemarks,
+        inquiry_date: inquiryForVendor(payload, group.vendor_id, group.vendor_name)?.inquiry_date
+          || new Date().toISOString().slice(0, 10),
+      });
+      const { data } = await axios.post(
+        `${apiBase}/leads/${lead.id}/vendor-inquiry-email`,
+        {
+          vendor_id: group.vendor_id || '',
+          vendor_name: group.vendor_name || '',
+          to_email: to,
+          subject: draftSubject,
+          remarks: draftRemarks,
+          items: group.items.map((item) => ({
+            item_name: item.item_name || '',
+            specification: item.specification || '',
+            quantity: item.quantity || '',
+            uom: item.uom || '',
+          })),
+        },
+        { headers: authHeader() },
+      );
+      if (Array.isArray(data?.workflow_payload?.vendor_inquiries)) {
+        setPayload(mergeWorkflowPayload({
+          ...payload,
+          vendor_inquiries: data.workflow_payload.vendor_inquiries,
+        }));
+      } else {
+        upsertInquiry(group, {
+          vendor_email: data?.to_email || to,
+          remarks: draftRemarks,
+          inquiry_status: 'sent',
+          inquiry_sent_at: new Date().toISOString(),
+        });
+      }
+      toast.success(data?.message || `Inquiry emailed to ${to}`);
+      setInquiryDialog(null);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Could not send the inquiry email'));
+    } finally {
+      setSendingInquiry(false);
+    }
   };
 
   const purchaseColumns = [
@@ -2659,8 +2735,8 @@ function ModuleVendorSelection({
                   type="button"
                   size="sm"
                   className="h-8 bg-indigo-600 text-white hover:bg-indigo-700"
-                  disabled
-                  title="Email from the application will be enabled next"
+                  disabled={!canEdit}
+                  onClick={() => openInquiryDialog(group)}
                 >
                   <Mail className="h-3.5 w-3.5 mr-1" />
                   Send inquiry
@@ -2676,9 +2752,6 @@ function ModuleVendorSelection({
                     Mark as sent manually
                   </Button>
                 )}
-                <p className="text-xs text-slate-500">
-                  Mail trigger from this screen is next — record the inquiry here for now.
-                </p>
               </div>
             </div>
 
@@ -2795,6 +2868,95 @@ function ModuleVendorSelection({
           </div>
         );
       })}
+      <Dialog open={Boolean(inquiryDialog)} onOpenChange={(open) => { if (!open && !sendingInquiry) setInquiryDialog(null); }}>
+        <DialogContent className="max-w-2xl" hideClose={sendingInquiry}>
+          <DialogHeader>
+            <DialogTitle>Send inquiry to {inquiryDialog?.vendor_name || 'vendor'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-slate-900">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              From: <span className="font-medium text-slate-800">{user?.name || 'You'}</span>
+              {user?.email ? ` · ${user.email}` : ''} — the vendor’s reply will come to this mailbox
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className={labelClass}>Vendor email</Label>
+                <Input
+                  type="email"
+                  className={inputClass}
+                  value={draftTo}
+                  onChange={(e) => setDraftTo(e.target.value)}
+                  placeholder="vendor@example.com"
+                  disabled={sendingInquiry}
+                />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <Label className={labelClass}>Subject</Label>
+                <Input
+                  className={inputClass}
+                  value={draftSubject}
+                  onChange={(e) => setDraftSubject(e.target.value)}
+                  disabled={sendingInquiry}
+                />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <Label className={labelClass}>Message</Label>
+                <textarea
+                  rows={3}
+                  className={textareaClass}
+                  value={draftRemarks}
+                  onChange={(e) => setDraftRemarks(e.target.value)}
+                  placeholder="Please quote price, technical data, warranty and delivery for the items below."
+                  disabled={sendingInquiry}
+                />
+              </div>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="bg-slate-100">
+                    <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Sl</th>
+                    <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Item name</th>
+                    <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Specification</th>
+                    <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Qty</th>
+                    <th className="border-b border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">UOM</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(inquiryDialog?.items || []).map((item, idx) => (
+                    <tr key={item.id || idx} className="odd:bg-white even:bg-slate-50/60">
+                      <td className="border-b border-r border-slate-200 px-2 py-1.5 text-slate-600">{idx + 1}</td>
+                      <td className="border-b border-r border-slate-200 px-2 py-1.5 font-medium">{item.item_name}</td>
+                      <td className="border-b border-r border-slate-200 px-2 py-1.5 text-slate-600">{item.specification || '—'}</td>
+                      <td className="border-b border-r border-slate-200 px-2 py-1.5">{item.quantity || '—'}</td>
+                      <td className="border-b border-slate-200 px-2 py-1.5">{item.uom || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={sendingInquiry}
+              onClick={() => setInquiryDialog(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              disabled={sendingInquiry}
+              onClick={sendInquiryEmail}
+            >
+              {sendingInquiry ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Mail className="h-4 w-4 mr-1" />}
+              Send email
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

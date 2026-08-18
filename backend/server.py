@@ -27,10 +27,12 @@ import io
 import uuid
 import json
 import re
+import html
 import time
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
 import boto3
 from botocore.exceptions import ClientError
 import pandas as pd
@@ -10865,23 +10867,36 @@ def _material_product_complete(payload: dict) -> bool:
     return all(_material_row_filled(r) for r in rows if _material_row_started(r))
 
 
+def _json_bool(value):
+    """True/False from JSON, including 0/1 and yes/no strings."""
+    if isinstance(value, bool):
+        return value
+    if value in (1, '1', 'true', 'True', 'yes', 'Yes'):
+        return True
+    if value in (0, '0', 'false', 'False', 'no', 'No'):
+        return False
+    return None
+
+
 def _opportunity_assessment_complete(payload: dict) -> bool:
     """Requirement Analysis gate — mirrors isOpportunityAssessmentComplete on the frontend."""
     oa = payload.get('opportunity_assessment') or {}
     cats = oa.get('product_categories') or []
+    tech_flag = _json_bool(oa.get('technical_datas_required'))
+    visit_flag = _json_bool(oa.get('site_visit_required'))
     base_ok = bool(
         str(oa.get('business_category') or '').strip()
         and isinstance(cats, list)
         and len(cats) > 0
-        and isinstance(oa.get('technical_datas_required'), bool)
-        and isinstance(oa.get('site_visit_required'), bool)
+        and tech_flag is not None
+        and visit_flag is not None
         and str(oa.get('expected_enquiry_closing_date') or '').strip()
     )
     if not base_ok:
         return False
     if PRODUCT_CATEGORY_OTHER in cats and not str(oa.get('product_category_other') or '').strip():
         return False
-    if oa.get('site_visit_required') is not True:
+    if visit_flag is not True:
         return True
     if not str(oa.get('site_visit_date') or '').strip():
         return False
@@ -11403,6 +11418,23 @@ class CarryOrderWorkflowUpdate(BaseModel):
     status_change_comment: Optional[str] = None
 
 
+class VendorInquirySendRequest(BaseModel):
+    vendor_id: Optional[str] = None
+    vendor_name: Optional[str] = None
+    to_email: Optional[str] = None
+    subject: Optional[str] = None
+    remarks: Optional[str] = None
+    items: Optional[List[dict]] = None
+
+
+class VendorInquirySendResponse(BaseModel):
+    message: str
+    to_email: str
+    from_name: str
+    from_email: str
+    workflow_payload: dict
+
+
 class AllocateOfferNumberResponse(BaseModel):
     offer_base: str
 
@@ -11532,10 +11564,41 @@ def _workflow_stage_index(stage: str) -> int:
     try:
         return CARRY_ORDER_STAGES.index(stage)
     except ValueError:
-        return 0
+        return -1
 
 
-def _validate_lead_workflow_transition(
+def _coalesce_workflow_section(stored_sec, incoming_sec) -> dict:
+    stored_sec = stored_sec if isinstance(stored_sec, dict) else {}
+    incoming_sec = incoming_sec if isinstance(incoming_sec, dict) else {}
+    merged = {**stored_sec, **incoming_sec}
+    for key, stored_val in stored_sec.items():
+        incoming_val = incoming_sec.get(key, None)
+        empty_incoming = incoming_val in (None, '', [], {})
+        kept_stored = stored_val not in (None, '', [], {})
+        if empty_incoming and kept_stored:
+            merged[key] = stored_val
+    return merged
+
+
+def _merge_workflow_payloads(stored, incoming) -> dict:
+    """Keep previously saved sections (Requirement Analysis, etc.) if the client sends blanks."""
+    stored = stored if isinstance(stored, dict) else {}
+    incoming = incoming if isinstance(incoming, dict) else {}
+    merged = {**stored, **incoming}
+    for key in (
+        'opportunity_assessment',
+        'technical_assessment',
+        'material_product',
+        'bom',
+        'closed_won',
+        'closed_lost',
+    ):
+        merged[key] = _coalesce_workflow_section(stored.get(key), incoming.get(key))
+    if not merged.get('vendor_inquiries') and stored.get('vendor_inquiries'):
+        merged['vendor_inquiries'] = stored.get('vendor_inquiries')
+    if not merged.get('vendor_selections') and stored.get('vendor_selections'):
+        merged['vendor_selections'] = stored.get('vendor_selections')
+    return merged
     lead: LeadModel, old_stage: str, new_stage: str, payload: dict
 ) -> None:
     if new_stage not in CARRY_ORDER_STAGES:
@@ -11548,7 +11611,7 @@ def _validate_lead_workflow_transition(
     if new_idx == old_idx:
         return
 
-    if new_idx > old_idx + 1:
+    if old_idx >= 0 and new_idx > old_idx + 1:
         terminal_from_follow_up = old_stage == 'follow_up' and new_stage in ('closed_won', 'closed_lost')
         if not terminal_from_follow_up:
             raise HTTPException(
@@ -11573,7 +11636,8 @@ def _validate_lead_workflow_transition(
             detail='Assign a vendor to every item that needs to be purchased before continuing',
         )
     if (
-        new_idx > _workflow_stage_index('opportunity_assessment')
+        old_stage in ('enquiry_logged', 'opportunity_assessment')
+        and new_idx > _workflow_stage_index('opportunity_assessment')
         and not _opportunity_assessment_complete(payload)
     ):
         raise HTTPException(
@@ -11581,7 +11645,8 @@ def _validate_lead_workflow_transition(
             detail='Complete Requirement Analysis before proceeding',
         )
     if (
-        new_idx > _workflow_stage_index('technical_assessment')
+        old_stage in ('enquiry_logged', 'opportunity_assessment', 'technical_assessment')
+        and new_idx > _workflow_stage_index('technical_assessment')
         and not _technical_assessment_complete(payload)
     ):
         raise HTTPException(
@@ -11589,7 +11654,13 @@ def _validate_lead_workflow_transition(
             detail='Add at least one technical question with its answer before proceeding',
         )
     if (
-        new_idx > _workflow_stage_index('material_product')
+        old_stage in (
+            'enquiry_logged',
+            'opportunity_assessment',
+            'technical_assessment',
+            'material_product',
+        )
+        and new_idx > _workflow_stage_index('material_product')
         and not _material_product_complete(payload)
     ):
         raise HTTPException(
@@ -11689,9 +11760,11 @@ def update_lead_workflow(
     _ensure_lead_workflow_initialized(lead, db)
     old_stage = lead.workflow_stage or 'enquiry_logged'
     new_stage = data.workflow_stage
-    _validate_lead_workflow_transition(lead, old_stage, new_stage, data.workflow_payload)
+    stored_payload = _parse_workflow_payload_raw(lead.workflow_payload) or {}
+    incoming_payload = data.workflow_payload if isinstance(data.workflow_payload, dict) else {}
+    workflow_payload = _merge_workflow_payloads(stored_payload, incoming_payload)
+    _validate_lead_workflow_transition(lead, old_stage, new_stage, workflow_payload)
     lead.workflow_stage = new_stage
-    workflow_payload = data.workflow_payload if isinstance(data.workflow_payload, dict) else {}
     workflow_payload = _ensure_site_visit_task_for_lead(db, lead, workflow_payload, current_user)
     lead.workflow_payload = _serialize_workflow_payload(workflow_payload)
     if new_stage == 'closed_won':
@@ -11721,6 +11794,259 @@ def update_lead_workflow(
     db.commit()
     db.refresh(lead)
     return _normalize_lead_for_response(lead, db)
+
+
+def _customer_best_email(db: Session, customer_id: Optional[str], fallback: Optional[str] = None) -> str:
+    fallback_email = str(fallback or '').strip()
+    if fallback_email and '@' in fallback_email:
+        return fallback_email
+    if not customer_id:
+        return fallback_email
+    row = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+    if row and str(row.email or '').strip():
+        return str(row.email).strip()
+    contacts = db.query(CustomerContactModel).filter(CustomerContactModel.customer_id == customer_id).all()
+    primary = next((c for c in contacts if c.is_primary and str(c.email or '').strip()), None)
+    if primary:
+        return str(primary.email).strip()
+    for contact in contacts:
+        if str(contact.email or '').strip():
+            return str(contact.email).strip()
+    return fallback_email
+
+
+def _lead_sender_identity(db: Session, lead: LeadModel, current_user: UserModel) -> Tuple[str, str]:
+    """Person working this lead — current user, then assigned employee."""
+    name = str(current_user.name or '').strip() or 'Resoline'
+    email = str(current_user.email or '').strip()
+    if not email and current_user.employee_id:
+        emp = db.query(EmployeeModel).filter(
+            (EmployeeModel.employee_id == current_user.employee_id)
+            | (EmployeeModel.id == current_user.employee_id)
+        ).first()
+        if emp and str(emp.email or '').strip():
+            email = str(emp.email).strip()
+            name = str(emp.name or name).strip()
+    if not email and lead.assigned_to_employee_id:
+        emp = db.query(EmployeeModel).filter(
+            (EmployeeModel.employee_id == lead.assigned_to_employee_id)
+            | (EmployeeModel.id == lead.assigned_to_employee_id)
+        ).first()
+        if emp and str(emp.email or '').strip():
+            email = str(emp.email).strip()
+            name = str(emp.name or lead.assigned_to_name or name).strip()
+        elif str(lead.assigned_to_name or '').strip():
+            name = str(lead.assigned_to_name).strip()
+    return name, email
+
+
+def _vendor_inquiry_items_for(payload: dict, vendor_id: Optional[str], vendor_name: Optional[str]) -> List[dict]:
+    mp = payload.get('material_product') or {}
+    rows = mp.get('purchase_items') or []
+    vendor_id = str(vendor_id or '').strip()
+    vendor_name = str(vendor_name or '').strip().lower()
+    items = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if not str(row.get('item_name') or '').strip():
+            continue
+        row_vid = str(row.get('vendor_id') or '').strip()
+        row_vname = str(row.get('vendor_name') or '').strip().lower()
+        if vendor_id and row_vid == vendor_id:
+            items.append(row)
+        elif not vendor_id and vendor_name and row_vname == vendor_name:
+            items.append(row)
+    return items
+
+
+def _build_vendor_inquiry_email_html(
+    lead: LeadModel,
+    vendor_name: str,
+    sender_name: str,
+    sender_email: str,
+    remarks: str,
+    items: List[dict],
+) -> str:
+    company = html.escape(str(lead.company or '').strip() or '—')
+    contact = html.escape(str(lead.contact_name or '').strip() or '—')
+    vendor = html.escape(vendor_name or 'Vendor')
+    sender = html.escape(sender_name or '')
+    sender_mail = html.escape(sender_email or '')
+    note = html.escape((remarks or '').strip())
+    rows_html = []
+    for i, item in enumerate(items, 1):
+        rows_html.append(
+            '<tr>'
+            f'<td style="padding:8px;border:1px solid #d1d5db;">{i}</td>'
+            f'<td style="padding:8px;border:1px solid #d1d5db;">{html.escape(str(item.get("item_name") or ""))}</td>'
+            f'<td style="padding:8px;border:1px solid #d1d5db;">{html.escape(str(item.get("specification") or "—"))}</td>'
+            f'<td style="padding:8px;border:1px solid #d1d5db;">{html.escape(str(item.get("quantity") or ""))}</td>'
+            f'<td style="padding:8px;border:1px solid #d1d5db;">{html.escape(str(item.get("uom") or ""))}</td>'
+            '</tr>'
+        )
+    remarks_block = (
+        f'<p style="white-space:pre-wrap;">{note}</p>'
+        if note else
+        '<p>Please quote for the items listed below.</p>'
+    )
+    return f'''<!DOCTYPE html>
+<html>
+<body style="font-family:Arial,sans-serif;color:#111827;font-size:14px;line-height:1.5;">
+  <p>Dear {vendor} team,</p>
+  <p>
+    We are writing from Resoline regarding an enquiry for
+    <strong>{company}</strong> (contact: {contact}).
+  </p>
+  {remarks_block}
+  <p>Kindly share <strong>price</strong>, <strong>technical data</strong>, <strong>warranty</strong> and
+  <strong>delivery time / date</strong> for the following items:</p>
+  <table style="border-collapse:collapse;width:100%;font-size:13px;">
+    <thead>
+      <tr style="background:#f3f4f6;">
+        <th style="padding:8px;border:1px solid #d1d5db;text-align:left;">Sl</th>
+        <th style="padding:8px;border:1px solid #d1d5db;text-align:left;">Item name</th>
+        <th style="padding:8px;border:1px solid #d1d5db;text-align:left;">Specification / description</th>
+        <th style="padding:8px;border:1px solid #d1d5db;text-align:left;">Qty</th>
+        <th style="padding:8px;border:1px solid #d1d5db;text-align:left;">UOM</th>
+      </tr>
+    </thead>
+    <tbody>
+      {''.join(rows_html)}
+    </tbody>
+  </table>
+  <p>Please reply to this email so the quote reaches <strong>{sender}</strong>
+  ({sender_mail or 'our team'}).</p>
+  <p>Regards,<br>{sender}<br>Resoline</p>
+</body>
+</html>'''
+
+
+@api_router.post('/leads/{lead_id}/vendor-inquiry-email', response_model=VendorInquirySendResponse)
+def send_vendor_inquiry_email(
+    lead_id: str,
+    data: VendorInquirySendRequest,
+    current_user: UserModel = Depends(require_leads_access),
+    db: Session = Depends(get_db),
+):
+    lead = db.query(LeadModel).filter(LeadModel.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail='Lead not found')
+    if not can_edit_lead(lead, current_user, db):
+        raise HTTPException(status_code=403, detail='You can only send vendor inquiries for leads you work on')
+
+    payload = _parse_workflow_payload_raw(lead.workflow_payload) or {}
+    items = []
+    for row in data.items or []:
+        if isinstance(row, dict) and str(row.get('item_name') or '').strip():
+            items.append(row)
+    if not items:
+        items = _vendor_inquiry_items_for(payload, data.vendor_id, data.vendor_name)
+    if not items:
+        raise HTTPException(status_code=400, detail='No purchase items are assigned to this vendor')
+
+    inquiry_rows = payload.get('vendor_inquiries') if isinstance(payload.get('vendor_inquiries'), list) else []
+    inquiry = None
+    vendor_id = str(data.vendor_id or '').strip()
+    vendor_name = str(data.vendor_name or '').strip()
+    for row in inquiry_rows:
+        if not isinstance(row, dict):
+            continue
+        if vendor_id and str(row.get('vendor_id') or '') == vendor_id:
+            inquiry = row
+            break
+        if not vendor_id and str(row.get('vendor_name') or '').strip().lower() == vendor_name.lower():
+            inquiry = row
+            break
+    if not vendor_name:
+        vendor_name = str((inquiry or {}).get('vendor_name') or items[0].get('vendor_name') or 'Vendor').strip()
+
+    to_email = _customer_best_email(
+        db,
+        vendor_id or (inquiry or {}).get('vendor_id'),
+        data.to_email or (inquiry or {}).get('vendor_email'),
+    )
+    if not to_email or '@' not in to_email:
+        raise HTTPException(
+            status_code=400,
+            detail='Vendor email is missing — add it on the Vendors screen or type it in the popup',
+        )
+
+    sender_name, sender_email = _lead_sender_identity(db, lead, current_user)
+    if not sender_email or '@' not in sender_email:
+        raise HTTPException(
+            status_code=400,
+            detail='Your user / employee record has no email — add it so the vendor can reply to you',
+        )
+
+    remarks = str(data.remarks if data.remarks is not None else (inquiry or {}).get('remarks') or '').strip()
+    company = str(lead.company or '').strip() or str(lead.contact_name or '').strip() or 'enquiry'
+    subject = str(data.subject or '').strip() or f'Inquiry for supply — {company} — {len(items)} item(s)'
+    body = _build_vendor_inquiry_email_html(lead, vendor_name, sender_name, sender_email, remarks, items)
+
+    ok, err = send_email(
+        to_email,
+        subject,
+        body,
+        is_html=True,
+        reply_to=sender_email,
+        cc=[sender_email],
+        from_name=sender_name,
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=503,
+            detail=err or 'Could not send the email. Check SMTP settings on the server.',
+        )
+
+    now = datetime.now(timezone.utc).isoformat()
+    today = datetime.now().strftime('%Y-%m-%d')
+    next_inquiry = dict(inquiry or {})
+    next_inquiry.update({
+        'id': next_inquiry.get('id') or f'vi-{uuid.uuid4().hex[:12]}',
+        'vendor_id': vendor_id or next_inquiry.get('vendor_id') or '',
+        'vendor_name': vendor_name,
+        'vendor_email': to_email,
+        'remarks': remarks,
+        'inquiry_date': next_inquiry.get('inquiry_date') or today,
+        'inquiry_status': 'sent',
+        'inquiry_sent_at': now,
+        'inquiry_subject': subject,
+        'inquiry_sent_by_name': sender_name,
+        'inquiry_sent_by_email': sender_email,
+        'technical_data_notes': next_inquiry.get('technical_data_notes') or '',
+        'technical_data_attachments': next_inquiry.get('technical_data_attachments') or [],
+        'quote_received_date': next_inquiry.get('quote_received_date') or '',
+    })
+    replaced = False
+    next_rows = []
+    for row in inquiry_rows:
+        if not isinstance(row, dict):
+            continue
+        match = (
+            (vendor_id and str(row.get('vendor_id') or '') == vendor_id)
+            or ((not vendor_id) and str(row.get('vendor_name') or '').strip().lower() == vendor_name.lower())
+        )
+        if match and not replaced:
+            next_rows.append(next_inquiry)
+            replaced = True
+        else:
+            next_rows.append(row)
+    if not replaced:
+        next_rows.append(next_inquiry)
+    payload['vendor_inquiries'] = next_rows
+    lead.workflow_payload = _serialize_workflow_payload(payload)
+    lead.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(lead)
+    saved = _parse_workflow_payload_raw(lead.workflow_payload) or payload
+    return VendorInquirySendResponse(
+        message=f'Inquiry emailed to {to_email}',
+        to_email=to_email,
+        from_name=sender_name,
+        from_email=sender_email,
+        workflow_payload=saved,
+    )
 
 
 @api_router.get('/leads/{lead_id}', response_model=Lead)
@@ -12232,10 +12558,20 @@ def smtp_env_status() -> Tuple[bool, List[str]]:
     return (len(missing) == 0, missing)
 
 
-def send_email(to_email: str, subject: str, body: str, is_html: bool = False) -> Tuple[bool, Optional[str]]:
+def send_email(
+    to_email: str,
+    subject: str,
+    body: str,
+    is_html: bool = False,
+    reply_to: Optional[str] = None,
+    cc: Optional[List[str]] = None,
+    from_name: Optional[str] = None,
+) -> Tuple[bool, Optional[str]]:
     """Send an email using SMTP configuration from environment variables.
 
     Returns (success, error_message). On success error_message is None.
+    reply_to / cc let a user's mailbox own the thread even when SMTP authenticates
+    as the shared SENDER_EMAIL account.
     """
     try:
         smtp_ready, missing = smtp_env_status()
@@ -12249,28 +12585,36 @@ def send_email(to_email: str, subject: str, body: str, is_html: bool = False) ->
         smtp_username = os.environ.get('SMTP_USERNAME', '').strip()
         smtp_password = os.environ.get('SMTP_PASSWORD', '').strip()
         sender_email = os.environ.get('SENDER_EMAIL', '').strip()
-        sender_name = os.environ.get('SENDER_NAME', 'CRM Application')
+        sender_name = (from_name or os.environ.get('SENDER_NAME', 'CRM Application') or 'CRM Application').strip()
 
-        # Create message
+        cc_list = []
+        for addr in (cc or []):
+            val = str(addr or '').strip()
+            if val and val.lower() not in {to_email.lower(), *(a.lower() for a in cc_list)}:
+                cc_list.append(val)
+
         msg = MIMEMultipart('alternative')
-        msg['From'] = f'{sender_name} <{sender_email}>'
+        msg['From'] = formataddr((sender_name, sender_email))
         msg['To'] = to_email
+        if cc_list:
+            msg['Cc'] = ', '.join(cc_list)
+        if reply_to and str(reply_to).strip():
+            msg['Reply-To'] = str(reply_to).strip()
         msg['Subject'] = subject
 
-        # Add body
         if is_html:
             part = MIMEText(body, 'html')
         else:
             part = MIMEText(body, 'plain')
         msg.attach(part)
 
-        # Send email
+        recipients = [to_email] + cc_list
         with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls()
             server.login(smtp_username, smtp_password)
-            server.send_message(msg)
+            server.send_message(msg, from_addr=smtp_username, to_addrs=recipients)
 
-        logging.info(f'Email sent successfully to {to_email}')
+        logging.info('Email sent successfully to %s (cc=%s)', to_email, cc_list)
         return True, None
     except smtplib.SMTPAuthenticationError as e:
         err = f'SMTP authentication failed: {e}'
