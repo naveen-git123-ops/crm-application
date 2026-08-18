@@ -1,10 +1,12 @@
 export const CARRY_ORDER_STAGES = [
   { id: 'enquiry_logged', label: 'Enquiry', short: '1' },
-  { id: 'opportunity_assessment', label: 'Opportunity & Assessment', short: '2' },
-  { id: 'technical_clearance', label: 'Vendor selection', short: '3' },
-  { id: 'bom_costing', label: 'BOM & costing', short: '4' },
-  { id: 'offer_revision', label: 'Offer & revision', short: '5' },
-  { id: 'follow_up', label: 'Follow-up', short: '6' },
+  { id: 'opportunity_assessment', label: 'Requirement Analysis', short: '2' },
+  { id: 'technical_assessment', label: 'Technical assessment', short: '3' },
+  { id: 'material_product', label: 'Material & product', short: '4' },
+  { id: 'technical_clearance', label: 'Vendor management', short: '5' },
+  { id: 'bom_costing', label: 'BOM & costing', short: '6' },
+  { id: 'offer_revision', label: 'Offer & revision', short: '7' },
+  { id: 'follow_up', label: 'Follow-up', short: '8' },
   { id: 'closed_won', label: 'Won', short: 'W' },
   { id: 'closed_lost', label: 'Lost', short: 'L' },
 ];
@@ -13,6 +15,8 @@ export const CARRY_ORDER_STAGES = [
 export const WORKFLOW_PIPELINE_IDS = [
   'enquiry_logged',
   'opportunity_assessment',
+  'technical_assessment',
+  'material_product',
   'technical_clearance',
   'bom_costing',
   'offer_revision',
@@ -26,17 +30,78 @@ export const OPPORTUNITY_BUSINESS_CATEGORIES = [
   'Service & Maintenance',
 ];
 
+/** Sentinel product category that lets the user type a custom category. */
+export const PRODUCT_CATEGORY_OTHER = 'Other';
+
+export const SITE_VISIT_STATUSES = [
+  { id: 'pending', label: 'Pending' },
+  { id: 'done', label: 'Done' },
+];
+
+export const SITE_VISIT_FOLLOW_UP_CHANNELS = [
+  { id: 'call', label: 'Call' },
+  { id: 'whatsapp', label: 'WhatsApp' },
+  { id: 'email', label: 'Email' },
+  { id: 'meeting', label: 'Meeting' },
+  { id: 'other', label: 'Other' },
+];
+
+export function siteVisitFollowUpChannelLabel(channelId) {
+  return (
+    SITE_VISIT_FOLLOW_UP_CHANNELS.find((c) => c.id === channelId)?.label
+    || followUpChannelLabel(channelId)
+  );
+}
+
+export function newSiteVisitOtherPerson() {
+  return {
+    id: `svo-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    name: '',
+    mobile: '',
+    email: '',
+    address: '',
+    id_proof: null,
+  };
+}
+
+export function newSiteVisitFollowUpRow() {
+  return {
+    id: `svf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    follow_up_date: new Date().toISOString().slice(0, 10),
+    follow_up_channel: 'call',
+    contact_person: '',
+    notes: '',
+    next_date: '',
+    attachments: [],
+  };
+}
+
 export function defaultOpportunityAssessment() {
   return {
     business_category: '',
     product_categories: [],
+    product_category_other: '',
     technical_datas_required: null,
     site_visit_required: null,
     expected_enquiry_closing_date: '',
     site_visit_date: '',
+    site_visit_assignees: [],
+    site_visit_others: [],
+    site_visit_status: '',
+    site_visit_photos: [],
+    technical_discussions: '',
+    technical_datasheet_drawing: [],
+    existing_equipment_details: '',
+    process_parameters: '',
+    minutes_of_meeting: '',
+    customer_signature: null,
+    engineer_signature: null,
+    site_visit_follow_ups: [],
+    // Legacy single-assignee keys — still written on save so older readers keep working.
     site_visit_assignee_employee_id: '',
     site_visit_assignee_name: '',
     site_visit_task_id: '',
+    site_visit_task_ids: {},
     site_visit_other: {
       name: '',
       mobile: '',
@@ -47,33 +112,426 @@ export function defaultOpportunityAssessment() {
   };
 }
 
+function hasAttachmentRef(ref) {
+  if (!ref || typeof ref !== 'object') return false;
+  return Boolean(ref.id || ref.attachment_id || ref.file_url || ref.url);
+}
+
+function isSiteVisitOtherComplete(person) {
+  return Boolean(
+    String(person?.name || '').trim()
+    && String(person?.mobile || '').trim()
+    && String(person?.email || '').trim()
+    && String(person?.address || '').trim()
+    && hasAttachmentRef(person?.id_proof),
+  );
+}
+
+/** Employees + external people assigned to the visit, migrating legacy single-assignee payloads. */
+export function siteVisitAssignees(oa) {
+  const list = Array.isArray(oa?.site_visit_assignees) ? oa.site_visit_assignees : [];
+  const normalized = list
+    .map((row) => ({
+      employee_id: String(row?.employee_id || row?.id || '').trim(),
+      name: String(row?.name || '').trim(),
+    }))
+    .filter((row) => row.employee_id);
+  if (normalized.length) return normalized;
+
+  const legacyId = String(oa?.site_visit_assignee_employee_id || '').trim();
+  if (legacyId && legacyId.toLowerCase() !== 'other') {
+    return [{ employee_id: legacyId, name: String(oa?.site_visit_assignee_name || '').trim() }];
+  }
+  return [];
+}
+
+export function siteVisitOtherPeople(oa) {
+  const list = Array.isArray(oa?.site_visit_others) ? oa.site_visit_others : [];
+  const normalized = list
+    .map((row, i) => ({
+      ...newSiteVisitOtherPerson(),
+      ...row,
+      id: row?.id || `svo-${i}`,
+    }))
+    .filter((row) => (
+      String(row.name || '').trim()
+      || String(row.mobile || '').trim()
+      || String(row.email || '').trim()
+      || String(row.address || '').trim()
+      || row.id_proof
+    ));
+  if (normalized.length) return normalized;
+
+  const legacy = oa?.site_visit_other;
+  const legacyIsOther = String(oa?.site_visit_assignee_employee_id || '').toLowerCase() === 'other';
+  if (legacyIsOther && legacy && (String(legacy.name || '').trim() || legacy.id_proof)) {
+    return [{ ...newSiteVisitOtherPerson(), ...legacy, id: 'svo-legacy' }];
+  }
+  return [];
+}
+
+function normalizeOpportunityAssessment(stored) {
+  const base = defaultOpportunityAssessment();
+  const oa = { ...base, ...(stored || {}) };
+  return {
+    ...oa,
+    product_categories: Array.isArray(stored?.product_categories) ? stored.product_categories : [],
+    site_visit_assignees: siteVisitAssignees(oa),
+    site_visit_others: siteVisitOtherPeople(oa),
+    site_visit_photos: Array.isArray(stored?.site_visit_photos) ? stored.site_visit_photos : [],
+    technical_datasheet_drawing: Array.isArray(stored?.technical_datasheet_drawing)
+      ? stored.technical_datasheet_drawing
+      : [],
+    site_visit_follow_ups: Array.isArray(stored?.site_visit_follow_ups)
+      ? stored.site_visit_follow_ups.map((row, i) => ({
+        ...newSiteVisitFollowUpRow(),
+        ...row,
+        id: row?.id || `svf-${i}`,
+        attachments: Array.isArray(row?.attachments) ? row.attachments : [],
+      }))
+      : [],
+    site_visit_task_ids:
+      stored?.site_visit_task_ids && typeof stored.site_visit_task_ids === 'object'
+        ? stored.site_visit_task_ids
+        : {},
+    site_visit_other: { ...base.site_visit_other, ...(stored?.site_visit_other || {}) },
+  };
+}
+
+/** Post-visit capture is mandatory once the engineer marks the visit Done. */
+export function isSiteVisitDoneComplete(oa) {
+  return Boolean(
+    (oa?.site_visit_photos || []).length > 0
+    && String(oa?.technical_discussions || '').trim()
+    && (oa?.technical_datasheet_drawing || []).length > 0
+    && String(oa?.existing_equipment_details || '').trim()
+    && String(oa?.process_parameters || '').trim()
+    && String(oa?.minutes_of_meeting || '').trim()
+    && hasAttachmentRef(oa?.customer_signature)
+    && hasAttachmentRef(oa?.engineer_signature),
+  );
+}
+
 export function isOpportunityAssessmentComplete(payload) {
   const oa = payload?.opportunity_assessment || {};
+  const categories = Array.isArray(oa.product_categories) ? oa.product_categories : [];
   const baseOk = Boolean(
     String(oa.business_category || '').trim()
-    && Array.isArray(oa.product_categories)
-    && oa.product_categories.length > 0
+    && categories.length > 0
     && typeof oa.technical_datas_required === 'boolean'
     && typeof oa.site_visit_required === 'boolean'
     && String(oa.expected_enquiry_closing_date || '').trim(),
   );
   if (!baseOk) return false;
+  if (
+    categories.includes(PRODUCT_CATEGORY_OTHER)
+    && !String(oa.product_category_other || '').trim()
+  ) {
+    return false;
+  }
   if (oa.site_visit_required !== true) return true;
 
-  const hasDate = Boolean(String(oa.site_visit_date || '').trim());
-  const assigneeId = String(oa.site_visit_assignee_employee_id || '').trim();
-  if (!hasDate || !assigneeId) return false;
-  if (assigneeId !== 'other') return true;
+  if (!String(oa.site_visit_date || '').trim()) return false;
 
-  const other = oa.site_visit_other || {};
-  return Boolean(
-    String(other.name || '').trim()
-    && String(other.mobile || '').trim()
-    && String(other.email || '').trim()
-    && String(other.address || '').trim()
-    && other.id_proof
-    && (other.id_proof.id || other.id_proof.file_url || other.id_proof.url),
+  const employees = siteVisitAssignees(oa);
+  const others = siteVisitOtherPeople(oa);
+  if (!employees.length && !others.length) return false;
+  if (others.some((person) => !isSiteVisitOtherComplete(person))) return false;
+
+  const status = String(oa.site_visit_status || '').trim();
+  if (!status) return false;
+  if (status !== 'done') return true;
+
+  return isSiteVisitDoneComplete(oa);
+}
+
+/** Free-form technical Q&A the engineer builds per enquiry. */
+export function newTechnicalAssessmentItem() {
+  return {
+    id: `ta-q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    question: '',
+    answer: '',
+  };
+}
+
+export function defaultTechnicalAssessment() {
+  return {
+    items: [],
+    follow_ups: [],
+  };
+}
+
+function normalizeTechnicalAssessment(stored) {
+  const base = defaultTechnicalAssessment();
+  if (!stored || typeof stored !== 'object') return base;
+  return {
+    ...base,
+    ...stored,
+    items: Array.isArray(stored.items)
+      ? stored.items.map((row, i) => ({
+        ...newTechnicalAssessmentItem(),
+        ...row,
+        id: row?.id || `ta-q-${i}`,
+      }))
+      : [],
+    follow_ups: Array.isArray(stored.follow_ups)
+      ? stored.follow_ups.map((row, i) => ({
+        ...newSiteVisitFollowUpRow(),
+        ...row,
+        id: row?.id || `svf-ta-${i}`,
+        attachments: Array.isArray(row?.attachments) ? row.attachments : [],
+      }))
+      : [],
+  };
+}
+
+export function technicalAssessmentItems(payload) {
+  const items = payload?.technical_assessment?.items;
+  return Array.isArray(items) ? items : [];
+}
+
+/** At least one question answered — the rest is up to the engineer. */
+export function isTechnicalAssessmentComplete(payload) {
+  return technicalAssessmentItems(payload).some(
+    (row) => String(row?.question || '').trim() && String(row?.answer || '').trim(),
   );
+}
+
+export function technicalAssessmentIncompleteMessage(payload) {
+  const items = technicalAssessmentItems(payload);
+  if (!items.length) return 'Add at least one technical question and its answer';
+  return 'Fill both the question and the answer for at least one entry';
+}
+
+export const MATERIAL_UOM_OPTIONS = [
+  'Nos', 'Set', 'Pair', 'Mtr', 'Ft', 'Sq.Mtr', 'Kg', 'Ton', 'Ltr', 'Box', 'Pkt', 'Roll', 'Lot',
+];
+
+/** One line item in the material / product grids. */
+export function newMaterialProductRow(overrides = {}) {
+  return {
+    id: `mp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    item_name: '',
+    specification: '',
+    quantity: '',
+    uom: 'Nos',
+    // Stock-grid only: link back to the stock master row.
+    stock_item_id: '',
+    available_qty: null,
+    // Purchase-grid only: the stock row whose shortfall created this line,
+    // plus the vendor picked for it in Vendor management.
+    split_from_row_id: '',
+    vendor_id: '',
+    vendor_name: '',
+    quoted_price: '',
+    warranty: '',
+    delivery_period: '',
+    delivery_date: '',
+    ...overrides,
+  };
+}
+
+export function defaultMaterialProduct() {
+  return {
+    stock_items: [],
+    purchase_items: [],
+    follow_ups: [],
+  };
+}
+
+function normalizeMaterialRows(rows, keyPrefix) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row, i) => ({
+    ...newMaterialProductRow(),
+    ...row,
+    id: row?.id || `${keyPrefix}-${i}`,
+  }));
+}
+
+function normalizeMaterialProduct(stored) {
+  const base = defaultMaterialProduct();
+  if (!stored || typeof stored !== 'object') return base;
+  return {
+    ...base,
+    ...stored,
+    stock_items: normalizeMaterialRows(stored.stock_items, 'mp-stk'),
+    purchase_items: normalizeMaterialRows(stored.purchase_items, 'mp-buy'),
+    follow_ups: Array.isArray(stored.follow_ups)
+      ? stored.follow_ups.map((row, i) => ({
+        ...newSiteVisitFollowUpRow(),
+        ...row,
+        id: row?.id || `svf-mp-${i}`,
+        attachments: Array.isArray(row?.attachments) ? row.attachments : [],
+      }))
+      : [],
+  };
+}
+
+export function materialStockRows(payload) {
+  const rows = payload?.material_product?.stock_items;
+  return Array.isArray(rows) ? rows : [];
+}
+
+/** Items to buy — this list is what Vendor management allocates to vendors. */
+export function materialPurchaseRows(payload) {
+  const rows = payload?.material_product?.purchase_items;
+  return Array.isArray(rows) ? rows : [];
+}
+
+/** Purchase lines still waiting for a vendor in Vendor management. */
+export function unassignedPurchaseRows(payload) {
+  return materialPurchaseRows(payload).filter(
+    (row) => String(row.item_name || '').trim() && !String(row.vendor_id || '').trim(),
+  );
+}
+
+export const VENDOR_INQUIRY_STATUSES = [
+  { id: 'draft', label: 'Draft' },
+  { id: 'sent', label: 'Inquiry sent' },
+  { id: 'quoted', label: 'Quote received' },
+];
+
+export function newVendorInquiry(overrides = {}) {
+  return {
+    id: `vi-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    vendor_id: '',
+    vendor_name: '',
+    vendor_email: '',
+    inquiry_date: new Date().toISOString().slice(0, 10),
+    inquiry_status: 'draft',
+    inquiry_sent_at: '',
+    remarks: '',
+    technical_data_notes: '',
+    technical_data_attachments: [],
+    quote_received_date: '',
+    ...overrides,
+  };
+}
+
+function normalizeVendorInquiries(stored) {
+  const rows = Array.isArray(stored?.vendor_inquiries) ? stored.vendor_inquiries : [];
+  return rows.map((row, i) => ({
+    ...newVendorInquiry(),
+    ...row,
+    id: row?.id || `vi-${i}`,
+    technical_data_attachments: Array.isArray(row?.technical_data_attachments)
+      ? row.technical_data_attachments
+      : [],
+  }));
+}
+
+export function vendorInquiries(payload) {
+  return Array.isArray(payload?.vendor_inquiries) ? payload.vendor_inquiries : [];
+}
+
+/** Purchase lines grouped by the vendor they were assigned to. */
+export function purchaseItemsByVendor(payload) {
+  const groups = [];
+  const index = new Map();
+  materialPurchaseRows(payload)
+    .filter((row) => String(row?.item_name || '').trim() && (row.vendor_id || row.vendor_name))
+    .forEach((row) => {
+      const key = String(row.vendor_id || row.vendor_name || '').trim();
+      if (!key) return;
+      if (!index.has(key)) {
+        index.set(key, groups.length);
+        groups.push({
+          key,
+          vendor_id: row.vendor_id || '',
+          vendor_name: row.vendor_name || '',
+          items: [],
+        });
+      }
+      groups[index.get(key)].items.push(row);
+    });
+  return groups;
+}
+
+export function inquiryForVendor(payload, vendorId, vendorName) {
+  const rows = vendorInquiries(payload);
+  return rows.find((row) => (
+    (vendorId && row.vendor_id === vendorId)
+    || (!vendorId && String(row.vendor_name || '').trim() === String(vendorName || '').trim())
+  )) || null;
+}
+
+function purchaseQuoteComplete(row) {
+  const price = Number(row?.quoted_price);
+  return Boolean(
+    Number.isFinite(price) && price > 0
+    && String(row?.warranty || '').trim()
+    && (String(row?.delivery_date || '').trim() || String(row?.delivery_period || '').trim()),
+  );
+}
+
+function vendorInquiryQuoteComplete(inquiry) {
+  if (!inquiry) return false;
+  return Boolean(
+    String(inquiry.inquiry_date || '').trim()
+    && (
+      String(inquiry.technical_data_notes || '').trim()
+      || (Array.isArray(inquiry.technical_data_attachments) && inquiry.technical_data_attachments.length)
+    ),
+  );
+}
+
+export function isMaterialProductRowFilled(row) {
+  return Boolean(
+    String(row?.item_name || '').trim()
+    && String(row?.quantity ?? '').toString().trim()
+    && Number(row?.quantity) > 0
+    && String(row?.uom || '').trim(),
+  );
+}
+
+export function isMaterialProductComplete(payload) {
+  const rows = [...materialStockRows(payload), ...materialPurchaseRows(payload)];
+  const filled = rows.filter(isMaterialProductRowFilled);
+  if (!filled.length) return false;
+  // Every started row must be finished so nothing half-typed reaches the vendor step.
+  return rows.every((row) => {
+    const touched = String(row?.item_name || '').trim()
+      || String(row?.specification || '').trim()
+      || String(row?.quantity ?? '').toString().trim();
+    return !touched || isMaterialProductRowFilled(row);
+  });
+}
+
+export function materialProductIncompleteMessage(payload) {
+  const rows = [...materialStockRows(payload), ...materialPurchaseRows(payload)];
+  if (!rows.some(isMaterialProductRowFilled)) {
+    return 'Add at least one item with name, quantity and UOM';
+  }
+  return 'Complete item name, quantity and UOM on every row (or remove the empty rows)';
+}
+
+/** Tells the user exactly which Requirement Analysis field is still missing. */
+export function requirementAnalysisIncompleteMessage(payload) {
+  const oa = payload?.opportunity_assessment || {};
+  const categories = Array.isArray(oa.product_categories) ? oa.product_categories : [];
+  if (!String(oa.business_category || '').trim()) return 'Select a business category';
+  if (!categories.length) return 'Select at least one product category';
+  if (categories.includes(PRODUCT_CATEGORY_OTHER) && !String(oa.product_category_other || '').trim()) {
+    return 'Type the custom product category for "Other"';
+  }
+  if (typeof oa.technical_datas_required !== 'boolean') return 'Answer whether technical datas are required';
+  if (typeof oa.site_visit_required !== 'boolean') return 'Answer whether a site visit is required';
+  if (!String(oa.expected_enquiry_closing_date || '').trim()) return 'Set the expected enquiry closing date';
+  if (oa.site_visit_required !== true) return 'Complete Requirement Analysis details';
+
+  if (!String(oa.site_visit_date || '').trim()) return 'Set the site visit date';
+  const employees = siteVisitAssignees(oa);
+  const others = siteVisitOtherPeople(oa);
+  if (!employees.length && !others.length) return 'Assign at least one person for the site visit';
+  if (others.some((person) => !isSiteVisitOtherComplete(person))) {
+    return 'Complete name, mobile, email, address and ID proof for every other person';
+  }
+  const status = String(oa.site_visit_status || '').trim();
+  if (!status) return 'Set the site visit status (Pending or Done)';
+  if (status === 'done' && !isSiteVisitDoneComplete(oa)) {
+    return 'Site visit marked Done — add photos, technical discussions, datasheet/drawing, existing equipment, process parameters, minutes of meeting and both signatures';
+  }
+  return 'Complete Requirement Analysis details';
 }
 
 export const WORKFLOW_TERMINAL_IDS = ['closed_won', 'closed_lost'];
@@ -104,11 +562,49 @@ function isVendorRowComplete(row) {
   );
 }
 
-/** At least one vendor row fully filled with technical clearance YES from vendor. */
+function purchaseRowsNeedingVendor(payload) {
+  return materialPurchaseRows(payload).filter((row) => String(row?.item_name || '').trim());
+}
+
+function purchaseRowHasVendor(row) {
+  return Boolean(String(row?.vendor_id || '').trim() || String(row?.vendor_name || '').trim());
+}
+
+/** Every purchase item has a vendor, an inquiry, and a quote (price, technical data, warranty/delivery). */
 export function isVendorSelectionComplete(payload) {
   if (payload?.technical_approved === true) return true;
-  const rows = payload?.vendor_selections || [];
-  return rows.some(isVendorRowComplete);
+  const purchase = purchaseRowsNeedingVendor(payload);
+  if (!purchase.length) return true;
+  if (!purchase.every(purchaseRowHasVendor)) return false;
+  if (!purchase.every(purchaseQuoteComplete)) return false;
+  const groups = purchaseItemsByVendor(payload);
+  return groups.every((group) => vendorInquiryQuoteComplete(
+    inquiryForVendor(payload, group.vendor_id, group.vendor_name),
+  ));
+}
+
+export function vendorManagementIncompleteMessage(payload) {
+  const missingVendors = unassignedPurchaseRows(payload);
+  if (missingVendors.length) {
+    const names = missingVendors.map((row) => row.item_name).filter(Boolean).slice(0, 4).join(', ');
+    const extra = missingVendors.length > 4 ? ` +${missingVendors.length - 4} more` : '';
+    return `Select a vendor for: ${names}${extra}`;
+  }
+  const groups = purchaseItemsByVendor(payload);
+  for (const group of groups) {
+    const inquiry = inquiryForVendor(payload, group.vendor_id, group.vendor_name);
+    if (!String(inquiry?.inquiry_date || '').trim()) {
+      return `Set the inquiry date for ${group.vendor_name || 'the vendor'}`;
+    }
+    if (!vendorInquiryQuoteComplete(inquiry)) {
+      return `Add technical data (notes or attachment) from ${group.vendor_name || 'the vendor'}`;
+    }
+  }
+  const missingQuote = purchaseRowsNeedingVendor(payload).filter((row) => !purchaseQuoteComplete(row));
+  if (missingQuote.length) {
+    return 'Enter price, warranty and delivery (date or period) for every quoted item';
+  }
+  return 'Complete vendor inquiry and quote details';
 }
 
 /** Max pipeline index reachable given saved stage and vendor selection gate. */
@@ -145,6 +641,10 @@ export function isStageComplete(stageId, payload, lead, { isCarryAndOrder, leadN
       return true;
     case 'opportunity_assessment':
       return isOpportunityAssessmentComplete(payload);
+    case 'technical_assessment':
+      return isTechnicalAssessmentComplete(payload);
+    case 'material_product':
+      return isMaterialProductComplete(payload);
     case 'technical_clearance':
       return isVendorSelectionComplete(payload);
     case 'bom_costing':
@@ -166,9 +666,13 @@ export function stageIncompleteMessage(stageId, lead, { isCarryAndOrder, leadNee
       }
       return 'Complete enquiry details';
     case 'opportunity_assessment':
-      return 'Fill business category, product category, technical/site visit answers, expected closing date, and site visit details when required';
+      return requirementAnalysisIncompleteMessage(payload);
+    case 'technical_assessment':
+      return technicalAssessmentIncompleteMessage(payload);
+    case 'material_product':
+      return materialProductIncompleteMessage(payload);
     case 'technical_clearance':
-      return 'Add at least one vendor with details filled and technical clearance from vendor set to YES';
+      return vendorManagementIncompleteMessage(payload);
     case 'bom_costing':
       return 'Add at least one BOM material line';
     case 'offer_revision':
@@ -259,10 +763,13 @@ export function defaultWorkflowPayload() {
     commercial_otx_comment: '',
     technical_attachments: [],
     vendor_selections: [newVendorSelectionRow()],
+    vendor_inquiries: [],
     bom_attachments: [],
     otx_date_from: '',
     otx_date_to: '',
     opportunity_assessment: defaultOpportunityAssessment(),
+    technical_assessment: defaultTechnicalAssessment(),
+    material_product: defaultMaterialProduct(),
     bom: {
       materials: [],
       install_cost: 0,
@@ -301,17 +808,9 @@ export function mergeWorkflowPayload(stored) {
   return {
     ...base,
     ...stored,
-    opportunity_assessment: {
-      ...base.opportunity_assessment,
-      ...(stored.opportunity_assessment || {}),
-      product_categories: Array.isArray(stored.opportunity_assessment?.product_categories)
-        ? stored.opportunity_assessment.product_categories
-        : base.opportunity_assessment.product_categories,
-      site_visit_other: {
-        ...base.opportunity_assessment.site_visit_other,
-        ...(stored.opportunity_assessment?.site_visit_other || {}),
-      },
-    },
+    opportunity_assessment: normalizeOpportunityAssessment(stored.opportunity_assessment),
+    technical_assessment: normalizeTechnicalAssessment(stored.technical_assessment),
+    material_product: normalizeMaterialProduct(stored.material_product),
     bom: { ...base.bom, ...(stored.bom || {}) },
     closed_won: { ...base.closed_won, ...(stored.closed_won || {}) },
     closed_lost: { ...base.closed_lost, ...(stored.closed_lost || {}) },
@@ -319,6 +818,7 @@ export function mergeWorkflowPayload(stored) {
       ? stored.technical_attachments
       : base.technical_attachments,
     vendor_selections: normalizeVendorSelections(stored),
+    vendor_inquiries: normalizeVendorInquiries(stored),
     bom_attachments: Array.isArray(stored.bom_attachments) ? stored.bom_attachments : base.bom_attachments,
     offer_revisions,
     lead_offer_no,

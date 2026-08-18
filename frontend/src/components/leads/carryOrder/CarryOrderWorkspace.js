@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -41,7 +41,31 @@ import {
   stageIncompleteMessage,
   OPPORTUNITY_BUSINESS_CATEGORIES,
   isOpportunityAssessmentComplete,
+  requirementAnalysisIncompleteMessage,
   defaultOpportunityAssessment,
+  PRODUCT_CATEGORY_OTHER,
+  SITE_VISIT_STATUSES,
+  SITE_VISIT_FOLLOW_UP_CHANNELS,
+  siteVisitAssignees,
+  siteVisitOtherPeople,
+  newSiteVisitOtherPerson,
+  newSiteVisitFollowUpRow,
+  defaultTechnicalAssessment,
+  newTechnicalAssessmentItem,
+  isTechnicalAssessmentComplete,
+  technicalAssessmentIncompleteMessage,
+  defaultMaterialProduct,
+  newMaterialProductRow,
+  materialPurchaseRows,
+  isMaterialProductComplete,
+  materialProductIncompleteMessage,
+  MATERIAL_UOM_OPTIONS,
+  unassignedPurchaseRows,
+  vendorManagementIncompleteMessage,
+  vendorInquiries,
+  purchaseItemsByVendor,
+  inquiryForVendor,
+  newVendorInquiry,
 } from '@/lib/carryOrderWorkflow';
 import {
   CheckCircle2,
@@ -56,6 +80,7 @@ import {
   Loader2,
   Lock,
   Check,
+  Mail,
 } from 'lucide-react';
 import { isCarryAndOrder, leadNeedsVendor, LEAD_CATEGORY_OPTIONS } from '@/lib/leadUtils';
 import { getApiErrorMessage } from '@/lib/apiErrors';
@@ -68,6 +93,8 @@ const selectClass =
   'h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900';
 const labelClass = 'text-xs font-semibold text-slate-800 uppercase tracking-wide';
 const readOnlyValueClass = 'text-sm font-medium mt-1 text-slate-900';
+const textareaClass =
+  'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 resize-none';
 
 export function CarryOrderWorkspace({
   lead,
@@ -120,9 +147,12 @@ export function CarryOrderWorkspace({
       && leadNeedsVendor(lead)
       && nextStage !== 'enquiry_logged'
       && nextStage !== 'opportunity_assessment'
+      && nextStage !== 'technical_assessment'
+      && nextStage !== 'material_product'
+      && nextStage !== 'technical_clearance'
+      && !isVendorSelectionComplete(nextPayload || payload)
     ) {
-      toast.error('Assign a vendor before moving past opportunity assessment');
-      onAssignVendor?.(lead);
+      toast.error('Assign a vendor to every item that needs to be purchased');
       return;
     }
     setSaving(true);
@@ -393,7 +423,7 @@ export function CarryOrderWorkspace({
         && pipelineStageIndex(stageId) > techIdx
         && pipelineMaxIdx <= techIdx
       ) {
-        toast.error('Complete vendor selection to unlock the next steps');
+        toast.error('Complete vendor management to unlock the next steps');
         return;
       }
       const need = WORKFLOW_PIPELINE_IDS[pipelineMaxIdx];
@@ -457,7 +487,7 @@ export function CarryOrderWorkspace({
     if (!next) return;
     const comment =
       next === 'bom_costing' && isVendorSelectionComplete(payload)
-        ? 'Vendor selection completed — proceeding to BOM'
+        ? 'Vendor management completed — proceeding to BOM'
         : `Completed ${CARRY_ORDER_STAGES.find((s) => s.id === activeTab)?.label}`;
     saveWorkflow(
       next,
@@ -491,7 +521,7 @@ export function CarryOrderWorkspace({
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">Setup pending — vendor not assigned</p>
             <p className="text-xs text-amber-800 mt-0.5">
-              This lead is saved. Assign a vendor below to unlock vendor selection and later stages.
+              This lead is saved. Assign a vendor below to unlock vendor management and later stages.
             </p>
           </div>
           {canEdit && (
@@ -578,6 +608,26 @@ export function CarryOrderWorkspace({
             authHeader={authHeader}
           />
         )}
+        {canOpenStage(activeTab) && activeTab === 'technical_assessment' && (
+          <ModuleTechnicalAssessment
+            payload={payload}
+            setPayload={setPayload}
+            canEdit={editActive}
+            saving={saving}
+            uploadLeadFile={uploadLeadAttachmentFile}
+          />
+        )}
+        {canOpenStage(activeTab) && activeTab === 'material_product' && (
+          <ModuleMaterialProduct
+            payload={payload}
+            setPayload={setPayload}
+            canEdit={editActive}
+            saving={saving}
+            uploadLeadFile={uploadLeadAttachmentFile}
+            apiBase={apiBase}
+            authHeader={authHeader}
+          />
+        )}
         {canOpenStage(activeTab) && activeTab === 'technical_clearance' && (
           <ModuleVendorSelection
             payload={payload}
@@ -585,12 +635,9 @@ export function CarryOrderWorkspace({
             vendors={vendors}
             canEdit={editActive}
             saving={saving}
-            onUploadRowFiles={uploadVendorRowAttachments}
-            onRemoveRowAttachment={removeVendorRowAttachment}
-            onUploadRowTechnicalFiles={uploadVendorRowTechnicalAttachments}
-            onRemoveRowTechnicalAttachment={removeVendorRowTechnicalAttachment}
-            onUploadRowOfferFiles={uploadVendorRowOfferAttachments}
-            onRemoveRowOfferAttachment={removeVendorRowOfferAttachment}
+            uploadLeadFile={uploadLeadAttachmentFile}
+            apiBase={apiBase}
+            authHeader={authHeader}
           />
         )}
         {canOpenStage(activeTab) && activeTab === 'bom_costing' && (
@@ -644,9 +691,13 @@ export function CarryOrderWorkspace({
               ? stepComplete
                 ? 'Step requirements met — continue when ready.'
                 : activeTab === 'opportunity_assessment' && !isOpportunityAssessmentComplete(payload)
-                  ? 'Fill all Opportunity & Assessment fields to continue.'
+                  ? requirementAnalysisIncompleteMessage(payload)
+                : activeTab === 'technical_assessment' && !isTechnicalAssessmentComplete(payload)
+                  ? technicalAssessmentIncompleteMessage(payload)
+                : activeTab === 'material_product' && !isMaterialProductComplete(payload)
+                  ? materialProductIncompleteMessage(payload)
                 : activeTab === 'technical_clearance' && !isVendorSelectionComplete(payload)
-                  ? 'Complete vendor details and set technical clearance from vendor to YES for at least one vendor.'
+                  ? vendorManagementIncompleteMessage(payload)
                   : stageIncompleteMessage(activeTab, lead, stageCtx)
               : 'Viewing a completed step — save to update details without moving forward.'}
           </p>
@@ -759,6 +810,443 @@ function ModuleEnquiry({ lead, attachments, payload, setPayload, canEdit }) {
   );
 }
 
+/** Saved-attachment row with open + remove, used across the Requirement Analysis fields. */
+function OaAttachmentRow({ item, canEdit, busy, onRemove }) {
+  const name = item?.file_name || item?.name || 'File';
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+      <button
+        type="button"
+        className="flex-1 flex items-center gap-2 truncate text-left text-indigo-700 hover:underline"
+        onClick={() => {
+          if (item?.file_url) window.open(item.file_url, '_blank', 'noopener,noreferrer');
+        }}
+      >
+        <FileText className="h-4 w-4 shrink-0" />
+        <span className="truncate">{name}</span>
+      </button>
+      {canEdit && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs"
+          disabled={busy}
+          onClick={onRemove}
+        >
+          Remove
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function OaSingleFileField({ label, value, canEdit, busy, addLabel, onPick, onRemove }) {
+  return (
+    <div className="space-y-2">
+      <Label className={labelClass}>{label}</Label>
+      {value ? (
+        <OaAttachmentRow item={value} canEdit={canEdit} busy={busy} onRemove={onRemove} />
+      ) : (
+        <p className="text-sm text-slate-500">Not attached</p>
+      )}
+      {canEdit && !value && (
+        <CgwMultiFilePicker
+          label=""
+          accept={LEAD_ATTACHMENT_ACCEPT}
+          hint={LEAD_ATTACHMENT_HINT}
+          files={[]}
+          onChange={onPick}
+          addLabel={addLabel}
+          disabled={busy}
+        />
+      )}
+    </div>
+  );
+}
+
+function OaMultiFileField({ label, items, canEdit, busy, addLabel, onPick, onRemove }) {
+  const list = Array.isArray(items) ? items : [];
+  return (
+    <div className="space-y-2">
+      <Label className={labelClass}>{label}</Label>
+      {list.length === 0 ? (
+        <p className="text-sm text-slate-500">No files attached</p>
+      ) : (
+        <div className="space-y-1.5">
+          {list.map((item) => (
+            <OaAttachmentRow
+              key={item.id || item.file_url}
+              item={item}
+              canEdit={canEdit}
+              busy={busy}
+              onRemove={() => onRemove(item.id)}
+            />
+          ))}
+        </div>
+      )}
+      {canEdit && (
+        <CgwMultiFilePicker
+          label=""
+          accept={LEAD_ATTACHMENT_ACCEPT}
+          hint={LEAD_ATTACHMENT_HINT}
+          files={[]}
+          onChange={onPick}
+          addLabel={addLabel}
+          disabled={busy}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Spreadsheet-style editable grid: arrow/Enter navigation between cells,
+ * multi-cell paste from Excel, and add/remove rows.
+ */
+function ExcelGrid({
+  columns,
+  rows,
+  onChange,
+  canEdit,
+  newRow,
+  emptyLabel,
+  rowActions,
+  allowAddRemove = true,
+}) {
+  const list = Array.isArray(rows) ? rows : [];
+  const showRowControls = canEdit && allowAddRemove;
+  const cellRef = (rowIdx, colIdx) => `cell-${rowIdx}-${colIdx}`;
+  const gridRef = useRef(null);
+
+  const focusCell = (rowIdx, colIdx) => {
+    const el = gridRef.current?.querySelector(`[data-cell="${cellRef(rowIdx, colIdx)}"]`);
+    if (el) {
+      el.focus();
+      if (typeof el.select === 'function') el.select();
+    }
+  };
+
+  const updateCell = (rowId, key, value) => {
+    onChange(list.map((row) => (row.id === rowId ? { ...row, [key]: value } : row)));
+  };
+
+  // A column handler may return the next rows, or apply its own wider update
+  // (e.g. splitting a shortfall into another grid) and return nothing.
+  const applyHandler = (handler, row, value) => {
+    const next = handler(list, row, value);
+    if (Array.isArray(next)) onChange(next);
+  };
+
+  const addRow = () => onChange([...list, newRow()]);
+
+  const removeRow = (rowId) => onChange(list.filter((row) => row.id !== rowId));
+
+  const handleKeyDown = (e, rowIdx, colIdx) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (rowIdx === list.length - 1) {
+        if (!showRowControls) return;
+        onChange([...list, newRow()]);
+        // Wait for the new row to render before moving into it.
+        window.setTimeout(() => focusCell(rowIdx + 1, colIdx), 0);
+      } else {
+        focusCell(rowIdx + 1, colIdx);
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown' && rowIdx < list.length - 1) {
+      e.preventDefault();
+      focusCell(rowIdx + 1, colIdx);
+      return;
+    }
+    if (e.key === 'ArrowUp' && rowIdx > 0) {
+      e.preventDefault();
+      focusCell(rowIdx - 1, colIdx);
+    }
+  };
+
+  /** Paste a block copied from Excel starting at the focused cell. */
+  const handlePaste = (e, rowIdx, colIdx) => {
+    const text = e.clipboardData?.getData('text/plain') || '';
+    if (!text.includes('\t') && !text.includes('\n')) return;
+    e.preventDefault();
+    const matrix = text
+      .replace(/\r/g, '')
+      .split('\n')
+      .filter((line, i, arr) => line.trim() || i < arr.length - 1)
+      .map((line) => line.split('\t'));
+
+    const next = [...list];
+    matrix.forEach((cells, r) => {
+      const targetIdx = rowIdx + r;
+      if (!next[targetIdx]) next[targetIdx] = newRow();
+      const patch = {};
+      cells.forEach((raw, c) => {
+        const col = columns[colIdx + c];
+        if (!col) return;
+        patch[col.key] = col.type === 'number' ? String(raw).trim() : String(raw).trim();
+      });
+      next[targetIdx] = { ...next[targetIdx], ...patch };
+    });
+    onChange(next);
+  };
+
+  return (
+    <div className="space-y-2" ref={gridRef}>
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="bg-slate-100">
+              <th className="w-14 border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                Sl no
+              </th>
+              {columns.map((col) => (
+                <th
+                  key={col.key}
+                  style={col.width ? { width: col.width } : undefined}
+                  className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600"
+                >
+                  {col.label}
+                </th>
+              ))}
+              {showRowControls && <th className="w-20 border-b border-slate-200 px-2 py-2" />}
+            </tr>
+          </thead>
+          <tbody>
+            {list.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={columns.length + (showRowControls ? 2 : 1)}
+                  className="px-3 py-4 text-center text-sm text-slate-500"
+                >
+                  {emptyLabel}
+                </td>
+              </tr>
+            ) : (
+              list.map((row, rowIdx) => (
+                <tr key={row.id} className="odd:bg-white even:bg-slate-50/60">
+                  <td className="border-b border-r border-slate-200 px-2 py-1 text-slate-600">
+                    {rowIdx + 1}
+                  </td>
+                  {columns.map((col, colIdx) => (
+                    <td key={col.key} className="border-b border-r border-slate-200 p-0">
+                      {col.type === 'select' ? (
+                        <select
+                          data-cell={cellRef(rowIdx, colIdx)}
+                          disabled={!canEdit || col.readOnly}
+                          value={row[col.key] ?? ''}
+                          onChange={(e) => {
+                            if (col.onCellChange) {
+                              applyHandler(col.onCellChange, row, e.target.value);
+                              return;
+                            }
+                            updateCell(row.id, col.key, e.target.value);
+                          }}
+                          onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
+                          className="w-full border-0 bg-transparent px-2 py-1.5 text-sm text-slate-900 outline-none focus:bg-indigo-50/70 focus:ring-1 focus:ring-inset focus:ring-indigo-400 disabled:text-slate-500"
+                        >
+                          <option value="">{col.placeholder || 'Select'}</option>
+                          {(col.selectOptions || []).map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          data-cell={cellRef(rowIdx, colIdx)}
+                          type={col.type === 'number' ? 'number' : 'text'}
+                          min={col.type === 'number' ? '0' : undefined}
+                          step={col.type === 'number' ? 'any' : undefined}
+                          list={col.options ? `${col.key}-options` : undefined}
+                          disabled={!canEdit || col.readOnly}
+                          value={col.displayValue ? col.displayValue(row) : (row[col.key] ?? '')}
+                          placeholder={col.placeholder}
+                          onChange={(e) => {
+                            if (col.onCellChange) {
+                              applyHandler(col.onCellChange, row, e.target.value);
+                              return;
+                            }
+                            updateCell(row.id, col.key, e.target.value);
+                          }}
+                          onBlur={(e) => {
+                            if (col.onCellBlur) applyHandler(col.onCellBlur, row, e.target.value);
+                          }}
+                          onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
+                          onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
+                          className="w-full border-0 bg-transparent px-2 py-1.5 text-sm text-slate-900 outline-none focus:bg-indigo-50/70 focus:ring-1 focus:ring-inset focus:ring-indigo-400 disabled:text-slate-500"
+                        />
+                      )}
+                    </td>
+                  ))}
+                  {showRowControls && (
+                    <td className="border-b border-slate-200 px-1 py-1">
+                      <div className="flex items-center justify-end gap-1">
+                        {rowActions?.(row)}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-slate-500 hover:text-rose-600"
+                          aria-label="Remove row"
+                          onClick={() => removeRow(row.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      {columns.filter((c) => c.options).map((col) => (
+        <datalist key={col.key} id={`${col.key}-options`}>
+          {col.options.map((opt) => (
+            <option key={opt} value={opt} />
+          ))}
+        </datalist>
+      ))}
+      {showRowControls && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={addRow}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Add row
+          </Button>
+          <p className="text-xs text-slate-500">
+            Press Enter for a new row, or paste a block of cells straight from Excel
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Shared follow-up log used by Requirement Analysis and Technical assessment. */
+function FollowUpLogSection({
+  rows,
+  canEdit,
+  saving,
+  uploadingField,
+  keyPrefix,
+  description,
+  onAdd,
+  onUpdate,
+  onRemove,
+  onUploadAttachments,
+}) {
+  const list = Array.isArray(rows) ? rows : [];
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <Label className={labelClass}>Follow-ups</Label>
+          <p className="text-xs text-slate-500 normal-case font-normal">{description}</p>
+        </div>
+        {canEdit && (
+          <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={onAdd}>
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Add follow-up
+          </Button>
+        )}
+      </div>
+      {list.length === 0 ? (
+        <p className="text-sm text-slate-500">No follow-ups logged yet</p>
+      ) : (
+        list.map((row, index) => (
+          <div key={row.id} className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                Follow-up {index + 1}
+              </p>
+              {canEdit && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-rose-600 hover:text-rose-700"
+                  onClick={() => onRemove(row.id)}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  Remove
+                </Button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className={labelClass}>Date</Label>
+                <Input
+                  type="date"
+                  className={inputClass}
+                  disabled={!canEdit}
+                  value={row.follow_up_date || ''}
+                  onChange={(e) => onUpdate(row.id, { follow_up_date: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className={labelClass}>Mode</Label>
+                <select
+                  className={selectClass}
+                  disabled={!canEdit}
+                  value={row.follow_up_channel || 'call'}
+                  onChange={(e) => onUpdate(row.id, { follow_up_channel: e.target.value })}
+                >
+                  {SITE_VISIT_FOLLOW_UP_CHANNELS.map((c) => (
+                    <option key={c.id} value={c.id}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label className={labelClass}>Contact person</Label>
+                <Input
+                  className={inputClass}
+                  disabled={!canEdit}
+                  value={row.contact_person || ''}
+                  onChange={(e) => onUpdate(row.id, { contact_person: e.target.value })}
+                  placeholder="Who did you speak to"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className={labelClass}>Next follow-up date</Label>
+                <Input
+                  type="date"
+                  className={inputClass}
+                  disabled={!canEdit}
+                  value={row.next_date || ''}
+                  onChange={(e) => onUpdate(row.id, { next_date: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className={labelClass}>Discussion notes</Label>
+              <textarea
+                disabled={!canEdit}
+                value={row.notes || ''}
+                onChange={(e) => onUpdate(row.id, { notes: e.target.value })}
+                rows={2}
+                className={textareaClass}
+                placeholder="What was discussed and agreed"
+              />
+            </div>
+            <OaMultiFileField
+              label="Attachments"
+              items={row.attachments}
+              canEdit={canEdit}
+              busy={saving || uploadingField === `${keyPrefix}-${row.id}`}
+              addLabel={uploadingField === `${keyPrefix}-${row.id}` ? 'Uploading…' : 'Add attachment'}
+              onRemove={(refId) => onUpdate(row.id, {
+                attachments: (row.attachments || []).filter((a) => a.id !== refId),
+              })}
+              onPick={(files) => onUploadAttachments(row, files)}
+            />
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 function ModuleOpportunityAssessment({
   payload,
   setPayload,
@@ -770,14 +1258,21 @@ function ModuleOpportunityAssessment({
 }) {
   const { categories, loading: categoriesLoading } = useLeadCategories({ enabled: true });
   const [employees, setEmployees] = useState([]);
-  const [uploadingIdProof, setUploadingIdProof] = useState(false);
+  const [uploadingField, setUploadingField] = useState('');
   const oa = payload.opportunity_assessment || defaultOpportunityAssessment();
-  const other = oa.site_visit_other || defaultOpportunityAssessment().site_visit_other;
   const productOptions = (categories || []).map((c) => c.name).filter(Boolean);
-  const options = productOptions.length ? productOptions : LEAD_CATEGORY_OPTIONS;
+  const baseOptions = productOptions.length ? productOptions : LEAD_CATEGORY_OPTIONS;
+  const options = baseOptions.includes(PRODUCT_CATEGORY_OTHER)
+    ? baseOptions
+    : [...baseOptions, PRODUCT_CATEGORY_OTHER];
   const selected = Array.isArray(oa.product_categories) ? oa.product_categories : [];
+  const otherCategorySelected = selected.includes(PRODUCT_CATEGORY_OTHER);
   const siteVisitYes = oa.site_visit_required === true;
-  const assigneeIsOther = String(oa.site_visit_assignee_employee_id || '') === 'other';
+  const assignees = siteVisitAssignees(oa);
+  const otherPeople = siteVisitOtherPeople(oa);
+  const siteVisitStatus = String(oa.site_visit_status || '');
+  const siteVisitDone = siteVisitStatus === 'done';
+  const followUps = Array.isArray(oa.site_visit_follow_ups) ? oa.site_visit_follow_ups : [];
 
   useEffect(() => {
     axios
@@ -793,11 +1288,6 @@ function ModuleOpportunityAssessment({
         ...defaultOpportunityAssessment(),
         ...oa,
         ...patch,
-        site_visit_other: {
-          ...defaultOpportunityAssessment().site_visit_other,
-          ...(oa.site_visit_other || {}),
-          ...(patch.site_visit_other || {}),
-        },
       },
     });
   };
@@ -807,54 +1297,97 @@ function ModuleOpportunityAssessment({
     const next = selected.includes(name)
       ? selected.filter((n) => n !== name)
       : [...selected, name];
-    updateOa({ product_categories: next });
-  };
-
-  const onAssigneeChange = (value) => {
-    if (value === 'other') {
-      updateOa({
-        site_visit_assignee_employee_id: 'other',
-        site_visit_assignee_name: 'Other',
-      });
-      return;
-    }
-    const emp = employees.find((e) => String(e.employee_id || e.id) === String(value));
     updateOa({
-      site_visit_assignee_employee_id: value,
-      site_visit_assignee_name: emp?.name || '',
-      site_visit_other: defaultOpportunityAssessment().site_visit_other,
+      product_categories: next,
+      ...(name === PRODUCT_CATEGORY_OTHER && !next.includes(PRODUCT_CATEGORY_OTHER)
+        ? { product_category_other: '' }
+        : {}),
     });
   };
 
-  const updateOther = (patch) => {
+  const toggleAssignee = (employee) => {
+    if (!canEdit) return;
+    const id = String(employee.employee_id || employee.id);
+    const exists = assignees.some((a) => String(a.employee_id) === id);
+    const next = exists
+      ? assignees.filter((a) => String(a.employee_id) !== id)
+      : [...assignees, { employee_id: id, name: employee.name || '' }];
     updateOa({
-      site_visit_other: {
-        ...other,
-        ...patch,
-      },
+      site_visit_assignees: next,
+      site_visit_assignee_employee_id: next[0]?.employee_id || '',
+      site_visit_assignee_name: next[0]?.name || '',
     });
   };
 
-  const onIdProofFiles = async (files) => {
+  const addOtherPerson = () => {
+    if (!canEdit) return;
+    updateOa({ site_visit_others: [...otherPeople, newSiteVisitOtherPerson()] });
+  };
+
+  const updateOtherPerson = (personId, patch) => {
+    updateOa({
+      site_visit_others: otherPeople.map((p) => (p.id === personId ? { ...p, ...patch } : p)),
+    });
+  };
+
+  const removeOtherPerson = (personId) => {
+    updateOa({ site_visit_others: otherPeople.filter((p) => p.id !== personId) });
+  };
+
+  /** Uploads the first picked file and hands the saved reference back to the caller. */
+  const uploadSingle = async (fieldKey, files, onUploaded, successMessage) => {
     const list = normalizeFileList(files);
     if (!list.length || !uploadLeadFile) return;
-    setUploadingIdProof(true);
+    setUploadingField(fieldKey);
     try {
       const ref = await uploadLeadFile(list[0]);
-      updateOther({ id_proof: ref });
-      toast.success('ID proof uploaded');
+      onUploaded(ref);
+      toast.success(successMessage);
     } catch (err) {
-      toast.error(getApiErrorMessage(err, 'Failed to upload ID proof'));
+      toast.error(getApiErrorMessage(err, 'Upload failed'));
     } finally {
-      setUploadingIdProof(false);
+      setUploadingField('');
     }
+  };
+
+  const uploadMany = async (fieldKey, files, existing, onUploaded, successMessage) => {
+    const list = normalizeFileList(files);
+    if (!list.length || !uploadLeadFile) return;
+    setUploadingField(fieldKey);
+    try {
+      const refs = [...(existing || [])];
+      for (const file of list) {
+        refs.push(await uploadLeadFile(file));
+      }
+      onUploaded(refs);
+      toast.success(successMessage);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Upload failed'));
+    } finally {
+      setUploadingField('');
+    }
+  };
+
+  const addFollowUp = () => {
+    if (!canEdit) return;
+    updateOa({ site_visit_follow_ups: [...followUps, newSiteVisitFollowUpRow()] });
+  };
+
+  const updateFollowUp = (rowId, patch) => {
+    updateOa({
+      site_visit_follow_ups: followUps.map((r) => (r.id === rowId ? { ...r, ...patch } : r)),
+    });
+  };
+
+  const removeFollowUp = (rowId) => {
+    updateOa({ site_visit_follow_ups: followUps.filter((r) => r.id !== rowId) });
   };
 
   return (
     <section className="space-y-4">
       <SectionTitle
-        title="Module 2 — Opportunity & Assessment"
-        subtitle="Qualify the enquiry before vendor and costing steps"
+        title="Module 2 — Requirement Analysis"
+        subtitle="Capture the customer requirement, site visit findings and follow-ups before vendor and costing steps"
       />
       <div className="rounded-xl border border-slate-200 p-4 bg-white space-y-4 text-slate-900">
         <div className="space-y-2">
@@ -896,6 +1429,18 @@ function ModuleOpportunityAssessment({
           {selected.length > 0 && (
             <p className="text-xs text-slate-600">Selected: {selected.join(', ')}</p>
           )}
+          {otherCategorySelected && (
+            <div className="space-y-2 pt-1">
+              <Label className={labelClass}>Specify other category</Label>
+              <Input
+                className={inputClass}
+                disabled={!canEdit}
+                value={oa.product_category_other || ''}
+                onChange={(e) => updateOa({ product_category_other: e.target.value })}
+                placeholder="Type the product category"
+              />
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -932,11 +1477,14 @@ function ModuleOpportunityAssessment({
                   ...(yes
                     ? {}
                     : {
-                        site_visit_date: '',
-                        site_visit_assignee_employee_id: '',
-                        site_visit_assignee_name: '',
-                        site_visit_other: defaultOpportunityAssessment().site_visit_other,
-                      }),
+                      site_visit_date: '',
+                      site_visit_assignees: [],
+                      site_visit_others: [],
+                      site_visit_status: '',
+                      site_visit_assignee_employee_id: '',
+                      site_visit_assignee_name: '',
+                      site_visit_other: defaultOpportunityAssessment().site_visit_other,
+                    }),
                 });
               }}
             >
@@ -948,124 +1496,315 @@ function ModuleOpportunityAssessment({
         </div>
 
         {siteVisitYes && (
-          <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-4 space-y-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Site visit details</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className={labelClass}>Site visit date</Label>
-                <Input
-                  type="date"
-                  className={inputClass}
-                  disabled={!canEdit}
-                  value={oa.site_visit_date || ''}
-                  onChange={(e) => updateOa({ site_visit_date: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className={labelClass}>Assign person for site visit</Label>
-                <select
-                  className={selectClass}
-                  disabled={!canEdit}
-                  value={oa.site_visit_assignee_employee_id || ''}
-                  onChange={(e) => onAssigneeChange(e.target.value)}
-                >
-                  <option value="">Select employee</option>
-                  {employees.map((emp) => {
-                    const id = emp.employee_id || emp.id;
-                    return (
-                      <option key={id} value={id}>
-                        {emp.name} ({id})
-                      </option>
-                    );
-                  })}
-                  <option value="other">Other</option>
-                </select>
-              </div>
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-4 space-y-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Site visit</p>
+            <div className="space-y-2 max-w-xs">
+              <Label className={labelClass}>Site visit date</Label>
+              <Input
+                type="date"
+                className={inputClass}
+                disabled={!canEdit}
+                value={oa.site_visit_date || ''}
+                onChange={(e) => updateOa({ site_visit_date: e.target.value })}
+              />
             </div>
 
-            {assigneeIsOther && (
-              <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Other person details</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label className={labelClass}>Name</Label>
-                    <Input
-                      className={inputClass}
-                      disabled={!canEdit}
-                      value={other.name || ''}
-                      onChange={(e) => updateOther({ name: e.target.value })}
-                      placeholder="Full name"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className={labelClass}>Mobile number</Label>
-                    <Input
-                      className={inputClass}
-                      disabled={!canEdit}
-                      value={other.mobile || ''}
-                      onChange={(e) => updateOther({ mobile: e.target.value })}
-                      placeholder="Mobile number"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className={labelClass}>Email</Label>
-                    <Input
-                      type="email"
-                      className={inputClass}
-                      disabled={!canEdit}
-                      value={other.email || ''}
-                      onChange={(e) => updateOther({ email: e.target.value })}
-                      placeholder="Email"
-                    />
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label className={labelClass}>Address</Label>
-                    <textarea
-                      disabled={!canEdit}
-                      value={other.address || ''}
-                      onChange={(e) => updateOther({ address: e.target.value })}
-                      rows={2}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none"
-                      placeholder="Address"
-                    />
-                  </div>
+            <div className="space-y-2">
+              <Label className={labelClass}>Assign persons for site visit</Label>
+              <p className="text-xs text-slate-500 normal-case font-normal">
+                Select one or more employees — each gets a site visit task
+              </p>
+              <div className="rounded-lg border border-slate-200 bg-white p-3 max-h-44 overflow-y-auto space-y-2">
+                {employees.length === 0 ? (
+                  <p className="text-sm text-slate-500">No employees available</p>
+                ) : (
+                  employees.map((emp) => {
+                    const id = String(emp.employee_id || emp.id);
+                    return (
+                      <label key={id} className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300"
+                          disabled={!canEdit}
+                          checked={assignees.some((a) => String(a.employee_id) === id)}
+                          onChange={() => toggleAssignee(emp)}
+                        />
+                        <span>{emp.name} ({id})</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              {assignees.length > 0 && (
+                <p className="text-xs text-slate-600">
+                  Assigned: {assignees.map((a) => a.name || a.employee_id).join(', ')}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <Label className={labelClass}>Other persons joining</Label>
+                  <p className="text-xs text-slate-500 normal-case font-normal">
+                    External engineers or customer-side people who are not employees
+                  </p>
                 </div>
-                <div className="space-y-2">
-                  <Label className={labelClass}>ID proof</Label>
-                  {other.id_proof?.file_name || other.id_proof?.name ? (
-                    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                      <span className="truncate text-indigo-800">
-                        <FileText className="h-4 w-4 inline mr-1.5 -mt-0.5" />
-                        {other.id_proof.file_name || other.id_proof.name}
-                      </span>
-                      {canEdit && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
-                          disabled={saving || uploadingIdProof}
-                          onClick={() => updateOther({ id_proof: null })}
-                        >
-                          Remove
-                        </Button>
-                      )}
+                {canEdit && (
+                  <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={addOtherPerson}>
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Add person
+                  </Button>
+                )}
+              </div>
+              {otherPeople.map((person, index) => (
+                <div key={person.id} className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                      Other person {index + 1}
+                    </p>
+                    {canEdit && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-rose-600 hover:text-rose-700"
+                        onClick={() => removeOtherPerson(person.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label className={labelClass}>Name</Label>
+                      <Input
+                        className={inputClass}
+                        disabled={!canEdit}
+                        value={person.name || ''}
+                        onChange={(e) => updateOtherPerson(person.id, { name: e.target.value })}
+                        placeholder="Full name"
+                      />
                     </div>
-                  ) : null}
-                  {canEdit && (
-                    <CgwMultiFilePicker
-                      label=""
-                      accept={LEAD_ATTACHMENT_ACCEPT}
-                      hint={LEAD_ATTACHMENT_HINT}
-                      files={[]}
-                      onChange={onIdProofFiles}
-                      addLabel={uploadingIdProof ? 'Uploading…' : 'Attach ID proof'}
-                      disabled={uploadingIdProof || saving}
-                    />
+                    <div className="space-y-2">
+                      <Label className={labelClass}>Mobile number</Label>
+                      <Input
+                        className={inputClass}
+                        disabled={!canEdit}
+                        value={person.mobile || ''}
+                        onChange={(e) => updateOtherPerson(person.id, { mobile: e.target.value })}
+                        placeholder="Mobile number"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className={labelClass}>Email</Label>
+                      <Input
+                        type="email"
+                        className={inputClass}
+                        disabled={!canEdit}
+                        value={person.email || ''}
+                        onChange={(e) => updateOtherPerson(person.id, { email: e.target.value })}
+                        placeholder="Email"
+                      />
+                    </div>
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label className={labelClass}>Address</Label>
+                      <textarea
+                        disabled={!canEdit}
+                        value={person.address || ''}
+                        onChange={(e) => updateOtherPerson(person.id, { address: e.target.value })}
+                        rows={2}
+                        className={textareaClass}
+                        placeholder="Address"
+                      />
+                    </div>
+                  </div>
+                  <OaSingleFileField
+                    label="ID proof"
+                    value={person.id_proof}
+                    canEdit={canEdit}
+                    busy={saving || uploadingField === `id_proof-${person.id}`}
+                    addLabel={uploadingField === `id_proof-${person.id}` ? 'Uploading…' : 'Attach ID proof'}
+                    onRemove={() => updateOtherPerson(person.id, { id_proof: null })}
+                    onPick={(files) => uploadSingle(
+                      `id_proof-${person.id}`,
+                      files,
+                      (ref) => updateOtherPerson(person.id, { id_proof: ref }),
+                      'ID proof uploaded',
+                    )}
+                  />
+                </div>
+              ))}
+              {otherPeople.length === 0 && (
+                <p className="text-sm text-slate-500">No other persons added</p>
+              )}
+            </div>
+
+            <div className="space-y-2 max-w-xs">
+              <Label className={labelClass}>Site visit status</Label>
+              <select
+                className={selectClass}
+                disabled={!canEdit}
+                value={siteVisitStatus}
+                onChange={(e) => updateOa({ site_visit_status: e.target.value })}
+              >
+                <option value="">Select status</option>
+                {SITE_VISIT_STATUSES.map((s) => (
+                  <option key={s.id} value={s.id}>{s.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500">
+                Mark Done to record the site visit report below
+              </p>
+            </div>
+
+            {siteVisitDone && (
+              <div className="rounded-lg border border-emerald-200 bg-white p-4 space-y-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                    Site visit report
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Capture everything gathered on site — required to complete this step
+                  </p>
+                </div>
+
+                <OaMultiFileField
+                  label="Site visit photos"
+                  items={oa.site_visit_photos}
+                  canEdit={canEdit}
+                  busy={saving || uploadingField === 'site_visit_photos'}
+                  addLabel={uploadingField === 'site_visit_photos' ? 'Uploading…' : 'Add photos'}
+                  onRemove={(refId) => updateOa({
+                    site_visit_photos: (oa.site_visit_photos || []).filter((a) => a.id !== refId),
+                  })}
+                  onPick={(files) => uploadMany(
+                    'site_visit_photos',
+                    files,
+                    oa.site_visit_photos,
+                    (refs) => updateOa({ site_visit_photos: refs }),
+                    'Site visit photos uploaded',
                   )}
+                />
+
+                <div className="space-y-2">
+                  <Label className={labelClass}>Technical discussions</Label>
+                  <textarea
+                    disabled={!canEdit}
+                    value={oa.technical_discussions || ''}
+                    onChange={(e) => updateOa({ technical_discussions: e.target.value })}
+                    rows={3}
+                    className={textareaClass}
+                    placeholder="What was discussed technically on site"
+                  />
+                </div>
+
+                <OaMultiFileField
+                  label="Technical datasheet / drawing"
+                  items={oa.technical_datasheet_drawing}
+                  canEdit={canEdit}
+                  busy={saving || uploadingField === 'technical_datasheet_drawing'}
+                  addLabel={uploadingField === 'technical_datasheet_drawing' ? 'Uploading…' : 'Add datasheet / drawing'}
+                  onRemove={(refId) => updateOa({
+                    technical_datasheet_drawing: (oa.technical_datasheet_drawing || []).filter((a) => a.id !== refId),
+                  })}
+                  onPick={(files) => uploadMany(
+                    'technical_datasheet_drawing',
+                    files,
+                    oa.technical_datasheet_drawing,
+                    (refs) => updateOa({ technical_datasheet_drawing: refs }),
+                    'Datasheet / drawing uploaded',
+                  )}
+                />
+
+                <div className="space-y-2">
+                  <Label className={labelClass}>Existing equipment details</Label>
+                  <textarea
+                    disabled={!canEdit}
+                    value={oa.existing_equipment_details || ''}
+                    onChange={(e) => updateOa({ existing_equipment_details: e.target.value })}
+                    rows={3}
+                    className={textareaClass}
+                    placeholder="Make, model, rating, condition of equipment already installed"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className={labelClass}>Process parameters</Label>
+                  <textarea
+                    disabled={!canEdit}
+                    value={oa.process_parameters || ''}
+                    onChange={(e) => updateOa({ process_parameters: e.target.value })}
+                    rows={3}
+                    className={textareaClass}
+                    placeholder="Flow, pressure, temperature, capacity and other operating parameters"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className={labelClass}>Minutes of the meeting</Label>
+                  <textarea
+                    disabled={!canEdit}
+                    value={oa.minutes_of_meeting || ''}
+                    onChange={(e) => updateOa({ minutes_of_meeting: e.target.value })}
+                    rows={4}
+                    className={textareaClass}
+                    placeholder="Agreements, action items and owners from the site meeting"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <OaSingleFileField
+                    label="Customer signature"
+                    value={oa.customer_signature}
+                    canEdit={canEdit}
+                    busy={saving || uploadingField === 'customer_signature'}
+                    addLabel={uploadingField === 'customer_signature' ? 'Uploading…' : 'Attach signature'}
+                    onRemove={() => updateOa({ customer_signature: null })}
+                    onPick={(files) => uploadSingle(
+                      'customer_signature',
+                      files,
+                      (ref) => updateOa({ customer_signature: ref }),
+                      'Customer signature uploaded',
+                    )}
+                  />
+                  <OaSingleFileField
+                    label="Our engineer signature"
+                    value={oa.engineer_signature}
+                    canEdit={canEdit}
+                    busy={saving || uploadingField === 'engineer_signature'}
+                    addLabel={uploadingField === 'engineer_signature' ? 'Uploading…' : 'Attach signature'}
+                    onRemove={() => updateOa({ engineer_signature: null })}
+                    onPick={(files) => uploadSingle(
+                      'engineer_signature',
+                      files,
+                      (ref) => updateOa({ engineer_signature: ref }),
+                      'Engineer signature uploaded',
+                    )}
+                  />
                 </div>
               </div>
             )}
+
+            <FollowUpLogSection
+              rows={followUps}
+              canEdit={canEdit}
+              saving={saving}
+              uploadingField={uploadingField}
+              keyPrefix="follow_up"
+              description="Log every touchpoint after the visit — call, WhatsApp, email or meeting"
+              onAdd={addFollowUp}
+              onUpdate={updateFollowUp}
+              onRemove={removeFollowUp}
+              onUploadAttachments={(row, files) => uploadMany(
+                `follow_up-${row.id}`,
+                files,
+                row.attachments,
+                (refs) => updateFollowUp(row.id, { attachments: refs }),
+                'Follow-up attachment uploaded',
+              )}
+            />
           </div>
         )}
 
@@ -1084,296 +1823,978 @@ function ModuleOpportunityAssessment({
   );
 }
 
+function ModuleTechnicalAssessment({ payload, setPayload, canEdit, saving, uploadLeadFile }) {
+  const [uploadingField, setUploadingField] = useState('');
+  const ta = payload.technical_assessment || defaultTechnicalAssessment();
+  const items = Array.isArray(ta.items) ? ta.items : [];
+  const followUps = Array.isArray(ta.follow_ups) ? ta.follow_ups : [];
+
+  const updateTa = (patch) => {
+    setPayload({
+      ...payload,
+      technical_assessment: { ...defaultTechnicalAssessment(), ...ta, ...patch },
+    });
+  };
+
+  const addItem = () => {
+    if (!canEdit) return;
+    updateTa({ items: [...items, newTechnicalAssessmentItem()] });
+  };
+
+  const updateItem = (rowId, patch) => {
+    updateTa({ items: items.map((row) => (row.id === rowId ? { ...row, ...patch } : row)) });
+  };
+
+  const removeItem = (rowId) => {
+    updateTa({ items: items.filter((row) => row.id !== rowId) });
+  };
+
+  const addFollowUp = () => {
+    if (!canEdit) return;
+    updateTa({ follow_ups: [...followUps, newSiteVisitFollowUpRow()] });
+  };
+
+  const updateFollowUp = (rowId, patch) => {
+    updateTa({ follow_ups: followUps.map((row) => (row.id === rowId ? { ...row, ...patch } : row)) });
+  };
+
+  const removeFollowUp = (rowId) => {
+    updateTa({ follow_ups: followUps.filter((row) => row.id !== rowId) });
+  };
+
+  const uploadFollowUpFiles = async (row, files) => {
+    const list = normalizeFileList(files);
+    if (!list.length || !uploadLeadFile) return;
+    const fieldKey = `ta_follow_up-${row.id}`;
+    setUploadingField(fieldKey);
+    try {
+      const refs = [...(row.attachments || [])];
+      for (const file of list) {
+        refs.push(await uploadLeadFile(file));
+      }
+      updateFollowUp(row.id, { attachments: refs });
+      toast.success('Follow-up attachment uploaded');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Upload failed'));
+    } finally {
+      setUploadingField('');
+    }
+  };
+
+  return (
+    <section className="space-y-4">
+      <SectionTitle
+        title="Module 3 — Technical assessment"
+        subtitle="Build your own technical checklist — add any question and record the answer"
+      />
+      <div className="rounded-xl border border-slate-200 p-4 bg-white space-y-5 text-slate-900">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <Label className={labelClass}>Technical questions</Label>
+              <p className="text-xs text-slate-500 normal-case font-normal">
+                Type the question, then the answer — add as many as you need
+              </p>
+            </div>
+            {canEdit && (
+              <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={addItem}>
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Add question
+              </Button>
+            )}
+          </div>
+          {items.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No questions added yet — click Add question to start the assessment
+            </p>
+          ) : (
+            items.map((row, index) => (
+              <div key={row.id} className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                    Question {index + 1}
+                  </p>
+                  {canEdit && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-rose-600 hover:text-rose-700"
+                      onClick={() => removeItem(row.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      Remove
+                    </Button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label className={labelClass}>Question</Label>
+                  <Input
+                    className={inputClass}
+                    disabled={!canEdit}
+                    value={row.question || ''}
+                    onChange={(e) => updateItem(row.id, { question: e.target.value })}
+                    placeholder="e.g. Required flow rate at duty point"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className={labelClass}>Answer</Label>
+                  <textarea
+                    disabled={!canEdit}
+                    value={row.answer || ''}
+                    onChange={(e) => updateItem(row.id, { answer: e.target.value })}
+                    rows={2}
+                    className={textareaClass}
+                    placeholder="Answer from the customer or site"
+                  />
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <FollowUpLogSection
+          rows={followUps}
+          canEdit={canEdit}
+          saving={saving}
+          uploadingField={uploadingField}
+          keyPrefix="ta_follow_up"
+          description="Log every touchpoint on the technical assessment — call, WhatsApp, email or meeting"
+          onAdd={addFollowUp}
+          onUpdate={updateFollowUp}
+          onRemove={removeFollowUp}
+          onUploadAttachments={uploadFollowUpFiles}
+        />
+      </div>
+    </section>
+  );
+}
+
+function ModuleMaterialProduct({
+  payload,
+  setPayload,
+  canEdit,
+  saving,
+  uploadLeadFile,
+  apiBase,
+  authHeader,
+}) {
+  const [uploadingField, setUploadingField] = useState('');
+  const [stockItems, setStockItems] = useState([]);
+  const [stockLoading, setStockLoading] = useState(true);
+  const [stockError, setStockError] = useState('');
+  const [stockReloadKey, setStockReloadKey] = useState(0);
+  const mp = payload.material_product || defaultMaterialProduct();
+  const stockRows = Array.isArray(mp.stock_items) ? mp.stock_items : [];
+  const purchaseRows = Array.isArray(mp.purchase_items) ? mp.purchase_items : [];
+  const followUps = Array.isArray(mp.follow_ups) ? mp.follow_ups : [];
+
+  useEffect(() => {
+    let active = true;
+    const normalize = (rows) => (Array.isArray(rows) ? rows : [])
+      .filter((item) => item && item.id && item.name)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        unit: item.unit || 'Nos',
+        quantity: Number(item.quantity || 0),
+        item_code: item.item_code || '',
+      }));
+
+    const load = async () => {
+      setStockLoading(true);
+      setStockError('');
+      try {
+        const { data } = await axios.get(`${apiBase}/stock-items/lookup`, { headers: authHeader() });
+        if (active) setStockItems(normalize(data));
+      } catch (err) {
+        // Older API builds have no /lookup route — fall back to the Stock Management list.
+        try {
+          const { data } = await axios.get(`${apiBase}/stock-items`, { headers: authHeader() });
+          if (active) setStockItems(normalize(data));
+        } catch (fallbackErr) {
+          if (active) {
+            setStockItems([]);
+            setStockError(getApiErrorMessage(fallbackErr, 'Could not load items from Stock Management'));
+          }
+        }
+      } finally {
+        if (active) setStockLoading(false);
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, [apiBase, authHeader, stockReloadKey]);
+
+  const stockByName = useMemo(() => {
+    const map = new Map();
+    stockItems.forEach((item) => {
+      if (item?.name) map.set(String(item.name).trim().toLowerCase(), item);
+    });
+    return map;
+  }, [stockItems]);
+
+  const findStockItem = (name) => stockByName.get(String(name || '').trim().toLowerCase()) || null;
+
+  const updateMp = (patch) => {
+    setPayload({
+      ...payload,
+      material_product: { ...defaultMaterialProduct(), ...mp, ...patch },
+    });
+  };
+
+  /** Picking a stock item fills its name, UOM and the on-hand count. */
+  const applyStockPick = (rows, row, stockItemId) => {
+    const match = stockItems.find((item) => item.id === stockItemId) || null;
+    return rows.map((r) => (
+      r.id === row.id
+        ? {
+          ...r,
+          stock_item_id: match?.id || '',
+          item_name: match?.name || '',
+          uom: match?.unit || r.uom || 'Nos',
+          available_qty: match ? Number(match.quantity || 0) : null,
+        }
+        : r
+    ));
+  };
+
+  /**
+   * Anything asked for beyond the on-hand count belongs to the purchase list,
+   * so the stock row keeps what we can issue and the shortfall is split off.
+   */
+  const applyStockQuantity = (rows, row, value) => {
+    const requested = Number(value);
+    const available = Number(row.available_qty ?? 0);
+    const unlinked = purchaseRows.filter((p) => p.split_from_row_id !== row.id);
+    const linked = purchaseRows.find((p) => p.split_from_row_id === row.id) || null;
+
+    const setQty = (qty) => rows.map((r) => (r.id === row.id ? { ...r, quantity: qty } : r));
+
+    if (!row.stock_item_id || !Number.isFinite(requested) || requested <= 0) {
+      updateMp({ stock_items: setQty(value), purchase_items: unlinked });
+      return;
+    }
+    if (requested <= available) {
+      updateMp({ stock_items: setQty(String(requested)), purchase_items: unlinked });
+      return;
+    }
+
+    const shortfall = Math.round((requested - Math.max(available, 0)) * 1000) / 1000;
+    const shortfallRow = {
+      ...(linked || newMaterialProductRow()),
+      item_name: row.item_name,
+      specification: row.specification,
+      uom: row.uom,
+      quantity: String(shortfall),
+      split_from_row_id: row.id,
+    };
+    const nextPurchase = linked
+      ? purchaseRows.map((p) => (p.split_from_row_id === row.id ? shortfallRow : p))
+      : [...purchaseRows, shortfallRow];
+
+    if (available > 0) {
+      updateMp({ stock_items: setQty(String(available)), purchase_items: nextPurchase });
+      toast.info(`Only ${available} ${row.uom || ''} in stock — ${shortfall} moved to the purchase list`);
+    } else {
+      updateMp({
+        stock_items: rows.filter((r) => r.id !== row.id),
+        purchase_items: nextPurchase.map((p) => (
+          p.split_from_row_id === row.id ? { ...p, split_from_row_id: '' } : p
+        )),
+      });
+      toast.info(`${row.item_name} is out of stock — full quantity moved to the purchase list`);
+    }
+  };
+
+  const moveRowToPurchase = (row) => {
+    updateMp({
+      stock_items: stockRows.filter((r) => r.id !== row.id),
+      purchase_items: [
+        // Drop the shortfall row this stock row spawned — the whole line moves over now.
+        ...purchaseRows.filter((p) => p.split_from_row_id !== row.id),
+        newMaterialProductRow({
+          item_name: row.item_name,
+          specification: row.specification,
+          quantity: row.quantity,
+          uom: row.uom,
+        }),
+      ],
+    });
+    toast.success('Moved to purchase list');
+  };
+
+  const moveRowToStock = (row) => {
+    const match = findStockItem(row.item_name);
+    updateMp({
+      purchase_items: purchaseRows.filter((r) => r.id !== row.id),
+      stock_items: [
+        ...stockRows,
+        newMaterialProductRow({
+          item_name: row.item_name,
+          specification: row.specification,
+          quantity: row.quantity,
+          uom: match?.unit || row.uom,
+          stock_item_id: match?.id || '',
+          available_qty: match ? match.quantity : null,
+        }),
+      ],
+    });
+    toast.success('Moved to stock list');
+  };
+
+  const addFollowUp = () => {
+    if (!canEdit) return;
+    updateMp({ follow_ups: [...followUps, newSiteVisitFollowUpRow()] });
+  };
+
+  const updateFollowUp = (rowId, patch) => {
+    updateMp({ follow_ups: followUps.map((row) => (row.id === rowId ? { ...row, ...patch } : row)) });
+  };
+
+  const removeFollowUp = (rowId) => {
+    updateMp({ follow_ups: followUps.filter((row) => row.id !== rowId) });
+  };
+
+  const uploadFollowUpFiles = async (row, files) => {
+    const list = normalizeFileList(files);
+    if (!list.length || !uploadLeadFile) return;
+    const fieldKey = `mp_follow_up-${row.id}`;
+    setUploadingField(fieldKey);
+    try {
+      const refs = [...(row.attachments || [])];
+      for (const file of list) {
+        refs.push(await uploadLeadFile(file));
+      }
+      updateFollowUp(row.id, { attachments: refs });
+      toast.success('Follow-up attachment uploaded');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Upload failed'));
+    } finally {
+      setUploadingField('');
+    }
+  };
+
+  const baseColumns = [
+    { key: 'item_name', label: 'Item name', width: '26%', placeholder: 'Item name' },
+    { key: 'specification', label: 'Specification / description', width: '34%', placeholder: 'Specification or description' },
+    { key: 'quantity', label: 'Quantity', width: '12%', type: 'number', placeholder: '0' },
+    { key: 'uom', label: 'UOM', width: '12%', options: MATERIAL_UOM_OPTIONS, placeholder: 'Nos' },
+  ];
+
+  const stockColumns = [
+    {
+      key: 'stock_item_id',
+      label: 'Item name',
+      width: '26%',
+      type: 'select',
+      placeholder: stockLoading
+        ? 'Loading stock…'
+        : (stockItems.length ? 'Select item from stock' : 'No stock items found'),
+      selectOptions: stockItems.map((item) => ({
+        value: item.id,
+        label: `${item.name} — ${Number(item.quantity || 0)} ${item.unit || ''} available`,
+      })),
+      onCellChange: (rows, row, value) => applyStockPick(rows, row, value),
+    },
+    baseColumns[1],
+    {
+      ...baseColumns[2],
+      onCellBlur: (rows, row, value) => applyStockQuantity(rows, row, value),
+    },
+    { ...baseColumns[3], readOnly: true },
+    {
+      key: 'available_qty',
+      label: 'In stock',
+      width: '10%',
+      readOnly: true,
+      placeholder: '—',
+      displayValue: (row) => (row.available_qty == null ? '' : String(row.available_qty)),
+    },
+  ];
+
+  return (
+    <section className="space-y-4">
+      <SectionTitle
+        title="Module 4 — Material & product component"
+        subtitle="List every item needed — what we hold in stock and what has to be bought from a vendor"
+      />
+
+      <div className="rounded-xl border border-slate-200 p-4 bg-white space-y-3 text-slate-900">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">
+              Available in our stock
+              {!stockLoading && stockItems.length > 0 && (
+                <span className="ml-2 text-xs font-normal text-slate-500">
+                  {stockItems.length} item(s) loaded
+                </span>
+              )}
+            </p>
+            <p className="text-xs text-slate-500">
+              Pick an item from Stock Management — UOM and available count fill in automatically. Ask for more
+              than we hold and the extra quantity drops into the purchase list below.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            disabled={stockLoading}
+            onClick={() => setStockReloadKey((k) => k + 1)}
+          >
+            {stockLoading ? 'Loading…' : 'Reload stock'}
+          </Button>
+        </div>
+        <ExcelGrid
+          columns={stockColumns}
+          rows={stockRows}
+          onChange={(rows) => updateMp({ stock_items: rows })}
+          canEdit={canEdit}
+          newRow={newMaterialProductRow}
+          emptyLabel="No stock items added — click Add row to start"
+          rowActions={(row) => (
+            row.stock_item_id ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-amber-700 hover:text-amber-900"
+                title="Buy this item from a vendor instead"
+                onClick={() => moveRowToPurchase(row)}
+              >
+                To purchase
+              </Button>
+            ) : null
+          )}
+        />
+        {stockError ? (
+          <p className="text-xs text-rose-700">{stockError}</p>
+        ) : (!stockLoading && !stockItems.length && (
+          <p className="text-xs text-amber-700">
+            No items found in Stock Management — add them there first, or list everything in the purchase grid below.
+          </p>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-indigo-200 p-4 bg-indigo-50/30 space-y-3 text-slate-900">
+        <div>
+          <p className="text-sm font-semibold text-slate-800">To be purchased from vendor</p>
+          <p className="text-xs text-slate-500">
+            This list is carried into Vendor management, where you assign each item to a vendor
+          </p>
+        </div>
+        <ExcelGrid
+          columns={baseColumns}
+          rows={purchaseRows}
+          onChange={(rows) => updateMp({ purchase_items: rows })}
+          canEdit={canEdit}
+          newRow={newMaterialProductRow}
+          emptyLabel="No purchase items — add rows or ask for more than we hold in the grid above"
+          rowActions={(row) => (
+            !row.split_from_row_id && findStockItem(row.item_name) ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-emerald-700 hover:text-emerald-900"
+                title="This item exists in stock — move it to the stock list"
+                onClick={() => moveRowToStock(row)}
+              >
+                In stock
+              </Button>
+            ) : null
+          )}
+        />
+      </div>
+
+      <div className="rounded-xl border border-slate-200 p-4 bg-white space-y-3 text-slate-900">
+        <FollowUpLogSection
+          rows={followUps}
+          canEdit={canEdit}
+          saving={saving}
+          uploadingField={uploadingField}
+          keyPrefix="mp_follow_up"
+          description="Log every touchpoint on material and product selection — call, WhatsApp, email or meeting"
+          onAdd={addFollowUp}
+          onUpdate={updateFollowUp}
+          onRemove={removeFollowUp}
+          onUploadAttachments={uploadFollowUpFiles}
+        />
+      </div>
+    </section>
+  );
+}
+
+function vendorMasterEmail(vendor) {
+  if (!vendor) return '';
+  if (vendor.email) return vendor.email;
+  const contacts = Array.isArray(vendor.contacts) ? vendor.contacts : [];
+  const primary = contacts.find((c) => c.is_primary) || contacts[0];
+  return primary?.email || '';
+}
+
+function inquiryStatusLabel(status) {
+  if (status === 'sent') return 'Inquiry sent';
+  if (status === 'quoted') return 'Quote received';
+  return 'Draft';
+}
+
 function ModuleVendorSelection({
   payload,
   setPayload,
   vendors = [],
   canEdit,
   saving,
-  onUploadRowFiles,
-  onRemoveRowAttachment,
-  onUploadRowTechnicalFiles,
-  onRemoveRowTechnicalAttachment,
-  onUploadRowOfferFiles,
-  onRemoveRowOfferAttachment,
+  uploadLeadFile,
+  apiBase,
+  authHeader,
 }) {
-  const rows = payload.vendor_selections?.length
-    ? payload.vendor_selections
-    : [newVendorSelectionRow()];
+  const [vendorList, setVendorList] = useState(Array.isArray(vendors) ? vendors : []);
+  const [vendorLoading, setVendorLoading] = useState(false);
+  const [uploadingField, setUploadingField] = useState('');
 
-  const updateRow = (rowId, patch) => {
-    const next = rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row));
-    setPayload({ ...payload, vendor_selections: next });
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setVendorLoading(true);
+      try {
+        const { data } = await axios.get(`${apiBase}/customers?entity_type=1`, {
+          headers: authHeader(),
+        });
+        if (active) setVendorList(Array.isArray(data) ? data : []);
+      } catch (err) {
+        if (active) {
+          if (Array.isArray(vendors) && vendors.length) setVendorList(vendors);
+          toast.error(getApiErrorMessage(err, 'Could not load vendors'));
+        }
+      } finally {
+        if (active) setVendorLoading(false);
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, [apiBase, authHeader]);
+
+  useEffect(() => {
+    if (Array.isArray(vendors) && vendors.length) setVendorList(vendors);
+  }, [vendors]);
+
+  const allPurchaseRows = materialPurchaseRows(payload);
+  const purchaseItems = allPurchaseRows.filter((item) => String(item.item_name || '').trim());
+  const missing = unassignedPurchaseRows(payload);
+
+  const vendorGroups = purchaseItemsByVendor(payload);
+
+  const vendorOptions = useMemo(() => {
+    const options = vendorList
+      .filter((v) => v.id && v.company_name)
+      .map((v) => ({ value: v.id, label: v.company_name }));
+    purchaseItems.forEach((item) => {
+      if (item.vendor_id && !options.some((opt) => opt.value === item.vendor_id)) {
+        options.push({ value: item.vendor_id, label: item.vendor_name || item.vendor_id });
+      }
+    });
+    return options;
+  }, [vendorList, purchaseItems]);
+
+  const syncInquiries = (nextPurchase, extraInquiries) => {
+    const usedKeys = new Set(
+      nextPurchase
+        .filter((item) => item.vendor_id || item.vendor_name)
+        .map((item) => item.vendor_id || item.vendor_name),
+    );
+    const existing = extraInquiries || vendorInquiries(payload);
+    const kept = existing.filter((row) => usedKeys.has(row.vendor_id || row.vendor_name));
+    usedKeys.forEach((key) => {
+      if (kept.some((row) => (row.vendor_id || row.vendor_name) === key)) return;
+      const sample = nextPurchase.find((item) => (item.vendor_id || item.vendor_name) === key);
+      const master = vendorList.find((v) => v.id === sample?.vendor_id);
+      kept.push(newVendorInquiry({
+        vendor_id: sample?.vendor_id || '',
+        vendor_name: sample?.vendor_name || '',
+        vendor_email: vendorMasterEmail(master),
+      }));
+    });
+    return kept;
   };
 
-  const addRow = () => {
-    setPayload({ ...payload, vendor_selections: [...rows, newVendorSelectionRow()] });
+  const assignItemVendor = (_rows, row, vendorId) => {
+    const vendor = vendorList.find((v) => v.id === vendorId) || null;
+    const nextPurchase = allPurchaseRows.map((r) => (
+      r.id === row.id
+        ? { ...r, vendor_id: vendor?.id || '', vendor_name: vendor?.company_name || '' }
+        : r
+    ));
+    const uniqueVendors = [];
+    const seen = new Set();
+    nextPurchase.forEach((item) => {
+      const key = item.vendor_id || item.vendor_name;
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      uniqueVendors.push({
+        ...newVendorSelectionRow(),
+        id: `vs-${key}`,
+        vendor_name: item.vendor_name || '',
+      });
+    });
+    setPayload({
+      ...payload,
+      material_product: {
+        ...(payload.material_product || defaultMaterialProduct()),
+        purchase_items: nextPurchase,
+      },
+      vendor_selections: uniqueVendors.length ? uniqueVendors : payload.vendor_selections,
+      vendor_inquiries: syncInquiries(nextPurchase),
+    });
   };
 
-  const removeRow = (rowId) => {
-    if (rows.length <= 1) return;
-    setPayload({ ...payload, vendor_selections: rows.filter((row) => row.id !== rowId) });
+  const updatePurchaseItem = (itemId, patch) => {
+    const nextPurchase = allPurchaseRows.map((r) => (r.id === itemId ? { ...r, ...patch } : r));
+    setPayload({
+      ...payload,
+      material_product: {
+        ...(payload.material_product || defaultMaterialProduct()),
+        purchase_items: nextPurchase,
+      },
+    });
   };
 
-  const vendorNames = vendors.map((v) => v.company_name).filter(Boolean);
+  const upsertInquiry = (group, patch) => {
+    const rows = vendorInquiries(payload);
+    const idx = rows.findIndex((r) => (
+      (group.vendor_id && r.vendor_id === group.vendor_id)
+      || (!group.vendor_id && r.vendor_name === group.vendor_name)
+    ));
+    const master = vendorList.find((v) => v.id === group.vendor_id);
+    const base = idx >= 0
+      ? rows[idx]
+      : newVendorInquiry({
+        vendor_id: group.vendor_id,
+        vendor_name: group.vendor_name,
+        vendor_email: vendorMasterEmail(master),
+      });
+    const next = {
+      ...base,
+      ...patch,
+      vendor_id: group.vendor_id,
+      vendor_name: group.vendor_name,
+      vendor_email: patch.vendor_email ?? base.vendor_email ?? vendorMasterEmail(master),
+    };
+    const copy = [...rows];
+    if (idx >= 0) copy[idx] = next;
+    else copy.push(next);
+    setPayload({ ...payload, vendor_inquiries: copy });
+  };
+
+  const uploadTechnicalFiles = async (group, files) => {
+    const list = normalizeFileList(files);
+    if (!list.length || !uploadLeadFile) return;
+    const inquiry = inquiryForVendor(payload, group.vendor_id, group.vendor_name)
+      || newVendorInquiry({ vendor_id: group.vendor_id, vendor_name: group.vendor_name });
+    const fieldKey = `vi-tech-${group.key}`;
+    setUploadingField(fieldKey);
+    try {
+      const refs = [...(inquiry.technical_data_attachments || [])];
+      for (const file of list) refs.push(await uploadLeadFile(file));
+      upsertInquiry(group, { technical_data_attachments: refs });
+      toast.success('Technical data attached');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Upload failed'));
+    } finally {
+      setUploadingField('');
+    }
+  };
+
+  const markInquirySent = (group) => {
+    upsertInquiry(group, {
+      inquiry_status: 'sent',
+      inquiry_sent_at: new Date().toISOString(),
+      inquiry_date: inquiryForVendor(payload, group.vendor_id, group.vendor_name)?.inquiry_date
+        || new Date().toISOString().slice(0, 10),
+    });
+    toast.success('Marked as sent. Application email will be wired next.');
+  };
+
+  const purchaseColumns = [
+    { key: 'item_name', label: 'Item name', width: '22%', readOnly: true },
+    { key: 'specification', label: 'Specification / description', width: '28%', readOnly: true },
+    { key: 'quantity', label: 'Quantity', width: '10%', readOnly: true },
+    { key: 'uom', label: 'UOM', width: '10%', readOnly: true },
+    {
+      key: 'vendor_id',
+      label: 'Vendor',
+      width: '22%',
+      type: 'select',
+      placeholder: vendorLoading
+        ? 'Loading vendors…'
+        : (vendorOptions.length ? 'Select vendor' : 'No vendors found'),
+      selectOptions: vendorOptions,
+      onCellChange: (itemRows, row, value) => assignItemVendor(itemRows, row, value),
+    },
+  ];
 
   return (
     <section className="space-y-4">
       <SectionTitle
-        title="Vendor selection"
-        subtitle="Record each vendor — complete details, attach enquiry, and confirm technical clearance from vendor (YES) to continue"
+        title="Module 5 — Vendor management"
+        subtitle="Assign vendors, prepare the inquiry, then capture price, technical data, warranty and delivery"
       />
-      <div className="space-y-4">
-        {rows.map((row, index) => {
-          const attachments = row.attachments || [];
-          const technicalAttachments = row.technical_clearance_attachments || [];
-          const offerAttachments = row.techno_commercial_offer_attachments || [];
-          const technicalYes = row.technical_clearance_from_vendor === true;
-          const technicalNo = row.technical_clearance_from_vendor === false;
-          return (
-            <div key={row.id} className="rounded-xl border border-slate-200 p-5 space-y-4 bg-white">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-slate-800">Vendor {index + 1}</p>
-                {canEdit && rows.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-rose-600 hover:text-rose-700"
-                    onClick={() => removeRow(row.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 mr-1" />
-                    Remove
-                  </Button>
-                )}
+      <div className="rounded-xl border border-indigo-200 bg-white p-4 space-y-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-800">
+            Items to purchase ({purchaseItems.length})
+          </p>
+          <p className="text-xs text-slate-500">
+            Pick a vendor for each line. Inquiry packs below are grouped by vendor — sending the email
+            from the application comes next.
+          </p>
+        </div>
+        <ExcelGrid
+          columns={purchaseColumns}
+          rows={purchaseItems}
+          onChange={() => {}}
+          canEdit={canEdit}
+          newRow={newMaterialProductRow}
+          allowAddRemove={false}
+          emptyLabel="Nothing to purchase — every item is covered from stock. Continue to the next step."
+        />
+        {missing.length > 0 && (
+          <p className="text-xs text-amber-700">
+            {missing.length} item(s) still need a vendor: {missing.map((i) => i.item_name).join(', ')}
+          </p>
+        )}
+        {!vendorLoading && !vendorList.length && (
+          <p className="text-xs text-rose-700">
+            No vendors found — add them in the Vendors screen, then reload this page.
+          </p>
+        )}
+      </div>
+
+      {vendorGroups.map((group) => {
+        const master = vendorList.find((v) => v.id === group.vendor_id);
+        const inquiry = inquiryForVendor(payload, group.vendor_id, group.vendor_name)
+          || newVendorInquiry({
+            vendor_id: group.vendor_id,
+            vendor_name: group.vendor_name,
+            vendor_email: vendorMasterEmail(master),
+          });
+        const email = inquiry.vendor_email || vendorMasterEmail(master);
+        const status = inquiry.inquiry_status || 'draft';
+        return (
+          <div key={group.key} className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">{group.vendor_name || 'Vendor'}</p>
+                <p className="text-xs text-slate-500">
+                  {email || 'No email on the vendor record'} · {group.items.length} item(s)
+                </p>
               </div>
+              <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                status === 'quoted'
+                  ? 'bg-emerald-50 text-emerald-800'
+                  : status === 'sent'
+                    ? 'bg-indigo-50 text-indigo-800'
+                    : 'bg-slate-100 text-slate-700'
+              }`}
+              >
+                {inquiryStatusLabel(status)}
+              </span>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                Inquiry to vendor
+              </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <Label className={labelClass}>Vendor name</Label>
-                  <Input
-                    list={vendorNames.length ? `vendor-names-${row.id}` : undefined}
-                    className={inputClass}
-                    disabled={!canEdit}
-                    value={row.vendor_name || ''}
-                    onChange={(e) => updateRow(row.id, { vendor_name: e.target.value })}
-                    placeholder="Enter vendor name"
-                  />
-                  {vendorNames.length > 0 && (
-                    <datalist id={`vendor-names-${row.id}`}>
-                      {vendorNames.map((name) => (
-                        <option key={name} value={name} />
-                      ))}
-                    </datalist>
-                  )}
-                </div>
-                <div>
-                  <Label className={labelClass}>Date of enquiry sent to vendor</Label>
+                <div className="space-y-1">
+                  <Label className={labelClass}>Inquiry date</Label>
                   <Input
                     type="date"
                     className={inputClass}
                     disabled={!canEdit}
-                    value={row.date || ''}
-                    onChange={(e) => updateRow(row.id, { date: e.target.value })}
+                    value={inquiry.inquiry_date || ''}
+                    onChange={(e) => upsertInquiry(group, { inquiry_date: e.target.value })}
                   />
                 </div>
-                <div className="sm:col-span-2">
-                  <Label className={labelClass}>Enquiry Details sent to Vendor</Label>
+                <div className="space-y-1">
+                  <Label className={labelClass}>Vendor email</Label>
                   <Input
+                    type="email"
                     className={inputClass}
                     disabled={!canEdit}
-                    value={row.enquiry_sent_to_customer || ''}
-                    onChange={(e) => updateRow(row.id, { enquiry_sent_to_customer: e.target.value })}
-                    placeholder="e.g. Yes, sent on email, pending, etc."
+                    value={email}
+                    onChange={(e) => upsertInquiry(group, { vendor_email: e.target.value })}
+                    placeholder="vendor@example.com"
+                  />
+                </div>
+                <div className="sm:col-span-2 space-y-1">
+                  <Label className={labelClass}>Remarks / covering note</Label>
+                  <textarea
+                    disabled={!canEdit}
+                    rows={2}
+                    className={textareaClass}
+                    value={inquiry.remarks || ''}
+                    onChange={(e) => upsertInquiry(group, { remarks: e.target.value })}
+                    placeholder="Scope, drawings, due date for quote, etc."
                   />
                 </div>
               </div>
-              <div className="pt-2 border-t border-slate-100">
-                {attachments.length > 0 && (
-                  <ul className="mb-3 space-y-1">
-                    <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mb-1">
-                      Attachments
-                    </p>
-                    {attachments.map((att) => (
-                      <li key={att.id} className="flex items-center gap-2 text-sm">
-                        <button
-                          type="button"
-                          className="flex-1 flex items-center gap-2 truncate text-left text-indigo-700 hover:underline"
-                          onClick={() => {
-                            if (att.file_url) window.open(att.file_url, '_blank', 'noopener,noreferrer');
-                          }}
-                        >
-                          <FileText className="h-4 w-4 shrink-0" />
-                          {att.file_name || 'File'}
-                        </button>
-                        {canEdit && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-rose-600 hover:text-rose-700"
-                            disabled={saving}
-                            onClick={() => onRemoveRowAttachment?.(row.id, att.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <CgwMultiFilePicker
-                  label="Attachment of customer enquiry sent to vendor"
-                  accept={LEAD_ATTACHMENT_ACCEPT}
-                  hint={`Supporting documents for this vendor (optional). ${LEAD_ATTACHMENT_HINT}`}
-                  disabled={!canEdit || saving}
-                  files={[]}
-                  onChange={(files) => onUploadRowFiles?.(row.id, files)}
-                  existingAttachments={null}
-                  addLabel="Attach"
-                />
-              </div>
-              <div className="pt-2 border-t border-slate-100 space-y-4">
-                <Label className={labelClass}>Technical clearance from vendor</Label>
-                <div className="flex gap-3">
-                  <button
+              <ul className="text-xs text-slate-700 space-y-0.5">
+                {group.items.map((item) => (
+                  <li key={item.id}>
+                    • {item.item_name}
+                    {item.specification ? ` — ${item.specification}` : ''}
+                    {item.quantity ? ` (${item.quantity} ${item.uom || ''})` : ''}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 bg-indigo-600 text-white hover:bg-indigo-700"
+                  disabled
+                  title="Email from the application will be enabled next"
+                >
+                  <Mail className="h-3.5 w-3.5 mr-1" />
+                  Send inquiry
+                </Button>
+                {canEdit && status === 'draft' && (
+                  <Button
                     type="button"
-                    disabled={!canEdit}
-                    onClick={() => updateRow(row.id, { technical_clearance_from_vendor: true })}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border-2 font-semibold text-sm ${
-                      technicalYes
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
-                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() => markInquirySent(group)}
                   >
-                    <CheckCircle2 className="h-5 w-5" /> YES
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canEdit}
-                    onClick={() =>
-                      updateRow(row.id, {
-                        technical_clearance_from_vendor: false,
-                        technical_clearance_attachments: [],
-                      })
-                    }
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg border-2 font-semibold text-sm ${
-                      technicalNo
-                        ? 'border-rose-400 bg-rose-50 text-rose-800'
-                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
-                  >
-                    <XCircle className="h-5 w-5" /> NO
-                  </button>
-                </div>
-                {technicalNo && (
-                  <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    Technical clearance is NO — this vendor will not unlock the next workflow steps. Select YES on
-                    another vendor or change to YES to continue.
-                  </p>
+                    Mark as sent manually
+                  </Button>
                 )}
-                {technicalYes && (
-                  <div className="space-y-3">
-                    {technicalAttachments.length > 0 && (
-                      <ul className="space-y-1">
-                        <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mb-1">
-                          Technical clearance documents
-                        </p>
-                        {technicalAttachments.map((att) => (
-                          <li key={att.id} className="flex items-center gap-2 text-sm">
-                            <button
-                              type="button"
-                              className="flex-1 flex items-center gap-2 truncate text-left text-indigo-700 hover:underline"
-                              onClick={() => {
-                                if (att.file_url) window.open(att.file_url, '_blank', 'noopener,noreferrer');
-                              }}
-                            >
-                              <FileText className="h-4 w-4 shrink-0" />
-                              {att.file_name || 'File'}
-                            </button>
-                            {canEdit && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 text-rose-600 hover:text-rose-700"
-                                disabled={saving}
-                                onClick={() => onRemoveRowTechnicalAttachment?.(row.id, att.id)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <CgwMultiFilePicker
-                      label="Attachment of technical clearance data"
-                      accept={LEAD_ATTACHMENT_ACCEPT}
-                      hint={`Upload technical clearance documents from vendor. ${LEAD_ATTACHMENT_HINT}`}
-                      disabled={!canEdit || saving}
-                      files={[]}
-                      onChange={(files) => onUploadRowTechnicalFiles?.(row.id, files)}
-                      existingAttachments={null}
-                      addLabel="Attach"
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="pt-2 border-t border-slate-100 space-y-3">
-                {offerAttachments.length > 0 && (
-                  <ul className="space-y-1">
-                    <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mb-1">
-                      Techno commercial offer documents
-                    </p>
-                    {offerAttachments.map((att) => (
-                      <li key={att.id} className="flex items-center gap-2 text-sm">
-                        <button
-                          type="button"
-                          className="flex-1 flex items-center gap-2 truncate text-left text-indigo-700 hover:underline"
-                          onClick={() => {
-                            if (att.file_url) window.open(att.file_url, '_blank', 'noopener,noreferrer');
-                          }}
-                        >
-                          <FileText className="h-4 w-4 shrink-0" />
-                          {att.file_name || 'File'}
-                        </button>
-                        {canEdit && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-rose-600 hover:text-rose-700"
-                            disabled={saving}
-                            onClick={() => onRemoveRowOfferAttachment?.(row.id, att.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <CgwMultiFilePicker
-                  label="Techno commercial offer from vendor"
-                  accept={LEAD_ATTACHMENT_ACCEPT}
-                  hint={`Upload techno commercial offer from vendor (optional). ${LEAD_ATTACHMENT_HINT}`}
-                  disabled={!canEdit || saving}
-                  files={[]}
-                  onChange={(files) => onUploadRowOfferFiles?.(row.id, files)}
-                  existingAttachments={null}
-                  addLabel="Attach"
-                />
+                <p className="text-xs text-slate-500">
+                  Mail trigger from this screen is next — record the inquiry here for now.
+                </p>
               </div>
             </div>
-          );
-        })}
-        {canEdit && (
-          <Button type="button" variant="outline" size="sm" className="border-slate-300" onClick={addRow}>
-            <Plus className="h-4 w-4 mr-1" />
-            Add vendor
-          </Button>
-        )}
-      </div>
+
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                Vendor quote — price, technical data, warranty &amp; delivery
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className={labelClass}>Quote received date</Label>
+                  <Input
+                    type="date"
+                    className={inputClass}
+                    disabled={!canEdit}
+                    value={inquiry.quote_received_date || ''}
+                    onChange={(e) => upsertInquiry(group, {
+                      quote_received_date: e.target.value,
+                      inquiry_status: e.target.value ? 'quoted' : inquiry.inquiry_status,
+                    })}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className={labelClass}>Technical data / discussion</Label>
+                <textarea
+                  disabled={!canEdit}
+                  rows={3}
+                  className={textareaClass}
+                  value={inquiry.technical_data_notes || ''}
+                  onChange={(e) => upsertInquiry(group, { technical_data_notes: e.target.value })}
+                  placeholder="Datasheet summary, deviations, model offered, etc."
+                />
+              </div>
+              <OaMultiFileField
+                label="Technical data attachments"
+                items={inquiry.technical_data_attachments}
+                canEdit={canEdit}
+                busy={saving || uploadingField === `vi-tech-${group.key}`}
+                addLabel={uploadingField === `vi-tech-${group.key}` ? 'Uploading…' : 'Add datasheet / drawing'}
+                onRemove={(refId) => upsertInquiry(group, {
+                  technical_data_attachments: (inquiry.technical_data_attachments || []).filter((a) => a.id !== refId),
+                })}
+                onPick={(files) => uploadTechnicalFiles(group, files)}
+              />
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-slate-100">
+                      <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Item</th>
+                      <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Qty</th>
+                      <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Price (₹)</th>
+                      <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Warranty</th>
+                      <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Delivery period</th>
+                      <th className="border-b border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Delivery date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.items.map((item) => (
+                      <tr key={item.id} className="odd:bg-white even:bg-slate-50/60">
+                        <td className="border-b border-r border-slate-200 px-2 py-1.5 text-slate-800">
+                          <p className="font-medium">{item.item_name}</p>
+                          {item.specification ? (
+                            <p className="text-xs text-slate-500">{item.specification}</p>
+                          ) : null}
+                        </td>
+                        <td className="border-b border-r border-slate-200 px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                          {item.quantity} {item.uom || ''}
+                        </td>
+                        <td className="border-b border-r border-slate-200 p-1">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="h-8 border-0 bg-transparent shadow-none"
+                            disabled={!canEdit}
+                            value={item.quoted_price ?? ''}
+                            onChange={(e) => updatePurchaseItem(item.id, { quoted_price: e.target.value })}
+                            placeholder="0.00"
+                          />
+                        </td>
+                        <td className="border-b border-r border-slate-200 p-1">
+                          <Input
+                            className="h-8 border-0 bg-transparent shadow-none"
+                            disabled={!canEdit}
+                            value={item.warranty || ''}
+                            onChange={(e) => updatePurchaseItem(item.id, { warranty: e.target.value })}
+                            placeholder="e.g. 18 months"
+                          />
+                        </td>
+                        <td className="border-b border-r border-slate-200 p-1">
+                          <Input
+                            className="h-8 border-0 bg-transparent shadow-none"
+                            disabled={!canEdit}
+                            value={item.delivery_period || ''}
+                            onChange={(e) => updatePurchaseItem(item.id, { delivery_period: e.target.value })}
+                            placeholder="e.g. 4 weeks"
+                          />
+                        </td>
+                        <td className="border-b border-slate-200 p-1">
+                          <Input
+                            type="date"
+                            className="h-8 border-0 bg-transparent shadow-none"
+                            disabled={!canEdit}
+                            value={item.delivery_date || ''}
+                            onChange={(e) => updatePurchaseItem(item.id, { delivery_date: e.target.value })}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }

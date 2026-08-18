@@ -9582,6 +9582,36 @@ def stock_item_filter_options(
     return {'stock_groups': groups, 'godowns': godowns}
 
 
+@api_router.get('/stock-items/lookup')
+def stock_item_lookup(
+    q: Optional[str] = None,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Read-only picker feed for lead workflows — no Stock Management permission needed."""
+    query = db.query(StockItemModel)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        query = query.filter(
+            (StockItemModel.name.ilike(like))
+            | (StockItemModel.alias.ilike(like))
+            | (StockItemModel.item_code.ilike(like))
+        )
+    rows = query.order_by(StockItemModel.name.asc()).limit(2000).all()
+    return [
+        {
+            'id': r.id,
+            'name': r.name,
+            'item_code': r.item_code,
+            'stock_group': r.stock_group,
+            'unit': r.unit or 'Nos',
+            'quantity': r.quantity or 0,
+            'godown': r.godown,
+        }
+        for r in rows
+    ]
+
+
 @api_router.get('/stock-items/{item_id}', response_model=StockItem)
 def get_stock_item(
     item_id: str,
@@ -10548,12 +10578,73 @@ def _vendor_row_complete(row: dict) -> bool:
     )
 
 
+def _purchase_row_has_vendor(row: dict) -> bool:
+    return bool(str(row.get('vendor_id') or '').strip() or str(row.get('vendor_name') or '').strip())
+
+
+def _purchase_quote_complete(row: dict) -> bool:
+    try:
+        price = float(row.get('quoted_price') or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        price > 0
+        and str(row.get('warranty') or '').strip()
+        and (
+            str(row.get('delivery_date') or '').strip()
+            or str(row.get('delivery_period') or '').strip()
+        )
+    )
+
+
+def _inquiry_for_vendor(payload: dict, vendor_id: str, vendor_name: str):
+    for row in payload.get('vendor_inquiries') or []:
+        if not isinstance(row, dict):
+            continue
+        if vendor_id and row.get('vendor_id') == vendor_id:
+            return row
+        if not vendor_id and str(row.get('vendor_name') or '').strip() == str(vendor_name or '').strip():
+            return row
+    return None
+
+
+def _vendor_inquiry_quote_complete(inquiry: dict) -> bool:
+    if not inquiry:
+        return False
+    notes = str(inquiry.get('technical_data_notes') or '').strip()
+    attachments = inquiry.get('technical_data_attachments') or []
+    return bool(
+        str(inquiry.get('inquiry_date') or '').strip()
+        and (notes or (isinstance(attachments, list) and len(attachments) > 0))
+    )
+
+
 def _vendor_selection_stage_complete(payload: dict) -> bool:
-    """At least one vendor row complete with technical clearance YES from vendor."""
+    """Vendor assigned, inquiry prepared, and quote captured (price, technical data, warranty/delivery)."""
     if payload.get('technical_approved') is True:
         return True
-    rows = payload.get('vendor_selections') or []
-    return any(_vendor_row_complete(row) for row in rows)
+    mp = payload.get('material_product') or {}
+    purchase = mp.get('purchase_items') or []
+    named = [
+        row for row in purchase
+        if isinstance(row, dict) and str(row.get('item_name') or '').strip()
+    ]
+    if not named:
+        return True
+    if not all(_purchase_row_has_vendor(row) for row in named):
+        return False
+    if not all(_purchase_quote_complete(row) for row in named):
+        return False
+    seen = set()
+    for row in named:
+        key = str(row.get('vendor_id') or row.get('vendor_name') or '').strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        inquiry = _inquiry_for_vendor(payload, str(row.get('vendor_id') or ''), str(row.get('vendor_name') or ''))
+        if not _vendor_inquiry_quote_complete(inquiry):
+            return False
+    return True
 
 
 def _default_carry_order_workflow_payload() -> dict:
@@ -10562,18 +10653,33 @@ def _default_carry_order_workflow_payload() -> dict:
         'commercial_otx_comment': '',
         'technical_attachments': [],
         'vendor_selections': [_new_vendor_selection_row()],
+        'vendor_inquiries': [],
         'bom_attachments': [],
         'otx_date_from': '',
         'otx_date_to': '',
         'opportunity_assessment': {
             'business_category': '',
             'product_categories': [],
+            'product_category_other': '',
             'technical_datas_required': None,
             'site_visit_required': None,
             'expected_enquiry_closing_date': '',
             'site_visit_date': '',
+            'site_visit_assignees': [],
+            'site_visit_others': [],
+            'site_visit_status': '',
+            'site_visit_photos': [],
+            'technical_discussions': '',
+            'technical_datasheet_drawing': [],
+            'existing_equipment_details': '',
+            'process_parameters': '',
+            'minutes_of_meeting': '',
+            'customer_signature': None,
+            'engineer_signature': None,
+            'site_visit_follow_ups': [],
             'site_visit_assignee_employee_id': '',
             'site_visit_assignee_name': '',
+            'site_visit_task_ids': {},
             'site_visit_other': {
                 'name': '',
                 'mobile': '',
@@ -10581,6 +10687,15 @@ def _default_carry_order_workflow_payload() -> dict:
                 'address': '',
                 'id_proof': None,
             },
+        },
+        'technical_assessment': {
+            'items': [],
+            'follow_ups': [],
+        },
+        'material_product': {
+            'stock_items': [],
+            'purchase_items': [],
+            'follow_ups': [],
         },
         'bom': {
             'materials': [],
@@ -10614,7 +10729,144 @@ def _default_carry_order_workflow_payload() -> dict:
     }
 
 
+PRODUCT_CATEGORY_OTHER = 'Other'
+
+
+def _has_attachment_ref(ref) -> bool:
+    if not isinstance(ref, dict):
+        return False
+    return bool(
+        ref.get('id')
+        or ref.get('attachment_id')
+        or ref.get('file_url')
+        or ref.get('url')
+    )
+
+
+def _site_visit_assignees(oa: dict) -> List[dict]:
+    """Employee assignees, migrating legacy single-assignee payloads."""
+    rows = oa.get('site_visit_assignees')
+    normalized: List[dict] = []
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            emp_id = str(row.get('employee_id') or row.get('id') or '').strip()
+            if not emp_id or emp_id.lower() == 'other':
+                continue
+            normalized.append({'employee_id': emp_id, 'name': str(row.get('name') or '').strip()})
+    if normalized:
+        return normalized
+
+    legacy_id = str(oa.get('site_visit_assignee_employee_id') or '').strip()
+    if legacy_id and legacy_id.lower() != 'other':
+        return [{
+            'employee_id': legacy_id,
+            'name': str(oa.get('site_visit_assignee_name') or '').strip(),
+        }]
+    return []
+
+
+def _site_visit_other_people(oa: dict) -> List[dict]:
+    rows = oa.get('site_visit_others')
+    normalized: List[dict] = []
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if any(
+                str(row.get(key) or '').strip()
+                for key in ('name', 'mobile', 'email', 'address')
+            ) or row.get('id_proof'):
+                normalized.append(row)
+    if normalized:
+        return normalized
+
+    legacy = oa.get('site_visit_other')
+    legacy_is_other = str(oa.get('site_visit_assignee_employee_id') or '').strip().lower() == 'other'
+    if legacy_is_other and isinstance(legacy, dict) and (
+        str(legacy.get('name') or '').strip() or legacy.get('id_proof')
+    ):
+        return [legacy]
+    return []
+
+
+def _site_visit_other_complete(person: dict) -> bool:
+    return bool(
+        str(person.get('name') or '').strip()
+        and str(person.get('mobile') or '').strip()
+        and str(person.get('email') or '').strip()
+        and str(person.get('address') or '').strip()
+        and _has_attachment_ref(person.get('id_proof'))
+    )
+
+
+def _site_visit_done_complete(oa: dict) -> bool:
+    photos = oa.get('site_visit_photos')
+    datasheets = oa.get('technical_datasheet_drawing')
+    return bool(
+        isinstance(photos, list)
+        and len(photos) > 0
+        and str(oa.get('technical_discussions') or '').strip()
+        and isinstance(datasheets, list)
+        and len(datasheets) > 0
+        and str(oa.get('existing_equipment_details') or '').strip()
+        and str(oa.get('process_parameters') or '').strip()
+        and str(oa.get('minutes_of_meeting') or '').strip()
+        and _has_attachment_ref(oa.get('customer_signature'))
+        and _has_attachment_ref(oa.get('engineer_signature'))
+    )
+
+
+def _technical_assessment_complete(payload: dict) -> bool:
+    """Technical assessment is free-form: one answered question is the minimum."""
+    ta = payload.get('technical_assessment') or {}
+    items = ta.get('items') or []
+    if not isinstance(items, list):
+        return False
+    return any(
+        isinstance(row, dict)
+        and str(row.get('question') or '').strip()
+        and str(row.get('answer') or '').strip()
+        for row in items
+    )
+
+
+def _material_row_started(row: dict) -> bool:
+    return bool(
+        str(row.get('item_name') or '').strip()
+        or str(row.get('specification') or '').strip()
+        or str(row.get('quantity') or '').strip()
+    )
+
+
+def _material_row_filled(row: dict) -> bool:
+    try:
+        qty = float(row.get('quantity') or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        str(row.get('item_name') or '').strip()
+        and qty > 0
+        and str(row.get('uom') or '').strip()
+    )
+
+
+def _material_product_complete(payload: dict) -> bool:
+    """At least one finished item, and no row left half-typed."""
+    mp = payload.get('material_product') or {}
+    rows = []
+    for key in ('stock_items', 'purchase_items'):
+        value = mp.get(key) or []
+        if isinstance(value, list):
+            rows.extend([r for r in value if isinstance(r, dict)])
+    if not any(_material_row_filled(r) for r in rows):
+        return False
+    return all(_material_row_filled(r) for r in rows if _material_row_started(r))
+
+
 def _opportunity_assessment_complete(payload: dict) -> bool:
+    """Requirement Analysis gate — mirrors isOpportunityAssessmentComplete on the frontend."""
     oa = payload.get('opportunity_assessment') or {}
     cats = oa.get('product_categories') or []
     base_ok = bool(
@@ -10627,24 +10879,26 @@ def _opportunity_assessment_complete(payload: dict) -> bool:
     )
     if not base_ok:
         return False
+    if PRODUCT_CATEGORY_OTHER in cats and not str(oa.get('product_category_other') or '').strip():
+        return False
     if oa.get('site_visit_required') is not True:
         return True
     if not str(oa.get('site_visit_date') or '').strip():
         return False
-    assignee_id = str(oa.get('site_visit_assignee_employee_id') or '').strip()
-    if not assignee_id:
+
+    employees = _site_visit_assignees(oa)
+    others = _site_visit_other_people(oa)
+    if not employees and not others:
         return False
-    if assignee_id != 'other':
+    if any(not _site_visit_other_complete(person) for person in others):
+        return False
+
+    status = str(oa.get('site_visit_status') or '').strip().lower()
+    if not status:
+        return False
+    if status != 'done':
         return True
-    other = oa.get('site_visit_other') or {}
-    id_proof = other.get('id_proof') or {}
-    return bool(
-        str(other.get('name') or '').strip()
-        and str(other.get('mobile') or '').strip()
-        and str(other.get('email') or '').strip()
-        and str(other.get('address') or '').strip()
-        and (id_proof.get('id') or id_proof.get('file_url') or id_proof.get('url'))
-    )
+    return _site_visit_done_complete(oa)
 
 # Site-visit Telegram: morning notice at 06:00, then 3 hourly reminders (07/08/09).
 SITE_VISIT_TELEGRAM_SLOTS = {
@@ -10669,7 +10923,11 @@ def _parse_workflow_payload_raw(raw) -> Optional[dict]:
 
 def _format_site_visit_telegram_message(lead: LeadModel, oa: dict, slot_key: str) -> str:
     visit_date = str(oa.get('site_visit_date') or '').strip()
-    assignee = str(oa.get('site_visit_assignee_name') or '').strip() or 'you'
+    names = [
+        a['name'] or a['employee_id']
+        for a in _site_visit_assignees(oa)
+    ]
+    assignee = ', '.join(names) if names else 'you'
     company = (getattr(lead, 'company', None) or '').strip() or '—'
     contact = (getattr(lead, 'contact_name', None) or '').strip() or '—'
     if slot_key == 'morning':
@@ -10743,8 +11001,10 @@ def run_site_visit_telegram_reminders_job(force_hour: Optional[int] = None) -> D
             visit_date = str(oa.get('site_visit_date') or '').strip()
             if visit_date != today:
                 continue
-            assignee_id = str(oa.get('site_visit_assignee_employee_id') or '').strip()
-            if not assignee_id or assignee_id.lower() == 'other':
+            assignees = _site_visit_assignees(oa)
+            if not assignees:
+                continue
+            if str(oa.get('site_visit_status') or '').strip().lower() == 'done':
                 continue
 
             notices = oa.get('site_visit_telegram_notices') or {}
@@ -10759,50 +11019,58 @@ def run_site_visit_telegram_reminders_job(force_hour: Optional[int] = None) -> D
                 out['skipped'] += 1
                 continue
 
-            chat_id = _telegram_chat_id_for_employee(db, assignee_id)
-            if not chat_id:
-                out['skipped'] += 1
-                out['details'].append({
-                    'lead_id': lead.id,
-                    'employee_id': assignee_id,
-                    'status': 'no_telegram_chat_id',
-                })
-                logging.warning(
-                    'Site visit Telegram skipped: no chat_id for employee %s (lead %s)',
-                    assignee_id,
-                    lead.id,
-                )
-                continue
-
             message = _format_site_visit_telegram_message(lead, oa, slot_key)
-            ok, error = send_telegram_message_verbose(message, chat_id)
-            if not ok:
-                out['errors'] += 1
+            delivered = 0
+            for assignee in assignees:
+                assignee_id = assignee['employee_id']
+                chat_id = _telegram_chat_id_for_employee(db, assignee_id)
+                if not chat_id:
+                    out['skipped'] += 1
+                    out['details'].append({
+                        'lead_id': lead.id,
+                        'employee_id': assignee_id,
+                        'status': 'no_telegram_chat_id',
+                    })
+                    logging.warning(
+                        'Site visit Telegram skipped: no chat_id for employee %s (lead %s)',
+                        assignee_id,
+                        lead.id,
+                    )
+                    continue
+
+                ok, error = send_telegram_message_verbose(message, chat_id)
+                if not ok:
+                    out['errors'] += 1
+                    out['details'].append({
+                        'lead_id': lead.id,
+                        'employee_id': assignee_id,
+                        'status': 'send_failed',
+                        'error': error,
+                    })
+                    logging.warning(
+                        'Site visit Telegram failed for lead %s employee %s: %s',
+                        lead.id,
+                        assignee_id,
+                        error,
+                    )
+                    continue
+
+                delivered += 1
+                out['sent'] += 1
                 out['details'].append({
                     'lead_id': lead.id,
                     'employee_id': assignee_id,
-                    'status': 'send_failed',
-                    'error': error,
+                    'status': 'sent',
+                    'slot': slot_key,
                 })
-                logging.warning(
-                    'Site visit Telegram failed for lead %s employee %s: %s',
-                    lead.id,
-                    assignee_id,
-                    error,
-                )
-                continue
 
-            sent_slots = list(sent_slots) + [slot_key]
-            oa['site_visit_telegram_notices'] = {'date': today, 'sent_slots': sent_slots}
-            payload['opportunity_assessment'] = oa
-            lead.workflow_payload = _serialize_workflow_payload(payload)
-            out['sent'] += 1
-            out['details'].append({
-                'lead_id': lead.id,
-                'employee_id': assignee_id,
-                'status': 'sent',
-                'slot': slot_key,
-            })
+            # Only mark the slot done when at least one assignee was reached,
+            # so a transient failure still retries on the next slot.
+            if delivered:
+                sent_slots = list(sent_slots) + [slot_key]
+                oa['site_visit_telegram_notices'] = {'date': today, 'sent_slots': sent_slots}
+                payload['opportunity_assessment'] = oa
+                lead.workflow_payload = _serialize_workflow_payload(payload)
 
         db.commit()
     except Exception as exc:
@@ -10838,7 +11106,7 @@ def _ensure_site_visit_task_for_lead(
     payload: dict,
     current_user: UserModel,
 ) -> dict:
-    """Create/update a Tasks-screen task when site visit is assigned to a company employee."""
+    """Create/update one Tasks-screen task per employee assigned to the site visit."""
     if not isinstance(payload, dict):
         return payload
     oa = payload.get('opportunity_assessment') or {}
@@ -10847,90 +11115,107 @@ def _ensure_site_visit_task_for_lead(
 
     site_visit_required = oa.get('site_visit_required') is True
     visit_date = str(oa.get('site_visit_date') or '').strip()
-    assignee_id = str(oa.get('site_visit_assignee_employee_id') or '').strip()
-    assignee_name = str(oa.get('site_visit_assignee_name') or '').strip()
-    existing_task_id = str(oa.get('site_visit_task_id') or '').strip()
+    assignees = _site_visit_assignees(oa)
 
-    if (
-        not site_visit_required
-        or not visit_date
-        or not assignee_id
-        or assignee_id.lower() == 'other'
-    ):
+    if not site_visit_required or not visit_date or not assignees:
         return payload
 
-    employee = db.query(EmployeeModel).filter(
-        (EmployeeModel.employee_id == assignee_id) | (EmployeeModel.id == assignee_id)
-    ).first()
-    if not employee:
-        logging.warning(
-            'Site visit task skipped: employee %s not found (lead %s)',
-            assignee_id,
-            getattr(lead, 'id', None),
-        )
-        return payload
+    existing_task_ids = oa.get('site_visit_task_ids')
+    if not isinstance(existing_task_ids, dict):
+        existing_task_ids = {}
+    legacy_task_id = str(oa.get('site_visit_task_id') or '').strip()
 
     company = (getattr(lead, 'company', None) or '').strip() or '—'
     contact = (getattr(lead, 'contact_name', None) or '').strip() or '—'
+    brief = (getattr(lead, 'brief_of_enquiry', None) or '').strip()
     title = f'Site visit: {company}'
     if len(title) > 255:
         title = title[:252] + '...'
-    brief = (getattr(lead, 'brief_of_enquiry', None) or '').strip()
-    desc_parts = [
-        f'Lead site visit for {company} ({contact}).',
-        f'Visit date: {visit_date}',
-        f'Assigned to: {assignee_name or employee.name}',
-        f'Lead ID: {lead.id}',
-    ]
-    if brief:
-        desc_parts.extend(['', f'Brief of enquiry: {brief[:700]}'])
-    description = '\n'.join(desc_parts)
-    if len(description) > 1000:
-        description = description[:997] + '...'
 
-    task = None
-    previous_assignee_id = None
-    if existing_task_id:
-        task = db.query(TaskModel).filter(TaskModel.task_id == existing_task_id).first()
+    task_ids: Dict[str, str] = {}
+    resolved: List[dict] = []
+    for assignee in assignees:
+        assignee_id = assignee['employee_id']
+        employee = db.query(EmployeeModel).filter(
+            (EmployeeModel.employee_id == assignee_id) | (EmployeeModel.id == assignee_id)
+        ).first()
+        if not employee:
+            logging.warning(
+                'Site visit task skipped: employee %s not found (lead %s)',
+                assignee_id,
+                getattr(lead, 'id', None),
+            )
+            continue
 
-    if task:
-        previous_assignee_id = task.assigned_to_employee_id
-        task.title = title
-        task.description = description
-        task.assigned_to_employee_id = employee.employee_id
-        task.assigned_to_name = employee.name
-        task.due_date = visit_date
-        task.updated_at = datetime.now(timezone.utc)
-        if task.status in ('Completed',):
-            # Keep completed tasks as-is for status; still refresh metadata above.
-            pass
-        db.add(task)
-        _notify_task_assigned_telegram(
-            db,
-            task,
-            current_user.name or 'System',
-            previous_assignee_id=previous_assignee_id,
-        )
-    else:
-        task = TaskModel(
-            task_id=_next_task_number_id(db),
-            title=title,
-            description=description,
-            priority='High',
-            assigned_to_employee_id=employee.employee_id,
-            assigned_to_name=employee.name,
-            created_by_employee_id=getattr(current_user, 'employee_id', None),
-            created_by_name=getattr(current_user, 'name', None) or 'System',
-            due_date=visit_date,
-            status='Pending',
-        )
-        db.add(task)
-        db.flush()
-        _notify_task_assigned_telegram(db, task, current_user.name or 'System')
+        desc_parts = [
+            f'Lead site visit for {company} ({contact}).',
+            f'Visit date: {visit_date}',
+            f'Assigned to: {employee.name}',
+            f'Lead ID: {lead.id}',
+        ]
+        if brief:
+            desc_parts.extend(['', f'Brief of enquiry: {brief[:700]}'])
+        description = '\n'.join(desc_parts)
+        if len(description) > 1000:
+            description = description[:997] + '...'
 
-    oa['site_visit_task_id'] = task.task_id
-    oa['site_visit_assignee_employee_id'] = employee.employee_id
-    oa['site_visit_assignee_name'] = employee.name
+        prior_task_id = str(
+            existing_task_ids.get(employee.employee_id)
+            or existing_task_ids.get(assignee_id)
+            or ''
+        ).strip()
+        # One legacy single-assignee task can be reused by its original assignee.
+        if not prior_task_id and legacy_task_id and len(assignees) == 1:
+            prior_task_id = legacy_task_id
+
+        task = None
+        if prior_task_id:
+            task = db.query(TaskModel).filter(TaskModel.task_id == prior_task_id).first()
+
+        if task:
+            previous_assignee_id = task.assigned_to_employee_id
+            task.title = title
+            task.description = description
+            task.assigned_to_employee_id = employee.employee_id
+            task.assigned_to_name = employee.name
+            task.due_date = visit_date
+            task.updated_at = datetime.now(timezone.utc)
+            db.add(task)
+            _notify_task_assigned_telegram(
+                db,
+                task,
+                current_user.name or 'System',
+                previous_assignee_id=previous_assignee_id,
+            )
+        else:
+            task = TaskModel(
+                task_id=_next_task_number_id(db),
+                title=title,
+                description=description,
+                priority='High',
+                assigned_to_employee_id=employee.employee_id,
+                assigned_to_name=employee.name,
+                created_by_employee_id=getattr(current_user, 'employee_id', None),
+                created_by_name=getattr(current_user, 'name', None) or 'System',
+                due_date=visit_date,
+                status='Pending',
+            )
+            db.add(task)
+            db.flush()
+            _notify_task_assigned_telegram(db, task, current_user.name or 'System')
+
+        task_ids[employee.employee_id] = task.task_id
+        resolved.append({'employee_id': employee.employee_id, 'name': employee.name})
+
+    if not resolved:
+        return payload
+
+    oa['site_visit_assignees'] = resolved
+    oa['site_visit_task_ids'] = task_ids
+    # Keep legacy single-assignee keys in sync for older readers.
+    oa['site_visit_task_id'] = task_ids.get(resolved[0]['employee_id'], '')
+    oa['site_visit_assignee_employee_id'] = resolved[0]['employee_id']
+    oa['site_visit_assignee_name'] = resolved[0]['name']
     payload['opportunity_assessment'] = oa
     return payload
 
@@ -11232,6 +11517,8 @@ def _allocate_rtb_offer_base(db: Session, lead: LeadModel) -> str:
 CARRY_ORDER_STAGES = [
     'enquiry_logged',
     'opportunity_assessment',
+    'technical_assessment',
+    'material_product',
     'technical_clearance',
     'bom_costing',
     'offer_revision',
@@ -11272,11 +11559,18 @@ def _validate_lead_workflow_transition(
     if (
         _is_carry_and_order_subcategory(lead.sub_category)
         and not lead.vendor_id
-        and new_stage not in ('enquiry_logged', 'opportunity_assessment')
+        and new_stage not in (
+            'enquiry_logged',
+            'opportunity_assessment',
+            'technical_assessment',
+            'material_product',
+            'technical_clearance',
+        )
+        and not _vendor_selection_stage_complete(payload)
     ):
         raise HTTPException(
             status_code=400,
-            detail='Assign a vendor before advancing past opportunity assessment (open the lead to complete setup)',
+            detail='Assign a vendor to every item that needs to be purchased before continuing',
         )
     if (
         new_idx > _workflow_stage_index('opportunity_assessment')
@@ -11284,13 +11578,29 @@ def _validate_lead_workflow_transition(
     ):
         raise HTTPException(
             status_code=400,
-            detail='Complete Opportunity & Assessment before proceeding',
+            detail='Complete Requirement Analysis before proceeding',
+        )
+    if (
+        new_idx > _workflow_stage_index('technical_assessment')
+        and not _technical_assessment_complete(payload)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail='Add at least one technical question with its answer before proceeding',
+        )
+    if (
+        new_idx > _workflow_stage_index('material_product')
+        and not _material_product_complete(payload)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail='Add at least one material/product item with quantity and UOM before proceeding',
         )
     if new_stage in ('bom_costing', 'offer_revision', 'follow_up', 'closed_won', 'closed_lost'):
         if not _vendor_selection_stage_complete(payload):
             raise HTTPException(
                 status_code=400,
-                detail='Complete vendor selection with technical clearance from vendor (YES) before proceeding',
+                detail='Assign a vendor to every item that needs to be purchased before proceeding',
             )
     bom = payload.get('bom') or {}
     materials = bom.get('materials') or []
@@ -11393,7 +11703,7 @@ def update_lead_workflow(
         lead.status = 'Lost'
     elif new_stage in ('bom_costing', 'offer_revision', 'follow_up'):
         lead.status = 'Negotiation'
-    elif new_stage == 'technical_clearance':
+    elif new_stage in ('technical_assessment', 'material_product', 'technical_clearance'):
         lead.status = 'Qualified'
     elif new_stage == 'opportunity_assessment':
         lead.status = 'Contacted'
