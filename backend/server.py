@@ -11599,6 +11599,9 @@ def _merge_workflow_payloads(stored, incoming) -> dict:
     if not merged.get('vendor_selections') and stored.get('vendor_selections'):
         merged['vendor_selections'] = stored.get('vendor_selections')
     return merged
+
+
+def _validate_lead_workflow_transition(
     lead: LeadModel, old_stage: str, new_stage: str, payload: dict
 ) -> None:
     if new_stage not in CARRY_ORDER_STAGES:
