@@ -58,6 +58,7 @@ import {
   defaultMaterialProduct,
   newMaterialProductRow,
   materialPurchaseRows,
+  materialStockRows,
   isMaterialProductComplete,
   materialProductIncompleteMessage,
   MATERIAL_UOM_OPTIONS,
@@ -67,6 +68,11 @@ import {
   purchaseItemsByVendor,
   inquiryForVendor,
   newVendorInquiry,
+  buildBomCostingLines,
+  bomMaterialsFromWorkflow,
+  withSyncedBomMaterials,
+  isBomCostingComplete,
+  bomCostingIncompleteMessage,
 } from '@/lib/carryOrderWorkflow';
 import {
   CheckCircle2,
@@ -136,12 +142,12 @@ export function CarryOrderWorkspace({
     if (lead?.id) load();
   }, [lead?.id]);
 
-  const bomTotals = useMemo(() => computeBomTotals(payload.bom), [payload.bom]);
+  const bomTotals = useMemo(() => computeBomTotals(payload.bom, payload), [payload]);
   const offerTotals = useMemo(() => {
     const latest = latestOfferRevision(payload.offer_revisions);
     const pct = latest?.offer_profit_margin_pct ?? payload.offer_profit_margin_pct;
-    return computeOfferTotals(payload.bom, pct);
-  }, [payload.bom, payload.offer_revisions, payload.offer_profit_margin_pct]);
+    return computeOfferTotals(payload.bom, pct, payload);
+  }, [payload]);
 
   const saveWorkflow = async (nextStage, nextPayload, comment, successMessage) => {
     if (
@@ -159,11 +165,12 @@ export function CarryOrderWorkspace({
     }
     setSaving(true);
     try {
+      const prepared = withSyncedBomMaterials(nextPayload || payload);
       const { data } = await axios.put(
         `${apiBase}/leads/${lead.id}/workflow`,
         {
           workflow_stage: nextStage,
-          workflow_payload: nextPayload,
+          workflow_payload: prepared,
           status_change_comment: comment || undefined,
         },
         { headers: authHeader() },
@@ -701,6 +708,8 @@ export function CarryOrderWorkspace({
                   ? materialProductIncompleteMessage(payload)
                 : activeTab === 'technical_clearance' && !isVendorSelectionComplete(payload)
                   ? vendorManagementIncompleteMessage(payload)
+                : activeTab === 'bom_costing' && !isBomCostingComplete(payload)
+                  ? bomCostingIncompleteMessage(payload)
                   : stageIncompleteMessage(activeTab, lead, stageCtx)
               : 'Viewing a completed step — save to update details without moving forward.'}
           </p>
@@ -1032,12 +1041,19 @@ function ExcelGrid({
                   <td className="border-b border-r border-slate-200 px-2 py-1 text-slate-600">
                     {rowIdx + 1}
                   </td>
-                  {columns.map((col, colIdx) => (
+                  {columns.map((col, colIdx) => {
+                    const cellReadOnly = !canEdit || col.readOnly || Boolean(col.isReadOnly?.(row));
+                    const alignClass = col.align === 'right' ? 'text-right tabular-nums' : '';
+                    return (
                     <td key={col.key} className="border-b border-r border-slate-200 p-0">
-                      {col.type === 'select' ? (
+                      {col.type === 'display' ? (
+                        <div className={`px-2 py-1.5 text-sm text-slate-800 ${alignClass}`}>
+                          {col.displayValue ? col.displayValue(row) : (row[col.key] ?? '')}
+                        </div>
+                      ) : col.type === 'select' ? (
                         <select
                           data-cell={cellRef(rowIdx, colIdx)}
-                          disabled={!canEdit || col.readOnly}
+                          disabled={cellReadOnly}
                           value={row[col.key] ?? ''}
                           onChange={(e) => {
                             if (col.onCellChange) {
@@ -1061,7 +1077,7 @@ function ExcelGrid({
                           min={col.type === 'number' ? '0' : undefined}
                           step={col.type === 'number' ? 'any' : undefined}
                           list={col.options ? `${col.key}-options` : undefined}
-                          disabled={!canEdit || col.readOnly}
+                          disabled={cellReadOnly}
                           value={col.displayValue ? col.displayValue(row) : (row[col.key] ?? '')}
                           placeholder={col.placeholder}
                           onChange={(e) => {
@@ -1076,11 +1092,12 @@ function ExcelGrid({
                           }}
                           onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                           onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
-                          className="w-full border-0 bg-transparent px-2 py-1.5 text-sm text-slate-900 outline-none focus:bg-indigo-50/70 focus:ring-1 focus:ring-inset focus:ring-indigo-400 disabled:text-slate-500"
+                          className={`w-full border-0 bg-transparent px-2 py-1.5 text-sm text-slate-900 outline-none focus:bg-indigo-50/70 focus:ring-1 focus:ring-inset focus:ring-indigo-400 disabled:text-slate-500 ${alignClass}`}
                         />
                       )}
                     </td>
-                  ))}
+                    );
+                  })}
                   {showRowControls && (
                     <td className="border-b border-slate-200 px-1 py-1">
                       <div className="flex items-center justify-end gap-1">
@@ -2964,90 +2981,199 @@ function ModuleVendorSelection({
 function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBomFiles, onRemoveBomAttachment }) {
   const bom = payload.bom || {};
   const bomAttachments = payload.bom_attachments || [];
-  const setBom = (patch) => setPayload({ ...payload, bom: { ...bom, ...patch } });
+  const mp = payload.material_product || defaultMaterialProduct();
+  const lines = useMemo(() => buildBomCostingLines(payload), [payload]);
+  const useWorkflowLines = lines.length > 0;
+
+  const patchPayload = (next) => {
+    setPayload({
+      ...next,
+      bom: {
+        ...(next.bom || bom),
+        materials: bomMaterialsFromWorkflow(next),
+      },
+    });
+  };
+
+  const setBom = (patch) => {
+    const next = { ...payload, bom: { ...bom, ...patch } };
+    setPayload(useWorkflowLines ? { ...next, bom: { ...next.bom, materials: bomMaterialsFromWorkflow(next) } } : next);
+  };
+
+  const updateCostingRows = (nextLines) => {
+    const stockById = new Map(nextLines.filter((line) => line.source === 'stock').map((line) => [line.id, line]));
+    const purchaseById = new Map(nextLines.filter((line) => line.source === 'vendor').map((line) => [line.id, line]));
+    const nextStock = materialStockRows(payload).map((item) => {
+      const line = stockById.get(item.id);
+      return line ? { ...item, unit_cost: line.unit_price } : item;
+    });
+    const nextPurchase = materialPurchaseRows(payload).map((item) => {
+      const line = purchaseById.get(item.id);
+      return line ? { ...item, quoted_price: line.unit_price } : item;
+    });
+    patchPayload({
+      ...payload,
+      material_product: { ...mp, stock_items: nextStock, purchase_items: nextPurchase },
+    });
+  };
+
+  const costingIncomplete = !isBomCostingComplete(payload);
+
+  const costingColumns = [
+    {
+      key: 'source_label',
+      label: 'Source',
+      width: '9%',
+      type: 'display',
+      displayValue: (row) => row.source_label,
+    },
+    { key: 'item_name', label: 'Item name', width: '18%', readOnly: true },
+    { key: 'specification', label: 'Specification / description', width: '20%', readOnly: true },
+    { key: 'quantity', label: 'Qty', width: '8%', readOnly: true, align: 'right' },
+    { key: 'uom', label: 'UOM', width: '8%', readOnly: true },
+    {
+      key: 'vendor_name',
+      label: 'Vendor',
+      width: '14%',
+      type: 'display',
+      displayValue: (row) => (row.source === 'vendor' ? (row.vendor_name || '—') : '—'),
+    },
+    {
+      key: 'unit_price',
+      label: 'Unit price (₹)',
+      width: '12%',
+      type: 'number',
+      align: 'right',
+      placeholder: '0.00',
+    },
+    {
+      key: 'amount',
+      label: 'Amount (₹)',
+      width: '11%',
+      type: 'display',
+      align: 'right',
+      displayValue: (row) => formatInr(row.amount || 0),
+    },
+  ];
+
+  const rollup = [
+    { label: 'Stock items', value: bomTotals.stockTotal, show: useWorkflowLines },
+    { label: 'Vendor purchase', value: bomTotals.vendorTotal, show: useWorkflowLines },
+    { label: 'Materials total', value: bomTotals.materialsTotal, show: true },
+    { label: 'Installation, commissioning', value: bomTotals.install, show: true },
+    { label: 'Packaging', value: bomTotals.packaging, show: true },
+    { label: 'Transportation', value: bomTotals.transport, show: true },
+    { label: 'Tour & travel', value: bomTotals.costOfAp, show: true },
+    { label: 'TPC cost', value: bomTotals.tpcCost, show: true },
+  ].filter((row) => row.show);
 
   return (
     <section className="space-y-4">
-      <SectionTitle title="BOM & Costing Workspace" subtitle="Consignment total updates as you enter material and cost fields" />
-      <div className="overflow-x-auto rounded-xl border border-slate-200">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-100 border-b border-slate-200">
-            <tr>
-              <th className="text-left p-2 font-semibold text-slate-700">Material / Services</th>
-              {/* <th className="text-left p-2 font-semibold text-slate-700">Max WP</th> */}
-              <th className="text-right p-2 font-semibold text-slate-700">Base cost (₹)</th>
-              <th className="w-10" />
-            </tr>
-          </thead>
-          <tbody>
-            {(bom.materials || []).map((row, idx) => (
-              <tr key={row.id} className="border-b border-slate-100">
-                <td className="p-2">
-                  <Input
-                    disabled={!canEdit}
-                    value={row.material_name}
-                    onChange={(e) => {
-                      const materials = [...bom.materials];
-                      materials[idx] = { ...row, material_name: e.target.value };
-                      setBom({ materials });
-                    }}
-                    className={inputClass}
-                    placeholder="Material name"
-                  />
-                </td>
-                {/* <td className="p-2">
-                  <Input
-                    disabled={!canEdit}
-                    value={row.max_wp_rating}
-                    onChange={(e) => {
-                      const materials = [...bom.materials];
-                      materials[idx] = { ...row, max_wp_rating: e.target.value };
-                      setBom({ materials });
-                    }}
-                    className={inputClass}
-                  />
-                </td> */}
-                <td className="p-2">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    disabled={!canEdit}
-                    value={row.base_cost}
-                    onChange={(e) => {
-                      const materials = [...bom.materials];
-                      materials[idx] = { ...row, base_cost: parseFloat(e.target.value) || 0 };
-                      setBom({ materials });
-                    }}
-                    className={`${inputClass} text-right`}
-                  />
-                </td>
-                <td className="p-2">
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={() => setBom({ materials: bom.materials.filter((_, i) => i !== idx) })}
-                      className="text-rose-500 hover:bg-rose-50 p-1 rounded"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </td>
+      <SectionTitle
+        title="Module 6 — BOM & costing"
+        subtitle="Items come from Material & product and Vendor management. Enter stock unit prices; vendor prices are taken from quotes. Installation and other charges sit on top of that material total."
+      />
+      {useWorkflowLines ? (
+        <div className="rounded-xl border border-indigo-200 bg-white p-4 space-y-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">
+              Supply to customer ({lines.length})
+            </p>
+            <p className="text-xs text-slate-500">
+              Stock lines need a unit price here. Vendor lines use the quoted unit price from Vendor management
+              (qty × unit price).
+            </p>
+          </div>
+          <ExcelGrid
+            columns={costingColumns}
+            rows={lines}
+            onChange={updateCostingRows}
+            canEdit={canEdit}
+            newRow={newMaterialProductRow}
+            allowAddRemove={false}
+            emptyLabel="No items yet — complete Material & product first."
+          />
+          {costingIncomplete && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              {bomCostingIncompleteMessage(payload)}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-100 border-b border-slate-200">
+              <tr>
+                <th className="text-left p-2 font-semibold text-slate-700">Material / Services</th>
+                <th className="text-right p-2 font-semibold text-slate-700">Base cost (₹)</th>
+                <th className="w-10" />
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {canEdit && (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setBom({ materials: [...(bom.materials || []), newMaterialRow()] })}
-        >
-          <Plus className="h-4 w-4 mr-1" /> Add material row
-        </Button>
+            </thead>
+            <tbody>
+              {(bom.materials || []).map((row, idx) => (
+                <tr key={row.id} className="border-b border-slate-100">
+                  <td className="p-2">
+                    <Input
+                      disabled={!canEdit}
+                      value={row.material_name}
+                      onChange={(e) => {
+                        const materials = [...bom.materials];
+                        materials[idx] = { ...row, material_name: e.target.value };
+                        setBom({ materials });
+                      }}
+                      className={inputClass}
+                      placeholder="Material name"
+                    />
+                  </td>
+                  <td className="p-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      disabled={!canEdit}
+                      value={row.base_cost}
+                      onChange={(e) => {
+                        const materials = [...bom.materials];
+                        materials[idx] = { ...row, base_cost: parseFloat(e.target.value) || 0 };
+                        setBom({ materials });
+                      }}
+                      className={`${inputClass} text-right`}
+                    />
+                  </td>
+                  <td className="p-2">
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => setBom({ materials: bom.materials.filter((_, i) => i !== idx) })}
+                        className="text-rose-500 hover:bg-rose-50 p-1 rounded"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {canEdit && (
+            <div className="p-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setBom({ materials: [...(bom.materials || []), newMaterialRow()] })}
+              >
+                <Plus className="h-4 w-4 mr-1" /> Add material row
+              </Button>
+            </div>
+          )}
+        </div>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div>
+        <p className="text-sm font-semibold text-slate-800 mb-2">Additional charges</p>
+        <p className="text-xs text-slate-500 mb-3">
+          These sit on top of the material total above to give the consignment cost before quotation profit.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <NumField label="Installation, Commissioning & Cost(₹)" value={bom.install_cost} onChange={(v) => setBom({ install_cost: v })} canEdit={canEdit} />
         {/* <NumField label="Testing, training & TPI (₹)" value={bom.testing_cost} onChange={(v) => setBom({ testing_cost: v })} canEdit={canEdit} /> */}
         <NumField label="Packaging Cost(₹)" value={bom.packaging_cost} onChange={(v) => setBom({ packaging_cost: v })} canEdit={canEdit} />
@@ -3083,6 +3209,20 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
             className={`${inputClass} mt-1`}
             placeholder="e.g. 20"
           />
+        </div>
+        </div>
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+        <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600 bg-slate-50 border-b border-slate-200">
+          Cost roll-up (before quotation)
+        </p>
+        <div className="divide-y divide-slate-100">
+          {rollup.map((row) => (
+            <div key={row.label} className="px-4 py-2 flex items-center justify-between gap-3 text-sm">
+              <span className="text-slate-600">{row.label}</span>
+              <span className="font-medium tabular-nums text-slate-900">{formatInr(row.value || 0)}</span>
+            </div>
+          ))}
         </div>
       </div>
       <div className="space-y-2">
@@ -3236,7 +3376,7 @@ function ModuleOfferFollowUp({
   }));
   const [addingFollowUp, setAddingFollowUp] = React.useState(false);
 
-  const draftTotals = computeOfferTotals(payload.bom, offerDraft.margin_pct);
+  const draftTotals = computeOfferTotals(payload.bom, offerDraft.margin_pct, payload);
   const canEditFollowUp = canEdit && isFollowUp;
 
   const uploadOfferRevisionAttachments = async (revId, pickedFiles) => {
@@ -3409,6 +3549,7 @@ function ModuleOfferFollowUp({
         existingRevisions: revisions,
         lead_offer_no: offerBase,
         offerBase,
+        payload,
       });
       const nextPayload = {
         ...payload,

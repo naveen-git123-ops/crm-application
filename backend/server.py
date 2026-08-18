@@ -10867,6 +10867,49 @@ def _material_product_complete(payload: dict) -> bool:
     return all(_material_row_filled(r) for r in rows if _material_row_started(r))
 
 
+def _named_material_rows(rows) -> List[dict]:
+    if not isinstance(rows, list):
+        return []
+    return [
+        row for row in rows
+        if isinstance(row, dict) and str(row.get('item_name') or '').strip()
+    ]
+
+
+def _parse_money(value) -> float:
+    try:
+        if isinstance(value, (int, float)):
+            return float(value)
+        cleaned = str(value or '').replace('₹', '').replace(',', '').strip()
+        return float(cleaned) if cleaned else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _positive_number(value) -> bool:
+    return _parse_money(value) > 0
+
+
+def _bom_costing_complete(payload: dict) -> bool:
+    """Priced stock + vendor lines that are fully filled. Legacy BOM materials still allowed."""
+    mp = payload.get('material_product') or {}
+    stock = [row for row in _named_material_rows(mp.get('stock_items')) if _material_row_filled(row)]
+    purchase = [row for row in _named_material_rows(mp.get('purchase_items')) if _material_row_filled(row)]
+    if stock or purchase:
+        if any(not _positive_number(row.get('unit_cost')) for row in stock):
+            return False
+        if any(not _positive_number(row.get('quoted_price') or row.get('unit_cost')) for row in purchase):
+            return False
+        return True
+    materials = (payload.get('bom') or {}).get('materials') or []
+    return any(
+        isinstance(row, dict)
+        and str(row.get('material_name') or '').strip()
+        and _positive_number(row.get('base_cost'))
+        for row in materials
+    )
+
+
 def _json_bool(value):
     """True/False from JSON, including 0/1 and yes/no strings."""
     if isinstance(value, bool):
@@ -11676,10 +11719,11 @@ def _validate_lead_workflow_transition(
                 status_code=400,
                 detail='Assign a vendor to every item that needs to be purchased before proceeding',
             )
-    bom = payload.get('bom') or {}
-    materials = bom.get('materials') or []
-    if new_stage in ('offer_revision', 'follow_up', 'closed_won', 'closed_lost') and len(materials) == 0:
-        raise HTTPException(status_code=400, detail='Add at least one BOM material line before offer stage')
+    if new_stage in ('offer_revision', 'follow_up', 'closed_won', 'closed_lost') and not _bom_costing_complete(payload):
+        raise HTTPException(
+            status_code=400,
+            detail='Enter a unit price for every stock item (vendor prices come from quotes) before offer stage',
+        )
     # Won/Lost detail fields are filled on the terminal step after client decision routing.
     if payload.get('pipeline_terminal_confirmed'):
         if new_stage == 'closed_won':

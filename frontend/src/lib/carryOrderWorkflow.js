@@ -327,6 +327,8 @@ export function newMaterialProductRow(overrides = {}) {
     warranty: '',
     delivery_period: '',
     delivery_date: '',
+    // Stock-grid only: unit cost entered on BOM & costing.
+    unit_cost: '',
     ...overrides,
   };
 }
@@ -505,6 +507,113 @@ export function materialProductIncompleteMessage(payload) {
   return 'Complete item name, quantity and UOM on every row (or remove the empty rows)';
 }
 
+export function materialLineQty(row) {
+  const n = Number(row?.quantity);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+export function parseMoney(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const n = Number(String(value ?? '').replace(/₹/g, '').replace(/,/g, '').trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function materialLineUnitPrice(row, source) {
+  const raw = source === 'vendor'
+    ? (row?.quoted_price ?? row?.unit_price)
+    : (row?.unit_cost ?? row?.unit_price);
+  const n = parseMoney(raw);
+  return n > 0 ? n : 0;
+}
+
+export function materialLineAmount(row, source) {
+  return materialLineQty(row) * materialLineUnitPrice(row, source);
+}
+
+/** Combined customer-supply list for BOM: stock issues + vendor purchases. */
+export function buildBomCostingLines(payload) {
+  const stock = materialStockRows(payload).filter(isMaterialProductRowFilled).map((row) => {
+    const rate = materialLineUnitPrice(row, 'stock');
+    return {
+      ...row,
+      source: 'stock',
+      source_label: 'Stock',
+      vendor_name: '',
+      unit_price: row.unit_cost ?? '',
+      amount: materialLineQty(row) * rate,
+      price_editable: true,
+    };
+  });
+  const purchase = materialPurchaseRows(payload).filter(isMaterialProductRowFilled).map((row) => {
+    const rate = materialLineUnitPrice(row, 'vendor');
+    return {
+      ...row,
+      source: 'vendor',
+      source_label: 'Vendor',
+      unit_price: row.quoted_price ?? '',
+      amount: materialLineQty(row) * rate,
+      price_editable: true,
+    };
+  });
+  return [...stock, ...purchase];
+}
+
+export function bomMaterialsFromWorkflow(payload) {
+  return buildBomCostingLines(payload).map((row) => ({
+    id: `bom-${row.source}-${row.id}`,
+    source: row.source,
+    source_row_id: row.id,
+    material_name: row.item_name,
+    specification: row.specification || '',
+    quantity: row.quantity,
+    uom: row.uom || '',
+    vendor_name: row.vendor_name || '',
+    unit_price: materialLineUnitPrice(row, row.source),
+    base_cost: row.amount,
+  }));
+}
+
+export function withSyncedBomMaterials(payload) {
+  const lines = buildBomCostingLines(payload);
+  if (!lines.length) return payload;
+  return {
+    ...payload,
+    bom: {
+      ...(payload.bom || {}),
+      materials: bomMaterialsFromWorkflow(payload),
+    },
+  };
+}
+
+export function isBomCostingComplete(payload) {
+  const lines = buildBomCostingLines(payload);
+  if (lines.length) {
+    return lines.every((row) => materialLineUnitPrice(row, row.source) > 0);
+  }
+  return (payload?.bom?.materials || []).some(
+    (row) => String(row?.material_name || '').trim() && parseMoney(row?.base_cost) > 0,
+  );
+}
+
+export function bomCostingIncompleteMessage(payload) {
+  const lines = buildBomCostingLines(payload);
+  if (!lines.length) {
+    if ((payload?.bom?.materials || []).length) {
+      return 'Enter a base cost on at least one BOM material line';
+    }
+    return 'Add stock or purchase items on Material & product first — they appear here automatically';
+  }
+  const missingStock = lines.filter((row) => row.source === 'stock' && !(materialLineUnitPrice(row, 'stock') > 0));
+  if (missingStock.length) {
+    return `Enter a unit price for every stock item (${missingStock.map((row) => row.item_name).join(', ')})`;
+  }
+  const missingVendor = lines.filter((row) => row.source === 'vendor' && !(materialLineUnitPrice(row, 'vendor') > 0));
+  if (missingVendor.length) {
+    return `Vendor quotes are missing a price for: ${missingVendor.map((row) => row.item_name).join(', ')}`;
+  }
+  return 'Complete costing for every line';
+}
+
 /** Tells the user exactly which Requirement Analysis field is still missing. */
 export function requirementAnalysisIncompleteMessage(payload) {
   const oa = payload?.opportunity_assessment || {};
@@ -648,7 +757,7 @@ export function isStageComplete(stageId, payload, lead, { isCarryAndOrder, leadN
     case 'technical_clearance':
       return isVendorSelectionComplete(payload);
     case 'bom_costing':
-      return (payload.bom?.materials || []).length > 0;
+      return isBomCostingComplete(payload);
     case 'offer_revision':
       return (payload.offer_revisions || []).some((r) => (Number(r.offer_profit_margin_pct) || 0) > 0);
     case 'follow_up':
@@ -674,7 +783,7 @@ export function stageIncompleteMessage(stageId, lead, { isCarryAndOrder, leadNee
     case 'technical_clearance':
       return vendorManagementIncompleteMessage(payload);
     case 'bom_costing':
-      return 'Add at least one BOM material line';
+      return bomCostingIncompleteMessage(payload);
     case 'offer_revision':
       return 'Record at least one offer revision with profit margin %';
     case 'follow_up':
@@ -928,9 +1037,18 @@ export function applyMarginFormula(base, marginPct) {
   return { pct, value, amount: value - safeBase };
 }
 
-export function computeBomTotals(bom) {
-  const materials = bom?.materials || [];
-  const materialsTotal = materials.reduce((sum, row) => sum + (Number(row.base_cost) || 0), 0);
+export function computeBomTotals(bom, payload) {
+  const workflowLines = payload ? buildBomCostingLines(payload) : [];
+  const useWorkflow = workflowLines.length > 0;
+  const materialsTotal = useWorkflow
+    ? workflowLines.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
+    : (bom?.materials || []).reduce((sum, row) => sum + (Number(row.base_cost) || 0), 0);
+  const stockTotal = useWorkflow
+    ? workflowLines.filter((row) => row.source === 'stock').reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
+    : 0;
+  const vendorTotal = useWorkflow
+    ? workflowLines.filter((row) => row.source === 'vendor').reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
+    : 0;
   const install = Number(bom?.install_cost) || 0;
   const testing = Number(bom?.testing_cost) || 0;
   const packaging = Number(bom?.packaging_cost) || 0;
@@ -945,6 +1063,15 @@ export function computeBomTotals(bom) {
   );
   return {
     tpc: materialsTotal,
+    materialsTotal,
+    stockTotal,
+    vendorTotal,
+    install,
+    testing,
+    packaging,
+    transport,
+    costOfAp,
+    tpcCost,
     totalCost: materialsTotal + install + testing + packaging + transport + costOfAp,
     sellingValue: profitValue,
     consignmentTotal,
@@ -1001,7 +1128,7 @@ export function buildOfferRevisionEntry(bom, marginPct, stage = 'offer_revision'
     );
   }
   const offerNo = formatOfferRevisionNumber(baseNo, revisionIndex);
-  const bomTotals = computeBomTotals(bom);
+  const bomTotals = computeBomTotals(bom, opts.payload);
   const baseAfterBomProfit = bomTotals.profitValue;
   const { pct, value: offerValue, amount: offerProfitAmount } = applyMarginFormula(
     baseAfterBomProfit,
@@ -1046,8 +1173,8 @@ export function revisionProofOfOfferAttachments(rev) {
   return Array.isArray(rev?.proof_of_offer_attachments) ? rev.proof_of_offer_attachments : [];
 }
 
-export function computeOfferTotals(bom, offerProfitMarginPct) {
-  const bomTotals = computeBomTotals(bom);
+export function computeOfferTotals(bom, offerProfitMarginPct, payload) {
+  const bomTotals = computeBomTotals(bom, payload);
   const baseAfterBomProfit = bomTotals.profitValue;
   const { pct, value: offerValue, amount: offerProfitAmount } = applyMarginFormula(
     baseAfterBomProfit,
