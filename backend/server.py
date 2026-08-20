@@ -6503,6 +6503,14 @@ def run_cgw_renewal_digest_now(current_user: UserModel = Depends(get_current_use
     return result
 
 
+@api_router.post('/settings/cgw-expired-noc-telegram/run-now')
+def run_expired_noc_telegram_now(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Manually send the expired-NOC Telegram list to every linked user (for testing)."""
+    if not can_manage_cgw(current_user, db):
+        raise HTTPException(status_code=403, detail='Not authorized')
+    return run_expired_noc_telegram_digest_job(send_empty=True)
+
+
 @api_router.post('/cgw-flow-metres/{inventory_id}/upload-certificate')
 def upload_calibration_certificate(
     inventory_id: str,
@@ -13067,6 +13075,246 @@ def run_cgw_renewal_digest_job(
         db.close()
 
 
+TELEGRAM_TEXT_LIMIT = 3900
+
+
+def _linked_telegram_chat_ids(db: Session) -> List[str]:
+    """Unique Telegram chat IDs from CRM users and active employees who linked the bot."""
+    seen = set()
+    chats: List[str] = []
+    for user in db.query(UserModel).filter(UserModel.telegram_chat_id.isnot(None)).all():
+        cid = str(user.telegram_chat_id or '').strip()
+        if cid and cid not in seen:
+            seen.add(cid)
+            chats.append(cid)
+    for emp in db.query(EmployeeModel).filter(EmployeeModel.telegram_chat_id.isnot(None)).all():
+        status = str(getattr(emp, 'status', None) or '').strip().lower()
+        if status and status != 'active':
+            continue
+        cid = str(emp.telegram_chat_id or '').strip()
+        if cid and cid not in seen:
+            seen.add(cid)
+            chats.append(cid)
+    return chats
+
+
+def _split_telegram_text(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> List[str]:
+    text = (text or '').strip()
+    if not text:
+        return []
+    if len(text) <= limit:
+        return [text]
+    chunks: List[str] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= limit:
+            chunks.append(remaining)
+            break
+        cut = remaining.rfind('\n', 0, limit)
+        if cut < limit // 2:
+            cut = limit
+        chunks.append(remaining[:cut].rstrip())
+        remaining = remaining[cut:].lstrip('\n')
+    return chunks
+
+
+def _cgw_effective_noc_snapshot(item: CGWFlowMetreModel) -> dict:
+    records = _cgw_noc_records_from_stored(item)
+    current = _cgw_pick_current_noc(records) or {}
+    noc_no = (current.get('noc_no') or getattr(item, 'noc_no', None) or '').strip() or '—'
+    valid_from = (current.get('valid_from') or getattr(item, 'noc_valid_from', None) or '').strip() or '—'
+    valid_upto = (current.get('valid_upto') or getattr(item, 'noc_valid_upto', None) or '').strip() or '—'
+    noc_type = (current.get('noc_type') or getattr(item, 'noc_type', None) or '').strip() or '—'
+    return {
+        'noc_no': noc_no,
+        'valid_from': valid_from,
+        'valid_upto': valid_upto,
+        'noc_type': noc_type,
+    }
+
+
+def _collect_expired_noc_entries(db: Session, today: date) -> List[dict]:
+    """One entry per customer whose current NOC valid-upto is before today. Drafts skipped."""
+    grouped: Dict[str, dict] = {}
+    rows = db.query(CGWFlowMetreModel).all()
+    for item in rows:
+        if _is_cgw_draft_record(item):
+            continue
+        snap = _cgw_effective_noc_snapshot(item)
+        vu = parse_cgw_renewal_date(snap.get('valid_upto'))
+        if not vu or vu >= today:
+            continue
+        key = str(item.customer_id or item.customer_name or item.id)
+        entry = grouped.get(key)
+        inv = (item.inventory_id or '').strip()
+        if not entry:
+            grouped[key] = {
+                'customer_name': (item.customer_name or '').strip() or '—',
+                'location': (item.location or '').strip() or '—',
+                'contact_person': (item.contact_person or '').strip() or '—',
+                'person_mobile': (item.person_mobile_number or '').strip() or '—',
+                'email': (item.email_id or '').strip() or '—',
+                'noc_no': snap['noc_no'],
+                'noc_type': snap['noc_type'],
+                'valid_from': snap['valid_from'],
+                'valid_upto': snap['valid_upto'],
+                'days_expired': (today - vu).days,
+                'inventory_ids': [inv] if inv else [],
+            }
+            continue
+        if inv and inv not in entry['inventory_ids']:
+            entry['inventory_ids'].append(inv)
+        if entry['days_expired'] < (today - vu).days:
+            entry['days_expired'] = (today - vu).days
+            entry['valid_from'] = snap['valid_from']
+            entry['valid_upto'] = snap['valid_upto']
+            entry['noc_no'] = snap['noc_no']
+            entry['noc_type'] = snap['noc_type']
+    entries = list(grouped.values())
+    entries.sort(key=lambda e: (-int(e.get('days_expired') or 0), str(e.get('customer_name') or '')))
+    return entries
+
+
+def _format_expired_noc_telegram_messages(entries: List[dict], today: date, test_send: bool) -> List[str]:
+    header_lines = [
+        f'Expired NOC list — {today.isoformat()} ({ATTENDANCE_TZ_NAME})',
+    ]
+    if test_send:
+        header_lines.append('Test send from View CGWA.')
+    if not entries:
+        header_lines.append('')
+        header_lines.append('No expired NOCs as of today.')
+        return ['\n'.join(header_lines)]
+
+    header_lines.append('')
+    header_lines.append(f'{len(entries)} customer(s) with expired NOC:')
+    header = '\n'.join(header_lines)
+    blocks: List[str] = []
+    for idx, e in enumerate(entries, start=1):
+        ids = ', '.join(e.get('inventory_ids') or []) or '—'
+        ntype = e.get('noc_type') or '—'
+        if ntype == 'new':
+            ntype = 'New'
+        elif ntype == 'renewal':
+            ntype = 'Renewal'
+        blocks.append(
+            '\n'.join([
+                '',
+                f'{idx}. {e.get("customer_name") or "—"}',
+                f'   CGWA: {ids}',
+                f'   NOC: {e.get("noc_no") or "—"} ({ntype})',
+                f'   Valid: {e.get("valid_from") or "—"} → {e.get("valid_upto") or "—"}',
+                f'   Expired: {e.get("days_expired") or 0} day(s)',
+                f'   Contact: {e.get("contact_person") or "—"} · {e.get("person_mobile") or "—"}',
+                f'   Location: {e.get("location") or "—"}',
+            ])
+        )
+    chunks: List[str] = []
+    current = header
+    for block in blocks:
+        extra = block
+        if len(current) + len(extra) > TELEGRAM_TEXT_LIMIT and current != header:
+            chunks.append(current)
+            current = header + '\n(continued)' + extra
+        else:
+            current += extra
+    if current.strip():
+        chunks.append(current)
+    out: List[str] = []
+    for chunk in chunks:
+        out.extend(_split_telegram_text(chunk))
+    return out
+
+
+def run_expired_noc_telegram_digest_job(send_empty: bool = False) -> Dict[str, Any]:
+    """Send expired-NOC details to every CRM user/employee with Telegram linked.
+
+    Scheduled 09:00: send_empty=False (skip if nothing expired).
+    Test button: send_empty=True (still send a 'none expired' note so delivery can be verified).
+    """
+    out: Dict[str, Any] = {
+        'sent': False,
+        'expired_count': 0,
+        'recipient_count': 0,
+        'delivered': 0,
+        'failed': 0,
+        'skipped_reason': None,
+        'message': '',
+    }
+    if not telegram_enabled():
+        out['skipped_reason'] = 'telegram_disabled'
+        out['message'] = 'Telegram is not configured on the server (TELEGRAM_BOT_TOKEN).'
+        logging.warning('Expired NOC Telegram digest skipped: bot token not configured')
+        return out
+
+    db = SessionLocal()
+    try:
+        today = attendance_local_now().date()
+        entries = _collect_expired_noc_entries(db, today)
+        out['expired_count'] = len(entries)
+        chats = _linked_telegram_chat_ids(db)
+        out['recipient_count'] = len(chats)
+
+        if not chats:
+            out['skipped_reason'] = 'no_linked_users'
+            out['message'] = 'No CRM users have Telegram linked, so nothing was sent.'
+            logging.info('Expired NOC Telegram digest skipped: no linked chat IDs')
+            return out
+
+        if not entries and not send_empty:
+            out['skipped_reason'] = 'no_expired_nocs'
+            out['message'] = f'No expired NOCs as of {today.isoformat()} ({ATTENDANCE_TZ_NAME}), so nothing was sent.'
+            logging.info('Expired NOC Telegram digest: no expired rows')
+            return out
+
+        messages = _format_expired_noc_telegram_messages(entries, today, test_send=send_empty)
+        delivered_chats = 0
+        failed_chats = 0
+        last_error = None
+        for chat_id in chats:
+            chat_ok = True
+            for idx, text in enumerate(messages):
+                ok, err = send_telegram_message_verbose(text, chat_id)
+                if not ok:
+                    chat_ok = False
+                    last_error = err
+                    logging.warning('Expired NOC Telegram failed for chat %s: %s', chat_id, err)
+                    break
+                if idx < len(messages) - 1:
+                    time.sleep(0.05)
+            if chat_ok:
+                delivered_chats += 1
+            else:
+                failed_chats += 1
+            time.sleep(0.05)
+
+        out['delivered'] = delivered_chats
+        out['failed'] = failed_chats
+        out['sent'] = delivered_chats > 0
+        if delivered_chats:
+            out['message'] = (
+                f'Sent expired NOC list ({len(entries)}) to {delivered_chats} linked Telegram user(s).'
+                + (f' {failed_chats} failed.' if failed_chats else '')
+            )
+            logging.info(
+                'Expired NOC Telegram digest sent to %s/%s chats (%s expired)',
+                delivered_chats,
+                len(chats),
+                len(entries),
+            )
+        else:
+            out['skipped_reason'] = 'send_failed'
+            out['message'] = last_error or 'Telegram send failed for all linked users.'
+        return out
+    except Exception as exc:
+        logging.exception('Expired NOC Telegram digest job failed: %s', exc)
+        out['skipped_reason'] = 'job_error'
+        out['message'] = f'Digest job error: {exc}'
+        return out
+    finally:
+        db.close()
+
+
 def calculate_subscription_status(subscription_end_date: Optional[datetime]) -> str:
     """Calculate subscription status based on end date."""
     if not subscription_end_date:
@@ -14970,6 +15218,12 @@ def _start_cgw_renewal_digest_scheduler():
         replace_existing=True,
     )
     _cgw_digest_scheduler.add_job(
+        run_expired_noc_telegram_digest_job,
+        CronTrigger(hour=9, minute=0, timezone=sched_tz),
+        id='cgw_expired_noc_telegram_daily',
+        replace_existing=True,
+    )
+    _cgw_digest_scheduler.add_job(
         run_site_visit_telegram_reminders_job,
         CronTrigger(hour='6-9', minute=0, timezone=sched_tz),
         id='site_visit_telegram_reminders',
@@ -14977,6 +15231,7 @@ def _start_cgw_renewal_digest_scheduler():
     )
     _cgw_digest_scheduler.start()
     logger.info('CGW past-due renewal digest scheduled daily at 09:00 (%s)', ATTENDANCE_TZ_NAME)
+    logger.info('Expired NOC Telegram digest scheduled daily at 09:00 (%s)', ATTENDANCE_TZ_NAME)
     logger.info(
         'Site visit Telegram reminders scheduled at 06:00 + hourly reminders 07/08/09 (%s)',
         ATTENDANCE_TZ_NAME,

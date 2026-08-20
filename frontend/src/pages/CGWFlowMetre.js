@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save, Calendar } from 'lucide-react';
+import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save, Calendar, Send } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 import { getApiErrorMessage } from '@/lib/apiErrors';
@@ -1028,6 +1028,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
   const [digestEnabled, setDigestEnabled] = useState(false);
   const [digestScheduleTz, setDigestScheduleTz] = useState('');
   const [digestSaving, setDigestSaving] = useState(false);
+  const [nocTelegramSending, setNocTelegramSending] = useState(false);
 
   const [nocDialogOpen, setNocDialogOpen] = useState(false);
   const [customerPreviewOpen, setCustomerPreviewOpen] = useState(false);
@@ -2981,6 +2982,28 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
     }
   };
 
+  const sendExpiredNocTelegramNow = async () => {
+    setNocTelegramSending(true);
+    try {
+      const res = await axios.post(
+        `${API}/settings/cgw-expired-noc-telegram/run-now`,
+        {},
+        { headers: authHeaders(), timeout: 120000 },
+      );
+      const d = res.data || {};
+      const msg = d.message || 'Telegram send finished.';
+      if (d.sent) {
+        toast.success(msg);
+      } else {
+        toast.error(msg);
+      }
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to send expired NOC list to Telegram'));
+    } finally {
+      setNocTelegramSending(false);
+    }
+  };
+
   const runDigestNow = async () => {
     try {
       const res = await axios.post(`${API}/settings/cgw-renewal-digest/run-now`, {}, { headers: authHeaders() });
@@ -4166,6 +4189,29 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
       {isViewScreen && (
         <>
+      {canManage ? (
+        <Card className="rounded-lg border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <h3 className="text-sm font-semibold text-gray-900">Expired NOC Telegram alert</h3>
+              <p className="text-xs text-gray-600 leading-relaxed">
+                Every morning at <span className="font-medium text-gray-800">9:00</span> (Asia/Kolkata),
+                the list of expired NOCs is sent to every CRM user with Telegram linked.
+                Use the button to send that list now for testing.
+              </p>
+            </div>
+            <Button
+              type="button"
+              className="h-9 shrink-0 bg-blue-600 text-white hover:bg-blue-700"
+              disabled={nocTelegramSending}
+              onClick={sendExpiredNocTelegramNow}
+            >
+              <Send className="h-4 w-4 mr-1.5" />
+              {nocTelegramSending ? 'Sending…' : 'Send expired NOC list to Telegram'}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
       <Card className="p-4 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
