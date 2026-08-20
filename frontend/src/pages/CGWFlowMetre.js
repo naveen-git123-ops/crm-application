@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save } from 'lucide-react';
+import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save, Calendar } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 import { getApiErrorMessage } from '@/lib/apiErrors';
@@ -505,8 +505,8 @@ const EMPTY_NOC_FORM = {
   noc_type: '',
   valid_from: '',
   valid_upto: '',
-  permitted_m3_per_day: '',
   permitted_m3_per_year: '',
+  permitted_m3_per_day: '',
   existing_bw_count: '',
   total_proposed_bw_count: '',
   flowmeter_applicable: '',
@@ -514,6 +514,77 @@ const EMPTY_NOC_FORM = {
   piezometer_applicable: '',
   piezometer_count: '',
 };
+
+function nocFormFromRecord(rec) {
+  return {
+    bhuneer_user_id: rec?.bhuneer_user_id || '',
+    bhuneer_password: rec?.bhuneer_password || '',
+    nocap_user_id: rec?.nocap_user_id || '',
+    nocap_password: rec?.nocap_password || '',
+    project_name: rec?.project_name || '',
+    project_address: rec?.project_address || '',
+    communication_address: rec?.communication_address || '',
+    noc_no: rec?.noc_no || '',
+    application_no: rec?.application_no || '',
+    project_status: rec?.project_status || '',
+    noc_type: rec?.noc_type || '',
+    valid_from: rec?.valid_from || '',
+    valid_upto: rec?.valid_upto || '',
+    permitted_m3_per_day: rec?.permitted_m3_per_day || '',
+    permitted_m3_per_year: rec?.permitted_m3_per_year || '',
+    existing_bw_count: rec?.existing_bw_count || '',
+    total_proposed_bw_count: rec?.total_proposed_bw_count || '',
+    flowmeter_applicable: rec?.flowmeter_applicable || '',
+    flowmeter_count: rec?.flowmeter_count || '',
+    piezometer_applicable: rec?.piezometer_applicable || '',
+    piezometer_count: rec?.piezometer_count || '',
+  };
+}
+
+function nocRecordsFromItem(item) {
+  const list = Array.isArray(item?.noc_records) ? item.noc_records.filter(Boolean) : [];
+  if (list.length) return list;
+  const fallback = nocFormFromItem(item);
+  if (item?.noc_document_url || fallback.noc_no || fallback.valid_from || fallback.valid_upto) {
+    return [{
+      id: 'legacy-current',
+      document_url: item?.noc_document_url || '',
+      file_name: 'NOC PDF',
+      ...fallback,
+    }];
+  }
+  return [];
+}
+
+function isoToday() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function nocPeriodStatus(rec, today = isoToday()) {
+  const vf = String(rec?.valid_from || '').slice(0, 10);
+  const vu = String(rec?.valid_upto || '').slice(0, 10);
+  if (vu && vu < today) return 'expired';
+  if (vf && vf > today) return 'upcoming';
+  if ((vf && vf <= today) && (!vu || vu >= today)) return 'active';
+  return 'saved';
+}
+
+function pickCurrentNocRecord(records) {
+  if (!records?.length) return null;
+  const today = isoToday();
+  const covering = records.filter((rec) => nocPeriodStatus(rec, today) === 'active');
+  const pool = covering.length ? covering : records;
+  return [...pool].sort((a, b) => String(b.valid_upto || '').localeCompare(String(a.valid_upto || '')))[0];
+}
+
+function formatNocPeriod(rec) {
+  const vf = rec?.valid_from || '—';
+  const vu = rec?.valid_upto || '—';
+  return `${vf} → ${vu}`;
+}
 const FILTER_FIELDS = [
   'customer_name',
   'location',
@@ -965,6 +1036,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
   const [nocTargetItem, setNocTargetItem] = useState(null);
   const [nocFile, setNocFile] = useState(null);
   const [nocLocalPreview, setNocLocalPreview] = useState('');
+  const [nocSaveMode, setNocSaveMode] = useState('update');
+  const [nocSelectedRecordId, setNocSelectedRecordId] = useState(null);
   const [nocForm, setNocForm] = useState({
     bhuneer_user_id: '',
     bhuneer_password: '',
@@ -1037,29 +1110,11 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
     clearNocLocalPreview();
     setNocFile(null);
     setNocTargetItem(item);
-    setNocForm({
-      bhuneer_user_id: item.noc_bhuneer_user_id || '',
-      bhuneer_password: item.noc_bhuneer_password || '',
-      nocap_user_id: item.noc_nocap_user_id || '',
-      nocap_password: item.noc_nocap_password || '',
-      project_name: item.noc_project_name || '',
-      project_address: item.noc_project_address || '',
-      communication_address: item.noc_communication_address || '',
-      noc_no: item.noc_no || '',
-      application_no: item.noc_application_no || '',
-      project_status: item.noc_project_status || '',
-      noc_type: item.noc_type || '',
-      valid_from: item.noc_valid_from || '',
-      valid_upto: item.noc_valid_upto || '',
-      permitted_m3_per_day: item.noc_permitted_m3_per_day || '',
-      permitted_m3_per_year: item.noc_permitted_m3_per_year || '',
-      existing_bw_count: item.noc_existing_bw_count || '',
-      total_proposed_bw_count: item.noc_total_proposed_bw_count || '',
-      flowmeter_applicable: item.noc_flowmeter_applicable || '',
-      flowmeter_count: item.noc_flowmeter_count || '',
-      piezometer_applicable: item.noc_piezometer_applicable || '',
-      piezometer_count: item.noc_piezometer_count || '',
-    });
+    const records = nocRecordsFromItem(item);
+    const current = pickCurrentNocRecord(records) || records[records.length - 1] || null;
+    setNocSaveMode('update');
+    setNocSelectedRecordId(current?.id || null);
+    setNocForm(current ? nocFormFromRecord(current) : { ...EMPTY_NOC_FORM });
     const canEditNoc = userCanEditSubmittedCgw(user);
     setNocSideFieldsEditable(canEditNoc && !startInPreviewMode);
     setNocDialogOpen(true);
@@ -1070,8 +1125,38 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
     clearNocLocalPreview();
     setNocFile(null);
     setNocTargetItem(null);
+    setNocSaveMode('update');
+    setNocSelectedRecordId(null);
     setNocSideFieldsEditable(false);
     setNocDialogOpen(false);
+  };
+
+  const selectNocPeriod = (rec) => {
+    if (!rec) return;
+    clearNocLocalPreview();
+    setNocFile(null);
+    setNocSaveMode('update');
+    setNocSelectedRecordId(rec.id);
+    setNocForm(nocFormFromRecord(rec));
+    setNocSideFieldsEditable(false);
+  };
+
+  const startAddNocPeriod = (mode = 'add') => {
+    const records = nocRecordsFromItem(nocTargetItem);
+    const latest = pickCurrentNocRecord(records) || records[records.length - 1];
+    clearNocLocalPreview();
+    setNocFile(null);
+    setNocSaveMode(mode);
+    setNocSelectedRecordId(null);
+    setNocForm({
+      ...(latest ? nocFormFromRecord(latest) : { ...EMPTY_NOC_FORM }),
+      noc_no: '',
+      application_no: '',
+      noc_type: mode === 'renew' ? 'renewal' : 'new',
+      valid_from: mode === 'renew' && latest?.valid_upto ? latest.valid_upto : '',
+      valid_upto: '',
+    });
+    setNocSideFieldsEditable(true);
   };
 
   const handleNocFilePicked = (e) => {
@@ -1090,9 +1175,17 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
   const handleNocSave = async () => {
     if (!nocTargetItem) return;
-    const hasExisting = !!(nocTargetItem.noc_document_url && String(nocTargetItem.noc_document_url).trim());
-    if (!nocFile && !hasExisting) {
-      toast.error('Select a NOC PDF to upload.');
+    const modeAtSave = nocSaveMode || 'update';
+    const records = nocRecordsFromItem(nocTargetItem);
+    const selected = records.find((r) => r.id === nocSelectedRecordId);
+    const hasExisting = !!(selected?.document_url || nocTargetItem.noc_document_url);
+    const addingPeriod = modeAtSave === 'add' || modeAtSave === 'renew';
+    if (!nocFile && (addingPeriod || !hasExisting)) {
+      toast.error('Select a NOC PDF for this validity period.');
+      return;
+    }
+    if (!(nocForm.valid_from || '').trim() || !(nocForm.valid_upto || '').trim()) {
+      toast.error('Enter valid from and valid up to dates for this NOC period.');
       return;
     }
     setNocSaving(true);
@@ -1120,14 +1213,34 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
       fd.append('bhuneer_password', nocForm.bhuneer_password || '');
       fd.append('nocap_user_id', nocForm.nocap_user_id || '');
       fd.append('nocap_password', nocForm.nocap_password || '');
-      await axios.post(`${API}/cgw-flow-metres/${nocTargetItem.id}/noc`, fd, {
+      fd.append('save_mode', modeAtSave);
+      if (modeAtSave === 'update' && nocSelectedRecordId) {
+        fd.append('noc_record_id', nocSelectedRecordId);
+      }
+      const res = await axios.post(`${API}/cgw-flow-metres/${nocTargetItem.id}/noc`, fd, {
         headers: authHeaders(),
         timeout: 120000,
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
       });
-      toast.success('NOC saved');
-      closeNocDialog();
+      const saved = res.data;
+      setNocTargetItem(saved);
+      const nextRecords = nocRecordsFromItem(saved);
+      const prevIds = new Set(records.map((r) => r.id).filter(Boolean));
+      const added = nextRecords.find((r) => r.id && !prevIds.has(r.id));
+      const current = pickCurrentNocRecord(nextRecords) || nextRecords[nextRecords.length - 1];
+      const nextSelected = addingPeriod
+        ? (added?.id || current?.id)
+        : (nocSelectedRecordId || current?.id);
+      setNocSaveMode('update');
+      setNocSelectedRecordId(nextSelected);
+      setNocForm(nocFormFromRecord(
+        nextRecords.find((r) => r.id === nextSelected) || current || {},
+      ));
+      setNocFile(null);
+      clearNocLocalPreview();
+      setNocSideFieldsEditable(false);
+      toast.success(modeAtSave === 'renew' ? 'NOC renewed for the new period' : modeAtSave === 'add' ? 'NOC period added' : 'NOC saved');
       fetchItems();
     } catch (err) {
       toast.error(getApiErrorMessage(err, 'Failed to save NOC'));
@@ -1249,11 +1362,17 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
       revokeNocRemoteBlob();
       return undefined;
     }
-    if (nocLocalPreview || !nocTargetItem?.noc_document_url) {
+    const records = nocRecordsFromItem(nocTargetItem);
+    const addingPeriod = nocSaveMode === 'add' || nocSaveMode === 'renew';
+    const selected = addingPeriod
+      ? null
+      : (records.find((r) => r.id === nocSelectedRecordId) || pickCurrentNocRecord(records));
+    const rawUrl = selected?.document_url || '';
+    if (nocLocalPreview || !rawUrl) {
       revokeNocRemoteBlob();
       return undefined;
     }
-    const full = nocDocHref(nocTargetItem.noc_document_url);
+    const full = nocDocHref(rawUrl);
     if (!isNocStreamableRemoteUrl(full)) {
       revokeNocRemoteBlob();
       return undefined;
@@ -1293,7 +1412,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
       setNocRemotePreviewUrl('');
       setNocRemotePreviewLoading(false);
     };
-  }, [nocDialogOpen, nocTargetItem?.id, nocTargetItem?.noc_document_url, nocLocalPreview, revokeNocRemoteBlob]);
+  }, [nocDialogOpen, nocTargetItem, nocSelectedRecordId, nocLocalPreview, nocSaveMode, revokeNocRemoteBlob]);
 
   useEffect(() => {
     const savedUrl = editingItem?.noc_document_url;
@@ -2620,6 +2739,12 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
   const canManage = userCanEditSubmittedCgw(user);
   const canDeleteCgw = userCanDeleteCgw(user);
   const nocReadOnly = !canManage;
+  const nocPeriodRecords = useMemo(() => nocRecordsFromItem(nocTargetItem), [nocTargetItem]);
+  const selectedNocRecord = useMemo(() => {
+    if (nocSaveMode === 'add' || nocSaveMode === 'renew') return null;
+    return nocPeriodRecords.find((r) => r.id === nocSelectedRecordId) || pickCurrentNocRecord(nocPeriodRecords);
+  }, [nocPeriodRecords, nocSelectedRecordId, nocSaveMode]);
+  const selectedNocDocumentUrl = selectedNocRecord?.document_url || '';
 
   const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
   const [mediaDialogItem, setMediaDialogItem] = useState(null);
@@ -3133,7 +3258,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                               className="h-11"
                             />
                             <p className="text-[11px] text-gray-500">
-                              If selected, the same NOC PDF is attached to every equipment row you create. It is saved to your draft so you can preview it after leaving this step.
+                              This is the first validity period. Additional or renewed NOC periods can be added later from View CGWA.
                             </p>
                           </>
                         ) : null}
@@ -4413,7 +4538,12 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                             </td>
                           )}
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-cyan-50/35">{groupAnchor.noc_no || '—'}</td>
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-cyan-50/35">
+                              <p>{groupAnchor.noc_no || '—'}</p>
+                              {nocRecordsFromItem(groupAnchor).length > 1 ? (
+                                <p className="text-[10px] text-cyan-800 mt-0.5">{nocRecordsFromItem(groupAnchor).length} periods</p>
+                              ) : null}
+                            </td>
                           )}
                           {rowIndex === 0 && (
                             <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-cyan-50/35">{groupAnchor.noc_application_no || '—'}</td>
@@ -4773,15 +4903,85 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
               <DialogTitle className="text-base font-semibold text-white m-0 flex items-center gap-2">
                 <FileText className="h-5 w-5 shrink-0" />
                 <span className="truncate">
-                  NOC — {nocTargetItem?.inventory_id || ''} · {nocTargetItem?.customer_name || ''}
+                  NOC periods — {nocTargetItem?.inventory_id || ''} · {nocTargetItem?.customer_name || ''}
                 </span>
               </DialogTitle>
+              <p className="text-slate-300 text-xs mt-1">
+                Each NOC covers a validity period. Add another period or renew without replacing earlier PDFs.
+              </p>
             </DialogHeader>
           </div>
           <div className="flex flex-1 min-h-0 flex-col lg:flex-row gap-0 overflow-hidden">
-            <div className="relative min-h-[52vh] flex-1 min-w-0 basis-0 bg-neutral-900 border-b lg:min-h-0 lg:border-b-0 lg:border-r lg:border-gray-200">
+            <div className="w-full shrink-0 border-b border-gray-200 bg-slate-50 lg:w-[240px] lg:max-w-[240px] lg:border-b-0 lg:border-r overflow-y-auto p-3 space-y-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Validity periods</p>
+                <p className="text-xs text-gray-500 mt-0.5">{nocPeriodRecords.length} period{nocPeriodRecords.length === 1 ? '' : 's'}</p>
+              </div>
+              {!nocReadOnly ? (
+                <div className="flex flex-col gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 bg-blue-600 text-white hover:bg-blue-700"
+                    onClick={() => startAddNocPeriod('add')}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Add NOC period
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    disabled={!nocPeriodRecords.length}
+                    onClick={() => startAddNocPeriod('renew')}
+                  >
+                    <Calendar className="h-3.5 w-3.5 mr-1" />
+                    Renew NOC
+                  </Button>
+                </div>
+              ) : null}
+              <div className="space-y-2">
+                {nocPeriodRecords.length === 0 ? (
+                  <p className="text-xs text-gray-500">No NOC periods yet. Add the first validity period.</p>
+                ) : (
+                  nocPeriodRecords.map((rec) => {
+                    const status = nocPeriodStatus(rec);
+                    const selected = nocSaveMode === 'update' && rec.id === (nocSelectedRecordId || selectedNocRecord?.id);
+                    return (
+                      <button
+                        key={rec.id}
+                        type="button"
+                        onClick={() => selectNocPeriod(rec)}
+                        className={cn(
+                          'w-full text-left rounded-md border px-2.5 py-2 transition-colors',
+                          selected ? 'border-blue-500 bg-white shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300',
+                        )}
+                      >
+                        <p className="text-xs font-semibold text-gray-900">{formatNocPeriod(rec)}</p>
+                        <p className="text-[11px] text-gray-500 mt-0.5 truncate">{rec.noc_no || rec.application_no || rec.file_name || 'NOC'}</p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <span className={cn(
+                            'inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                            status === 'active' ? 'bg-emerald-50 text-emerald-700' : status === 'expired' ? 'bg-gray-100 text-gray-600' : status === 'upcoming' ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600',
+                          )}>
+                            {status === 'active' ? 'Current' : status === 'expired' ? 'Expired' : status === 'upcoming' ? 'Upcoming' : 'Saved'}
+                          </span>
+                          {rec.noc_type ? (
+                            <span className="inline-flex rounded-full bg-cyan-50 px-1.5 py-0.5 text-[10px] font-medium text-cyan-800">
+                              {rec.noc_type === 'renewal' ? 'Renewal' : rec.noc_type === 'new' ? 'New' : rec.noc_type}
+                            </span>
+                          ) : null}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+            <div className="relative min-h-[40vh] flex-1 min-w-0 basis-0 bg-neutral-900 border-b lg:min-h-0 lg:border-b-0 lg:border-r lg:border-gray-200">
               {(() => {
-                const rawUrl = nocTargetItem?.noc_document_url;
+                const rawUrl = selectedNocDocumentUrl;
                 const fullHref = rawUrl ? nocDocHref(rawUrl) : '';
                 const useStream = isNocStreamableRemoteUrl(fullHref);
                 const directSrc =
@@ -4819,14 +5019,37 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   <div className="absolute inset-0 flex items-center justify-center bg-gray-100 p-6 text-center text-sm text-gray-500">
                     {nocReadOnly
                       ? 'No NOC document on file for this row.'
-                      : canManage && !nocSideFieldsEditable
+                      : nocSaveMode === 'add' || nocSaveMode === 'renew'
+                        ? 'Upload the PDF for this new validity period to preview it here.'
+                        : canManage && !nocSideFieldsEditable
                         ? 'Preview only. Use Edit NOC details on the right to change the PDF or metadata.'
                         : 'Select a PDF (right) to preview here, or open an existing NOC from the grid.'}
                   </div>
                 );
               })()}
             </div>
-            <div className="w-full shrink-0 space-y-2 overflow-y-auto border-t border-gray-200 bg-white p-3 lg:w-[min(280px,26vw)] lg:max-w-[280px] lg:border-l lg:border-t-0 lg:border-gray-200">
+            <div className="w-full shrink-0 space-y-2 overflow-y-auto border-t border-gray-200 bg-white p-3 lg:w-[min(300px,28vw)] lg:max-w-[300px] lg:border-l lg:border-t-0 lg:border-gray-200">
+              {nocSaveMode === 'add' || nocSaveMode === 'renew' ? (
+                <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
+                  <p className="text-xs font-semibold text-blue-950">
+                    {nocSaveMode === 'renew' ? 'Renewing NOC' : 'Adding a new validity period'}
+                  </p>
+                  <p className="text-[11px] text-blue-800 mt-0.5">
+                    Set the new valid from / valid up to dates and upload the PDF for this period. Earlier periods stay on file.
+                  </p>
+                  {nocPeriodRecords.length ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="mt-1 h-7 px-0 text-[11px] text-blue-800 hover:text-blue-950"
+                      onClick={() => selectNocPeriod(pickCurrentNocRecord(nocPeriodRecords) || nocPeriodRecords[nocPeriodRecords.length - 1])}
+                    >
+                      Cancel and keep existing periods
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="rounded-md border border-gray-200 bg-gray-50/70 p-3 space-y-2">
                 <p className="text-xs font-semibold text-gray-800">BHUNEER / no-cap portal</p>
                 <div className="space-y-1.5">
@@ -4901,7 +5124,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                     />
                     <Upload className="h-4 w-4 text-gray-400 shrink-0" aria-hidden />
                   </div>
-                  <p className="text-[11px] text-gray-500">Same flow as Documents: PDF only, max 25 MB.</p>
+                  <p className="text-[11px] text-gray-500">PDF only, max 25 MB. Required for a new or renewed period.</p>
                 </div>
               )}
               <div className="space-y-1.5">
@@ -5104,7 +5327,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                     disabled={nocSaving}
                     onClick={handleNocSave}
                   >
-                    {nocSaving ? 'Saving…' : 'Save NOC'}
+                    {nocSaving ? 'Saving…' : nocSaveMode === 'renew' ? 'Save renewed NOC' : nocSaveMode === 'add' ? 'Save new period' : 'Save NOC'}
                   </Button>
                 )}
                 <Button type="button" variant="outline" onClick={closeNocDialog}>

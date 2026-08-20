@@ -904,6 +904,8 @@ class CGWFlowMetreModel(Base):
     noc_bhuneer_password = Column(String(255), nullable=True)
     noc_nocap_user_id = Column(String(200), nullable=True)
     noc_nocap_password = Column(String(255), nullable=True)
+    # JSON list of NOC periods (each with its own validity dates and PDF)
+    noc_records_json = Column(Text, nullable=True)
     # JSON: {"flow_meter":[{id,file_name,url}], "telemetry":[...], ...}
     cgw_attachments_json = Column(Text, nullable=True)
     wizard_draft_json = Column(Text, nullable=True)
@@ -1664,6 +1666,27 @@ def migrate_cgw_flow_metres_attachments_json():
 
 
 _safe_migrate(migrate_cgw_flow_metres_attachments_json)
+
+def migrate_cgw_flow_metres_noc_records_json():
+    """Add noc_records_json so one CGWA row can store multiple NOC validity periods."""
+    from sqlalchemy import text, inspect
+    try:
+        inspector = inspect(engine)
+        existing = {col['name'] for col in inspector.get_columns('cgw_flow_metres')}
+        if 'noc_records_json' in existing:
+            return
+        with engine.connect() as conn:
+            if DATABASE_URL.startswith('mysql'):
+                conn.execute(text('ALTER TABLE cgw_flow_metres ADD COLUMN noc_records_json LONGTEXT NULL'))
+            else:
+                conn.execute(text('ALTER TABLE cgw_flow_metres ADD COLUMN noc_records_json TEXT NULL'))
+            conn.commit()
+        print('Added column noc_records_json to cgw_flow_metres')
+    except Exception as e:
+        print(f'Migration error for cgw_flow_metres noc_records_json: {e}')
+
+
+_safe_migrate(migrate_cgw_flow_metres_noc_records_json)
 def migrate_cgw_flow_metres_flow_metre_details_columns():
     """Add flow metre / calibration / telemetry detail columns to cgw_flow_metres if missing."""
     from sqlalchemy import text, inspect
@@ -3109,6 +3132,7 @@ class CGWFlowMetre(BaseModel):
     noc_bhuneer_password: Optional[str] = None
     noc_nocap_user_id: Optional[str] = None
     noc_nocap_password: Optional[str] = None
+    noc_records: Optional[List[Dict[str, Any]]] = None
     cgw_attachments: Optional[Dict[str, List[CgwFileAttachment]]] = None
     wizard_draft_json: Optional[str] = None
     created_by_name: Optional[str] = None
@@ -5288,6 +5312,7 @@ def _cgw_media_buckets_for_api(item: CGWFlowMetreModel) -> Dict[str, List[dict]]
 
 def _hydrate_cgw_flow_metre_attachments(item: CGWFlowMetreModel) -> None:
     setattr(item, 'cgw_attachments', _cgw_media_buckets_for_api(item))
+    setattr(item, 'noc_records', _cgw_noc_records_for_api(item))
 
 
 def _cgw_persist_media_buckets(item: CGWFlowMetreModel, buckets: Dict[str, List[dict]]) -> None:
@@ -5295,6 +5320,125 @@ def _cgw_persist_media_buckets(item: CGWFlowMetreModel, buckets: Dict[str, List[
     has_any = any(len(clean[k]) > 0 for k in CGW_MEDIA_ATTACHMENT_KEYS)
     item.cgw_attachments_json = json.dumps(clean) if has_any else None
     flag_modified(item, 'cgw_attachments_json')
+
+
+def _cgw_legacy_noc_as_record(item: CGWFlowMetreModel) -> Optional[dict]:
+    url = (getattr(item, 'noc_document_url', None) or '').strip()
+    noc_no = (getattr(item, 'noc_no', None) or '').strip()
+    vf = (getattr(item, 'noc_valid_from', None) or '').strip()
+    vu = (getattr(item, 'noc_valid_upto', None) or '').strip()
+    if not url and not noc_no and not vf and not vu:
+        return None
+    return {
+        'id': 'legacy-current',
+        'document_url': url or None,
+        'file_name': 'NOC PDF' if url else None,
+        'project_name': getattr(item, 'noc_project_name', None),
+        'project_address': getattr(item, 'noc_project_address', None),
+        'communication_address': getattr(item, 'noc_communication_address', None),
+        'noc_no': getattr(item, 'noc_no', None),
+        'application_no': getattr(item, 'noc_application_no', None),
+        'project_status': getattr(item, 'noc_project_status', None),
+        'noc_type': getattr(item, 'noc_type', None),
+        'valid_from': getattr(item, 'noc_valid_from', None),
+        'valid_upto': getattr(item, 'noc_valid_upto', None),
+        'permitted_m3_per_day': getattr(item, 'noc_permitted_m3_per_day', None),
+        'permitted_m3_per_year': getattr(item, 'noc_permitted_m3_per_year', None),
+        'existing_bw_count': getattr(item, 'noc_existing_bw_count', None),
+        'total_proposed_bw_count': getattr(item, 'noc_total_proposed_bw_count', None),
+        'flowmeter_applicable': getattr(item, 'noc_flowmeter_applicable', None),
+        'flowmeter_count': getattr(item, 'noc_flowmeter_count', None),
+        'piezometer_applicable': getattr(item, 'noc_piezometer_applicable', None),
+        'piezometer_count': getattr(item, 'noc_piezometer_count', None),
+        'bhuneer_user_id': getattr(item, 'noc_bhuneer_user_id', None),
+        'bhuneer_password': getattr(item, 'noc_bhuneer_password', None),
+        'nocap_user_id': getattr(item, 'noc_nocap_user_id', None),
+        'nocap_password': getattr(item, 'noc_nocap_password', None),
+    }
+
+
+def _cgw_noc_records_from_stored(item: CGWFlowMetreModel) -> List[dict]:
+    raw = getattr(item, 'noc_records_json', None)
+    records: List[dict] = []
+    if raw:
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else raw
+            if isinstance(data, list):
+                records = [x for x in data if isinstance(x, dict)]
+        except Exception:
+            records = []
+    if not records:
+        legacy = _cgw_legacy_noc_as_record(item)
+        if legacy:
+            records = [legacy]
+    return records
+
+
+def _cgw_noc_records_for_api(item: CGWFlowMetreModel) -> List[dict]:
+    records = _cgw_noc_records_from_stored(item)
+    records.sort(key=lambda r: ((r.get('valid_from') or ''), (r.get('valid_upto') or ''), (r.get('id') or '')))
+    return records
+
+
+def _cgw_pick_current_noc(records: List[dict]) -> Optional[dict]:
+    if not records:
+        return None
+    today = datetime.now().strftime('%Y-%m-%d')
+    covering = []
+    for rec in records:
+        vf = str(rec.get('valid_from') or '').strip()
+        vu = str(rec.get('valid_upto') or '').strip()
+        if vf and vf > today:
+            continue
+        if vu and vu < today:
+            continue
+        covering.append(rec)
+    pool = covering or [r for r in records if (r.get('valid_upto') or r.get('valid_from'))] or records
+    pool = list(pool)
+    pool.sort(key=lambda r: (str(r.get('valid_upto') or ''), str(r.get('valid_from') or '')), reverse=True)
+    return pool[0]
+
+
+def _cgw_apply_noc_record_to_columns(item: CGWFlowMetreModel, rec: dict) -> None:
+    mapping = {
+        'document_url': 'noc_document_url',
+        'project_name': 'noc_project_name',
+        'project_address': 'noc_project_address',
+        'communication_address': 'noc_communication_address',
+        'noc_no': 'noc_no',
+        'application_no': 'noc_application_no',
+        'project_status': 'noc_project_status',
+        'noc_type': 'noc_type',
+        'valid_from': 'noc_valid_from',
+        'valid_upto': 'noc_valid_upto',
+        'permitted_m3_per_day': 'noc_permitted_m3_per_day',
+        'permitted_m3_per_year': 'noc_permitted_m3_per_year',
+        'existing_bw_count': 'noc_existing_bw_count',
+        'total_proposed_bw_count': 'noc_total_proposed_bw_count',
+        'flowmeter_applicable': 'noc_flowmeter_applicable',
+        'flowmeter_count': 'noc_flowmeter_count',
+        'piezometer_applicable': 'noc_piezometer_applicable',
+        'piezometer_count': 'noc_piezometer_count',
+        'bhuneer_user_id': 'noc_bhuneer_user_id',
+        'bhuneer_password': 'noc_bhuneer_password',
+        'nocap_user_id': 'noc_nocap_user_id',
+        'nocap_password': 'noc_nocap_password',
+    }
+    for src, dest in mapping.items():
+        val = rec.get(src)
+        if isinstance(val, str):
+            val = val.strip() or None
+        setattr(item, dest, val)
+        flag_modified(item, dest)
+
+
+def _cgw_persist_noc_records(item: CGWFlowMetreModel, records: List[dict]) -> None:
+    clean = [r for r in records if isinstance(r, dict)]
+    item.noc_records_json = json.dumps(clean) if clean else None
+    flag_modified(item, 'noc_records_json')
+    current = _cgw_pick_current_noc(clean)
+    if current:
+        _cgw_apply_noc_record_to_columns(item, current)
 
 
 def _cgw_delete_stored_attachment_file(url: str) -> None:
@@ -5320,6 +5464,10 @@ def _cgw_iter_record_attachment_urls(item: CGWFlowMetreModel) -> List[str]:
     noc = (getattr(item, 'noc_document_url', None) or '').strip()
     if noc:
         urls.append(noc)
+    for rec in _cgw_noc_records_from_stored(item):
+        u = (rec.get('document_url') or '').strip()
+        if u:
+            urls.append(u)
     cal = (getattr(item, 'calibration_certificate', None) or '').strip()
     if cal:
         urls.append(cal)
@@ -6067,10 +6215,12 @@ def upload_or_update_cgw_noc(
     bhuneer_password: Optional[str] = Form(None),
     nocap_user_id: Optional[str] = Form(None),
     nocap_password: Optional[str] = Form(None),
+    save_mode: Optional[str] = Form('update'),
+    noc_record_id: Optional[str] = Form(None),
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Upload or replace NOC PDF and/or save NOC metadata for one CGW inventory row (multipart, same pattern as documents/upload)."""
+    """Save a NOC period (add, renew, or update) with optional PDF for one CGW inventory row."""
     if not can_manage_cgw(current_user, db):
         raise HTTPException(status_code=403, detail='Not authorized')
 
@@ -6078,8 +6228,14 @@ def upload_or_update_cgw_noc(
     if not item:
         raise HTTPException(status_code=404, detail='Inventory item not found')
 
-    existing_url = (getattr(item, 'noc_document_url', None) or '').strip()
+    mode = (save_mode or 'update').strip().lower()
+    if mode not in ('update', 'add', 'renew'):
+        mode = 'update'
+
+    records = _cgw_noc_records_from_stored(item)
     has_file = bool(file and file.filename)
+    doc_url = None
+    original_name = None
     if has_file:
         fn_lower = file.filename.lower()
         if not fn_lower.endswith('.pdf'):
@@ -6087,7 +6243,7 @@ def upload_or_update_cgw_noc(
         file_content = file.file.read()
         if len(file_content) > 25 * 1024 * 1024:
             raise HTTPException(status_code=400, detail='PDF must be 25 MB or smaller')
-        safe_base = Path(file.filename).name.replace('..', '_').replace('/', '_') or 'noc.pdf'
+        original_name = Path(file.filename).name.replace('..', '_').replace('/', '_') or 'noc.pdf'
         new_filename = f'cgw_noc_{uuid.uuid4().hex}.pdf'
         doc_url = upload_to_s3(file_content, new_filename, folder='cgw_noc')
         if not doc_url:
@@ -6095,48 +6251,78 @@ def upload_or_update_cgw_noc(
                 status_code=503,
                 detail='File upload service is temporarily unavailable. Please try again in a few moments.',
             )
-        item.noc_document_url = doc_url
-        flag_modified(item, 'noc_document_url')
-        if existing_url and existing_url != doc_url:
-            _cgw_delete_stored_attachment_file(existing_url)
-    elif not existing_url:
-        raise HTTPException(status_code=400, detail='Upload a NOC PDF first, or use an existing row that already has a NOC document.')
 
-    item.noc_project_name = _cgw_norm_form_str(project_name)
-    item.noc_project_address = _cgw_norm_form_str(project_address)
-    item.noc_communication_address = _cgw_norm_form_str(communication_address)
-    item.noc_no = _cgw_norm_form_str(noc_no)
-    item.noc_application_no = _cgw_norm_form_str(application_no)
-    item.noc_project_status = _cgw_norm_form_str(project_status)
-    item.noc_type = _cgw_norm_form_str(noc_type)
-    item.noc_valid_from = _cgw_norm_form_str(valid_from)
-    item.noc_valid_upto = _cgw_norm_form_str(valid_upto)
-    item.noc_permitted_m3_per_day = _cgw_norm_form_str(permitted_m3_per_day)
-    item.noc_permitted_m3_per_year = _cgw_norm_form_str(permitted_m3_per_year)
-    item.noc_existing_bw_count = _cgw_norm_form_str(existing_bw_count)
-    item.noc_total_proposed_bw_count = _cgw_norm_form_str(total_proposed_bw_count)
-    item.noc_flowmeter_applicable = _cgw_norm_form_str(flowmeter_applicable)
-    fm_app = (item.noc_flowmeter_applicable or '').lower()
-    item.noc_flowmeter_count = _cgw_norm_form_str(flowmeter_count) if fm_app == 'yes' else None
-    item.noc_piezometer_applicable = _cgw_norm_form_str(piezometer_applicable)
-    pz_app = (item.noc_piezometer_applicable or '').lower()
-    item.noc_piezometer_count = _cgw_norm_form_str(piezometer_count) if pz_app == 'yes' else None
-    item.noc_bhuneer_user_id = _cgw_norm_form_str(bhuneer_user_id)
-    item.noc_bhuneer_password = _cgw_norm_form_str(bhuneer_password)
     _nocap_uid = _cgw_norm_form_str(nocap_user_id)
-    item.noc_nocap_user_id = _nocap_uid.lower() if _nocap_uid else None
-    item.noc_nocap_password = _cgw_norm_form_str(nocap_password)
-    for attr in (
-        'noc_project_name', 'noc_project_address', 'noc_communication_address',
-        'noc_no', 'noc_application_no', 'noc_project_status', 'noc_type',
-        'noc_valid_from', 'noc_valid_upto',
-        'noc_permitted_m3_per_day', 'noc_permitted_m3_per_year',
-        'noc_existing_bw_count', 'noc_total_proposed_bw_count',
-        'noc_flowmeter_applicable', 'noc_flowmeter_count',
-        'noc_piezometer_applicable', 'noc_piezometer_count',
-        'noc_bhuneer_user_id', 'noc_bhuneer_password', 'noc_nocap_user_id', 'noc_nocap_password',
-    ):
-        flag_modified(item, attr)
+    fm_app = (_cgw_norm_form_str(flowmeter_applicable) or '').lower()
+    pz_app = (_cgw_norm_form_str(piezometer_applicable) or '').lower()
+    payload = {
+        'project_name': _cgw_norm_form_str(project_name),
+        'project_address': _cgw_norm_form_str(project_address),
+        'communication_address': _cgw_norm_form_str(communication_address),
+        'noc_no': _cgw_norm_form_str(noc_no),
+        'application_no': _cgw_norm_form_str(application_no),
+        'project_status': _cgw_norm_form_str(project_status),
+        'noc_type': _cgw_norm_form_str(noc_type),
+        'valid_from': _cgw_norm_form_str(valid_from),
+        'valid_upto': _cgw_norm_form_str(valid_upto),
+        'permitted_m3_per_day': _cgw_norm_form_str(permitted_m3_per_day),
+        'permitted_m3_per_year': _cgw_norm_form_str(permitted_m3_per_year),
+        'existing_bw_count': _cgw_norm_form_str(existing_bw_count),
+        'total_proposed_bw_count': _cgw_norm_form_str(total_proposed_bw_count),
+        'flowmeter_applicable': _cgw_norm_form_str(flowmeter_applicable),
+        'flowmeter_count': _cgw_norm_form_str(flowmeter_count) if fm_app == 'yes' else None,
+        'piezometer_applicable': _cgw_norm_form_str(piezometer_applicable),
+        'piezometer_count': _cgw_norm_form_str(piezometer_count) if pz_app == 'yes' else None,
+        'bhuneer_user_id': _cgw_norm_form_str(bhuneer_user_id),
+        'bhuneer_password': _cgw_norm_form_str(bhuneer_password),
+        'nocap_user_id': _nocap_uid.lower() if _nocap_uid else None,
+        'nocap_password': _cgw_norm_form_str(nocap_password),
+    }
+
+    if mode in ('add', 'renew'):
+        if not has_file:
+            raise HTTPException(status_code=400, detail='Upload a NOC PDF for this validity period')
+        if mode == 'renew' and not payload.get('noc_type'):
+            payload['noc_type'] = 'renewal'
+        payload['id'] = str(uuid.uuid4())
+        payload['document_url'] = doc_url
+        payload['file_name'] = original_name
+        payload['created_at'] = datetime.now(timezone.utc).isoformat()
+        records.append(payload)
+    else:
+        target_id = (noc_record_id or '').strip()
+        found = None
+        if target_id:
+            found = next((r for r in records if str(r.get('id') or '') == target_id), None)
+        if found is None and records:
+            found = _cgw_pick_current_noc(records) or records[-1]
+        if found is None:
+            if not has_file:
+                raise HTTPException(status_code=400, detail='Upload a NOC PDF first, or use an existing row that already has a NOC document.')
+            payload['id'] = str(uuid.uuid4())
+            payload['document_url'] = doc_url
+            payload['file_name'] = original_name
+            payload['created_at'] = datetime.now(timezone.utc).isoformat()
+            records.append(payload)
+        else:
+            old_url = (found.get('document_url') or '').strip()
+            found.update({k: v for k, v in payload.items() if v is not None or k in payload})
+            for k, v in payload.items():
+                found[k] = v
+            if has_file:
+                found['document_url'] = doc_url
+                found['file_name'] = original_name
+                still_used = any(
+                    (r.get('document_url') or '').strip() == old_url
+                    for r in records
+                    if r is not found
+                )
+                if old_url and old_url != doc_url and not still_used:
+                    _cgw_delete_stored_attachment_file(old_url)
+            elif not (found.get('document_url') or '').strip():
+                raise HTTPException(status_code=400, detail='Upload a NOC PDF first, or use an existing row that already has a NOC document.')
+
+    _cgw_persist_noc_records(item, records)
     item.last_modified_by_name = current_user.name
     item.updated_at = datetime.now(timezone.utc)
     try:
@@ -6167,9 +6353,20 @@ def download_cgw_attachments_zip(
     zip_name = f'{customer_stem}documents.zip'
 
     entries: List[Tuple[str, str, str]] = []
-    noc_url = (getattr(item, 'noc_document_url', None) or '').strip()
-    if noc_url:
-        entries.append((noc_url, f'{customer_stem}-noc', 'noc.pdf'))
+    noc_records = _cgw_noc_records_for_api(item)
+    if noc_records:
+        for idx, rec in enumerate(noc_records, start=1):
+            noc_url = (rec.get('document_url') or '').strip()
+            if not noc_url:
+                continue
+            vf = (rec.get('valid_from') or '').replace('-', '')
+            vu = (rec.get('valid_upto') or '').replace('-', '')
+            period = f'{vf}-{vu}' if vf or vu else str(idx)
+            entries.append((noc_url, f'{customer_stem}-noc-{period}', rec.get('file_name') or 'noc.pdf'))
+    else:
+        noc_url = (getattr(item, 'noc_document_url', None) or '').strip()
+        if noc_url:
+            entries.append((noc_url, f'{customer_stem}-noc', 'noc.pdf'))
 
     buckets = _cgw_media_buckets_for_api(item)
     for category, files in buckets.items():

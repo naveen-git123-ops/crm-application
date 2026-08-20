@@ -14,6 +14,7 @@ import {
   normalizeCgwAttachments,
   previewCommunicationVia,
   previewDisplay,
+  previewNocPeriodStatus,
   previewNocType,
   previewProjectStatus,
   previewTelemetryCompany,
@@ -554,27 +555,79 @@ export function CgwCustomerPreviewDialog({
                 {/* 2 — NOC */}
                 <SectionPanel step="2" title="NOC (No Objection Certificate)" accent="bg-cyan-50 border-cyan-100">
                   <div className="space-y-4">
-                    {model.nocDocumentUrl ? (
-                      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-cyan-200 bg-white p-4">
-                        <div className="flex-1 min-w-[200px]">
-                          <p className="text-sm font-medium text-gray-900">NOC document</p>
-                          <p className="text-xs text-gray-500 mt-0.5">PDF uploaded for this customer</p>
+                    <SubSection title="Validity periods">
+                      {(model.nocRecords || []).length ? (
+                        <ul className="space-y-2">
+                          {(model.nocRecords || []).map((rec) => {
+                            const status = previewNocPeriodStatus(rec);
+                            const label =
+                              status === 'active' ? 'Current' : status === 'expired' ? 'Expired' : status === 'upcoming' ? 'Upcoming' : 'Saved';
+                            return (
+                              <li
+                                key={rec.id || `${rec.valid_from}-${rec.valid_upto}-${rec.noc_no}`}
+                                className="flex flex-wrap items-center gap-3 rounded-lg border border-cyan-200 bg-white p-3"
+                              >
+                                <div className="min-w-[180px] flex-1">
+                                  <p className="text-sm font-medium text-gray-900">
+                                    {previewDisplay(rec.valid_from)} → {previewDisplay(rec.valid_upto)}
+                                  </p>
+                                  <p className="text-xs text-gray-500 mt-0.5 truncate">
+                                    {rec.noc_no || rec.application_no || rec.file_name || 'NOC'}
+                                    {rec.noc_type ? ` · ${previewNocType(rec.noc_type)}` : ''}
+                                  </p>
+                                </div>
+                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                  status === 'active'
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : status === 'expired'
+                                      ? 'bg-gray-100 text-gray-600'
+                                      : status === 'upcoming'
+                                        ? 'bg-sky-50 text-sky-700'
+                                        : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                  {label}
+                                </span>
+                                {rec.document_url ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 shrink-0"
+                                    onClick={() => openAttachmentPreview(
+                                      {
+                                        id: rec.id,
+                                        file_name: rec.file_name || 'NOC PDF',
+                                        url: rec.document_url,
+                                        mime_type: 'application/pdf',
+                                      },
+                                      `${previewDisplay(rec.valid_from)} → ${previewDisplay(rec.valid_upto)}`,
+                                    )}
+                                  >
+                                    <Eye className="h-3.5 w-3.5 mr-1.5" />
+                                    View PDF
+                                  </Button>
+                                ) : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-gray-500 italic">No NOC periods on file.</p>
+                      )}
+                      {onPreviewNoc ? (
+                        <div className="mt-3">
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-9 bg-cyan-700 hover:bg-cyan-800 text-white"
+                            onClick={() => onPreviewNoc?.(enrichedRows[0] || group?.rows?.[0])}
+                          >
+                            <FileText className="h-4 w-4 mr-2" />
+                            Open NOC periods
+                          </Button>
                         </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-9 bg-cyan-700 hover:bg-cyan-800 text-white shrink-0"
-                          onClick={() => onPreviewNoc?.(enrichedRows[0] || group?.rows?.[0])}
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          View NOC PDF
-                        </Button>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-500 rounded-lg border border-dashed border-gray-200 bg-white px-4 py-3">
-                        No NOC PDF uploaded.
-                      </p>
-                    )}
+                      ) : null}
+                    </SubSection>
 
                     <SubSection title="BHUNEER / no-cap portal">
                       <FieldGrid cols="sm:grid-cols-2">
@@ -586,7 +639,7 @@ export function CgwCustomerPreviewDialog({
                     </SubSection>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                      <SubSection title="Project">
+                      <SubSection title="Current period details">
                         <FieldGrid cols="sm:grid-cols-1">
                           <PreviewField label="Project name" value={previewDisplay(noc.project_name)} />
                           <PreviewField label="NOC number" value={previewDisplay(noc.noc_no)} mono />

@@ -320,18 +320,65 @@ export function buildCustomerPreviewModel(rows, customerCode = '') {
 
   const needsPiezometer = String(nocForm.piezometer_applicable || '').toLowerCase() === 'yes';
   const allAttachments = mergeCgwAttachments(...list.map((r) => r?.cgw_attachments));
+  const nocRecords = collectPreviewNocRecords(list, anchor);
 
   return {
     customerCode: customerCode || anchor.customer_id || '',
     formData,
     nocForm,
+    nocRecords,
     equipmentLines,
     piezometerLines,
     needsPiezometer,
-    nocDocumentUrl: anchor.noc_document_url || list.find((r) => r.noc_document_url)?.noc_document_url || '',
+    nocDocumentUrl:
+      nocRecords.find((r) => r.document_url)?.document_url
+      || anchor.noc_document_url
+      || list.find((r) => r.noc_document_url)?.noc_document_url
+      || '',
     inventoryIds: list.map((r) => r.inventory_id).filter(Boolean),
     allAttachments,
   };
+}
+
+function isoToday() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+export function previewNocPeriodStatus(rec, today = isoToday()) {
+  const vf = String(rec?.valid_from || '').slice(0, 10);
+  const vu = String(rec?.valid_upto || '').slice(0, 10);
+  if (vu && vu < today) return 'expired';
+  if (vf && vf > today) return 'upcoming';
+  if (vf && vf <= today && (!vu || vu >= today)) return 'active';
+  return 'saved';
+}
+
+export function nocRecordsFromPreviewItem(item) {
+  const list = Array.isArray(item?.noc_records) ? item.noc_records.filter(Boolean) : [];
+  if (list.length) return list;
+  const fallback = nocFormFromItem(item);
+  if (item?.noc_document_url || fallback.noc_no || fallback.valid_from || fallback.valid_upto) {
+    return [{
+      id: 'legacy-current',
+      document_url: item?.noc_document_url || '',
+      file_name: 'NOC PDF',
+      ...fallback,
+    }];
+  }
+  return [];
+}
+
+function collectPreviewNocRecords(list, anchor) {
+  const fromAnchor = nocRecordsFromPreviewItem(anchor);
+  if (fromAnchor.length) return fromAnchor;
+  for (const row of list || []) {
+    const recs = nocRecordsFromPreviewItem(row);
+    if (recs.length) return recs;
+  }
+  return [];
 }
 
 export function previewDisplay(value) {
