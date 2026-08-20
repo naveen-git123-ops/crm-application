@@ -57,12 +57,27 @@ export function userHasPermission(user, permissionKey) {
   return normalizeUserPermissions(user).includes(permissionKey);
 }
 
-/** CGW screen: view + create + edit when role includes cgw-flow-metre. */
+/** One CGWA permission unlocks Create, Drafts, and View. */
 export function userCanManageCgw(user) {
   return userHasPermission(user, 'cgw-flow-metre');
 }
 
-/** Delete entire CGW inventory rows — Admin only. */
+export function isCgwDraftRecord(item) {
+  return String(item?.status || '').trim().toLowerCase() === 'draft';
+}
+
+/** Edit or delete a submitted (non-draft) CGWA row — Admin only. */
+export function userCanEditSubmittedCgw(user) {
+  return isAdminUser(user);
+}
+
+export function userCanEditCgwRecord(user, item) {
+  if (isAdminUser(user)) return true;
+  if (!userCanManageCgw(user)) return false;
+  return isCgwDraftRecord(item);
+}
+
+/** Delete entire CGW inventory rows — Admin only (own drafts still allowed in the UI). */
 export function userCanDeleteCgw(user) {
   return isAdminUser(user);
 }

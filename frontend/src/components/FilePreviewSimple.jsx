@@ -1,253 +1,209 @@
-// Simple File Preview Component for S3 Files
-// Uses direct S3 URLs with CORS for preview
+import React, { useEffect, useRef, useState } from 'react';
+import axios from 'axios';
+import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 
-import React, { useState } from 'react';
+function resolveHref(url) {
+  if (!url) return '';
+  if (url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${BACKEND_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function isStreamableRemote(full) {
+  return (
+    !!full &&
+    /^https?:\/\//i.test(full) &&
+    (full.includes('.amazonaws.com') || full.includes('.digitaloceanspaces.com'))
+  );
+}
+
+function extFrom(url, fileName) {
+  const source = fileName && String(fileName).includes('.') ? fileName : url;
+  try {
+    let path = String(source || '');
+    if (path.includes('://')) path = new URL(path).pathname;
+    const filename = path.split('/').pop() || '';
+    return (filename.split('.').pop() || '').toLowerCase().split('?')[0] || '';
+  } catch {
+    return '';
+  }
+}
+
+function mimeForExt(ext) {
+  if (ext === 'pdf') return 'application/pdf';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'gif') return 'image/gif';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'bmp') return 'image/bmp';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'mp4') return 'video/mp4';
+  if (ext === 'webm') return 'video/webm';
+  if (ext === 'mp3') return 'audio/mpeg';
+  if (ext === 'wav') return 'audio/wav';
+  return '';
+}
+
+function DownloadLink({ href, fileName, label }) {
+  if (!href) return null;
+  return (
+    <a
+      href={href}
+      download={fileName}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+    >
+      {label}
+    </a>
+  );
+}
 
 export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
-  const [error, setError] = useState(null);
-  
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const blobRef = useRef(null);
+
+  const fullHref = resolveHref(fileUrl);
+  const ext = extFrom(fileUrl, fileName);
+  const shouldStream = isStreamableRemote(fullHref);
+  const downloadName = fileName?.includes('.') ? fileName : `${fileName}${ext ? `.${ext}` : ''}`;
+
+  useEffect(() => {
+    if (blobRef.current) {
+      URL.revokeObjectURL(blobRef.current);
+      blobRef.current = null;
+    }
+    setError('');
+    setPreviewUrl('');
+
+    if (!fullHref) {
+      setError('No file URL provided');
+      return undefined;
+    }
+
+    if (!shouldStream) {
+      setPreviewUrl(fullHref);
+      setLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    (async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await axios.get(`${API_ENDPOINT}/files/stream`, {
+          params: { file_url: fullHref },
+          headers: { Authorization: `Bearer ${token}` },
+          responseType: 'blob',
+        });
+        if (cancelled) return;
+        const headerType = String(res.headers?.['content-type'] || '').split(';')[0].trim();
+        const mime = mimeForExt(ext) || headerType || 'application/octet-stream';
+        const blob = new Blob([res.data], { type: mime });
+        const objectUrl = URL.createObjectURL(blob);
+        blobRef.current = objectUrl;
+        setPreviewUrl(objectUrl);
+      } catch (_err) {
+        if (!cancelled) setError('Could not load preview. You can still try downloading the file.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fullHref, shouldStream, ext]);
+
+  useEffect(
+    () => () => {
+      if (blobRef.current) {
+        URL.revokeObjectURL(blobRef.current);
+        blobRef.current = null;
+      }
+    },
+    [],
+  );
+
   if (!fileUrl) {
-    return <div style={{ padding: '20px', color: '#999' }}>No file URL provided</div>;
+    return <p className="p-5 text-sm text-gray-500">No file URL provided</p>;
   }
 
-  console.log('FilePreviewSimple received URL:', fileUrl);
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 p-10 text-sm text-gray-600">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+        Loading preview…
+      </div>
+    );
+  }
 
-  // Get file extension
-  const getFileExtension = (url) => {
-    try {
-      // Handle both S3 URLs and local paths
-      let path = url;
-      
-      // If it's a URL, extract pathname
-      if (url.includes('://')) {
-        path = new URL(url).pathname;
-      }
-      
-      // Get last part after last slash and extract extension
-      const filename = path.split('/').pop();
-      const ext = filename.split('.').pop().toLowerCase();
-      console.log('Extracted extension:', ext, 'from:', filename);
-      return ext;
-    } catch (e) {
-      console.error('Error extracting extension:', e);
-      return '';
-    }
-  };
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+        <p className="text-sm text-red-700 mb-4">{error}</p>
+        <DownloadLink
+          href={shouldStream ? '' : fullHref}
+          fileName={downloadName}
+          label="Download file"
+        />
+      </div>
+    );
+  }
 
-  const ext = getFileExtension(fileUrl);
-  
-  // Use S3 URL directly for preview (S3 supports CORS)
-  // Add query parameter to bypass cache for testing
-  const previewUrl = fileUrl.includes('https://') 
-    ? `${fileUrl}?t=${Date.now()}` 
-    : fileUrl;
-  
-  console.log('Preview URL:', previewUrl);
-  
-  // Image types - simple inline display
+  if (!previewUrl) {
+    return <p className="p-5 text-sm text-gray-500">Preparing preview…</p>;
+  }
+
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) {
     return (
-      <div style={{ textAlign: 'center', padding: '20px' }}>
-        {!error ? (
-          <img 
-            src={previewUrl}
-            alt={fileName}
-            style={{
-              maxWidth: '100%',
-              maxHeight: '600px',
-              borderRadius: '4px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-            }}
-            crossOrigin="anonymous"
-            onError={(e) => {
-              console.error('❌ Image load error:', e);
-              console.error('Failed to load from URL:', previewUrl);
-              console.error('This is likely a CORS issue - S3 bucket needs CORS configuration');
-              setError('CORS_ERROR');
-            }}
-            onLoad={() => {
-              console.log('✅ Image loaded successfully');
-              setError(null);
-            }}
-          />
-        ) : null}
-        
-        {error === 'CORS_ERROR' && (
-          <div style={{ 
-            padding: '20px', 
-            backgroundColor: '#fff3cd', 
-            border: '1px solid #ffc107',
-            borderRadius: '4px',
-            marginBottom: '20px'
-          }}>
-            <p style={{ color: '#856404', marginBottom: '10px', fontWeight: 'bold' }}>
-              ⚠️ Cannot preview image (CORS issue)
-            </p>
-            <p style={{ color: '#856404', fontSize: '14px', marginBottom: '15px' }}>
-              Your S3 bucket needs CORS configuration for preview to work.
-            </p>
-            <a 
-              href={fileUrl}
-              download={`${fileName}.${ext}`}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                display: 'inline-block',
-                padding: '10px 20px',
-                backgroundColor: '#ffc107',
-                color: '#333',
-                textDecoration: 'none',
-                borderRadius: '4px',
-                fontWeight: 'bold'
-              }}
-            >
-              ⬇️ Download Image ({ext.toUpperCase()})
-            </a>
-          </div>
-        )}
+      <div className="flex justify-center p-4">
+        <img
+          src={previewUrl}
+          alt={fileName}
+          className="max-h-[70vh] max-w-full rounded-md shadow-sm"
+        />
       </div>
     );
   }
 
-  // PDF type
   if (ext === 'pdf') {
     return (
-      <div style={{ textAlign: 'center', padding: '20px' }}>
-        <iframe
-          src={previewUrl}
-          type="application/pdf"
-          style={{
-            width: '100%',
-            height: '600px',
-            border: '1px solid #ddd',
-            borderRadius: '4px'
-          }}
-          title="PDF Viewer"
-          onError={() => {
-            console.error('PDF load error');
-            setError('Failed to load PDF');
-          }}
-        >
-          <p>
-            Your browser does not support PDFs. 
-            <a href={previewUrl} download={fileName} target="_blank" rel="noreferrer">Download instead</a>
-          </p>
-        </iframe>
-        {error && <p style={{ color: 'red', marginTop: '10px' }}>Preview might not work, but you can <a href={previewUrl} download={fileName}>download the file</a></p>}
-      </div>
+      <iframe
+        title="PDF preview"
+        src={previewUrl}
+        className="h-[70vh] w-full rounded-md border border-gray-200 bg-white"
+      />
     );
   }
 
-  // Document types - show download link
-  if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
-    return (
-      <div style={{
-        padding: '20px',
-        textAlign: 'center',
-        border: '1px solid #ddd',
-        borderRadius: '4px',
-        backgroundColor: '#f9f9f9'
-      }}>
-        <p style={{ fontSize: '16px', marginBottom: '10px' }}>
-          📄 {fileName}.{ext}
-        </p>
-        <a 
-          href={previewUrl}
-          download={`${fileName}.${ext}`}
-          target="_blank"
-          rel="noreferrer"
-          style={{
-            display: 'inline-block',
-            padding: '10px 20px',
-            backgroundColor: '#4caf50',
-            color: 'white',
-            textDecoration: 'none',
-            borderRadius: '4px',
-            fontWeight: 'bold',
-            marginRight: '10px'
-          }}
-        >
-          Download {ext.toUpperCase()}
-        </a>
-      </div>
-    );
-  }
-
-  // Video types
   if (['mp4', 'webm', 'ogg', 'avi', 'mov'].includes(ext)) {
     return (
-      <div style={{ textAlign: 'center', padding: '20px' }}>
-        <video
-          controls
-          style={{
-            maxWidth: '100%',
-            maxHeight: '600px',
-            borderRadius: '4px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}
-          crossOrigin="anonymous"
-          onError={() => {
-            console.error('Video load error');
-            setError('Failed to load video');
-          }}
-        >
-          <source src={previewUrl} type={`video/${ext}`} />
-          Your browser does not support video playback.
+      <div className="flex justify-center p-4">
+        <video controls className="max-h-[70vh] max-w-full rounded-md">
+          <source src={previewUrl} type={mimeForExt(ext) || undefined} />
         </video>
       </div>
     );
   }
 
-  // Audio types
   if (['mp3', 'wav', 'ogg', 'flac'].includes(ext)) {
     return (
-      <div style={{ padding: '20px' }}>
-        <audio
-          controls
-          style={{ width: '100%' }}
-          crossOrigin="anonymous"
-          onError={() => {
-            console.error('Audio load error');
-            setError('Failed to load audio');
-          }}
-        >
-          <source src={previewUrl} type={`audio/${ext}`} />
-          Your browser does not support audio playback.
+      <div className="p-5">
+        <audio controls className="w-full">
+          <source src={previewUrl} type={mimeForExt(ext) || undefined} />
         </audio>
       </div>
     );
   }
 
-  // Default - show download link
   return (
-    <div style={{
-      padding: '20px',
-      textAlign: 'center',
-      border: '1px solid #ddd',
-      borderRadius: '4px',
-      backgroundColor: '#f9f9f9'
-    }}>
-      <p>📎 {fileName}</p>
-      <p style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
-        Type: {ext || 'unknown'}
-      </p>
-      <a 
-        href={previewUrl}
-        download={fileName}
-        target="_blank"
-        rel="noreferrer"
-        style={{
-          display: 'inline-block',
-          padding: '10px 20px',
-          backgroundColor: '#2196F3',
-          color: 'white',
-          textDecoration: 'none',
-          borderRadius: '4px',
-          fontWeight: 'bold'
-        }}
-      >
-        Download File
-      </a>
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center">
+      <p className="text-sm font-medium text-gray-900 mb-1">{downloadName}</p>
+      <p className="text-xs text-gray-500 mb-4">Preview is not available for this file type</p>
+      <DownloadLink href={previewUrl} fileName={downloadName} label={`Download ${ext ? ext.toUpperCase() : 'file'}`} />
     </div>
   );
 }

@@ -472,18 +472,22 @@ export function CgwCustomerPreviewDialog({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="flex h-[min(94vh,920px)] max-h-[min(94vh,920px)] w-[min(1400px,98vw)] max-w-[min(1400px,98vw)] flex-col overflow-hidden bg-white rounded-xl border border-gray-200 shadow-xl p-0">
-          <div className="bg-gradient-to-r from-blue-700 to-blue-600 text-white px-5 py-4 shrink-0">
-            <DialogHeader>
-              <DialogTitle className="text-lg font-bold text-white flex flex-wrap items-center gap-2">
-                Customer details
-                <span className="font-mono text-sm font-normal text-blue-100 bg-white/10 px-2 py-0.5 rounded">
+          <div className="shrink-0 border-b border-gray-200 bg-white px-4 py-2 pr-12">
+            <DialogHeader className="space-y-0">
+              <DialogTitle className="flex min-w-0 flex-nowrap items-center gap-x-3 text-sm font-semibold text-gray-900">
+                <span className="shrink-0">Customer details</span>
+                <span className="shrink-0 font-mono text-xs font-medium text-gray-700">
                   {model.inventoryIds.length ? model.inventoryIds.join(' · ') : '—'}
                 </span>
+                <span className="min-w-0 truncate font-normal text-sm text-gray-600">
+                  {previewDisplay(fd.customer_name)}
+                </span>
+                {model.inventoryIds.length ? (
+                  <span className="ml-auto shrink-0 text-xs font-normal text-gray-500">
+                    {model.inventoryIds.length} inventory line{model.inventoryIds.length === 1 ? '' : 's'}
+                  </span>
+                ) : null}
               </DialogTitle>
-              <p className="text-blue-100 text-sm mt-1.5">
-                {previewDisplay(fd.customer_name)}
-                {model.inventoryIds.length ? ` · ${model.inventoryIds.length} inventory line(s)` : ''}
-              </p>
             </DialogHeader>
           </div>
 

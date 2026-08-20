@@ -20,7 +20,7 @@ const PERMISSION_LABELS = {
   dashboard: 'Dashboard',
   leads: 'Leads',
   customers: 'Customers',
-  'cgw-flow-metre': 'CGWA (Create / Drafts / View)',
+  'cgw-flow-metre': 'CGWA',
   employees: 'Employees',
   attendance: 'Attendance',
   'monthly-report': 'Monthly Report',
@@ -37,7 +37,15 @@ const PERMISSION_LABELS = {
   'stock-management': 'Stock Management',
 };
 
-const PERMISSION_KEYS = Object.keys(PERMISSION_LABELS);
+const PERMISSION_GROUPS = [
+  { label: 'Overview', keys: ['dashboard'] },
+  { label: 'CRM', keys: ['leads', 'customers', 'tasks'] },
+  { label: 'CGWA', keys: ['cgw-flow-metre'], hint: 'One checkbox unlocks Create CGWA, My Drafts, and View CGWA.' },
+  { label: 'Employee', keys: ['attendance', 'monthly-report', 'leaves'] },
+  { label: 'HR', keys: ['employees', 'holidays', 'idcards', 'documents'] },
+  { label: 'Operations', keys: ['expenses', 'stock-management', 'vehicles', 'workspace'] },
+  { label: 'Admin', keys: ['roles', 'settings'] },
+];
 
 export const Roles = () => {
   const { user } = useAuth();
@@ -448,17 +456,29 @@ export const Roles = () => {
             </div>
             <div>
               <Label className="text-sm font-semibold text-gray-900 mb-2 block">Screens this role can access *</Label>
-              <div className="grid grid-cols-2 gap-2 border border-gray-300 rounded-lg p-3 bg-gray-50 max-h-48 overflow-y-auto">
-                {PERMISSION_KEYS.map((key) => (
-                  <label key={key} className="flex items-center gap-2 cursor-pointer text-sm">
-                    <input
-                      type="checkbox"
-                      checked={roleForm.permissions.includes(key)}
-                      onChange={() => togglePermission(key)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-gray-700">{PERMISSION_LABELS[key]}</span>
-                  </label>
+              <div className="space-y-3 border border-gray-300 rounded-lg p-3 bg-gray-50 max-h-72 overflow-y-auto">
+                {PERMISSION_GROUPS.map((group) => (
+                  <div key={group.label}>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+                      {group.label}
+                    </p>
+                    {group.hint ? (
+                      <p className="text-xs text-gray-500 mb-1.5">{group.hint}</p>
+                    ) : null}
+                    <div className="grid grid-cols-2 gap-2">
+                      {group.keys.map((key) => (
+                        <label key={key} className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="checkbox"
+                            checked={roleForm.permissions.includes(key)}
+                            onChange={() => togglePermission(key)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-gray-700">{PERMISSION_LABELS[key]}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>

@@ -3382,34 +3382,26 @@ def upload_to_s3(file_content: bytes, filename: str, folder: str = 'uploads') ->
         logging.exception('Unexpected error during S3 upload')
         return None
 
+def _s3_key_from_url(file_url: str) -> Optional[str]:
+    if not file_url or not S3_BUCKET_NAME or S3_BUCKET_NAME not in file_url:
+        return None
+    key = (urlparse(file_url).path or '').lstrip('/')
+    return key or None
+
+
 def delete_from_s3(file_url: str) -> bool:
-    """
-    Delete file from S3 bucket.
-    Extracts the S3 key from the public URL.
-    """
+    """Delete a file from S3 using the object key in the stored URL."""
     if not USE_S3 or not s3_client or not file_url:
         return False
-    
+    s3_key = _s3_key_from_url(file_url)
+    if not s3_key:
+        return False
     try:
-        # Extract S3 key from URL
-        if S3_BUCKET_NAME in file_url:
-            s3_key = file_url.split(f"{S3_BUCKET_NAME}.s3")[1]
-            if s3_key.startswith('.').replace('.s3.', '/').startswith('/'):
-                # Clean up the key
-                s3_key = s3_key.split('/')[-1]
-                s3_key = '/'.join(file_url.split('/')[-3:])
-            else:
-                s3_key = '/'.join(file_url.split('/')[-3:])
-            
-            s3_client.delete_object(
-                Bucket=S3_BUCKET_NAME,
-                Key=s3_key
-            )
-            return True
+        s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
+        return True
     except ClientError as e:
-        logging.error(f"S3 delete error: {str(e)}")
-    
-    return False
+        logging.error('S3 delete error: %s', e)
+        return False
 
 # ============= HELPER FUNCTIONS =============
 
@@ -3495,7 +3487,7 @@ def require_permission(permission: str):
 
 
 def can_manage_cgw(current_user: UserModel, db: Session) -> bool:
-    """Allow Admin and any role with cgw-flow-metre permission."""
+    """Allow Admin and any role with cgw-flow-metre permission (view/create/drafts)."""
     if is_admin_user(current_user):
         return True
     perms = get_permissions_for_role(db, current_user.role)
@@ -3503,8 +3495,33 @@ def can_manage_cgw(current_user: UserModel, db: Session) -> bool:
 
 
 def can_delete_cgw(current_user: UserModel) -> bool:
-    """Delete entire CGW inventory rows — Admin only."""
+    """Delete entire submitted CGW inventory rows — Admin only."""
     return is_admin_user(current_user)
+
+
+def _is_cgw_draft_record(item) -> bool:
+    return (
+        str(getattr(item, 'status', None) or '').strip().lower() == 'draft'
+        or _is_cgw_draft_inventory_id(getattr(item, 'inventory_id', None))
+    )
+
+
+def can_mutate_cgw_item(current_user: UserModel, item, db: Session) -> bool:
+    """Admin may change any row; other CGW users may only change drafts."""
+    if is_admin_user(current_user):
+        return True
+    if not can_manage_cgw(current_user, db):
+        return False
+    return _is_cgw_draft_record(item)
+
+
+def _require_cgw_item_mutation(current_user: UserModel, item, db: Session) -> None:
+    if can_mutate_cgw_item(current_user, item, db):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail='Only an administrator can edit or delete a submitted CGWA record',
+    )
 
 
 # ============= HEALTH CHECK ROUTES =============
@@ -5298,6 +5315,32 @@ def _cgw_delete_stored_attachment_file(url: str) -> None:
             pass
 
 
+def _cgw_iter_record_attachment_urls(item: CGWFlowMetreModel) -> List[str]:
+    urls: List[str] = []
+    noc = (getattr(item, 'noc_document_url', None) or '').strip()
+    if noc:
+        urls.append(noc)
+    cal = (getattr(item, 'calibration_certificate', None) or '').strip()
+    if cal:
+        urls.append(cal)
+    buckets = _cgw_media_buckets_from_stored_json(item)
+    for files in buckets.values():
+        for att in files or []:
+            u = (att.get('url') or '').strip()
+            if u:
+                urls.append(u)
+    return urls
+
+
+def _cgw_delete_all_record_attachments(item: CGWFlowMetreModel) -> None:
+    seen = set()
+    for url in _cgw_iter_record_attachment_urls(item):
+        if url in seen:
+            continue
+        seen.add(url)
+        _cgw_delete_stored_attachment_file(url)
+
+
 def _cgw_zip_safe_stem(value: str) -> str:
     raw = (value or '').strip()
     if not raw:
@@ -5698,6 +5741,7 @@ def update_cgw_flow_metre(inventory_id: str, data: CGWFlowMetreUpdate, current_u
     item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
     if not item:
         raise HTTPException(status_code=404, detail='Inventory item not found')
+    _require_cgw_item_mutation(current_user, item, db)
 
     needs_cgwa_id = _is_cgw_draft_inventory_id(item.inventory_id)
     for key, value in data.model_dump(exclude_unset=True).items():
@@ -5828,6 +5872,11 @@ def save_cgw_flow_metre_draft(
     item = db.query(CGWFlowMetreModel).filter(CGWFlowMetreModel.id == inventory_id).first()
     if not item:
         raise HTTPException(status_code=404, detail='Inventory item not found')
+    if not _is_cgw_draft_record(item) and not is_admin_user(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail='Only an administrator can edit a submitted CGWA record',
+        )
     _cgw_apply_draft_wizard_to_row(item, data)
     item.status = 'Draft'
     item.last_modified_by_name = current_user.name
@@ -6048,6 +6097,8 @@ def upload_or_update_cgw_noc(
             )
         item.noc_document_url = doc_url
         flag_modified(item, 'noc_document_url')
+        if existing_url and existing_url != doc_url:
+            _cgw_delete_stored_attachment_file(existing_url)
     elif not existing_url:
         raise HTTPException(status_code=400, detail='Upload a NOC PDF first, or use an existing row that already has a NOC document.')
 
@@ -6182,6 +6233,7 @@ def delete_cgw_flow_metre(inventory_id: str, current_user: UserModel = Depends(g
     if not can_delete_cgw(current_user) and not can_delete_own_draft:
         raise HTTPException(status_code=403, detail='Not authorized')
 
+    _cgw_delete_all_record_attachments(item)
     db.delete(item)
     db.commit()
 
@@ -6303,8 +6355,8 @@ def import_cgw_from_excel(
     db: Session = Depends(get_db)
 ):
     """Import CGW Flow Metre items from Excel file"""
-    if not can_manage_cgw(current_user, db):
-        raise HTTPException(status_code=403, detail='Not authorized')
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail='Only an administrator can import CGWA records')
     
     try:
         # Read Excel file. This workbook uses a two-row header where

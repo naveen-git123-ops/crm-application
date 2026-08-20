@@ -172,6 +172,12 @@ export const Layout = () => {
         { icon: Target, label: 'Leads', path: '/leads', permission: 'leads' },
         { icon: BookOpen, label: 'Create Ledger', path: '/customers', permission: 'customers' },
         { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
+      ],
+    },
+    {
+      id: 'cgwa',
+      label: 'CGWA',
+      items: [
         { icon: Droplets, label: 'Create CGWA', path: '/create-cgwa', permission: 'cgw-flow-metre' },
         { icon: FileClock, label: 'My Drafts', path: '/my-cgwa-drafts', permission: 'cgw-flow-metre' },
         { icon: Eye, label: 'View CGWA', path: '/view-cgwa', permission: 'cgw-flow-metre' },
