@@ -54,7 +54,7 @@ function PendingSetupBadge() {
 }
 
 const selectClass =
-  'h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100';
+  'h-9 rounded-lg border border-input bg-card px-3 text-sm text-foreground shadow-sm focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20';
 
 export function LeadCrmHub({
   filteredLeads,

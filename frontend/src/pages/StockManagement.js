@@ -212,22 +212,22 @@ export default function StockManagement() {
   };
 
   const inputClass =
-    'h-11 bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500';
-  const labelClass = 'text-sm font-semibold text-gray-900 block';
+    'h-11 bg-card border border-input rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary/50';
+  const labelClass = 'text-sm font-semibold text-foreground block';
 
   return (
     <div className="space-y-4 sm:space-y-6" data-testid="stock-management-page">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">
+          <h1 className="text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-foreground">
             Stock Management
           </h1>
-          <p className="text-gray-600 text-sm mt-1">
+          <p className="text-muted-foreground text-sm mt-1">
             Maintain stock items here (name, group, godown, qty, rate) — same details you track in Tally.
           </p>
         </div>
         <Button
-          className="bg-blue-600 hover:bg-blue-700 text-white min-h-[44px]"
+          className="min-h-[44px]"
           onClick={openCreate}
           data-testid="add-stock-item"
         >
@@ -237,33 +237,33 @@ export default function StockManagement() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card className="p-4 border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center gap-2 text-gray-500 text-xs font-semibold uppercase tracking-wide">
+        <Card className="p-4">
+          <div className="flex items-center gap-2 text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.08em]">
             <Package className="h-4 w-4" /> Items
           </div>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{summary.totalItems}</p>
+          <p className="text-2xl font-semibold tabular-nums text-foreground mt-1">{summary.totalItems}</p>
         </Card>
-        <Card className="p-4 border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center gap-2 text-gray-500 text-xs font-semibold uppercase tracking-wide">
+        <Card className="p-4">
+          <div className="flex items-center gap-2 text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.08em]">
             <Warehouse className="h-4 w-4" /> Total qty
           </div>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{formatQty(summary.totalQty)}</p>
+          <p className="text-2xl font-semibold tabular-nums text-foreground mt-1">{formatQty(summary.totalQty)}</p>
         </Card>
-        <Card className="p-4 border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center gap-2 text-gray-500 text-xs font-semibold uppercase tracking-wide">
+        <Card className="p-4">
+          <div className="flex items-center gap-2 text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.08em]">
             <IndianRupee className="h-4 w-4" /> Stock value
           </div>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{formatMoney(summary.totalValue)}</p>
+          <p className="text-2xl font-semibold tabular-nums text-foreground mt-1">{formatMoney(summary.totalValue)}</p>
         </Card>
-        <Card className="p-4 border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center gap-2 text-gray-500 text-xs font-semibold uppercase tracking-wide">
+        <Card className="p-4">
+          <div className="flex items-center gap-2 text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.08em]">
             <AlertTriangle className="h-4 w-4" /> Low stock
           </div>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{summary.lowStock}</p>
+          <p className="text-2xl font-semibold tabular-nums text-foreground mt-1">{summary.lowStock}</p>
         </Card>
       </div>
 
-      <Card className="p-4 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm space-y-4">
+      <Card className="p-4 sm:p-5 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="relative">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -298,7 +298,7 @@ export default function StockManagement() {
 
         {loading ? (
           <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent" />
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
           </div>
         ) : items.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
@@ -389,13 +389,13 @@ export default function StockManagement() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-2xl bg-white rounded-lg border border-gray-200 shadow-xl p-0 max-h-[90vh] overflow-y-auto">
-          <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+        <DialogContent className="sm:max-w-2xl p-0 max-h-[90vh] overflow-y-auto">
+          <div className="border-b border-border px-6 py-5">
             <DialogHeader>
-              <DialogTitle className="text-xl font-bold text-white">
+              <DialogTitle className="text-xl font-semibold text-foreground">
                 {editing ? 'Edit stock item' : 'Add stock item'}
               </DialogTitle>
-              <p className="text-blue-100 text-sm mt-1">
+              <p className="text-muted-foreground text-sm mt-1">
                 Enter stock master details manually (as in Tally stock item).
               </p>
             </DialogHeader>
@@ -550,7 +550,7 @@ export default function StockManagement() {
               >
                 Cancel
               </Button>
-              <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white" disabled={saving}>
+              <Button type="submit" disabled={saving}>
                 {saving ? 'Saving…' : editing ? 'Save changes' : 'Add item'}
               </Button>
             </div>

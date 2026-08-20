@@ -93,7 +93,7 @@ export const Workspace = () => {
   if (loading && logs.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -101,14 +101,14 @@ export const Workspace = () => {
   return (
     <div className="space-y-6" data-testid="workspace-page">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900">Workspace</h1>
-        <p className="text-gray-600 text-sm mt-1">Log your day&apos;s work before you log off</p>
+        <h1 className="text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-foreground">Workspace</h1>
+        <p className="text-muted-foreground text-sm mt-1">Log your day&apos;s work before you log off</p>
       </div>
 
       {/* Submit today's work log - only for users with employee_id */}
       {user?.employee_id && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <Card className="p-5 sm:p-6">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground mb-4 flex items-center gap-2">
             <LogOut className="h-5 w-5 text-amber-600" />
             End of Day Summary
           </h2>
@@ -130,7 +130,6 @@ export const Workspace = () => {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
               >
                 {submitting ? 'Submitting...' : 'Submit Work Log'}
               </Button>
@@ -141,9 +140,9 @@ export const Workspace = () => {
       )}
 
       {/* Past logs */}
-      <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+      <Card className="p-5 sm:p-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2">
             <FileText className="h-5 w-5" />
             Work Log History
           </h2>

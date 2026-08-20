@@ -36,6 +36,7 @@ import {
 import { useEffect, useState } from 'react';
 import { PageHeaderProvider, usePageHeader, usePageHeaderActions } from '@/contexts/PageHeaderContext';
 import { EmployeeLocationTracker } from '@/components/EmployeeLocationTracker';
+import { cn } from '@/lib/utils';
 
 function ClearHeaderOnNavigate() {
   const location = useLocation();
@@ -46,6 +47,15 @@ function ClearHeaderOnNavigate() {
   }, [location.pathname, clearPageHeader]);
 
   return null;
+}
+
+function userInitials(name) {
+  const parts = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return 'U';
+  return parts.slice(0, 2).map((part) => part[0]).join('').toUpperCase();
 }
 
 function AppHeaderBar({
@@ -67,11 +77,11 @@ function AppHeaderBar({
   })();
 
   return (
-    <header className="min-h-12 sm:min-h-14 border-b border-gray-200 bg-white flex items-center gap-2.5 sm:gap-3 px-3 sm:px-5 py-2 sm:py-2.5 shadow-sm flex-shrink-0 pt-[env(safe-area-inset-top)]">
+    <header className="min-h-14 border-b border-border/80 bg-card/90 backdrop-blur-xl flex items-center gap-2.5 sm:gap-3 px-3 sm:px-5 py-2 sm:py-2.5 flex-shrink-0 pt-[max(0.5rem,env(safe-area-inset-top))]">
       <Button
         variant="ghost"
         size="icon"
-        className="lg:hidden h-10 w-10 min-h-[40px] min-w-[40px] flex-shrink-0 border border-gray-300 text-gray-700 hover:bg-gray-100"
+        className="lg:hidden h-10 w-10 min-h-[40px] min-w-[40px] flex-shrink-0 text-foreground"
         onClick={onOpenMobileMenu}
         data-testid="mobile-menu-button"
         aria-label="Open menu"
@@ -81,7 +91,7 @@ function AppHeaderBar({
       <Button
         variant="ghost"
         size="icon"
-        className="hidden lg:inline-flex h-9 w-9 flex-shrink-0 border border-gray-300 text-gray-700 hover:bg-gray-100"
+        className="hidden lg:inline-flex h-9 w-9 flex-shrink-0 text-muted-foreground"
         onClick={onToggleDesktopSidebar}
         data-testid="desktop-sidebar-toggle"
         aria-label={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -90,9 +100,9 @@ function AppHeaderBar({
         {desktopSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
       </Button>
       <div className="flex-1 min-w-0 flex items-center gap-2">
-        <h2 className="text-base sm:text-lg font-semibold tracking-tight text-gray-900 truncate">{title}</h2>
+        <h2 className="text-[15px] sm:text-base font-semibold tracking-tight text-foreground truncate">{title}</h2>
         {header.subtitle ? (
-          <span className="hidden sm:inline text-sm text-gray-500 truncate border-l border-gray-200 pl-2.5 ml-0.5">
+          <span className="hidden sm:inline text-sm text-muted-foreground truncate border-l border-border pl-2.5 ml-0.5">
             {header.subtitle}
           </span>
         ) : null}
@@ -269,20 +279,26 @@ export const Layout = () => {
       data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
       className={() => {
         const isActive = pathIsActive(item.path);
-        return `flex items-center ${compact ? 'justify-center px-2' : 'gap-3 px-4'} ${
-          mobile ? 'py-3 rounded-xl min-h-[48px]' : 'py-2.5 rounded-lg'
-        } transition-colors text-sm ${
+        if (mobile) {
+          return cn(
+            'flex items-center gap-3 px-3 py-3 rounded-xl min-h-[48px] text-sm transition-colors',
+            isActive
+              ? 'bg-indigo-50 text-indigo-700 font-semibold'
+              : 'text-foreground hover:bg-muted active:bg-muted',
+          );
+        }
+        return cn(
+          'relative flex items-center text-[13px] transition-colors',
+          compact ? 'justify-center px-2 py-2.5 rounded-lg' : 'gap-3 px-3 py-2 rounded-lg',
           isActive
-            ? 'bg-blue-100 text-blue-700 font-medium'
-            : mobile
-              ? 'text-gray-700 hover:bg-gray-100 active:bg-gray-200'
-              : 'text-gray-700 hover:bg-gray-100'
-        }`;
+            ? 'bg-white/10 text-white font-medium'
+            : 'text-sidebar-muted hover:bg-white/5 hover:text-sidebar-foreground',
+        );
       }}
       title={item.label}
     >
-      <item.icon className="h-5 w-5 flex-shrink-0" />
-      {!compact && <span className={mobile ? 'truncate' : ''}>{item.label}</span>}
+      <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
+      {!compact && <span className={mobile ? 'truncate' : 'truncate'}>{item.label}</span>}
     </NavLink>
   );
 
@@ -294,30 +310,38 @@ export const Layout = () => {
     return (
       <div
         key={section.id}
-        className={sectionIndex > 0 ? (compact ? 'mt-3 pt-3 border-t border-gray-100' : 'mt-3') : ''}
+        className={sectionIndex > 0 ? (compact ? 'mt-3 pt-3 border-t border-white/10' : 'mt-4') : ''}
       >
         {section.label && !compact && (
           <button
             type="button"
             onClick={() => toggleSection(section.id)}
-            className={`flex w-full items-center justify-between rounded-md px-4 py-1.5 text-left transition-colors hover:bg-gray-50 ${
-              mobile ? 'mb-1' : 'mb-1.5'
-            }`}
+            className={cn(
+              'flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left transition-colors',
+              mobile ? 'mb-1 hover:bg-muted' : 'mb-1 hover:bg-white/5',
+            )}
             aria-expanded={!collapsed}
             aria-controls={`nav-section-${section.id}`}
           >
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+            <span className={cn(
+              'text-[10px] font-semibold uppercase tracking-[0.12em]',
+              mobile ? 'text-muted-foreground' : 'text-sidebar-muted',
+            )}>
               {section.label}
             </span>
             <ChevronDown
-              className={`h-3.5 w-3.5 text-gray-400 transition-transform ${collapsed ? '-rotate-90' : ''}`}
+              className={cn(
+                'h-3.5 w-3.5 transition-transform',
+                mobile ? 'text-muted-foreground' : 'text-sidebar-muted',
+                collapsed ? '-rotate-90' : '',
+              )}
             />
           </button>
         )}
         {showItems && (
           <div
             id={section.label ? `nav-section-${section.id}` : undefined}
-            className={mobile ? 'space-y-0.5' : 'space-y-1'}
+            className={mobile ? 'space-y-0.5' : 'space-y-0.5'}
           >
             {section.items.map((item) =>
               renderNavLink(item, {
@@ -340,59 +364,76 @@ export const Layout = () => {
   ].slice(0, 5);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
-      {/* Sidebar - Desktop */}
-      <aside className={`hidden lg:flex flex-col border-r border-gray-200 bg-white flex-shrink-0 transition-all duration-200 ${desktopSidebarCollapsed ? 'w-20' : 'w-64'}`}>
-        <div className={`border-b border-gray-200 bg-white ${desktopSidebarCollapsed ? 'p-3 flex justify-center' : 'p-6'}`}>
-          <img 
-            src={`${process.env.PUBLIC_URL}/logo1.png`}
-            alt="Company Logo" 
-            className={`${desktopSidebarCollapsed ? 'h-10' : 'h-12'} object-contain`}
-          />
+    <div className="flex h-screen overflow-hidden bg-background">
+      <aside className={cn(
+        'hidden lg:flex flex-col flex-shrink-0 transition-all duration-200 bg-sidebar text-sidebar-foreground border-r border-sidebar-border',
+        desktopSidebarCollapsed ? 'w-[72px]' : 'w-64',
+      )}>
+        <div className={cn(
+          'border-b border-white/10',
+          desktopSidebarCollapsed ? 'p-3 flex justify-center' : 'px-5 py-5',
+        )}>
+          <div className={cn(
+            'flex items-center justify-center rounded-xl bg-white shadow-sm',
+            desktopSidebarCollapsed ? 'h-10 w-10 p-1.5' : 'h-12 px-3 py-2',
+          )}>
+            <img 
+              src={`${process.env.PUBLIC_URL}/logo1.png`}
+              alt="Company Logo" 
+              className={cn(desktopSidebarCollapsed ? 'h-7' : 'h-8', 'object-contain')}
+            />
+          </div>
         </div>
         
-        <nav className="flex-1 p-4 overflow-y-auto scrollbar-hide">
+        <nav className={cn('flex-1 overflow-y-auto scrollbar-hide', desktopSidebarCollapsed ? 'p-2' : 'p-3')}>
           {filteredNavSections.map((section, sectionIndex) =>
             renderNavSection(section, sectionIndex, { mobile: false }),
           )}
         </nav>
 
-        <div className="p-4 border-t border-gray-200 space-y-2">
+        <div className="p-3 border-t border-white/10 space-y-2">
           {!desktopSidebarCollapsed && (
-            <div className="px-4 py-2">
-              <p className="text-sm font-medium text-gray-900">{user?.name}</p>
-              <p className="text-xs text-gray-600">{user?.role}</p>
+            <div className="flex items-center gap-3 px-2 py-2">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-xs font-semibold text-indigo-200">
+                {userInitials(user?.name)}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-white truncate">{user?.name}</p>
+                <p className="text-[11px] text-sidebar-muted truncate">{user?.role}</p>
+              </div>
             </div>
           )}
           <Button
             variant="ghost"
-            className={`w-full ${desktopSidebarCollapsed ? 'justify-center px-2' : 'justify-start'} bg-red-50 text-red-700 border-red-200 hover:bg-red-100 font-medium text-sm h-10`}
+            className={cn(
+              'w-full text-sidebar-muted hover:bg-rose-500/10 hover:text-rose-300',
+              desktopSidebarCollapsed ? 'justify-center px-2' : 'justify-start',
+            )}
             onClick={handleLogout}
             data-testid="logout-button"
             title="Logout"
           >
-            <LogOut className={`h-4 w-4 ${desktopSidebarCollapsed ? '' : 'mr-2'}`} />
+            <LogOut className={cn('h-4 w-4', desktopSidebarCollapsed ? '' : 'mr-2')} />
             {!desktopSidebarCollapsed && 'Logout'}
           </Button>
         </div>
       </aside>
 
-      {/* Mobile Sidebar overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
           <div 
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" 
+            className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm" 
             onClick={() => setSidebarOpen(false)} 
             aria-hidden="true"
           />
-          <aside className="fixed left-0 top-0 bottom-0 w-[min(280px,85vw)] max-w-full bg-white border-r border-gray-200 shadow-xl flex flex-col pt-[env(safe-area-inset-top)]">
-            <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-white">
+          <aside className="fixed left-0 top-0 bottom-0 w-[min(300px,88vw)] max-w-full bg-card border-r border-border shadow-panel flex flex-col pt-[env(safe-area-inset-top)]">
+            <div className="p-4 border-b border-border flex items-center justify-between">
               <img 
                 src={`${process.env.PUBLIC_URL}/logo1.png`}
                 alt="Company Logo" 
                 className="h-10 object-contain"
               />
-              <Button variant="ghost" size="icon" className="h-11 w-11 min-h-[44px] min-w-[44px] bg-gray-200 border border-gray-300 text-gray-800 hover:bg-gray-300" onClick={() => setSidebarOpen(false)}>
+              <Button variant="ghost" size="icon" className="h-11 w-11 min-h-[44px] min-w-[44px]" onClick={() => setSidebarOpen(false)}>
                 <X className="h-5 w-5" />
               </Button>
             </div>
@@ -403,14 +444,19 @@ export const Layout = () => {
               )}
             </nav>
 
-            <div className="p-3 border-t border-gray-200 space-y-2 pb-[env(safe-area-inset-bottom)]">
-              <div className="px-3 py-2">
-                <p className="text-sm font-medium text-gray-900 truncate">{user?.name}</p>
-                <p className="text-xs text-gray-600">{user?.role}</p>
+            <div className="p-3 border-t border-border space-y-2 pb-[env(safe-area-inset-bottom)]">
+              <div className="flex items-center gap-3 px-2 py-2">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-semibold text-indigo-700">
+                  {userInitials(user?.name)}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">{user?.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.role}</p>
+                </div>
               </div>
               <Button
                 variant="ghost"
-                className="w-full justify-start bg-red-50 text-red-700 border-red-200 hover:bg-red-100 active:bg-red-200 font-medium text-sm min-h-[48px] px-4"
+                className="w-full justify-start text-rose-600 hover:bg-rose-50 hover:text-rose-700 min-h-[48px] px-4"
                 onClick={handleLogout}
               >
                 <LogOut className="h-4 w-4 mr-2 flex-shrink-0" />
@@ -421,7 +467,6 @@ export const Layout = () => {
         </div>
       )}
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <PageHeaderProvider>
           <EmployeeLocationTracker />
@@ -434,15 +479,13 @@ export const Layout = () => {
             onToggleDesktopSidebar={() => setDesktopSidebarCollapsed((prev) => !prev)}
           />
 
-          {/* Page Content - responsive padding, space for bottom nav on mobile */}
-          <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 pb-24 sm:pb-6 bg-gray-50">
+          <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8 bg-background">
             <Outlet />
           </main>
         </PageHeaderProvider>
 
-        {/* Bottom navigation - mobile only */}
         <nav 
-          className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex items-center justify-around safe-area-bottom z-40"
+          className="lg:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-xl border-t border-border flex items-center justify-around safe-area-bottom z-40"
           aria-label="Main navigation"
         >
           {bottomNavItems.map((item) => (
@@ -451,22 +494,23 @@ export const Layout = () => {
               to={item.path}
               onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
-                `flex flex-col items-center justify-center gap-0.5 py-2 px-2 min-h-[56px] min-w-[56px] rounded-lg transition-colors text-xs bg-gray-100/80 border border-transparent ${
-                  isActive ? 'text-blue-600 font-medium bg-blue-50 border-blue-200' : 'text-gray-700'
-                }`
+                cn(
+                  'flex flex-col items-center justify-center gap-0.5 py-2 px-1.5 min-h-[56px] min-w-[56px] rounded-xl transition-colors text-[11px]',
+                  isActive ? 'text-primary font-semibold' : 'text-muted-foreground',
+                )
               }
             >
-              <item.icon className="h-6 w-6" />
+              <item.icon className="h-5 w-5" />
               <span className="truncate max-w-[72px]">{item.label}</span>
             </NavLink>
           ))}
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="flex flex-col items-center justify-center gap-0.5 py-2 px-2 min-h-[56px] min-w-[56px] rounded-lg transition-colors text-xs bg-gray-100/80 text-gray-700 border border-gray-200 hover:bg-gray-200"
+            className="flex flex-col items-center justify-center gap-0.5 py-2 px-1.5 min-h-[56px] min-w-[56px] rounded-xl transition-colors text-[11px] text-muted-foreground hover:text-foreground"
             aria-label="More menu"
           >
-            <Menu className="h-6 w-6" />
+            <Menu className="h-5 w-5" />
             <span className="truncate max-w-[72px]">More</span>
           </button>
         </nav>

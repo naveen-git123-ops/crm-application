@@ -683,45 +683,47 @@ const Vehicles = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Vehicle Management</h1>
-          <p className="text-gray-600 mt-1">Track vehicles, monitor usage, and manage fuel expenses</p>
+          <h1 className="text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-foreground">Vehicle Management</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Track vehicles, monitor usage, and manage fuel expenses</p>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-300 flex-wrap">
+      <Card className="p-1.5 sm:p-2">
+        <div className="flex gap-1 flex-wrap items-center">
         <button
           onClick={() => setActiveTab('vehicles')}
-          className={`pb-2 px-4 font-semibold ${activeTab === 'vehicles' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+          className={`h-9 rounded-lg px-3.5 text-sm font-semibold ${activeTab === 'vehicles' ? 'bg-indigo-50 text-indigo-800' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
         >
-          📋 Vehicles
+          Vehicles
         </button>
         <button
           onClick={() => setActiveTab('usage')}
-          className={`pb-2 px-4 font-semibold ${activeTab === 'usage' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+          className={`h-9 rounded-lg px-3.5 text-sm font-semibold ${activeTab === 'usage' ? 'bg-indigo-50 text-indigo-800' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
         >
-          🚗 Usage
+          Usage
         </button>
         <button
           onClick={() => setActiveTab('claims')}
-          className={`pb-2 px-4 font-semibold ${activeTab === 'claims' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+          className={`h-9 rounded-lg px-3.5 text-sm font-semibold ${activeTab === 'claims' ? 'bg-indigo-50 text-indigo-800' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
         >
-          ⛽ Claims
+          Claims
         </button>
         {['Admin', 'HR', 'Manager', 'Accountant'].includes(user?.role) && (
           <button
             onClick={() => setActiveTab('summary')}
-            className={`pb-2 px-4 font-semibold ${activeTab === 'summary' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-600'}`}
+            className={`h-9 rounded-lg px-3.5 text-sm font-semibold ${activeTab === 'summary' ? 'bg-indigo-50 text-indigo-800' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
           >
-            📊 Summary
+            Summary
           </button>
         )}
-      </div>
+        </div>
+      </Card>
 
       {/* VEHICLES TAB */}
       {activeTab === 'vehicles' && (
         <div className="space-y-4">
-          <Button onClick={() => setShowCreateVehicleDialog(true)} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={() => setShowCreateVehicleDialog(true)}>
             <Plus className="h-4 w-4 mr-2" /> Add Vehicle
           </Button>
 
@@ -746,19 +748,19 @@ const Vehicles = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {vehicles.map(vehicle => (
-              <Card key={vehicle.id} className="p-4 space-y-3 bg-white text-gray-900">
+              <Card key={vehicle.id} className="p-4 space-y-3">
                 {vehicle.photo_path && (
-                  <img src={vehicle.photo_path} alt={vehicle.vehicle_name} className="w-full h-32 object-cover rounded"/>
+                  <img src={vehicle.photo_path} alt={vehicle.vehicle_name} className="w-full h-32 object-cover rounded-lg"/>
                 )}
-                <h3 className="font-bold text-lg text-gray-900">{vehicle.vehicle_name}</h3>
-                <div className="space-y-1 text-sm text-gray-900">
-                  <p><span className="text-gray-700 font-medium">Type:</span> <span className="text-gray-900">{vehicle.vehicle_type}</span></p>
-                  <p><span className="text-gray-700 font-medium">Fuel:</span> <span className="text-gray-900">{vehicle.fuel_type}</span></p>
-                  <p><span className="text-gray-700 font-medium">Reg:</span> <span className="text-gray-900">{vehicle.registration_number}</span></p>
-                  <p><span className="text-gray-700 font-medium">Mileage:</span> <span className="text-gray-900">{vehicle.milage} km/L</span></p>
-                  <p><span className="text-gray-700 font-medium">Status:</span> <span className={`px-2 py-1 rounded text-xs ${vehicle.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{vehicle.status}</span></p>
+                <h3 className="font-semibold text-base text-foreground">{vehicle.vehicle_name}</h3>
+                <div className="space-y-1 text-sm text-foreground">
+                  <p><span className="text-muted-foreground font-medium">Type:</span> {vehicle.vehicle_type}</p>
+                  <p><span className="text-muted-foreground font-medium">Fuel:</span> {vehicle.fuel_type}</p>
+                  <p><span className="text-muted-foreground font-medium">Reg:</span> {vehicle.registration_number}</p>
+                  <p><span className="text-muted-foreground font-medium">Mileage:</span> {vehicle.milage} km/L</p>
+                  <p><span className="text-muted-foreground font-medium">Status:</span> <span className={`px-2 py-1 rounded-md text-xs font-medium ${vehicle.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{vehicle.status}</span></p>
                 </div>
-                <Button onClick={() => setSelectedVehicleForPhoto(vehicle.id)} size="sm" className="w-full bg-gray-500 hover:bg-gray-600 text-white">
+                <Button onClick={() => setSelectedVehicleForPhoto(vehicle.id)} size="sm" variant="outline" className="w-full">
                   <Camera className="h-4 w-4 mr-2" /> Photo
                 </Button>
               </Card>
@@ -774,15 +776,15 @@ const Vehicles = () => {
           {!activeUsage ? (
             <>
             <Dialog open={startUsageDialogOpen} onOpenChange={setStartUsageDialogOpen}>
-              <Button className="w-full sm:w-auto bg-green-600 text-white font-medium hover:bg-green-700" onClick={() => setStartUsageDialogOpen(true)}>
+              <Button className="w-full sm:w-auto" onClick={() => setStartUsageDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Start Journey
               </Button>
-              <DialogContent className="max-w-2xl bg-white rounded-lg border border-gray-200 shadow-xl p-0">
-                <div className="bg-green-600 text-white p-6 rounded-t-lg">
+              <DialogContent className="max-w-2xl p-0">
+                <div className="border-b border-border px-6 py-5">
                   <DialogHeader>
-                    <DialogTitle className="text-xl font-bold text-white">Start Vehicle Usage</DialogTitle>
-                    <p className="text-green-100 text-sm mt-1">Enter meter reading and capture photo for verification</p>
+                    <DialogTitle className="text-xl font-semibold text-foreground">Start Vehicle Usage</DialogTitle>
+                    <p className="text-muted-foreground text-sm mt-1">Enter meter reading and capture photo for verification</p>
                   </DialogHeader>
                 </div>
                 <div className="p-6 space-y-6">
@@ -796,20 +798,20 @@ const Vehicles = () => {
                           setConfirmedPreviousUsage(false);
                           setPreviousVehicleUsage(null);
                         }}
-                        className={`flex-1 py-2 px-4 rounded-lg border-2 font-medium transition ${
+                        className={`flex-1 py-2 px-4 rounded-lg border font-medium transition ${
                           !startUsageData.own_vehicle_type
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                            ? 'border-primary/30 bg-indigo-50 text-indigo-800'
+                            : 'border-border bg-card text-muted-foreground hover:border-primary/30'
                         }`}
                       >
                         🚗 Company Vehicle
                       </button>
                       <button
                         onClick={() => setStartUsageData({ ...startUsageData, vehicle_id: '', own_vehicle_type: 'Car' })}
-                        className={`flex-1 py-2 px-4 rounded-lg border-2 font-medium transition ${
+                        className={`flex-1 py-2 px-4 rounded-lg border font-medium transition ${
                           startUsageData.own_vehicle_type
-                            ? 'border-orange-500 bg-orange-50 text-orange-700'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                            ? 'border-primary/30 bg-indigo-50 text-indigo-800'
+                            : 'border-border bg-card text-muted-foreground hover:border-primary/30'
                         }`}
                       >
                         🏍️ Own Vehicle
@@ -886,11 +888,11 @@ const Vehicles = () => {
                         <Camera className="h-4 w-4" />
                         Meter Reading Photo * (Required for verification)
                       </Label>
-                      <label className="flex items-center justify-center w-full px-4 py-6 border-2 border-dashed border-green-300 rounded-lg cursor-pointer hover:border-green-500 bg-green-50 transition">
+                      <label className="flex items-center justify-center w-full px-4 py-6 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/40 bg-muted/40 transition">
                         <div className="text-center">
-                          <Camera className="h-8 w-8 text-green-600 mx-auto mb-2" />
-                          <p className="text-sm font-medium text-gray-700">Click to capture or upload photo</p>
-                          <p className="text-xs text-gray-500 mt-1">Take a clear photo of the meter reading</p>
+                          <Camera className="h-8 w-8 text-primary mx-auto mb-2" />
+                          <p className="text-sm font-medium text-foreground">Click to capture or upload photo</p>
+                          <p className="text-xs text-muted-foreground mt-1">Take a clear photo of the meter reading</p>
                         </div>
                         <input
                           type="file"
@@ -960,7 +962,6 @@ const Vehicles = () => {
                     <Button 
                       onClick={handleStartUsage} 
                       disabled={isSubmitting || !startPhotoFile}
-                      className="bg-green-600 hover:bg-green-700 text-white"
                     >
                       {isSubmitting ? <Loader className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
                       {isSubmitting ? 'Starting...' : 'Start Journey'}
@@ -972,14 +973,14 @@ const Vehicles = () => {
 
             {/* Previous Vehicle Usage Confirmation Dialog */}
             <Dialog open={showPreviousUsageDialog} onOpenChange={setShowPreviousUsageDialog}>
-              <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl">
-                <div className="bg-blue-600 text-white p-6 rounded-t-lg -m-6 mb-6">
+              <DialogContent className="max-w-lg p-0">
+                <div className="border-b border-border px-6 py-5">
                   <DialogHeader>
-                    <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
-                      <AlertCircle className="h-5 w-5" />
+                    <DialogTitle className="text-xl font-semibold text-foreground flex items-center gap-2">
+                      <AlertCircle className="h-5 w-5 text-primary" />
                       Vehicle Previously Used
                     </DialogTitle>
-                    <p className="text-blue-100 text-sm mt-2">This vehicle was last used by another employee. Please confirm details.</p>
+                    <p className="text-muted-foreground text-sm mt-2">This vehicle was last used by another employee. Please confirm details.</p>
                   </DialogHeader>
                 </div>
                 {previousVehicleUsage && (
@@ -1246,13 +1247,13 @@ const Vehicles = () => {
       {activeTab === 'claims' && (
         <div className="space-y-4">
           <Dialog open={createClaimDialogOpen} onOpenChange={setCreateClaimDialogOpen}>
-            <Button className="bg-purple-600 hover:bg-purple-700 text-white" onClick={() => setCreateClaimDialogOpen(true)}>
+            <Button onClick={() => setCreateClaimDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-2" /> Create Claim
             </Button>
-            <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl text-gray-900">
+            <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle className="text-gray-900">Create Fuel Claim</DialogTitle>
-                <DialogDescription className="text-gray-600">Claim fuel expenses for completed journeys</DialogDescription>
+                <DialogTitle>Create Fuel Claim</DialogTitle>
+                <DialogDescription>Claim fuel expenses for completed journeys</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
@@ -1297,7 +1298,7 @@ const Vehicles = () => {
                     placeholder="e.g., 500"
                   />
                 </div>
-                <Button onClick={handleCreateClaim} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+                <Button onClick={handleCreateClaim} disabled={loading} className="w-full">
                   {loading ? 'Creating...' : 'Create Claim'}
                 </Button>
               </div>
@@ -1305,7 +1306,7 @@ const Vehicles = () => {
           </Dialog>
 
           {user?.role === 'Admin' && (
-            <div className="mb-4 flex items-center gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <div className="mb-4 flex items-center gap-4 bg-muted/50 p-4 rounded-xl border border-border">
               <Label className="text-gray-900 font-semibold">Filter by Employee:</Label>
               <select
                 value={claimEmployeeFilter}
@@ -1469,7 +1470,7 @@ const Vehicles = () => {
                             <Button 
                               onClick={handleUpdateFuelPrice} 
                               disabled={fuelPriceLoading}
-                              className="bg-green-600 hover:bg-green-700"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
                             >
                               {fuelPriceLoading ? 'Saving...' : 'Save'}
                             </Button>
@@ -1834,7 +1835,7 @@ const Vehicles = () => {
                 <Button
                   onClick={handleApproveClaim}
                   disabled={approvingClaim}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
                 >
                   {approvingClaim ? 'Processing...' : 'Confirm'}
                 </Button>

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500&family=JetBrains+Mono:wght@500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,36 +6,74 @@
 
 @layer base {
   :root {
-    --background: 240 249 255;
-    --foreground: 55 65 81;
-    --card: 255 255 255;
-    --card-foreground: 55 65 81;
-    --primary: 6 182 212;
-    --primary-foreground: 255 255 255;
-    --secondary: 224 242 254;
-    --secondary-foreground: 55 65 81;
-    --muted: 224 242 254;
-    --muted-foreground: 75 85 99;
-    --accent: 219 234 254;
-    --accent-foreground: 6 182 212;
-    --destructive: 239 68 68;
-    --destructive-foreground: 255 255 255;
-    --border: 186 230 253;
-    --input: 186 230 253;
-    --ring: 6 182 212;
-    --radius: 0.375rem;
+    --background: 220 16% 97%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 239 84% 63%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 215 16% 42%;
+    --accent: 239 84% 96%;
+    --accent-foreground: 239 70% 40%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 91%;
+    --input: 220 13% 88%;
+    --ring: 239 84% 63%;
+    --radius: 0.625rem;
+    --sidebar: 222 47% 9%;
+    --sidebar-foreground: 210 20% 96%;
+    --sidebar-muted: 215 16% 64%;
+    --sidebar-accent: 217 33% 16%;
+    --sidebar-border: 217 19% 18%;
+    --sidebar-primary: 239 84% 67%;
+    --chart-1: 239 84% 63%;
+    --chart-2: 160 84% 39%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 0 72% 51%;
+    --chart-5: 262 83% 58%;
   }
-  
+
+  .dark {
+    --background: 222 47% 6%;
+    --foreground: 210 20% 98%;
+    --card: 222 47% 8%;
+    --card-foreground: 210 20% 98%;
+    --popover: 222 47% 8%;
+    --popover-foreground: 210 20% 98%;
+    --primary: 239 84% 70%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 19% 14%;
+    --secondary-foreground: 210 20% 98%;
+    --muted: 217 19% 14%;
+    --muted-foreground: 215 16% 65%;
+    --accent: 239 40% 16%;
+    --accent-foreground: 239 84% 80%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 217 19% 18%;
+    --input: 217 19% 22%;
+    --ring: 239 84% 70%;
+    --sidebar: 222 47% 6%;
+    --sidebar-foreground: 210 20% 96%;
+    --sidebar-muted: 215 16% 64%;
+    --sidebar-accent: 217 33% 14%;
+    --sidebar-border: 217 19% 16%;
+  }
+
   * {
     @apply border-border;
-    margin: 0;
-    padding: 0;
     box-sizing: border-box;
   }
-  
+
   html {
     font-size: 93.75%;
-    background-color: rgb(248, 250, 252);
+    background-color: hsl(var(--background));
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
   }
@@ -45,44 +83,37 @@
       font-size: 100%;
     }
   }
-  
+
   body {
-    background-color: rgb(248, 250, 252);
-    color: rgb(15, 23, 42);
-    font-family: 'Inter', sans-serif;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     min-height: 100vh;
     min-height: 100dvh;
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
     padding-bottom: env(safe-area-inset-bottom);
     overflow-x: hidden;
-  }
-  
-  .dark body {
-    background-color: rgb(2, 6, 23);
-    color: rgb(248, 250, 252);
-  }
-  
-  #root {
-    background-color: rgb(248, 250, 252);
-    color: rgb(15, 23, 42);
-    min-height: 100vh;
-  }
-  
-  .dark #root {
-    background-color: rgb(2, 6, 23);
-    color: rgb(248, 250, 252);
-  }
-  
-  h1, h2, h3, h4, h5, h6 {
-    font-family: 'Manrope', sans-serif;
-  }
-  
-  .font-mono {
-    font-family: 'JetBrains Mono', monospace;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Fix text visibility in form elements */
+  #root {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  .font-mono {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+
   input[type="text"],
   input[type="email"],
   input[type="password"],
@@ -94,56 +125,25 @@
   input[type="search"],
   textarea,
   select {
-    color: rgb(17, 24, 39) !important; /* text-gray-900 */
+    color: hsl(var(--foreground));
   }
 
   input::placeholder,
   textarea::placeholder {
-    color: rgb(156, 163, 175) !important; /* text-gray-400 */
+    color: hsl(var(--muted-foreground) / 0.72);
   }
 
   select option {
-    color: rgb(17, 24, 39) !important; /* text-gray-900 */
-    background-color: white !important;
+    color: hsl(var(--foreground));
+    background-color: hsl(var(--card));
   }
 
-  /* Ensure select dropdowns have visible text */
-  select {
-    background-color: white !important;
-  }
-
-  /* Fix for disabled inputs */
   input:disabled,
   textarea:disabled,
   select:disabled {
-    color: rgb(107, 114, 128) !important; /* text-gray-500 */
+    color: hsl(var(--muted-foreground));
   }
 
-  /* Ensure all buttons have visible text */
-  button {
-    color: inherit;
-  }
-
-  button[class*="bg-blue"],
-  button[class*="bg-green"],
-  button[class*="bg-red"],
-  button[class*="bg-emerald"],
-  button[class*="bg-rose"] {
-    color: white !important;
-  }
-
-  button[class*="bg-white"],
-  button[class*="bg-gray"]:not([class*="text-"]) {
-    color: rgb(17, 24, 39) !important; /* text-gray-900 */
-  }
-
-  /* Remove yellow hover states */
-  button:hover[class*="yellow"],
-  button:hover[class*="amber"]:not([class*="text-amber"]):not([class*="bg-amber"]) {
-    background-color: inherit !important;
-  }
-
-  /* Mobile: minimum touch targets (44px) */
   @media (max-width: 768px) {
     button:not([class*="size-"]):not(.min-h-),
     a[role="button"],
@@ -152,12 +152,45 @@
       min-width: 44px;
     }
     input, select, textarea {
-      font-size: 16px !important; /* prevents zoom on focus on iOS */
+      font-size: 16px !important;
     }
   }
 }
 
-/* Utility: horizontal scroll wrapper for tables on mobile */
+@layer components {
+  .app-surface {
+    @apply rounded-xl border border-border bg-card text-card-foreground shadow-soft;
+  }
+
+  .app-toolbar {
+    @apply flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between;
+  }
+
+  .app-table {
+    @apply w-full text-sm;
+  }
+
+  .app-table thead tr {
+    @apply border-b border-border bg-muted/60;
+  }
+
+  .app-table th {
+    @apply py-2.5 px-4 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground;
+  }
+
+  .app-table td {
+    @apply py-3 px-4 text-foreground;
+  }
+
+  .app-table tbody tr {
+    @apply border-b border-border/70 transition-colors hover:bg-muted/50;
+  }
+
+  .app-table tbody tr:last-child {
+    @apply border-b-0;
+  }
+}
+
 .table-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -166,102 +199,30 @@
   min-width: min-content;
 }
 
-/* Safe area for fixed bottom nav (notched / home indicator devices) */
 .safe-area-bottom {
   padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0));
 }
 
-/* Fix tab button text visibility - make all tab text grey */
-[role="tablist"] {
-  color: rgb(75, 85, 99) !important;
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
-[role="tab"] {
-  color: rgb(75, 85, 99) !important;
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
-
-[role="tab"][aria-selected="true"] {
-  color: rgb(55, 65, 81) !important;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
-
-/* Radix UI Tabs component text color fixes */
-[class*="TabsList"] {
-  color: rgb(75, 85, 99) !important;
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 999px;
+  border: 2px solid hsl(var(--background));
 }
-
-[class*="TabsTrigger"] {
-  color: rgb(75, 85, 99) !important;
-}
-
-[class*="TabsTrigger"][data-state="active"] {
-  color: rgb(55, 65, 81) !important;
-}
-
-/* Generic tab text color - grey throughout */
-.inline-flex[role="tablist"] *,
-[role="tab"] {
-  color: rgb(75, 85, 99) !important;
-}
-
-/* Ensure all button-like elements in tabs are grey */
-.rounded-md[role="tab"],
-button[role="tab"],
-[role="tab"] span {
-  color: rgb(75, 85, 99) !important;
-}
-
-[role="tab"][aria-selected="true"],
-[role="tab"][aria-selected="true"] span {
-  color: rgb(55, 65, 81) !important;
-}
-
-/* Fix text-muted-foreground to use grey */
-.text-muted-foreground {
-  color: rgb(75, 85, 99) !important;
-}
-
-.data-\[state\=active\]\:text-foreground {
-  color: rgb(55, 65, 81) !important;
-}
-
-/* Override all foreground colors to grey */
-.text-foreground {
-  color: rgb(55, 65, 81) !important;
-}
-
-/* Ensure all text in tabs buttons is visible */
-[role="tab"] button,
-[role="tab"] span,
-.h-9 button,
-.inline-flex button {
-  color: rgb(75, 85, 99) !important;
-}
-
-/* Active tab state - darker grey */
-[role="tab"][aria-selected="true"],
-[role="tab"][aria-selected="true"] *,
-button[aria-selected="true"],
-button[aria-selected="true"] * {
-  color: rgb(55, 65, 81) !important;
-}
-
-/* Fix background interactions */
-.data-\[state\=active\]\:bg-background {
-  background-color: white !important;
-}
-
-/* Override all mentions of text-white or light colors in UI elements */
-.rounded-lg.bg-muted {
-  background-color: rgb(224, 242, 254);
-}
-
-/* Ensure paragraph and span text inside tabs is grey */
-[role="tab"] p,
-[role="tab"] span {
-  color: rgb(75, 85, 99) !important;
-}
-
-[role="tab"][aria-selected="true"] p,
-[role="tab"][aria-selected="true"] span {
-  color: rgb(55, 65, 81) !important;
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.35);
 }

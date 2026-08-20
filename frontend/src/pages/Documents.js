@@ -394,7 +394,7 @@ export const Documents = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -402,21 +402,21 @@ export const Documents = () => {
   return (
     <div className="space-y-5" data-testid="documents-page">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="p-4 border border-gray-200 bg-white shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Total documents</p>
-          <p className="mt-1 text-2xl font-semibold text-gray-900">{baseDocuments.length}</p>
+        <Card className="p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Total documents</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{baseDocuments.length}</p>
         </Card>
-        <Card className="p-4 border border-gray-200 bg-white shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Expiring in 30 days</p>
-          <p className="mt-1 text-2xl font-semibold text-amber-600">{expiringSoonCount}</p>
+        <Card className="p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Expiring in 30 days</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-amber-600">{expiringSoonCount}</p>
         </Card>
-        <Card className="p-4 border border-gray-200 bg-white shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Expired</p>
-          <p className="mt-1 text-2xl font-semibold text-red-600">{expiredCount}</p>
+        <Card className="p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Expired</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-rose-600">{expiredCount}</p>
         </Card>
       </div>
 
-      <Card className="p-4 border border-gray-200 bg-white shadow-sm">
+      <Card className="p-4">
         <div className={`grid gap-3 ${canViewAllDocuments ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-2'}`}>
           {canViewAllDocuments ? (
             <div>

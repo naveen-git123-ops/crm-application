@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save, Calendar, Send } from 'lucide-react';
+import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save, Calendar } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 import { getApiErrorMessage } from '@/lib/apiErrors';
@@ -156,11 +156,11 @@ const CGW_GRID_SECTION_COLSPANS = {
 /** Frozen View CGWA columns (CGWA ID + customer name) while the grid scrolls sideways. */
 const cgwStickyId = 'sticky left-0 min-w-[148px] w-[148px] max-w-[148px]';
 const cgwStickyName = 'sticky left-[148px] min-w-[200px] w-[200px] max-w-[200px]';
-const cgwStickyIdHead = `${cgwStickyId} z-40 bg-sky-100 border-r border-sky-200`;
-const cgwStickyNameHead = `${cgwStickyName} z-40 bg-sky-100 shadow-[6px_0_10px_-6px_rgba(15,23,42,0.18)]`;
-const cgwStickyPairHead = 'sticky left-0 z-40 bg-sky-100 border-r border-sky-200';
-const cgwStickyIdCell = `${cgwStickyId} z-20 bg-sky-50 border-r border-sky-100`;
-const cgwStickyNameCell = `${cgwStickyName} z-20 bg-sky-50 shadow-[6px_0_10px_-6px_rgba(15,23,42,0.18)]`;
+const cgwStickyIdHead = `${cgwStickyId} z-40 bg-muted border-r border-border`;
+const cgwStickyNameHead = `${cgwStickyName} z-40 bg-muted shadow-[6px_0_10px_-6px_rgba(15,23,42,0.12)]`;
+const cgwStickyPairHead = 'sticky left-0 z-40 bg-muted border-r border-border';
+const cgwStickyIdCell = `${cgwStickyId} z-20 bg-card border-r border-border`;
+const cgwStickyNameCell = `${cgwStickyName} z-20 bg-card shadow-[6px_0_10px_-6px_rgba(15,23,42,0.12)]`;
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 /** When true, shows the “Daily past-due renewal email” admin card (CGW inventory). */
 const SHOW_CGW_DIGEST_EMAIL_SECTION = false;
@@ -1028,7 +1028,6 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
   const [digestEnabled, setDigestEnabled] = useState(false);
   const [digestScheduleTz, setDigestScheduleTz] = useState('');
   const [digestSaving, setDigestSaving] = useState(false);
-  const [nocTelegramSending, setNocTelegramSending] = useState(false);
 
   const [nocDialogOpen, setNocDialogOpen] = useState(false);
   const [customerPreviewOpen, setCustomerPreviewOpen] = useState(false);
@@ -2982,28 +2981,6 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
     }
   };
 
-  const sendExpiredNocTelegramNow = async () => {
-    setNocTelegramSending(true);
-    try {
-      const res = await axios.post(
-        `${API}/settings/cgw-expired-noc-telegram/run-now`,
-        {},
-        { headers: authHeaders(), timeout: 120000 },
-      );
-      const d = res.data || {};
-      const msg = d.message || 'Telegram send finished.';
-      if (d.sent) {
-        toast.success(msg);
-      } else {
-        toast.error(msg);
-      }
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Failed to send expired NOC list to Telegram'));
-    } finally {
-      setNocTelegramSending(false);
-    }
-  };
-
   const runDigestNow = async () => {
     try {
       const res = await axios.post(`${API}/settings/cgw-renewal-digest/run-now`, {}, { headers: authHeaders() });
@@ -3159,7 +3136,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
   if (loading || (isCreateScreen && editHydrating)) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -3167,7 +3144,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
   return (
     <div className="space-y-6" data-testid={isCreateScreen ? 'create-cgwa-page' : isDraftsScreen ? 'my-cgwa-drafts-page' : 'view-cgwa-page'}>
       {isCreateScreen && canCreateCgw && (
-        <Card className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+        <Card className="overflow-hidden">
               <form
                 onSubmit={(e) => e.preventDefault()}
                 className="space-y-6 p-6"
@@ -3177,16 +3154,16 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                     <div key={step.n} className="flex items-center gap-2 flex-1">
                       <div
                         className={`h-7 w-7 rounded-full text-xs font-semibold flex items-center justify-center ${
-                          addStep >= step.n ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
+                          addStep >= step.n ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                         }`}
                       >
                         {step.n}
                       </div>
-                      <span className={`text-xs font-medium ${addStep >= step.n ? 'text-blue-700' : 'text-gray-500'}`}>
+                      <span className={`text-xs font-medium ${addStep >= step.n ? 'text-primary' : 'text-muted-foreground'}`}>
                         {step.title}
                       </span>
                       {si < addWizardStepDefs.length - 1 ? (
-                        <div className={`h-px flex-1 ${addStep > step.n ? 'bg-blue-500' : 'bg-gray-200'}`} />
+                        <div className={`h-px flex-1 ${addStep > step.n ? 'bg-primary' : 'bg-border'}`} />
                       ) : null}
                     </div>
                   ))}
@@ -4162,14 +4139,14 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                       Cancel
                     </Button>
                     {addStep < addWizardFinalStep ? (
-                      <Button type="button" className="bg-blue-600 text-white hover:bg-blue-700" onClick={goAddNextStep}>
+                      <Button type="button" onClick={goAddNextStep}>
                         Next
                       </Button>
                     ) : (
                       <Button
                         type="button"
                         disabled={addWizardSubmitting}
-                        className="bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                        className="disabled:opacity-60"
                         onClick={handleSubmit}
                       >
                         {addWizardSubmitting
@@ -4189,37 +4166,14 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
       {isViewScreen && (
         <>
-      {canManage ? (
-        <Card className="rounded-lg border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0 space-y-1">
-              <h3 className="text-sm font-semibold text-gray-900">Expired NOC Telegram alert</h3>
-              <p className="text-xs text-gray-600 leading-relaxed">
-                Every morning at <span className="font-medium text-gray-800">9:00</span> (Asia/Kolkata),
-                the list of expired NOCs is sent to every CRM user with Telegram linked.
-                Use the button to send that list now for testing.
-              </p>
-            </div>
-            <Button
-              type="button"
-              className="h-9 shrink-0 bg-blue-600 text-white hover:bg-blue-700"
-              disabled={nocTelegramSending}
-              onClick={sendExpiredNocTelegramNow}
-            >
-              <Send className="h-4 w-4 mr-1.5" />
-              {nocTelegramSending ? 'Sending…' : 'Send expired NOC list to Telegram'}
-            </Button>
-          </div>
-        </Card>
-      ) : null}
-      <Card className="p-4 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
+      <Card className="p-4 sm:p-5">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             placeholder="Search across all columns…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 border border-gray-300 h-10 rounded-lg text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            className="pl-10 h-10"
           />
         </div>
       </Card>
@@ -4269,7 +4223,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
           <div className="mt-4 flex flex-wrap gap-2">
             <Button
               type="button"
-              className="bg-blue-600 text-white hover:bg-blue-700 h-9"
+              className="h-9"
               disabled={digestSaving}
               onClick={saveDigestSettings}
             >
@@ -4835,8 +4789,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
           </div>
         </Card>
       ) : (
-        <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
-          <p className="text-gray-600">No inventory items found</p>
+        <Card className="p-12 text-center">
+          <p className="text-muted-foreground">No inventory items found</p>
         </Card>
       )}
         </>
@@ -4844,29 +4798,29 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
       {isDraftsScreen && (
         <>
-          <Card className="p-4 sm:p-5 rounded-lg border border-gray-200 bg-white shadow-sm">
+          <Card className="p-4 sm:p-5">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
                 placeholder="Search drafts by customer, location, or ID…"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 border border-gray-300 h-10 rounded-lg text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                className="pl-10 h-10"
               />
             </div>
           </Card>
           {filteredItems.length > 0 ? (
-            <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+            <Card className="overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="app-table">
                   <thead>
-                    <tr className="border-b border-gray-200 bg-gray-50">
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Customer</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">CGWA ID</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Progress</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Last saved</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Saved by</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+                    <tr>
+                      <th>Customer</th>
+                      <th>CGWA ID</th>
+                      <th>Progress</th>
+                      <th>Last saved</th>
+                      <th>Saved by</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4921,7 +4875,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 Use Create CGWA and click Save draft to leave the form mid-way. You can continue from here later.
               </p>
               <Button
-                className="mt-4 bg-blue-600 text-white hover:bg-blue-700"
+                className="mt-4"
                 onClick={() => navigate(CREATE_CGWA_PATH)}
               >
                 Create CGWA
@@ -4968,7 +4922,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   <Button
                     type="button"
                     size="sm"
-                    className="h-8 bg-blue-600 text-white hover:bg-blue-700"
+                    className="h-8"
                     onClick={() => startAddNocPeriod('add')}
                   >
                     <Plus className="h-3.5 w-3.5 mr-1" />
@@ -5369,7 +5323,6 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 {!nocReadOnly && nocSideFieldsEditable && (
                   <Button
                     type="button"
-                    className="bg-blue-600 text-white hover:bg-blue-700"
                     disabled={nocSaving}
                     onClick={handleNocSave}
                   >

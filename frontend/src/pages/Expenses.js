@@ -498,14 +498,14 @@ export const Expenses = () => {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
 
   return (
     <div
-      className="relative space-y-5 pb-32 text-slate-800 antialiased md:pb-8 [font-family:ui-sans-serif,system-ui,-apple-system,Segoe_UI,Roboto,Inter,sans-serif]"
+      className="relative space-y-5 pb-32 md:pb-8"
       data-testid="expenses-page"
     >
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -527,10 +527,10 @@ export const Expenses = () => {
                 </div>
 
                 <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm ring-1 ring-slate-100">
-                  <div className="absolute left-0 top-0 h-full w-1 rounded-l-2xl bg-gradient-to-b from-red-500 to-rose-500" aria-hidden />
+                  <div className="absolute left-0 top-0 h-full w-1 rounded-l-2xl bg-primary" aria-hidden />
                   <div className="pl-3">
-                    <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-slate-500">
-                      <User className="h-3.5 w-3.5 text-red-500" aria-hidden />
+                    <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <User className="h-3.5 w-3.5 text-primary" aria-hidden />
                       Employee
                     </div>
                     <div className="mt-1.5 text-base font-semibold text-slate-900">
@@ -707,7 +707,7 @@ export const Expenses = () => {
               size="sm"
               className={`h-9 gap-2 rounded-xl px-4 text-sm font-semibold ${
                 pageTab === 'Requests'
-                  ? 'bg-sky-50 text-sky-800 ring-1 ring-sky-100'
+                  ? 'bg-indigo-50 text-indigo-800'
                   : 'text-slate-600 hover:bg-slate-50'
               }`}
               onClick={() => setPageTab('Requests')}
@@ -720,7 +720,7 @@ export const Expenses = () => {
               size="sm"
               className={`h-9 gap-2 rounded-xl px-4 text-sm font-semibold ${
                 pageTab === 'Summary'
-                  ? 'bg-sky-50 text-sky-800 ring-1 ring-sky-100'
+                  ? 'bg-indigo-50 text-indigo-800'
                   : 'text-slate-600 hover:bg-slate-50'
               }`}
               onClick={() => setPageTab('Summary')}
@@ -1004,7 +1004,7 @@ export const Expenses = () => {
                     size="sm"
                     className={`h-9 shrink-0 whitespace-nowrap rounded-xl px-4 text-sm font-semibold ${
                       activeTab === tab
-                        ? 'bg-sky-50 text-sky-800 ring-1 ring-sky-100'
+                        ? 'bg-indigo-50 text-indigo-800'
                         : 'text-slate-600 hover:bg-slate-50'
                     }`}
                     onClick={() => setActiveTab(tab)}

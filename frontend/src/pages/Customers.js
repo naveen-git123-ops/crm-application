@@ -416,20 +416,20 @@ export const Customers = () => {
     return (
       <Card
         key={tabId}
-        className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden"
+        className="p-5 sm:p-6 overflow-hidden"
       >
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <TabIcon className={`h-5 w-5 ${isVendor ? 'text-violet-600' : 'text-blue-600'}`} />
+            <h3 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2">
+              <TabIcon className={`h-5 w-5 ${isVendor ? 'text-violet-600' : 'text-primary'}`} />
               {panelLabel} directory
             </h3>
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Manage {panelLabelPlural}, contacts, and addresses in one place.
             </p>
           </div>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700 shrink-0"
+            className="shrink-0"
             data-testid={isVendor ? 'add-vendor-button' : 'add-customer-button'}
             onClick={() => openAddDialog(addType)}
           >
@@ -470,27 +470,27 @@ export const Customers = () => {
   if (loading && records.length === 0 && !searchTerm) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
 
   return (
     <div
-      className="space-y-5 sm:space-y-6 text-slate-800 antialiased [font-family:ui-sans-serif,system-ui,-apple-system,Segoe_UI,Roboto,Inter,sans-serif]"
+      className="space-y-5 sm:space-y-6"
       data-testid="customers-page"
     >
       <Dialog open={dialogOpen} onOpenChange={(open) => {
         setDialogOpen(open);
         if (!open) resetForm();
       }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-white rounded-lg border border-gray-200 shadow-xl p-0">
-              <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0">
+              <div className="border-b border-border px-6 py-5">
                 <DialogHeader>
-                  <DialogTitle className="text-xl font-bold text-white">
+                  <DialogTitle className="text-xl font-semibold text-foreground">
                     {editingRecord ? `Edit ${dialogEntityLabel}` : `Add New ${dialogEntityLabel}`}
                   </DialogTitle>
-                  <p className="text-blue-100 text-sm mt-1">
+                  <p className="text-muted-foreground text-sm mt-1">
                     {editingRecord
                       ? `Update ${dialogEntityLabelLower} details and save changes`
                       : `Create a new ${dialogEntityLabelLower} profile`}
@@ -721,7 +721,7 @@ export const Customers = () => {
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-300 text-gray-700 hover:bg-gray-50">
                     Cancel
                   </Button>
-                  <Button type="submit" data-testid="save-customer-button" className="bg-blue-600 text-white hover:bg-blue-700">
+                  <Button type="submit" data-testid="save-customer-button">
                     {editingRecord ? 'Update' : 'Add'} {dialogEntityLabel}
                   </Button>
                 </div>
@@ -729,7 +729,7 @@ export const Customers = () => {
         </DialogContent>
       </Dialog>
 
-      <Card className="p-2 sm:p-2.5 rounded-2xl border-0 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
+      <Card className="p-1.5 sm:p-2">
         <div className="flex gap-1 flex-wrap items-center [&_button]:min-h-[44px]">
           {ledgerTabs.map((tab) => {
             const Icon = tab.icon;
@@ -739,10 +739,10 @@ export const Customers = () => {
                 key={tab.id}
                 variant="ghost"
                 size="sm"
-                className={`rounded-xl gap-2 px-3.5 sm:px-4 transition-colors ${
+                className={`rounded-lg gap-2 px-3.5 sm:px-4 transition-colors ${
                   on
-                    ? 'bg-sky-50 text-sky-800 shadow-sm ring-1 ring-sky-100'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    ? 'bg-indigo-50 text-indigo-800 shadow-sm'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
                 onClick={() => {
                   if (activeTab === tab.id) return;
@@ -751,7 +751,7 @@ export const Customers = () => {
                   resetForm();
                 }}
               >
-                <Icon className={`h-4 w-4 shrink-0 ${on ? 'text-sky-600' : 'text-slate-400'}`} />
+                <Icon className={`h-4 w-4 shrink-0 ${on ? 'text-indigo-600' : 'text-muted-foreground'}`} />
                 <span className="font-medium">{tab.label}</span>
               </Button>
             );

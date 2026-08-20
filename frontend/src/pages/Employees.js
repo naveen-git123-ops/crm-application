@@ -135,7 +135,6 @@ export const Employees = () => {
     () =>
       canManageEmployees ? (
         <Button
-          className="bg-blue-600 text-white hover:bg-blue-700 h-9 sm:h-10 text-sm"
           data-testid="add-employee-button"
           onClick={() => {
             resetForm();
@@ -158,7 +157,7 @@ export const Employees = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -170,13 +169,13 @@ export const Employees = () => {
           setDialogOpen(open);
           if (!open) resetForm();
         }}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-lg border border-gray-200 shadow-xl p-0">
-              <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-0">
+              <div className="border-b border-border px-6 py-5">
                 <DialogHeader>
-                  <DialogTitle className="text-xl font-bold text-white">
+                  <DialogTitle className="text-xl font-semibold text-foreground">
                     {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
                   </DialogTitle>
-                  <p className="text-blue-100 text-sm mt-1">
+                  <p className="text-muted-foreground text-sm mt-1">
                     {editingEmployee ? 'Update employee details and save changes' : 'Create a new employee profile'}
                   </p>
                 </DialogHeader>
@@ -315,7 +314,7 @@ export const Employees = () => {
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-300 text-gray-700 hover:bg-gray-50">
                     Cancel
                   </Button>
-                  <Button type="submit" data-testid="save-employee-button" className="bg-blue-600 text-white hover:bg-blue-700">
+                  <Button type="submit" data-testid="save-employee-button">
                     {editingEmployee ? 'Update' : 'Add'} Employee
                   </Button>
                 </div>
@@ -325,36 +324,35 @@ export const Employees = () => {
       )}
 
       {/* Search */}
-      <Card className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
+      <Card className="p-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             data-testid="employee-search-input"
             placeholder="Search by name, email, department, or employee ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 border border-gray-300 h-10 rounded-lg text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            className="pl-10 h-10"
           />
         </div>
       </Card>
 
-      {/* Employees table grid */}
-      <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="overflow-x-auto table-scroll">
-          <table className="w-full text-sm min-w-[640px]">
+          <table className="app-table min-w-[640px]">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee ID</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Email</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Phone</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Department</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Job Role</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Joining Date</th>
-                <th className="text-right py-3 px-4 font-semibold text-gray-700">Salary</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
+              <tr>
+                <th>Employee ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Department</th>
+                <th>Job Role</th>
+                <th>Joining Date</th>
+                <th className="text-right">Salary</th>
+                <th>Status</th>
                 {canManageEmployees && (
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+                  <th>Actions</th>
                 )}
               </tr>
             </thead>
@@ -453,8 +451,8 @@ export const Employees = () => {
       </Card>
 
       {filteredEmployees.length === 0 && (
-        <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
-          <p className="text-gray-600">No employees found</p>
+        <Card className="p-12 text-center">
+          <p className="text-muted-foreground">No employees found</p>
         </Card>
       )}
     </div>

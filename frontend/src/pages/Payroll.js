@@ -73,7 +73,7 @@ export const Payroll = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -84,13 +84,13 @@ export const Payroll = () => {
     <div className="space-y-6" data-testid="payroll-page">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900">Payroll & Payslips</h1>
-        <p className="text-gray-600 text-sm mt-1">Generate and download employee payslips</p>
+        <h1 className="text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-foreground">Payroll & Payslips</h1>
+        <p className="text-muted-foreground text-sm mt-1">Generate and download employee payslips</p>
       </div>
 
       {/* Payslip Generator */}
-      <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Generate Payslip</h3>
+      <Card className="p-5 sm:p-6">
+        <h3 className="text-sm font-semibold tracking-tight text-foreground mb-4">Generate Payslip</h3>
         <div className="space-y-4">
           {canManagePayroll && (
             <div>

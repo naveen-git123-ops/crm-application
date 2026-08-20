@@ -105,25 +105,25 @@ export const GovernmentHolidays = () => {
     <div className="space-y-4 sm:space-y-6" data-testid="government-holidays-page">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">
+          <h1 className="text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-foreground">
             Government Holidays
           </h1>
-          <p className="text-gray-600 text-sm mt-1">View the list of government holidays for the year</p>
+          <p className="text-muted-foreground text-sm mt-1">View the list of government holidays for the year</p>
         </div>
         {canManageHolidays && (
           <div className="flex gap-2 flex-wrap">
             <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
               <DialogTrigger asChild>
-                <Button className="bg-blue-600 hover:bg-blue-700 text-white min-h-[44px]">
+                <Button className="min-h-[44px]">
                   <Plus className="h-4 w-4 mr-2" />
                   Add Holiday
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0">
-                <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+              <DialogContent className="sm:max-w-md p-0">
+                <div className="border-b border-border px-6 py-5">
                   <DialogHeader>
-                    <DialogTitle className="text-xl font-bold text-white">Add Government Holiday</DialogTitle>
-                    <p className="text-blue-100 text-sm mt-1">Add a holiday date and name</p>
+                    <DialogTitle className="text-xl font-semibold text-foreground">Add Government Holiday</DialogTitle>
+                    <p className="text-muted-foreground text-sm mt-1">Add a holiday date and name</p>
                   </DialogHeader>
                 </div>
                 <form onSubmit={handleAddHoliday} className="space-y-4 p-6">
@@ -175,7 +175,7 @@ export const GovernmentHolidays = () => {
         )}
       </div>
 
-      <Card className="p-4 sm:p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+      <Card className="p-4 sm:p-6">
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <Label htmlFor="year-filter" className="text-sm font-medium text-gray-700">Year</Label>
           <select

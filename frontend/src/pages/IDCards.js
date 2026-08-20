@@ -392,7 +392,7 @@ export const IDCards = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -402,8 +402,8 @@ export const IDCards = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">ID Card Generator</h1>
-          <p className="text-gray-600 text-sm mt-1">Generate and download employee identification cards</p>
+          <h1 className="text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-foreground">ID Card Generator</h1>
+          <p className="text-muted-foreground text-sm mt-1">Generate and download employee identification cards</p>
         </div>
       </div>
 

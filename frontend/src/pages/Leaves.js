@@ -466,14 +466,14 @@ export const Leaves = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
 
   return (
     <div
-      className="relative space-y-5 pb-32 text-slate-800 antialiased md:pb-8 [font-family:ui-sans-serif,system-ui,-apple-system,Segoe_UI,Roboto,Inter,sans-serif]"
+      className="relative space-y-5 pb-32 md:pb-8"
       data-testid="leaves-page"
     >
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -497,7 +497,7 @@ export const Leaves = () => {
                         data-testid="leave-employee-select"
                         value={formData.employee_id}
                         onChange={(e) => handleEmployeeChange(e.target.value)}
-                        className="flex h-12 w-full appearance-none rounded-xl border border-slate-200/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-500/12"
+                        className="flex h-12 w-full appearance-none rounded-xl border border-slate-200/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20"
                         required
                       >
                         <option value="">Select employee</option>
@@ -536,7 +536,7 @@ export const Leaves = () => {
                       data-testid="leave-type-select"
                       value={formData.leave_type}
                       onChange={(e) => handleLeaveTypeChange(e.target.value)}
-                      className="flex h-12 w-full appearance-none rounded-xl border border-slate-200/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-500/12"
+                      className="flex h-12 w-full appearance-none rounded-xl border border-slate-200/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       required
                     >
                       <option value="Casual">Casual Leave</option>
@@ -578,7 +578,7 @@ export const Leaves = () => {
                           data-testid="half-day-session-select"
                           value={formData.half_day_session}
                           onChange={(e) => setFormData({ ...formData, half_day_session: e.target.value })}
-                          className="flex h-12 w-full appearance-none rounded-xl border border-slate-200/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-500/12"
+                          className="flex h-12 w-full appearance-none rounded-xl border border-slate-200/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20"
                           required
                         >
                           <option value="First Half">First half (morning)</option>
@@ -653,7 +653,7 @@ export const Leaves = () => {
                     required
                     placeholder="e.g. Personal work"
                     rows={4}
-                    className="min-h-[6.5rem] w-full resize-y rounded-xl border border-slate-200/90 bg-white px-4 py-3 text-sm leading-relaxed text-slate-900 shadow-sm transition-all placeholder:text-slate-400 hover:border-slate-300 focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-500/12"
+                    className="min-h-[6.5rem] w-full resize-y rounded-xl border border-slate-200/90 bg-white px-4 py-3 text-sm leading-relaxed text-slate-900 shadow-sm transition-all placeholder:text-slate-400 hover:border-slate-300 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20"
                   />
                 </div>
 
@@ -856,7 +856,7 @@ export const Leaves = () => {
       )}
 
       {user?.role === 'Admin' && (
-        <Card className="rounded-2xl border-0 bg-white p-5 shadow-[0_2px_12px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/70">
+        <Card className="p-5">
           <div className="mb-3 flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
               <Settings2 className="h-4 w-4" />
@@ -878,7 +878,7 @@ export const Leaves = () => {
             <Button
               onClick={saveLeavePolicy}
               disabled={savingPolicy}
-              className="rounded-xl bg-sky-600 px-4 text-white hover:bg-sky-700"
+              className="rounded-lg"
             >
               {savingPolicy ? 'Saving…' : 'Save'}
             </Button>
@@ -899,7 +899,7 @@ export const Leaves = () => {
                 size="sm"
                 className={`h-9 rounded-xl px-4 text-sm font-semibold ${
                   activeTab === tab
-                    ? 'bg-sky-50 text-sky-800 ring-1 ring-sky-100'
+                    ? 'bg-indigo-50 text-indigo-800'
                     : 'text-slate-600 hover:bg-slate-50'
                 }`}
                 onClick={() => setActiveTab(tab)}

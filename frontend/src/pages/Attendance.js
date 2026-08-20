@@ -1162,14 +1162,14 @@ export const Attendance = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
 
   return (
     <div
-      className="space-y-5 sm:space-y-6 text-slate-800 antialiased [font-family:ui-sans-serif,system-ui,-apple-system,Segoe_UI,Roboto,Inter,sans-serif]"
+      className="space-y-5 sm:space-y-6"
       data-testid="attendance-page"
     >
       {/* Location notice for employees */}
@@ -1189,7 +1189,7 @@ export const Attendance = () => {
 
       {/* Tabs: admin/HR/accountant full set; employees get punch + personal grid + summary */}
       {showAttendanceTabs && (
-        <Card className="p-2 sm:p-2.5 rounded-2xl border-0 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
+        <Card className="p-1.5 sm:p-2">
           <div className="flex gap-1 flex-wrap items-center [&_button]:min-h-[44px]">
             {[
               { id: 'punch', label: 'Mark Attendance', icon: Clock, show: true },
@@ -1219,12 +1219,12 @@ export const Attendance = () => {
                     size="sm"
                     className={`rounded-xl gap-2 px-3.5 sm:px-4 transition-colors ${
                       on
-                        ? 'bg-sky-50 text-sky-800 shadow-sm ring-1 ring-sky-100'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                        ? 'bg-indigo-50 text-indigo-800 shadow-sm'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                     }`}
                     onClick={() => setActiveTab(tab.id)}
                   >
-                    <Icon className={`h-4 w-4 shrink-0 ${on ? 'text-sky-600' : 'text-slate-400'}`} />
+                    <Icon className={`h-4 w-4 shrink-0 ${on ? 'text-indigo-600' : 'text-muted-foreground'}`} />
                     <span className="font-medium">{tab.label}</span>
                   </Button>
                 );
@@ -1235,14 +1235,14 @@ export const Attendance = () => {
 
       {/* Attendance Grid: all staff (admin) or personal rows only (employee) */}
       {(canManageAttendanceGrid || canViewOwnAttendanceGrid) && activeTab === 'grid' && (
-        <Card className="overflow-hidden rounded-2xl border-0 bg-white p-5 sm:p-7 shadow-[0_4px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/60">
+        <Card className="overflow-hidden p-5 sm:p-6">
           {/* <div className="mb-4">
             <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
               {canViewOwnAttendanceGrid ? 'My attendance grid' : 'Attendance grid dashboard'}
             </h3>
           </div> */}
 
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-2xl border border-slate-100 bg-slate-50/80 px-3 py-2.5 text-xs text-slate-600 sm:gap-2 sm:px-3 sm:py-2 sm:text-sm">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl border border-border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground sm:gap-2 sm:px-3 sm:py-2 sm:text-sm">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">
@@ -1295,16 +1295,16 @@ export const Attendance = () => {
             </div>
 
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:ml-auto">
-              <div className="inline-flex rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200/80">
+              <div className="inline-flex rounded-lg bg-muted p-1">
                 <Button
                   type="button"
                   size="sm"
                   variant="ghost"
                   onClick={() => setGridViewMode('today')}
-                  className={`h-8 rounded-lg px-3 text-xs font-semibold sm:h-9 sm:px-4 sm:text-sm ${
+                  className={`h-8 rounded-md px-3 text-xs font-semibold sm:h-9 sm:px-4 sm:text-sm ${
                     gridViewMode === 'today'
-                      ? 'bg-white text-sky-800 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   Today
@@ -1314,10 +1314,10 @@ export const Attendance = () => {
                   size="sm"
                   variant="ghost"
                   onClick={() => setGridViewMode('month')}
-                  className={`h-8 rounded-lg px-3 text-xs font-semibold sm:h-9 sm:px-4 sm:text-sm ${
+                  className={`h-8 rounded-md px-3 text-xs font-semibold sm:h-9 sm:px-4 sm:text-sm ${
                     gridViewMode === 'month'
-                      ? 'bg-white text-sky-800 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   Month
@@ -1325,13 +1325,13 @@ export const Attendance = () => {
               </div>
               {gridViewMode === 'month' && (
                 <div className="flex items-center gap-1.5">
-                  <Calendar className="hidden h-4 w-4 shrink-0 text-sky-600 sm:block" aria-hidden />
-                  <div className="flex items-center gap-0.5 rounded-xl border border-sky-200 bg-white p-0.5 shadow-sm ring-1 ring-sky-100">
+                  <Calendar className="hidden h-4 w-4 shrink-0 text-primary sm:block" aria-hidden />
+                  <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
                     <Button
                       type="button"
                       size="icon"
                       variant="ghost"
-                      className="h-8 w-8 shrink-0 text-sky-800 hover:bg-sky-50"
+                      className="h-8 w-8 shrink-0"
                       onClick={() => setGridMonth(format(subMonths(new Date(`${gridMonth}-01`), 1), 'yyyy-MM'))}
                       aria-label="Previous month"
                     >
@@ -1341,13 +1341,13 @@ export const Attendance = () => {
                       type="month"
                       value={gridMonth}
                       onChange={(e) => setGridMonth(e.target.value)}
-                      className="h-8 min-w-[9.5rem] cursor-pointer border-0 bg-transparent px-1 text-center text-xs font-bold text-sky-900 outline-none sm:min-w-[11rem] sm:text-sm"
+                      className="h-8 min-w-[9.5rem] cursor-pointer border-0 bg-transparent px-1 text-center text-xs font-semibold text-foreground outline-none sm:min-w-[11rem] sm:text-sm"
                     />
                     <Button
                       type="button"
                       size="icon"
                       variant="ghost"
-                      className="h-8 w-8 shrink-0 text-sky-800 hover:bg-sky-50"
+                      className="h-8 w-8 shrink-0"
                       onClick={() => setGridMonth(format(addMonths(new Date(`${gridMonth}-01`), 1), 'yyyy-MM'))}
                       aria-label="Next month"
                     >
@@ -1373,7 +1373,7 @@ export const Attendance = () => {
                   value={gridSearch}
                   onChange={(e) => setGridSearch(e.target.value)}
                   placeholder="Search by name or employee ID…"
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-900 shadow-sm outline-none ring-sky-500/30 placeholder:text-slate-400 focus:border-sky-300 focus:ring-2"
+                  className="h-11 w-full rounded-lg border border-input bg-card pl-10 pr-3 text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground focus:border-primary/50 focus:ring-2 focus:ring-ring/20"
                 />
               </div>
               {canManageAttendanceGrid && departmentOptions.length > 0 && (
@@ -1382,7 +1382,7 @@ export const Attendance = () => {
                   <select
                     value={gridDepartmentFilter}
                     onChange={(e) => setGridDepartmentFilter(e.target.value)}
-                    className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-10 pr-8 text-sm font-medium text-slate-800 shadow-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20"
+                    className="h-11 w-full appearance-none rounded-lg border border-input bg-card pl-10 pr-8 text-sm font-medium text-foreground shadow-sm outline-none focus:border-primary/50 focus:ring-2 focus:ring-ring/20"
                   >
                     <option value="">All departments</option>
                     {departmentOptions.map((d) => (
@@ -1398,7 +1398,7 @@ export const Attendance = () => {
 
           {gridLoading ? (
             <div className="flex justify-center py-12">
-              <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent" />
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
             </div>
           ) : gridViewMode === 'today' ? (
             <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
@@ -1728,7 +1728,7 @@ export const Attendance = () => {
 
       {/* Regularize Attendance - Admin only */}
       {canManageAttendanceFull && activeTab === 'regularize' && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+        <Card className="p-5 sm:p-6">
           <div className="mb-6">
             <h3 className="text-lg font-semibold text-gray-900">Regularize Attendance</h3>
             <p className="text-sm text-gray-600 mt-1">Mark an employee as present for a specific date with standard office hours (9:15 AM - 7:00 PM)</p>
@@ -1773,15 +1773,15 @@ export const Attendance = () => {
               </select>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
-              <p className="text-blue-900">
+            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm">
+              <p className="text-indigo-950">
                 <strong>Note:</strong>{' '}
                 {regularizeAction === 'present'
                   ? 'Mark Present sets standard office timings:'
                   : 'Mark Absent clears punch-in/out and sets work hours to 0.'}
               </p>
               {regularizeAction === 'present' && (
-                <ul className="text-blue-800 mt-2 list-disc list-inside space-y-1">
+                <ul className="text-indigo-800 mt-2 list-disc list-inside space-y-1">
                   <li>Punch In: 9:15 AM</li>
                   <li>Punch Out: 7:00 PM</li>
                 </ul>
@@ -1792,8 +1792,8 @@ export const Attendance = () => {
               size="lg"
               className={`w-full h-12 text-white font-semibold min-h-[48px] ${
                 regularizeAction === 'present'
-                  ? 'bg-blue-600 hover:bg-blue-700'
-                  : 'bg-red-600 hover:bg-red-700'
+                  ? ''
+                  : 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
               }`}
               onClick={handleRegularizeAttendance}
               disabled={!regularizeEmployee || !regularizeDate || regularizeLoading}
@@ -1813,16 +1813,18 @@ export const Attendance = () => {
 
       {/* Punch In/Out - punch tab when tabs shown; always when no tab bar */}
       {(activeTab === 'punch' || !showAttendanceTabs) && (
-        <Card className="p-4 sm:p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Mark Attendance</h3>
+        <Card className="p-4 sm:p-6">
+          <h3 className="text-base sm:text-lg font-semibold text-foreground mb-4">Mark Attendance</h3>
 
           {!canSelectPunchEmployee && user && (
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="mb-6 p-4 bg-muted/50 rounded-xl border border-border">
               <div className="flex items-center gap-3">
-                <User className="h-10 w-10 text-gray-400" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50">
+                  <User className="h-5 w-5 text-indigo-600" />
+                </div>
                 <div>
-                  <p className="font-medium text-gray-900">{user.name}</p>
-                  <p className="text-sm text-gray-600">{user.employee_id} · {user.department || 'N/A'}</p>
+                  <p className="font-medium text-foreground">{user.name}</p>
+                  <p className="text-sm text-muted-foreground">{user.employee_id} · {user.department || 'N/A'}</p>
                 </div>
               </div>
             </div>
@@ -1850,7 +1852,7 @@ export const Attendance = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <Button
               size="lg"
-              className="h-14 sm:h-20 text-base sm:text-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 min-h-[48px]"
+              className="h-14 sm:h-20 text-base sm:text-lg font-semibold min-h-[48px]"
               onClick={() => handlePunch('punch_in')}
               disabled={canSelectPunchEmployee ? (todayAttendance?.is_active_session === 1 || punchLoading) : (isPunchedIn || punchLoading)}
               data-testid="punch-in-button"
@@ -1867,7 +1869,7 @@ export const Attendance = () => {
             <Button
               size="lg"
               variant="outline"
-              className="h-14 sm:h-20 text-base sm:text-lg border-gray-300 text-gray-900 hover:bg-gray-50 font-semibold min-h-[48px]"
+              className="h-14 sm:h-20 text-base sm:text-lg font-semibold min-h-[48px]"
               onClick={() => handlePunch('punch_out')}
               disabled={canSelectPunchEmployee ? (!todayAttendance || todayAttendance.is_active_session !== 1 || punchLoading) : (!isPunchedIn || punchLoading)}
               data-testid="punch-out-button"
@@ -1886,21 +1888,21 @@ export const Attendance = () => {
           {todayAttendance && (
             <div className="mt-6 space-y-4">
               {/* Summary Cards */}
-              <div className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div className="p-4 bg-muted/50 rounded-xl border border-border grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
-                  <p className="text-gray-600 text-xs uppercase font-semibold">First Punch In</p>
-                  <p className="font-mono font-bold text-blue-900 text-lg">{formatPunchTime(todayAttendance.punch_in)}</p>
+                  <p className="text-muted-foreground text-[11px] uppercase font-semibold tracking-[0.06em]">First Punch In</p>
+                  <p className="font-mono font-semibold text-foreground text-lg">{formatPunchTime(todayAttendance.punch_in)}</p>
                 </div>
                 <div>
-                  <p className="text-gray-600 text-xs uppercase font-semibold">Last Punch Out</p>
-                  <p className="font-mono font-bold text-blue-900 text-lg">{formatPunchTime(todayAttendance.punch_out)}</p>
+                  <p className="text-muted-foreground text-[11px] uppercase font-semibold tracking-[0.06em]">Last Punch Out</p>
+                  <p className="font-mono font-semibold text-foreground text-lg">{formatPunchTime(todayAttendance.punch_out)}</p>
                 </div>
                 <div>
-                  <p className="text-gray-600 text-xs uppercase font-semibold">Total Work Hours</p>
-                  <p className="font-mono font-bold text-blue-900 text-lg">{totalWorkHours?.toFixed(2) ?? 0} hrs</p>
+                  <p className="text-muted-foreground text-[11px] uppercase font-semibold tracking-[0.06em]">Total Work Hours</p>
+                  <p className="font-mono font-semibold text-foreground text-lg">{totalWorkHours?.toFixed(2) ?? 0} hrs</p>
                 </div>
                 <div>
-                  <p className="text-gray-600 text-xs uppercase font-semibold">Status</p>
+                  <p className="text-muted-foreground text-[11px] uppercase font-semibold tracking-[0.06em]">Status</p>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
                       className={`inline-block px-2 py-1 rounded text-xs font-medium ${
@@ -1962,7 +1964,7 @@ export const Attendance = () => {
 
       {/* Tour Requests - Admin/Manager */}
       {canApproveTour && activeTab === 'tour' && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <Card className="p-5 sm:p-6 overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -1975,7 +1977,7 @@ export const Attendance = () => {
             </div>
             <Button
               size="sm"
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={() => fetchTourPending(tourStatusFilter)}
               disabled={tourLoading}
             >
@@ -1990,7 +1992,7 @@ export const Attendance = () => {
                   key={status}
                   size="sm"
                   variant={tourStatusFilter === status ? 'default' : 'outline'}
-                  className={tourStatusFilter === status ? 'bg-blue-600 text-white' : 'border-gray-300'}
+                  className={tourStatusFilter === status ? '' : 'border-border'}
                   onClick={() => setTourStatusFilter(status)}
                 >
                   {status}
@@ -2023,7 +2025,7 @@ export const Attendance = () => {
 
           {tourLoading ? (
             <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent" />
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
             </div>
           ) : tourPending.filter((row) => !tourEmployeeFilter || row.employee_name === tourEmployeeFilter).length === 0 ? (
             <p className="text-center py-8 text-gray-500">No {tourStatusFilter.toLowerCase()} tour requests.</p>
@@ -2112,7 +2114,7 @@ export const Attendance = () => {
 
       {/* Late Punch-In Requests - Admin / HR */}
       {canManageAttendanceFull && activeTab === 'latepunchin' && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <Card className="p-5 sm:p-6 overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Late Punch-In Approval Requests</h3>
@@ -2122,7 +2124,7 @@ export const Attendance = () => {
             </div>
             <Button 
               size="sm" 
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={() => fetchLatePunchInRequests(latePunchInStatusFilter)}
               disabled={latePunchInLoading}
             >
@@ -2137,7 +2139,7 @@ export const Attendance = () => {
                   key={status}
                   size="sm"
                   variant={latePunchInStatusFilter === status ? 'default' : 'outline'}
-                  className={latePunchInStatusFilter === status ? 'bg-blue-600 text-white' : 'border-gray-300'}
+                  className={latePunchInStatusFilter === status ? '' : 'border-border'}
                   onClick={() => setLatePunchInStatusFilter(status)}
                 >
                   {status}
@@ -2266,7 +2268,7 @@ export const Attendance = () => {
 
       {/* Late Punch-Out Requests - Admin / HR */}
       {canManageAttendanceFull && activeTab === 'latepunchout' && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <Card className="p-5 sm:p-6 overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Late Punch-Out Approval Requests</h3>
@@ -2276,7 +2278,7 @@ export const Attendance = () => {
             </div>
             <Button 
               size="sm" 
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={() => fetchLatePunchOutRequests(latePunchOutStatusFilter)}
               disabled={latePunchOutLoading}
             >
@@ -2291,7 +2293,7 @@ export const Attendance = () => {
                   key={status}
                   size="sm"
                   variant={latePunchOutStatusFilter === status ? 'default' : 'outline'}
-                  className={latePunchOutStatusFilter === status ? 'bg-blue-600 text-white' : 'border-gray-300'}
+                  className={latePunchOutStatusFilter === status ? '' : 'border-border'}
                   onClick={() => setLatePunchOutStatusFilter(status)}
                 >
                   {status}
@@ -2420,7 +2422,7 @@ export const Attendance = () => {
 
       {/* Half Day Punch-In Requests - Admin / HR */}
       {canManageAttendanceFull && activeTab === 'halfdaypunchin' && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <Card className="p-5 sm:p-6 overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Half Day Punch-In Approval Requests</h3>
@@ -2428,13 +2430,13 @@ export const Attendance = () => {
                 Employees who punched in after 10:00 AM. Each request includes the <strong>reason</strong> they entered before punching.
               </p>
             </div>
-            <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => fetchHalfDayPunchInRequests(halfDayPunchInStatusFilter)} disabled={halfDayPunchInLoading}>
+            <Button size="sm" onClick={() => fetchHalfDayPunchInRequests(halfDayPunchInStatusFilter)} disabled={halfDayPunchInLoading}>
               {halfDayPunchInLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
           </div>
           <div className="mb-4 flex gap-2">
             {['Pending', 'Approved', 'Rejected'].map((status) => (
-              <Button key={status} size="sm" variant={halfDayPunchInStatusFilter === status ? 'default' : 'outline'} className={halfDayPunchInStatusFilter === status ? 'bg-blue-600 text-white' : 'border-gray-300'} onClick={() => setHalfDayPunchInStatusFilter(status)}>
+              <Button key={status} size="sm" variant={halfDayPunchInStatusFilter === status ? 'default' : 'outline'} className={halfDayPunchInStatusFilter === status ? '' : 'border-border'} onClick={() => setHalfDayPunchInStatusFilter(status)}>
                 {status}
               </Button>
             ))}
@@ -2489,7 +2491,7 @@ export const Attendance = () => {
 
       {/* Early Punch-Out Requests - Admin / HR */}
       {canManageAttendanceFull && activeTab === 'earlypunchout' && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <Card className="p-5 sm:p-6 overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Early Punch-Out Approval Requests</h3>
@@ -2497,13 +2499,13 @@ export const Attendance = () => {
                 Employees who punched out before 6:15 PM. Each request includes the <strong>reason</strong> they entered before punching out.
               </p>
             </div>
-            <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => fetchEarlyPunchOutRequests(earlyPunchOutStatusFilter)} disabled={earlyPunchOutLoading}>
+            <Button size="sm" onClick={() => fetchEarlyPunchOutRequests(earlyPunchOutStatusFilter)} disabled={earlyPunchOutLoading}>
               {earlyPunchOutLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
           </div>
           <div className="mb-4 flex gap-2">
             {['Pending', 'Approved', 'Rejected'].map((status) => (
-              <Button key={status} size="sm" variant={earlyPunchOutStatusFilter === status ? 'default' : 'outline'} className={earlyPunchOutStatusFilter === status ? 'bg-blue-600 text-white' : 'border-gray-300'} onClick={() => setEarlyPunchOutStatusFilter(status)}>
+              <Button key={status} size="sm" variant={earlyPunchOutStatusFilter === status ? 'default' : 'outline'} className={earlyPunchOutStatusFilter === status ? '' : 'border-border'} onClick={() => setEarlyPunchOutStatusFilter(status)}>
                 {status}
               </Button>
             ))}
@@ -2558,7 +2560,7 @@ export const Attendance = () => {
 
       {/* Report by date range - Admin/HR */}
       {canManageAttendanceFull && activeTab === 'report' && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <Card className="p-5 sm:p-6 overflow-hidden">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Attendance Report (Date Range)</h3>
           <div className="flex flex-wrap gap-3 mb-4">
             <div>
@@ -2593,7 +2595,7 @@ export const Attendance = () => {
               </select>
             </div>
             <div className="flex items-end">
-              <Button onClick={fetchReport} disabled={reportLoading} className="bg-blue-600 text-white hover:bg-blue-700">
+              <Button onClick={fetchReport} disabled={reportLoading}>
                 {reportLoading ? 'Loading…' : 'Load Report'}
               </Button>
             </div>
@@ -2644,7 +2646,7 @@ export const Attendance = () => {
 
       {/* Monthly summary - summary tab when tabs shown; always for employees without tab bar */}
       {(activeTab === 'summary' || (!showAttendanceTabs && !canManageAttendance)) && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <Card className="p-5 sm:p-6 overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Monthly Overview</h3>
@@ -2699,7 +2701,7 @@ export const Attendance = () => {
 
       {/* Recent attendance history - employees: only on punch tab when tab bar exists */}
       {!canManageAttendance && (!showAttendanceTabs || activeTab === 'punch') && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <Card className="p-5 sm:p-6 overflow-hidden">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent History</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -2749,14 +2751,14 @@ export const Attendance = () => {
       {/* Punch Out Work Log Dialog - MANDATORY */}
       {/* Late punch-in / punch-out reason — required before admin approval request */}
       <Dialog open={showLateReasonDialog} onOpenChange={(open) => { if (!open) handleCancelLateReasonDialog(); }}>
-        <DialogContent className="sm:max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0 pointer-events-auto">
-          <div className="bg-blue-600 text-white p-5 rounded-t-lg">
+        <DialogContent className="sm:max-w-md p-0 pointer-events-auto">
+          <div className="border-b border-border px-5 py-5">
             <DialogHeader>
-              <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
-                <AlertCircle className="h-5 w-5" />
+              <DialogTitle className="text-lg font-semibold text-foreground flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-primary" />
                 {pendingLatePunch?.punchType ? punchReasonDialogTitle(pendingLatePunch.punchType) : (pendingLatePunch?.action === 'punch_out' ? 'Late punch-out' : 'Late punch-in')}
               </DialogTitle>
-              <DialogDescription className="text-blue-100 text-sm mt-1">
+              <DialogDescription className="text-muted-foreground text-sm mt-1">
                 {pendingLatePunch?.punchType
                   ? punchReasonDialogDescription(pendingLatePunch.punchType)
                   : 'Enter a reason below. Your request is sent to admin only after you submit this form.'}
@@ -2782,7 +2784,7 @@ export const Attendance = () => {
             </Button>
             <Button
               type="button"
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={handleSubmitLateReasonAndPunch}
               disabled={punchLoading || !lateReasonText.trim()}
             >
@@ -2793,14 +2795,14 @@ export const Attendance = () => {
       </Dialog>
 
       <Dialog open={showTourReasonDialog} onOpenChange={(open) => { if (!open) handleCancelTourReasonDialog(); }}>
-        <DialogContent className="sm:max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0 pointer-events-auto">
-          <div className="bg-fuchsia-600 text-white p-5 rounded-t-lg">
+        <DialogContent className="sm:max-w-md p-0 pointer-events-auto">
+          <div className="border-b border-border px-5 py-5">
             <DialogHeader>
-              <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
-                <Briefcase className="h-5 w-5" />
+              <DialogTitle className="text-lg font-semibold text-foreground flex items-center gap-2">
+                <Briefcase className="h-5 w-5 text-primary" />
                 Tour details required
               </DialogTitle>
-              <DialogDescription className="text-fuchsia-100 text-sm mt-1">
+              <DialogDescription className="text-muted-foreground text-sm mt-1">
                 You are punching outside office. Enter tour place and reason so it can be sent for admin/manager approval.
               </DialogDescription>
             </DialogHeader>
@@ -2849,14 +2851,14 @@ export const Attendance = () => {
       </Dialog>
 
       <Dialog open={showPunchOutWorkLogDialog} onOpenChange={() => {}} >
-        <DialogContent className="sm:max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0 pointer-events-auto">
-          <div className="bg-amber-600 text-white p-6 rounded-t-lg">
+        <DialogContent className="sm:max-w-md p-0 pointer-events-auto">
+          <div className="border-b border-border px-6 py-5">
             <DialogHeader>
-              <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
-                <AlertCircle className="h-5 w-5" />
-                Work Log Required Before Punch Out
+              <DialogTitle className="text-lg font-semibold text-foreground flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-amber-600" />
+                Work log required before punch out
               </DialogTitle>
-              <DialogDescription className="text-amber-100 text-sm mt-1">
+              <DialogDescription className="text-muted-foreground text-sm mt-1">
                 You must submit your work summary before you can punch out. This is mandatory.
               </DialogDescription>
             </DialogHeader>

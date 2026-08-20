@@ -242,35 +242,34 @@ export const Roles = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-8" data-testid="roles-page">
+    <div className="space-y-6" data-testid="roles-page">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900">Role Management</h1>
-        <p className="text-gray-600 text-sm mt-1">Create and edit roles, control which screens each role can see. Assign roles to users below.</p>
+        <h1 className="text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-foreground">Role Management</h1>
+        <p className="text-muted-foreground text-sm mt-1">Create and edit roles, control which screens each role can see. Assign roles to users below.</p>
       </div>
 
-      {/* Roles & screen access */}
-      <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-gray-200 flex flex-wrap items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold text-gray-900">Roles & screen access</h2>
-          <Button onClick={openCreateRole} className="bg-blue-600 hover:bg-blue-700 text-white h-9">
+      <Card className="overflow-hidden">
+        <div className="p-4 border-b border-border flex flex-wrap items-center justify-between gap-4">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">Roles & screen access</h2>
+          <Button onClick={openCreateRole} className="h-9">
             <Plus className="h-4 w-4 mr-2" />
             Create role
           </Button>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="app-table">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Role name</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Screens</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+              <tr>
+                <th>Role name</th>
+                <th>Screens</th>
+                <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -317,10 +316,10 @@ export const Roles = () => {
       </Card>
 
       {/* User role assignment */}
-      <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">User role assignment</h2>
-          <p className="text-sm text-gray-600 mt-0.5">Assign a role to each user. Only Admin can change roles.</p>
+      <Card className="overflow-hidden">
+        <div className="p-4 border-b border-border">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">User role assignment</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">Assign a role to each user. Only Admin can change roles.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -427,19 +426,19 @@ export const Roles = () => {
       </Card>
 
       {users.length === 0 && (
-        <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
+        <Card className="p-12 text-center">
           <Shield className="h-12 w-12 mx-auto mb-2 opacity-20" />
-          <p className="text-gray-600">No users found</p>
+          <p className="text-muted-foreground">No users found</p>
         </Card>
       )}
 
       {/* Create / Edit role dialog */}
       <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
-        <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl p-0">
-          <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+        <DialogContent className="max-w-lg p-0">
+          <div className="border-b border-border px-6 py-5">
             <DialogHeader>
-              <DialogTitle className="text-xl font-bold text-white">{editingRole ? 'Edit Role' : 'Create Role'}</DialogTitle>
-              <p className="text-blue-100 text-sm mt-1">Choose which screens this role can access.</p>
+              <DialogTitle className="text-xl font-semibold text-foreground">{editingRole ? 'Edit Role' : 'Create Role'}</DialogTitle>
+              <p className="text-muted-foreground text-sm mt-1">Choose which screens this role can access.</p>
             </DialogHeader>
           </div>
           <div className="space-y-4 p-6">
@@ -484,7 +483,7 @@ export const Roles = () => {
             </div>
             <div className="flex justify-end gap-3 pt-2 border-t border-gray-200">
               <Button variant="outline" onClick={() => setRoleDialogOpen(false)} className="px-4 py-2">Cancel</Button>
-              <Button onClick={saveRoleForm} disabled={savingRole} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2">
+              <Button onClick={saveRoleForm} disabled={savingRole} className="px-4 py-2">
                 {savingRole ? <Loader2 className="h-4 w-4 animate-spin" /> : (editingRole ? 'Update' : 'Create')}
               </Button>
             </div>
@@ -504,11 +503,11 @@ export const Roles = () => {
           }
         }}
       >
-        <DialogContent className="max-w-md bg-white rounded-lg border border-gray-200 shadow-xl p-0">
-          <div className="bg-blue-600 text-white p-6 rounded-t-lg">
+        <DialogContent className="max-w-md p-0">
+          <div className="border-b border-border px-6 py-5">
             <DialogHeader>
-              <DialogTitle className="text-xl font-bold text-white">Reset Password</DialogTitle>
-              <p className="text-blue-100 text-sm mt-1">
+              <DialogTitle className="text-xl font-semibold text-foreground">Reset Password</DialogTitle>
+              <p className="text-muted-foreground text-sm mt-1">
                 {resetTargetUser ? `For ${resetTargetUser.name}` : 'For selected user'}
               </p>
             </DialogHeader>
@@ -541,7 +540,7 @@ export const Roles = () => {
               <Button
                 onClick={submitResetPassword}
                 disabled={resetSaving || !resetPassword.trim() || user?.role !== 'Admin'}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2"
+                className="px-4 py-2"
               >
                 {resetSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Reset'}
               </Button>

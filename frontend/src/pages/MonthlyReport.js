@@ -250,8 +250,8 @@ export const MonthlyReport = () => {
     <div className="space-y-6" data-testid="monthly-report-page">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Monthly attendance</h1>
-          <p className="text-gray-600 text-sm mt-1">
+          <h1 className="text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-foreground">Monthly attendance</h1>
+          <p className="text-muted-foreground text-sm mt-1">
             Full calendar month with each day marked Present, Absent, Half day, or Holiday. Use the Late attendance report
             tab for charts and reasons for late punch-ins and punch-outs.
           </p>
@@ -339,7 +339,7 @@ export const MonthlyReport = () => {
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
         </div>
       ) : canSelectEmployee && !reportEmployeeId ? (
         <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">

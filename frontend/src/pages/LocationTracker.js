@@ -297,11 +297,11 @@ const LocationTracker = () => {
     <div className="space-y-5" data-testid="location-tracker-page">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
-            <MapPin className="w-7 h-7 text-blue-600 shrink-0" />
+          <h1 className="text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-foreground flex items-center gap-2">
+            <MapPin className="w-6 h-6 text-primary shrink-0" />
             Location tracker
           </h1>
-          <p className="text-gray-600 text-sm mt-1 max-w-2xl">
+          <p className="text-muted-foreground text-sm mt-1 max-w-2xl">
             See where an employee is now and their full day journey — punch times and GPS updates while punched in.
           </p>
         </div>
@@ -309,7 +309,6 @@ const LocationTracker = () => {
           <Button
             type="button"
             variant={liveRefresh ? 'default' : 'outline'}
-            className={liveRefresh ? 'bg-blue-600 hover:bg-blue-700' : ''}
             onClick={() => setLiveRefresh((v) => !v)}
           >
             <Radio className={`h-4 w-4 mr-2 ${liveRefresh ? 'animate-pulse' : ''}`} />

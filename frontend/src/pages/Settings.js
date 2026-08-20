@@ -198,47 +198,53 @@ export const Settings = () => {
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6" data-testid="settings-page">
-      {/* Header */}
+    <div className="space-y-5" data-testid="settings-page">
       <div>
-        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Settings</h1>
-        <p className="text-gray-600 text-sm mt-1">Manage your account settings and preferences</p>
+        <h1 className="text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-foreground">Settings</h1>
+        <p className="text-muted-foreground text-sm mt-1">Manage your account settings and preferences</p>
       </div>
 
-      {/* User Profile */}
-      <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">User Profile</h3>
+      <Card className="p-5 sm:p-6">
+        <h3 className="text-sm font-semibold tracking-tight text-foreground mb-4">User Profile</h3>
         <div className="space-y-3">
-          <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <User className="h-10 w-10 text-blue-600" />
+          <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-xl border border-border">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50">
+              <User className="h-5 w-5 text-indigo-600" />
+            </div>
             <div className="flex-1">
-              <p className="text-xs text-gray-600 font-medium uppercase tracking-wider">Full Name</p>
-              <p className="font-medium text-gray-900">{user?.name}</p>
+              <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-[0.08em]">Full Name</p>
+              <p className="font-medium text-foreground">{user?.name}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <Mail className="h-10 w-10 text-blue-600" />
+          <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-xl border border-border">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50">
+              <Mail className="h-5 w-5 text-indigo-600" />
+            </div>
             <div className="flex-1">
-              <p className="text-xs text-gray-600 font-medium uppercase tracking-wider">Email Address</p>
-              <p className="font-medium text-gray-900">{user?.email}</p>
+              <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-[0.08em]">Email Address</p>
+              <p className="font-medium text-foreground">{user?.email}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <Shield className="h-10 w-10 text-blue-600" />
+          <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-xl border border-border">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50">
+              <Shield className="h-5 w-5 text-indigo-600" />
+            </div>
             <div className="flex-1">
-              <p className="text-xs text-gray-600 font-medium uppercase tracking-wider">Role</p>
-              <p className="font-medium text-gray-900">{user?.role}</p>
+              <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-[0.08em]">Role</p>
+              <p className="font-medium text-foreground">{user?.role}</p>
             </div>
           </div>
 
           {user?.employee_id && (
-            <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <Calendar className="h-10 w-10 text-blue-600" />
+            <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-xl border border-border">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50">
+                <Calendar className="h-5 w-5 text-indigo-600" />
+              </div>
               <div className="flex-1">
-                <p className="text-xs text-gray-600 font-medium uppercase tracking-wider">Employee ID</p>
-                <p className="font-mono font-medium text-gray-900">{user.employee_id}</p>
+                <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-[0.08em]">Employee ID</p>
+                <p className="font-mono font-medium text-foreground">{user.employee_id}</p>
               </div>
             </div>
           )}
@@ -246,7 +252,7 @@ export const Settings = () => {
       </Card>
 
       {telegramStatus.enabled ? (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+        <Card className="p-5 sm:p-6">
           <div className="flex items-start gap-3 mb-4">
             <Send className="h-6 w-6 text-blue-600 mt-0.5 shrink-0" />
             <div>
@@ -367,7 +373,7 @@ export const Settings = () => {
       )}
 
       {/* Editable Profile Information */}
-      <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+      <Card className="p-5 sm:p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-6">Update Profile Information</h3>
         
         <div className="space-y-6">
@@ -460,7 +466,7 @@ export const Settings = () => {
 
       {/* Office location - Admin only */}
       {user?.role === 'Admin' && (
-        <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+        <Card className="p-5 sm:p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <MapPin className="h-5 w-5 text-blue-600" />
             Office Location
@@ -488,7 +494,7 @@ export const Settings = () => {
       )}
 
       {/* System Info */}
-      <Card className="p-6 rounded-lg border border-gray-200 bg-white shadow-sm">
+      <Card className="p-5 sm:p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">System Information</h3>
         <div className="space-y-3 text-sm bg-gray-50 p-4 rounded-lg border border-gray-200">
           <div className="flex justify-between">

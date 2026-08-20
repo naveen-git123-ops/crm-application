@@ -6503,14 +6503,6 @@ def run_cgw_renewal_digest_now(current_user: UserModel = Depends(get_current_use
     return result
 
 
-@api_router.post('/settings/cgw-expired-noc-telegram/run-now')
-def run_expired_noc_telegram_now(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Manually send the expired-NOC Telegram list to every linked user (for testing)."""
-    if not can_manage_cgw(current_user, db):
-        raise HTTPException(status_code=403, detail='Not authorized')
-    return run_expired_noc_telegram_digest_job(send_empty=True)
-
-
 @api_router.post('/cgw-flow-metres/{inventory_id}/upload-certificate')
 def upload_calibration_certificate(
     inventory_id: str,
@@ -7043,6 +7035,28 @@ def get_tasks(
     tasks = query.order_by(TaskModel.due_date, TaskModel.priority.desc()).all()
     
     return tasks
+
+
+@api_router.delete('/tasks/clear-all')
+def clear_all_tasks(current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Delete every Tasks-screen record and related comments, time logs, attachments, and approvals. Admin only."""
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail='Not authorized')
+    deleted = {
+        'task_attachments': db.query(TaskAttachmentModel).delete(),
+        'task_time_logs': db.query(TaskTimeLogModel).delete(),
+        'task_comments': db.query(TaskCommentModel).delete(),
+        'task_approvals': db.query(TaskApprovalModel).delete(),
+        'tasks': db.query(TaskModel).delete(),
+    }
+    db.commit()
+    total = sum(deleted.values())
+    logging.info('Admin %s cleared all tasks: %s', current_user.email, deleted)
+    return {
+        'message': f'Deleted {deleted["tasks"]} task(s) and {total} related row(s).',
+        'deleted': deleted,
+    }
+
 
 @api_router.get('/tasks/{task_id}', response_model=Task)
 def get_task(task_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -13175,12 +13189,10 @@ def _collect_expired_noc_entries(db: Session, today: date) -> List[dict]:
     return entries
 
 
-def _format_expired_noc_telegram_messages(entries: List[dict], today: date, test_send: bool) -> List[str]:
+def _format_expired_noc_telegram_messages(entries: List[dict], today: date) -> List[str]:
     header_lines = [
         f'Expired NOC list — {today.isoformat()} ({ATTENDANCE_TZ_NAME})',
     ]
-    if test_send:
-        header_lines.append('Test send from View CGWA.')
     if not entries:
         header_lines.append('')
         header_lines.append('No expired NOCs as of today.')
@@ -13226,12 +13238,8 @@ def _format_expired_noc_telegram_messages(entries: List[dict], today: date, test
     return out
 
 
-def run_expired_noc_telegram_digest_job(send_empty: bool = False) -> Dict[str, Any]:
-    """Send expired-NOC details to every CRM user/employee with Telegram linked.
-
-    Scheduled 09:00: send_empty=False (skip if nothing expired).
-    Test button: send_empty=True (still send a 'none expired' note so delivery can be verified).
-    """
+def run_expired_noc_telegram_digest_job() -> Dict[str, Any]:
+    """Send expired-NOC details to every CRM user/employee with Telegram linked (daily 09:00)."""
     out: Dict[str, Any] = {
         'sent': False,
         'expired_count': 0,
@@ -13261,13 +13269,13 @@ def run_expired_noc_telegram_digest_job(send_empty: bool = False) -> Dict[str, A
             logging.info('Expired NOC Telegram digest skipped: no linked chat IDs')
             return out
 
-        if not entries and not send_empty:
+        if not entries:
             out['skipped_reason'] = 'no_expired_nocs'
             out['message'] = f'No expired NOCs as of {today.isoformat()} ({ATTENDANCE_TZ_NAME}), so nothing was sent.'
             logging.info('Expired NOC Telegram digest: no expired rows')
             return out
 
-        messages = _format_expired_noc_telegram_messages(entries, today, test_send=send_empty)
+        messages = _format_expired_noc_telegram_messages(entries, today)
         delivered_chats = 0
         failed_chats = 0
         last_error = None

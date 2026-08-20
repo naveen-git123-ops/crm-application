@@ -296,7 +296,7 @@ export const Leads = () => {
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          className="bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+          className="shadow-sm"
           onClick={() => setCreateOpen(true)}
         >
           <Plus className="h-4 w-4 mr-1" />
@@ -316,7 +316,7 @@ export const Leads = () => {
   if (loading && leads.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }

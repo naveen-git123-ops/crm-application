@@ -1,32 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import {
-  DndContext,
-  closestCorners,
-  PointerSensor,
-  KeyboardSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { formatISTDate, formatISTDateTime } from '@/utils/date';
@@ -34,1346 +19,769 @@ import {
   Plus,
   Search,
   Trash2,
-  Edit2,
   Calendar as CalendarIcon,
   User,
-  Flag,
   MessageSquare,
   Paperclip,
   Send,
   Download,
-  X,
+  Play,
+  Check,
+  Clock,
 } from 'lucide-react';
+import { API_ENDPOINT } from '@/lib/apiConfig';
+import { getApiErrorMessage } from '@/lib/apiErrors';
+import { isAdminOrManagerUser } from '@/lib/permissions';
+import { cn } from '@/lib/utils';
 
-import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
-
-const BACKEND_URL = BACKEND_BASE_URL;
 const API = API_ENDPOINT;
+const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
 
-const PRIORITY_STYLES = {
-  Low: { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-800' },
-  Medium: { bg: 'bg-yellow-50 border-yellow-200', text: 'text-yellow-700', badge: 'bg-yellow-100 text-yellow-800' },
-  High: { bg: 'bg-red-50 border-red-200', text: 'text-red-700', badge: 'bg-red-100 text-red-800' },
+const STATUS_META = {
+  Pending: { label: 'To do', className: 'bg-slate-100 text-slate-700' },
+  'In Progress': { label: 'In progress', className: 'bg-blue-50 text-blue-700' },
+  Overdue: { label: 'Overdue', className: 'bg-red-50 text-red-700' },
+  Completed: { label: 'Done', className: 'bg-emerald-50 text-emerald-700' },
+  'Approval Pending': { label: 'Waiting approval', className: 'bg-amber-50 text-amber-800' },
 };
 
-const STATUS_COLORS = {
-  Pending: { bg: 'bg-gray-50', border: 'border-gray-200', header: 'bg-gray-100', dark: 'text-gray-800' },
-  'In Progress': { bg: 'bg-blue-50', border: 'border-blue-200', header: 'bg-blue-100', dark: 'text-blue-800' },
-  Completed: { bg: 'bg-green-50', border: 'border-green-200', header: 'bg-green-100', dark: 'text-green-800' },
-  Overdue: { bg: 'bg-red-50', border: 'border-red-200', header: 'bg-red-100', dark: 'text-red-800' },
+const EMPTY_FORM = {
+  title: '',
+  description: '',
+  assigned_to_employee_id: '',
+  due_date: '',
+  estimated_time_hours: '',
 };
 
-// Task Card Component
-const TaskCard = ({ task, onClick, onStatusChange, user }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
-  const [isHovering, setIsHovering] = useState(false);
+function isoToday() {
+  return new Date().toISOString().slice(0, 10);
+}
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.7 : 1,
-    zIndex: isDragging ? 1000 : 0,
-  };
+function statusLabel(status) {
+  return STATUS_META[status]?.label || status || '—';
+}
 
-  const isOverdue = task.due_date < new Date().toISOString().split('T')[0] && task.status !== 'Completed';
-  const isAssignedToUser = task.assigned_to_employee_id === user?.employee_id;
-  const canEditTask = user?.role === 'Admin' || user?.role === 'Manager' || isAssignedToUser;
+function statusClass(status) {
+  return STATUS_META[status]?.className || 'bg-gray-100 text-gray-700';
+}
 
-  const handleStatusChange = (e) => {
-    e.stopPropagation();
-    const newStatus = e.target.value;
-    onStatusChange(task.id, newStatus);
-  };
+function isOpenStatus(status) {
+  return status !== 'Completed';
+}
 
+function formatHours(minutes) {
+  if (minutes == null || minutes === '') return '—';
+  const hours = Number(minutes) / 60;
+  if (!Number.isFinite(hours) || hours <= 0) return '—';
+  return hours % 1 === 0 ? `${hours}h` : `${hours.toFixed(1)}h`;
+}
+
+function dueLabel(dueDate, status) {
+  if (!dueDate) return 'No due date';
+  if (status === 'Completed') return formatISTDate(dueDate) || dueDate;
+  const today = isoToday();
+  if (dueDate < today) return `Overdue · ${dueDate}`;
+  if (dueDate === today) return 'Due today';
+  return dueDate;
+}
+
+function StatusPill({ status }) {
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`${PRIORITY_STYLES[task.priority].bg} border-2 rounded-lg overflow-hidden shadow-sm transition-all cursor-move ${isDragging ? 'shadow-lg border-blue-400 scale-105' : 'hover:shadow-md'} ${isHovering && !isDragging ? 'scale-102' : ''}`}
-      onMouseEnter={() => setIsHovering(true)}
-      onMouseLeave={() => setIsHovering(false)}
-    >
-      {/* Drag Handle */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="h-1 md:h-1.5 cursor-grab active:cursor-grabbing hover:bg-opacity-100 transition-colors"
-        style={{
-          background: isDragging ? 'rgba(59, 130, 246, 0.8)' : isHovering ? 'rgba(59, 130, 246, 0.5)' : 'rgba(200, 200, 200, 0.3)',
-        }}
-      />
-
-      {/* Clickable Content */}
-      <div
-        onClick={(e) => {
-          e.stopPropagation();
-          onClick();
-        }}
-        className="p-2 md:p-3 cursor-pointer"
-      >
-        <div className="flex items-start justify-between gap-2 mb-1.5 md:mb-2">
-          <div className="flex-1 min-w-0">
-            <p className="text-xs md:text-xs font-medium text-gray-900">{task.task_id}</p>
-            <h4 className="text-xs md:text-sm font-semibold text-gray-800 line-clamp-2">{task.title}</h4>
-          </div>
-          <span className={`${PRIORITY_STYLES[task.priority].badge} text-xs font-semibold px-2 py-0.5 md:py-1 rounded flex-shrink-0`}>
-            {task.priority[0]}
-          </span>
-        </div>
-
-        {task.priority === 'High' && <Flag className="h-2.5 md:h-3 w-2.5 md:w-3 text-red-500 fill-red-500 mb-1.5 md:mb-2" />}
-
-        <div className="space-y-0.5 md:space-y-1 text-xs text-gray-600">
-          {task.assigned_to_name && (
-            <div className="flex items-center gap-1">
-              <User className="h-2.5 md:h-3 w-2.5 md:w-3 flex-shrink-0" />
-              <span className="truncate text-xs">{task.assigned_to_name}</span>
-            </div>
-          )}
-          <div className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-600 font-semibold' : ''}`}>
-            <CalendarIcon className="h-2.5 md:h-3 w-2.5 md:w-3 flex-shrink-0" />
-            <span>{task.due_date}</span>
-          </div>
-        </div>
-
-        {/* Status Dropdown */}
-        <div className="mt-2 md:mt-3 pt-1.5 md:pt-2 border-t border-gray-200">
-          <select
-            value={task.status}
-            onChange={handleStatusChange}
-            disabled={!canEditTask}
-            className={`w-full px-1.5 md:px-2 py-1 text-xs bg-white border border-gray-300 rounded text-gray-900 font-medium hover:border-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 ${!canEditTask ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <option value="Pending">Pending</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Completed">Completed</option>
-            <option value="Overdue">Overdue</option>
-          </select>
-        </div>
-      </div>
-    </div>
+    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium', statusClass(status))}>
+      {statusLabel(status)}
+    </span>
   );
-};
+}
 
-// Kanban Column
-const KanbanColumn = ({ status, tasks, onCardClick, onStatusChange, user }) => {
-  const { setNodeRef } = useSortable({ 
-    id: status,
-    data: { type: 'Column', status }
-  });
-  const color = STATUS_COLORS[status];
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={`flex flex-col min-h-[300px] md:min-h-[500px] lg:min-h-[600px] ${color.bg} border-2 ${color.border} rounded-lg p-3 md:p-4 transition-all`}
-    >
-      <div className={`${color.header} rounded p-2 mb-3 md:mb-4 sticky top-0 z-10`}>
-        <h2 className={`${color.dark} font-bold text-xs md:text-sm flex items-center justify-between`}>
-          <span>{status}</span>
-          <span className="bg-white px-2 py-1 rounded text-xs font-semibold">{tasks.length}</span>
-        </h2>
-      </div>
-
-      <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div className="space-y-2 md:space-y-3 flex-1 overflow-y-auto">
-          {tasks.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-xs">No tasks</div>
-          ) : (
-            tasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                onClick={() => onCardClick(task)}
-                onStatusChange={onStatusChange}
-                user={user}
-              />
-            ))
-          )}
-        </div>
-      </SortableContext>
-    </div>
-  );
-};
-
-// Task Details Modal Component
-const TaskDetailsModal = ({ task, isOpen, onClose, onUpdate, user, employees = [] }) => {
+const TaskDetailsSheet = ({ task, open, onClose, onChanged, user, employees }) => {
   const [editMode, setEditMode] = useState(false);
-  const [editForm, setEditForm] = useState({
-    title: task?.title || '',
-    description: task?.description || '',
-    priority: task?.priority || 'Medium',
-    status: task?.status || 'Pending',
-    due_date: task?.due_date || '',
-    assigned_to_employee_id: task?.assigned_to_employee_id || '',
-    completion_percentage: task?.completion_percentage || 0,
-  });
-  const [completionUpdate, setCompletionUpdate] = useState(task?.completion_percentage || 0);
+  const [editForm, setEditForm] = useState({});
   const [comments, setComments] = useState([]);
-  const [timeLogs, setTimeLogs] = useState([]);
   const [attachments, setAttachments] = useState([]);
+  const [timeLogs, setTimeLogs] = useState([]);
   const [newComment, setNewComment] = useState('');
-  const [newTimeLog, setNewTimeLog] = useState({ time_spent_minutes: '', description: '', log_date: new Date().toISOString().split('T')[0] });
-  const [loadingComments, setLoadingComments] = useState(false);
-  const [loadingLogs, setLoadingLogs] = useState(false);
-  const [loadingAttachments, setLoadingAttachments] = useState(false);
+  const [timeMinutes, setTimeMinutes] = useState('');
+  const [timeNote, setTimeNote] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const canManage = isAdminOrManagerUser(user);
+  const isAssignee = task?.assigned_to_employee_id === user?.employee_id;
+  const canUpdateStatus = canManage || isAssignee;
+  const canDelete = canManage || task?.created_by_employee_id === user?.employee_id;
 
   useEffect(() => {
-    if (isOpen && task) {
-      fetchComments();
-      fetchTimeLogs();
-      fetchAttachments();
-      // Update form with current task data when task changes
-      setEditForm({
-        title: task.title || '',
-        description: task.description || '',
-        priority: task.priority || 'Medium',
-        status: task.status || 'Pending',
-        due_date: task.due_date || '',
-        assigned_to_employee_id: task.assigned_to_employee_id || '',
-        completion_percentage: task.completion_percentage || 0,
-      });
-      setCompletionUpdate(task.completion_percentage || 0);
+    if (!open || !task) return undefined;
+    setEditMode(false);
+    setEditForm({
+      title: task.title || '',
+      description: task.description || '',
+      status: task.status || 'Pending',
+      due_date: task.due_date || '',
+      assigned_to_employee_id: task.assigned_to_employee_id || '',
+    });
+    setNewComment('');
+    setTimeMinutes('');
+    setTimeNote('');
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const [cRes, aRes, tRes] = await Promise.all([
+          axios.get(`${API}/tasks/${task.id}/comments`, authHeaders()),
+          axios.get(`${API}/tasks/${task.id}/attachments`, authHeaders()),
+          axios.get(`${API}/tasks/${task.id}/time-logs`, authHeaders()),
+        ]);
+        if (cancelled) return;
+        setComments(Array.isArray(cRes.data) ? cRes.data : []);
+        setAttachments(Array.isArray(aRes.data) ? aRes.data : []);
+        setTimeLogs(Array.isArray(tRes.data) ? tRes.data : []);
+      } catch {
+        if (!cancelled) toast.error('Could not load task activity');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, task]);
+
+  if (!task) return null;
+
+  const updateStatus = async (status) => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/tasks/${task.id}/status`, { status }, authHeaders());
+      toast.success(status === 'Completed' ? 'Task marked done' : 'Status updated');
+      onChanged();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Could not update status'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/tasks/${task.id}`, editForm, authHeaders());
+      toast.success('Task updated');
       setEditMode(false);
-    }
-  }, [isOpen, task]);
-
-  const fetchComments = async () => {
-    if (!task) return;
-    setLoadingComments(true);
-    try {
-      const response = await axios.get(`${API}/tasks/${task.id}/comments`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      setComments(response.data);
+      onChanged();
     } catch (error) {
-      console.error('Error fetching comments:', error);
+      toast.error(getApiErrorMessage(error, 'Could not update task'));
     } finally {
-      setLoadingComments(false);
+      setSaving(false);
     }
   };
 
-  const fetchTimeLogs = async () => {
-    if (!task) return;
-    setLoadingLogs(true);
+  const addComment = async () => {
+    if (!newComment.trim()) return;
     try {
-      const response = await axios.get(`${API}/tasks/${task.id}/time-logs`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      setTimeLogs(response.data);
-    } catch (error) {
-      console.error('Error fetching time logs:', error);
-    } finally {
-      setLoadingLogs(false);
-    }
-  };
-
-  const fetchAttachments = async () => {
-    if (!task) return;
-    setLoadingAttachments(true);
-    try {
-      const response = await axios.get(`${API}/tasks/${task.id}/attachments`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      setAttachments(response.data);
-    } catch (error) {
-      console.error('Error fetching attachments:', error);
-    } finally {
-      setLoadingAttachments(false);
-    }
-  };
-
-  const handleAddComment = async () => {
-    if (!newComment.trim() || !task) return;
-
-    try {
-      await axios.post(
-        `${API}/tasks/${task.id}/comments`,
-        { content: newComment },
-        {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-        }
-      );
-      toast.success('Comment added');
+      await axios.post(`${API}/tasks/${task.id}/comments`, { content: newComment.trim() }, authHeaders());
       setNewComment('');
-      await fetchComments();
+      const res = await axios.get(`${API}/tasks/${task.id}/comments`, authHeaders());
+      setComments(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
-      toast.error('Failed to add comment');
+      toast.error(getApiErrorMessage(error, 'Could not add comment'));
     }
   };
 
-  const handleAddTimeLog = async () => {
-    if (!newTimeLog.time_spent_minutes || !task) return;
-
+  const addTime = async () => {
+    const minutes = parseInt(timeMinutes, 10);
+    if (!minutes || minutes <= 0) {
+      toast.error('Enter time in minutes');
+      return;
+    }
     try {
       await axios.post(
         `${API}/tasks/${task.id}/time-logs`,
-        newTimeLog,
-        {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-        }
+        { time_spent_minutes: minutes, description: timeNote, log_date: isoToday() },
+        authHeaders(),
       );
+      setTimeMinutes('');
+      setTimeNote('');
+      const res = await axios.get(`${API}/tasks/${task.id}/time-logs`, authHeaders());
+      setTimeLogs(Array.isArray(res.data) ? res.data : []);
       toast.success('Time logged');
-      setNewTimeLog({ time_spent_minutes: '', description: '', log_date: new Date().toISOString().split('T')[0] });
-      await fetchTimeLogs();
     } catch (error) {
-      toast.error('Failed to log time');
+      toast.error(getApiErrorMessage(error, 'Could not log time'));
     }
   };
 
-  const handleFileUpload = async (e) => {
+  const uploadFile = async (e) => {
     const file = e.target.files?.[0];
-    if (!file || !task) return;
-
-    const formData = new FormData();
-    formData.append('file', file);
-
+    e.target.value = '';
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
     try {
-      await axios.post(
-        `${API}/tasks/${task.id}/attachments`,
-        formData,
-        {
-          headers: { 
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      );
-      toast.success('File uploaded');
-      await fetchAttachments();
+      await axios.post(`${API}/tasks/${task.id}/attachments`, fd, {
+        headers: { ...authHeaders().headers, 'Content-Type': 'multipart/form-data' },
+      });
+      const res = await axios.get(`${API}/tasks/${task.id}/attachments`, authHeaders());
+      setAttachments(Array.isArray(res.data) ? res.data : []);
+      toast.success('File attached');
     } catch (error) {
-      toast.error('Failed to upload file');
+      toast.error(getApiErrorMessage(error, 'Could not upload file'));
     }
   };
 
-  const handleSaveEdit = async () => {
-    if (!task) return;
-
-    // Check if this is a status-only update (allowed for all users) or full edit (Admin/Manager only)
-    const isStatusOnlyUpdate = 
-      editForm.title === task.title &&
-      editForm.description === task.description &&
-      editForm.priority === task.priority &&
-      editForm.due_date === task.due_date &&
-      editForm.assigned_to_employee_id === task.assigned_to_employee_id;
-
-    // Only Admin and Manager can edit task details (non-status fields)
-    if (!isStatusOnlyUpdate && user?.role !== 'Admin' && user?.role !== 'Manager') {
-      toast.error('Only Admin and Manager can edit task details');
-      return;
-    }
-
+  const deleteTask = async () => {
+    if (!window.confirm('Delete this task?')) return;
     try {
-      await axios.put(
-        `${API}/tasks/${task.id}`,
-        editForm,
-        {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-        }
-      );
-      toast.success('Task updated');
-      setEditMode(false);
-      
-      // If this is a quick status update, close the modal and refresh board
-      if (isStatusOnlyUpdate && editForm.status !== task.status) {
-        onUpdate();
-        onClose();
-      } else {
-        onUpdate();
-      }
-    } catch (error) {
-      toast.error('Failed to update task');
-    }
-  };
-
-  const handleQuickStatusUpdate = async (newStatus) => {
-    if (!task) return;
-
-    try {
-      await axios.put(
-        `${API}/tasks/${task.id}`,
-        { status: newStatus },
-        {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-        }
-      );
-      toast.success('Status updated');
-      onUpdate();
+      await axios.delete(`${API}/tasks/${task.id}`, authHeaders());
+      toast.success('Task deleted');
       onClose();
+      onChanged();
     } catch (error) {
-      toast.error('Failed to update status');
+      toast.error(getApiErrorMessage(error, 'Could not delete task'));
     }
   };
-
-  const handleQuickCompletionUpdate = async () => {
-    if (!task) return;
-
-    // Only allow updating completion percentage if user is Admin/Manager or task is assigned to them
-    const isAssignedToUser = task.assigned_to_employee_id === user?.employee_id;
-    if (user?.role !== 'Admin' && user?.role !== 'Manager' && !isAssignedToUser) {
-      toast.error('You can only update completion for tasks assigned to you');
-      return;
-    }
-
-    const newValue = Number.isFinite(completionUpdate) ? completionUpdate : 0;
-
-    try {
-      const response = await axios.put(
-        `${API}/tasks/${task.id}`,
-        { completion_percentage: newValue },
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
-      );
-      if (response.status === 200) {
-        toast.success('Completion updated');
-        onUpdate();
-      }
-    } catch (error) {
-      console.error('Completion update error:', error.response?.data);
-      toast.error(error.response?.data?.detail || 'Failed to update');
-    }
-  };
-
-  if (!task || !isOpen) return null;
-
-  const isAssignedToUser = task.assigned_to_employee_id === user?.employee_id;
 
   return (
-    <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent className="w-full sm:w-[600px] lg:w-[720px] bg-white border-l border-gray-200 overflow-y-auto" side="right">
-        <SheetHeader className="sticky top-0 z-20 bg-white pb-3 md:pb-4">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex-1 min-w-0">
-              <SheetTitle className="text-lg md:text-2xl font-bold truncate">{task.task_id}</SheetTitle>
-              <p className="text-xs md:text-sm text-gray-600 mt-0.5 md:mt-1 line-clamp-2">{task.title}</p>
+    <Sheet open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <SheetContent className="w-full sm:max-w-lg bg-white overflow-y-auto p-0" side="right">
+        <div className="sticky top-0 z-10 border-b border-gray-200 bg-white px-5 py-4">
+          <SheetHeader className="space-y-1 text-left">
+            <p className="text-[11px] font-mono text-gray-500">{task.task_id}</p>
+            <SheetTitle className="text-lg font-semibold text-gray-900 leading-snug pr-8">
+              {task.title}
+            </SheetTitle>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <StatusPill status={task.status} />
+              <span className={cn('text-xs', task.status !== 'Completed' && task.due_date < isoToday() ? 'text-red-600 font-medium' : 'text-gray-500')}>
+                {dueLabel(task.due_date, task.status)}
+              </span>
             </div>
-            {editMode && (
-              <div className="flex gap-1 md:gap-2 flex-shrink-0">
-                <Button size="sm" variant="outline" onClick={() => setEditMode(false)} className="text-xs md:text-sm h-8 md:h-9 px-2 md:px-3">
-                  Cancel
-                </Button>
-                <Button size="sm" className="bg-blue-600 text-white text-xs md:text-sm h-8 md:h-9 px-2 md:px-3" onClick={handleSaveEdit}>
-                  Save
-                </Button>
-              </div>
-            )}
-          </div>
-        </SheetHeader>
+          </SheetHeader>
+        </div>
 
-        <div className="mt-4 md:mt-6 space-y-6 md:space-y-8">
-          {/* Details Section */}
-          <div>
-            <h3 className="text-base md:text-lg font-bold mb-3 md:mb-4 flex items-center gap-2 text-gray-900">
-              <span>Task Details</span>
-            </h3>
-            
-            {!editMode && (user?.role === 'Admin' || user?.role === 'Manager') && (
-              <Button
-                size="sm"
-                onClick={() => setEditMode(true)}
-                className="mb-3 md:mb-4 bg-blue-600 text-white hover:bg-blue-700 text-xs md:text-sm h-8 md:h-9 px-2 md:px-3"
-              >
-                <Edit2 className="h-3 md:h-4 w-3 md:w-4 md:mr-2" />
-                <span className="hidden md:inline">Edit Task</span>
-                <span className="md:hidden">Edit</span>
+        <div className="space-y-6 px-5 py-5">
+          {canUpdateStatus && task.status !== 'Completed' ? (
+            <div className="flex flex-wrap gap-2">
+              {task.status !== 'In Progress' ? (
+                <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" disabled={saving} onClick={() => updateStatus('In Progress')}>
+                  <Play className="h-3.5 w-3.5 mr-1.5" />
+                  Start
+                </Button>
+              ) : null}
+              <Button size="sm" className="h-8 bg-emerald-600 text-white hover:bg-emerald-700" disabled={saving} onClick={() => updateStatus('Completed')}>
+                <Check className="h-3.5 w-3.5 mr-1.5" />
+                Mark done
               </Button>
-            )}
+            </div>
+          ) : null}
 
-            {editMode ? (
-              <div className="space-y-3 md:space-y-4 border border-gray-300 rounded-lg p-3 md:p-4 bg-gray-50">
-                  <div>
-                    <Label className="text-xs md:text-sm font-medium text-gray-900">Title</Label>
-                    <Input
-                      value={editForm.title}
-                      onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                      className="mt-1 text-gray-900 text-xs md:text-sm"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs md:text-sm font-medium text-gray-900">Description</Label>
-                    <textarea
-                      value={editForm.description}
-                      onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                      rows={3}
-                      className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs md:text-sm text-gray-900"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs md:text-sm font-medium text-gray-900">Status</Label>
-                    <select
-                      value={editForm.status}
-                      onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                      className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs md:text-sm text-gray-900 bg-white"
-                    >
-                      {isAssignedToUser ? (
-                        <>
-                          <option value="Pending">Not Started</option>
-                          <option value="In Progress">In Progress</option>
-                          <option value="Completed">Completed</option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="Pending">Pending</option>
-                          <option value="In Progress">In Progress</option>
-                          <option value="Completed">Completed</option>
-                          <option value="Overdue">Overdue</option>
-                        </>
-                      )}
-                    </select>
-                  </div>
-                  <div>
-                    <Label className="text-xs md:text-sm font-medium text-gray-900">Due Date</Label>
-                    <Input
-                      type="date"
-                      value={editForm.due_date}
-                      onChange={(e) => setEditForm({ ...editForm, due_date: e.target.value })}
-                      className="mt-1 text-gray-900 text-xs md:text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <Label className="text-xs md:text-sm font-medium text-gray-900">Assign To</Label>
-                    <select
-                      value={editForm.assigned_to_employee_id}
-                      onChange={(e) => setEditForm({ ...editForm, assigned_to_employee_id: e.target.value })}
-                      className="w-full mt-1 border border-gray-300 rounded-lg p-2 text-xs md:text-sm text-gray-900 bg-white"
-                    >
-                      <option value="">Unassigned</option>
-                      {employees.map((emp) => (
-                        <option key={emp.id} value={emp.employee_id}>
-                          {emp.name} ({emp.employee_id})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="flex gap-1 md:gap-2 pt-3 md:pt-4">
-                    <Button size="sm" variant="outline" onClick={() => setEditMode(false)} className="text-xs md:text-sm h-8 md:h-9 px-2 md:px-3">
-                      Cancel
-                    </Button>
-                    <Button size="sm" className="bg-blue-600 text-white text-xs md:text-sm h-8 md:h-9 px-2 md:px-3" onClick={handleSaveEdit}>
-                      Save
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2 md:gap-4">
-                    <div>
-                      <p className="text-xs text-gray-500 font-medium uppercase">Status</p>
-                      <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">{task.status || 'Not set'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 font-medium uppercase">Due Date</p>
-                      <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">{task.due_date || 'Not set'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 font-medium uppercase">Assigned To</p>
-                      <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900 truncate">{task.assigned_to_name || 'Unassigned'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 font-medium uppercase">Created By</p>
-                      <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900 truncate">{task.created_by_name || 'Unknown'}</p>
-                    </div>
-                    <div className="col-span-2">
-                      <p className="text-xs text-gray-500 font-medium uppercase">Created At</p>
-                      <p className="text-xs md:text-sm font-semibold mt-1 text-gray-900">
-                        {task.created_at ? formatISTDateTime(task.created_at) : 'Not available'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 md:p-4 space-y-2">
-                    <p className="text-xs font-semibold text-blue-900">Quick Status Update</p>
-                    <div className="flex gap-2 flex-wrap">
-                      {task.status !== 'In Progress' && (
-                        <Button
-                          size="sm"
-                          className="bg-blue-600 text-white text-xs md:text-sm h-8 md:h-9 px-2 md:px-3"
-                          onClick={() => handleQuickStatusUpdate('In Progress')}
-                        >
-                          Start Work
-                        </Button>
-                      )}
-                      {task.status !== 'Completed' && task.status !== 'Overdue' && (
-                        <Button
-                          size="sm"
-                          className="bg-green-600 text-white text-xs md:text-sm h-8 md:h-9 px-2 md:px-3"
-                          onClick={() => handleQuickStatusUpdate('Completed')}
-                        >
-                          Mark Done
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                </div>
-              )}
-
-              {task.description && !editMode && (
-                <div className="bg-gray-50 p-2 md:p-4 rounded-lg mt-3 md:mt-4">
-                  <p className="text-xs text-gray-600 font-medium uppercase mb-1 md:mb-2">Description</p>
-                  <p className="text-xs md:text-sm text-gray-700 whitespace-pre-wrap">{task.description}</p>
-                </div>
-              )}
-          </div>
-
-          {/* Comments Section */}
-          <div className="border-t pt-4 md:pt-8">
-            <h3 className="text-base md:text-lg font-bold mb-3 md:mb-4 flex items-center gap-2 text-gray-900">
-              <MessageSquare className="h-4 md:h-5 w-4 md:w-5" />
-              <span>Comments</span>
-            </h3>
-            
-            <div className="space-y-3">
-              <div className="flex gap-1 md:gap-2">
-                <Input
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="Add a comment..."
-                  className="text-gray-900 text-xs md:text-sm h-8 md:h-9"
-                  onKeyPress={(e) => e.key === 'Enter' && handleAddComment()}
-                />
-                <Button size="sm" onClick={handleAddComment} className="bg-blue-600 text-white h-8 md:h-9 px-2 md:px-3">
-                  <Send className="h-3 md:h-4 w-3 md:w-4" />
-                </Button>
+          {editMode ? (
+            <div className="space-y-3 rounded-lg border border-gray-200 bg-slate-50 p-4">
+              <div>
+                <Label className="text-xs font-medium text-gray-700">Title</Label>
+                <Input className="mt-1 h-9" value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} />
               </div>
-
-              {loadingComments ? (
-                <div className="text-center py-4 text-gray-400 text-xs">Loading comments...</div>
-              ) : comments.length === 0 ? (
-                <div className="text-center py-6 md:py-8 text-gray-400 text-xs">No comments yet</div>
-              ) : (
-                <div className="space-y-2 md:space-y-3">
-                  {comments.map((comment) => (
-                    <div key={comment.id} className="bg-gray-50 p-2 md:p-3 rounded-lg">
-                      <div className="flex justify-between items-start mb-0.5 md:mb-1 gap-2">
-                        <p className="text-xs md:text-sm font-semibold text-gray-900 truncate">{comment.author_name}</p>
-                        <p className="text-xs text-gray-500 whitespace-nowrap">
-                          {formatISTDate(comment.created_at)}
-                        </p>
-                      </div>
-                      <p className="text-xs md:text-sm text-gray-700">{comment.content}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-
-
-          {/* Attachments Section */}
-          <div className="border-t pt-4 md:pt-8">
-            <h3 className="text-base md:text-lg font-bold mb-3 md:mb-4 flex items-center gap-2 text-gray-900">
-              <Paperclip className="h-4 md:h-5 w-4 md:w-5" />
-              <span>Attachments</span>
-            </h3>
-
-            <div className="space-y-3">
-              <label className="border-2 border-dashed border-gray-300 rounded-lg p-4 md:p-6 text-center cursor-pointer hover:bg-gray-50 transition">
-                <Paperclip className="h-5 md:h-6 w-5 md:w-6 text-gray-400 mx-auto mb-2" />
-                <p className="text-xs md:text-sm text-gray-600">Click to upload files</p>
-                <input
-                  type="file"
-                  onChange={handleFileUpload}
-                  className="hidden"
+              <div>
+                <Label className="text-xs font-medium text-gray-700">Description</Label>
+                <textarea
+                  rows={3}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  value={editForm.description}
+                  onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))}
                 />
-              </label>
-
-              {loadingAttachments ? (
-                <div className="text-center py-4 text-gray-400 text-xs">Loading attachments...</div>
-              ) : attachments.length === 0 ? (
-                <div className="text-center py-6 md:py-8 text-gray-400 text-xs">No attachments yet</div>
-              ) : (
-                <div className="space-y-1 md:space-y-2">
-                  {attachments.map((attachment) => (
-                    <div key={attachment.id} className="flex items-center justify-between bg-gray-50 p-2 md:p-3 rounded-lg">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs md:text-sm font-semibold text-gray-900 truncate">{attachment.file_name}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {attachment.uploaded_by_name} • {formatISTDate(attachment.created_at)}
-                        </p>
-                      </div>
-                      <a
-                        href={attachment.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-2 text-blue-600 hover:text-blue-800 flex-shrink-0"
-                      >
-                        <Download className="h-3 md:h-4 w-3 md:w-4" />
-                      </a>
-                    </div>
-                  ))}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-medium text-gray-700">Due date</Label>
+                  <Input type="date" className="mt-1 h-9" value={editForm.due_date} onChange={(e) => setEditForm((p) => ({ ...p, due_date: e.target.value }))} />
                 </div>
-              )}
+                <div>
+                  <Label className="text-xs font-medium text-gray-700">Assign to</Label>
+                  <select
+                    className="mt-1 h-9 w-full rounded-md border border-gray-300 bg-white px-2 text-sm"
+                    value={editForm.assigned_to_employee_id}
+                    onChange={(e) => setEditForm((p) => ({ ...p, assigned_to_employee_id: e.target.value }))}
+                  >
+                    {employees.map((emp) => (
+                      <option key={emp.id} value={emp.employee_id}>{emp.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setEditMode(false)}>Cancel</Button>
+                <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" disabled={saving} onClick={saveEdit}>Save</Button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Assigned to</p>
+                  <p className="mt-0.5 font-medium text-gray-900">{task.assigned_to_name || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Assigned by</p>
+                  <p className="mt-0.5 font-medium text-gray-900">{task.created_by_name || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Estimate</p>
+                  <p className="mt-0.5 font-medium text-gray-900">{formatHours(task.estimated_time_minutes)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Created</p>
+                  <p className="mt-0.5 font-medium text-gray-900">{task.created_at ? formatISTDateTime(task.created_at) : '—'}</p>
+                </div>
+              </div>
+              {task.description ? (
+                <p className="whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-sm text-gray-700">{task.description}</p>
+              ) : null}
+              {canManage ? (
+                <Button size="sm" variant="outline" className="h-8" onClick={() => setEditMode(true)}>Edit assignment</Button>
+              ) : null}
+            </div>
+          )}
+
+          <section>
+            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <MessageSquare className="h-4 w-4" /> Updates
+            </h3>
+            <div className="flex gap-2">
+              <Input
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="Write an update…"
+                className="h-9"
+                onKeyDown={(e) => e.key === 'Enter' && addComment()}
+              />
+              <Button size="sm" className="h-9 bg-blue-600 text-white hover:bg-blue-700" onClick={addComment}>
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {comments.length === 0 ? (
+                <p className="text-xs text-gray-400">No updates yet.</p>
+              ) : comments.map((c) => (
+                <div key={c.id} className="rounded-md bg-slate-50 px-3 py-2">
+                  <div className="flex justify-between gap-2 text-[11px] text-gray-500">
+                    <span className="font-medium text-gray-800">{c.author_name}</span>
+                    <span>{formatISTDateTime(c.created_at)}</span>
+                  </div>
+                  <p className="mt-0.5 text-sm text-gray-700">{c.content}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <Clock className="h-4 w-4" /> Time spent
+            </h3>
+            <div className="flex gap-2">
+              <Input type="number" min="1" className="h-9 w-28" placeholder="Minutes" value={timeMinutes} onChange={(e) => setTimeMinutes(e.target.value)} />
+              <Input className="h-9 flex-1" placeholder="What did you do?" value={timeNote} onChange={(e) => setTimeNote(e.target.value)} />
+              <Button size="sm" variant="outline" className="h-9" onClick={addTime}>Log</Button>
+            </div>
+            <div className="mt-2 space-y-1">
+              {timeLogs.map((log) => (
+                <p key={log.id} className="text-xs text-gray-600">
+                  {log.time_spent_minutes} min · {log.logged_by_name} · {log.log_date}
+                  {log.description ? ` — ${log.description}` : ''}
+                </p>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <Paperclip className="h-4 w-4" /> Files
+            </h3>
+            <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-gray-300 px-3 py-4 text-xs text-gray-500 hover:bg-slate-50">
+              Attach a file
+              <input type="file" className="hidden" onChange={uploadFile} />
+            </label>
+            <div className="mt-2 space-y-1">
+              {attachments.map((att) => (
+                <div key={att.id} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2">
+                  <span className="truncate text-sm text-gray-800">{att.file_name}</span>
+                  <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600">
+                    <Download className="h-4 w-4" />
+                  </a>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {canDelete ? (
+            <Button variant="outline" className="h-8 border-red-200 text-red-700 hover:bg-red-50" onClick={deleteTask}>
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+              Delete task
+            </Button>
+          ) : null}
         </div>
       </SheetContent>
     </Sheet>
   );
 };
 
-// Main Tasks Component
 export const Tasks = () => {
   const { user } = useAuth();
-  const [boardData, setBoardData] = useState(null);
+  const canSeeAll = isAdminOrManagerUser(user);
+  const [tasks, setTasks] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [selectedTask, setSelectedTask] = useState(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState('');
-  const [viewMode, setViewMode] = useState('board'); // 'board' or 'dashboard'
-  const [dashboardStats, setDashboardStats] = useState(null);
-  
-  // Get current month dates
-  const getCurrentMonthDates = () => {
-    const now = new Date();
-    const startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-    return { startDate, endDate };
-  };
-  
-  const { startDate: defaultStart, endDate: defaultEnd } = getCurrentMonthDates();
-  const [dateRange, setDateRange] = useState({
-    startDate: defaultStart,
-    endDate: defaultEnd,
-  });
-  
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    assigned_to_employee_id: '',
-    due_date: '',
-    estimated_time_hours: '',
-  });
+  const [scope, setScope] = useState('mine');
+  const [statusFilter, setStatusFilter] = useState('open');
+  const [assigneeFilter, setAssigneeFilter] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [creating, setCreating] = useState(false);
+  const [selected, setSelected] = useState(null);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      distance: 8,
-      delay: 0,
-    }),
-    useSensor(KeyboardSensor)
-  );
-
-  const handleDateRangeChange = (key, value) => {
-    setDateRange((prev) => ({ ...prev, [key]: value }));
-    setTimeout(() => (viewMode === 'dashboard' ? fetchDashboardData() : fetchBoardData()), 100);
-  };
+  const fetchTasks = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/tasks`, authHeaders());
+      const list = Array.isArray(res.data) ? res.data : [];
+      setTasks(list);
+      return list;
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Could not load tasks'));
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    fetchEmployees();
-    if (viewMode === 'dashboard') {
-      fetchDashboardData();
-    } else {
-      fetchBoardData();
-    }
-  }, [viewMode, selectedEmployeeFilter]);
-
-  const fetchBoardData = async () => {
-    try {
-      const params = {};
-      if (searchTerm) params.search = searchTerm;
-      if (dateRange.startDate) params.start_date = dateRange.startDate;
-      if (dateRange.endDate) params.end_date = dateRange.endDate;
-      if (selectedEmployeeFilter && (user?.role === 'Admin' || user?.role === 'Manager')) {
-        params.employee_id = selectedEmployeeFilter;
+    fetchTasks();
+    (async () => {
+      try {
+        const res = await axios.get(`${API}/employees`, authHeaders());
+        setEmployees(Array.isArray(res.data) ? res.data : []);
+      } catch {
+        setEmployees([]);
       }
-      const response = await axios.get(`${API}/tasks/board`, {
-        params,
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+    })();
+  }, [fetchTasks]);
+
+  const filtered = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    const mineId = user?.employee_id;
+    return [...tasks]
+      .filter((t) => {
+        if (scope === 'mine' && t.assigned_to_employee_id !== mineId) return false;
+        if (assigneeFilter && t.assigned_to_employee_id !== assigneeFilter) return false;
+        if (statusFilter === 'open' && !isOpenStatus(t.status)) return false;
+        if (statusFilter === 'todo' && t.status !== 'Pending' && t.status !== 'Overdue') return false;
+        if (statusFilter === 'progress' && t.status !== 'In Progress') return false;
+        if (statusFilter === 'done' && t.status !== 'Completed') return false;
+        if (statusFilter === 'overdue' && t.status !== 'Overdue' && !(isOpenStatus(t.status) && t.due_date && t.due_date < isoToday())) return false;
+        if (!q) return true;
+        return [t.title, t.task_id, t.assigned_to_name, t.description].some((v) => String(v || '').toLowerCase().includes(q));
+      })
+      .sort((a, b) => {
+        const rank = (t) => {
+          if (t.status === 'Overdue' || (isOpenStatus(t.status) && t.due_date && t.due_date < isoToday())) return 0;
+          if (t.status === 'In Progress') return 1;
+          if (t.status === 'Pending') return 2;
+          return 3;
+        };
+        const d = rank(a) - rank(b);
+        if (d !== 0) return d;
+        return String(a.due_date || '').localeCompare(String(b.due_date || ''));
       });
-      setBoardData(response.data);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching board:', error);
-      toast.error('Failed to load board');
-      setLoading(false);
-    }
-  };
+  }, [tasks, searchTerm, scope, statusFilter, assigneeFilter, user?.employee_id]);
 
-  const fetchEmployees = async () => {
-    try {
-      const response = await axios.get(`${API}/employees`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      setEmployees(response.data);
-    } catch (error) {
-      console.error('Error fetching employees:', error);
-    }
-  };
+  const stats = useMemo(() => {
+    const pool = scope === 'mine' ? tasks.filter((t) => t.assigned_to_employee_id === user?.employee_id) : tasks;
+    const today = isoToday();
+    return {
+      open: pool.filter((t) => isOpenStatus(t.status)).length,
+      progress: pool.filter((t) => t.status === 'In Progress').length,
+      overdue: pool.filter((t) => isOpenStatus(t.status) && t.due_date && t.due_date < today).length,
+      done: pool.filter((t) => t.status === 'Completed').length,
+    };
+  }, [tasks, scope, user?.employee_id]);
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      const params = {};
-      if (dateRange.startDate) params.start_date = dateRange.startDate;
-      if (dateRange.endDate) params.end_date = dateRange.endDate;
-      if (selectedEmployeeFilter && (user?.role === 'Admin' || user?.role === 'Manager')) {
-        params.employee_id = selectedEmployeeFilter;
-      }
-      const response = await axios.get(`${API}/tasks/dashboard`, {
-        params,
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      setDashboardStats(response.data);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching dashboard:', error);
-      toast.error('Failed to load dashboard');
-      setLoading(false);
-    }
-  };
-
-  const handleDragEnd = async (event) => {
-    // Only Admin and Manager can change task status via drag and drop
-    if (user?.role !== 'Admin' && user?.role !== 'Manager') {
-      toast.error('Only Admin and Manager can change task status');
-      return;
-    }
-
-    const { active, over } = event;
-
-    if (!over || active.id === over.id) return;
-
-    let task = null;
-    let oldStatus = null;
-
-    // Find the task being dragged
-    for (const column of boardData?.columns || []) {
-      const foundTask = column.tasks.find((t) => t.id === active.id);
-      if (foundTask) {
-        task = foundTask;
-        oldStatus = column.status;
-        break;
-      }
-    }
-
-    if (!task) return;
-
-    // Determine the new status based on where the task was dropped
-    let newStatus = oldStatus;
-    
-    // First check if over.id is a column status directly
-    for (const column of boardData?.columns || []) {
-      if (column.status === over.id) {
-        newStatus = column.status;
-        break;
-      }
-    }
-    
-    // If not, check if over.id is a task in another column
-    if (newStatus === oldStatus) {
-      for (const column of boardData?.columns || []) {
-        const isTaskInColumn = column.tasks.some((t) => t.id === over.id);
-        if (isTaskInColumn) {
-          newStatus = column.status;
-          break;
-        }
-      }
-    }
-
-    if (newStatus === oldStatus) return;
-
-    try {
-      await axios.put(
-        `${API}/tasks/${task.id}/status`,
-        { status: newStatus },
-        {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-        }
-      );
-      toast.success(`Task moved to ${newStatus}`);
-      await fetchBoardData();
-    } catch (error) {
-      console.error('Error updating task status:', error);
-      toast.error('Failed to move task');
-    }
-  };
-
-  const handleStatusChange = async (taskId, newStatus) => {
-    // Only Admin and Manager can change task status
-    if (user?.role !== 'Admin' && user?.role !== 'Manager') {
-      toast.error('Only Admin and Manager can change task status');
-      return;
-    }
-
-    try {
-      await axios.put(
-        `${API}/tasks/${taskId}/status`,
-        { status: newStatus },
-        {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-        }
-      );
-      toast.success(`Task status updated to ${newStatus}`);
-      await fetchBoardData();
-    } catch (error) {
-      console.error('Error updating task status:', error);
-      toast.error('Failed to update task status');
-    }
-  };
-
-  const handleCreateTask = async (e) => {
+  const createTask = async (e) => {
     e.preventDefault();
-
-    // Any authenticated user can create tasks
-    if (!formData.title || !formData.assigned_to_employee_id || !formData.due_date) {
-      toast.error('Please fill in all required fields');
+    if (!form.title.trim() || !form.assigned_to_employee_id || !form.due_date) {
+      toast.error('Title, assignee, and due date are required');
       return;
     }
-
-    // Estimated time hours is required
-    if (!formData.estimated_time_hours || parseFloat(formData.estimated_time_hours) <= 0) {
-      toast.error('Estimated time (hours) is required and must be greater than 0');
-      return;
-    }
-
+    setCreating(true);
     try {
-      await axios.post(`${API}/tasks`, formData, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      toast.success('Task created successfully');
-      setCreateDialogOpen(false);
-      resetForm();
-      await fetchBoardData();
+      const payload = {
+        title: form.title.trim(),
+        description: form.description.trim() || null,
+        assigned_to_employee_id: form.assigned_to_employee_id,
+        due_date: form.due_date,
+      };
+      if (form.estimated_time_hours) payload.estimated_time_hours = parseFloat(form.estimated_time_hours);
+      await axios.post(`${API}/tasks`, payload, authHeaders());
+      toast.success('Task assigned');
+      setCreateOpen(false);
+      setForm(EMPTY_FORM);
+      await fetchTasks();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to create task');
+      toast.error(getApiErrorMessage(error, 'Could not assign task'));
+    } finally {
+      setCreating(false);
     }
   };
 
-  const handleTaskUpdate = async () => {
-    if (viewMode === 'dashboard') {
-      await fetchDashboardData();
-    } else {
-      await fetchBoardData();
+  const quickStatus = async (task, status, e) => {
+    e.stopPropagation();
+    try {
+      await axios.put(`${API}/tasks/${task.id}/status`, { status }, authHeaders());
+      toast.success(status === 'Completed' ? 'Marked done' : 'Started');
+      await fetchTasks();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Could not update task'));
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      title: '',
-      description: '',
-      assigned_to_employee_id: '',
-      due_date: '',
-      estimated_time_hours: '',
-    });
-  };
+  const pageHeaderActions = useMemo(() => (
+    <Button className="h-9" onClick={() => { setForm(EMPTY_FORM); setCreateOpen(true); }}>
+      <Plus className="h-4 w-4 mr-1.5" />
+      Assign task
+    </Button>
+  ), []);
+
+  useRegisterPageHeader({
+    subtitle: `${stats.open} open · ${stats.overdue} overdue`,
+    actions: pageHeaderActions,
+    enabled: !loading,
+  });
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4" />
-          <p className="text-gray-600">Loading Kanban board...</p>
-        </div>
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
 
+  const chips = [
+    { id: 'open', label: 'Open' },
+    { id: 'todo', label: 'To do' },
+    { id: 'progress', label: 'In progress' },
+    { id: 'overdue', label: 'Overdue' },
+    { id: 'done', label: 'Done' },
+    { id: 'all', label: 'All' },
+  ];
+
   return (
-    <div className="h-full flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
-        <div className="px-3 md:px-6 py-3 md:py-4">
-          <div className="flex items-center justify-between mb-3 gap-2">
-            <div className="min-w-0">
-              <h1 className="text-lg md:text-2xl font-bold text-gray-900">Tasks</h1>
-              <p className="text-gray-600 text-xs mt-0.5 truncate">
-                {boardData?.total_tasks || dashboardStats?.total_tasks || 0} total • {boardData?.user_tasks || 0} assigned to you
-              </p>
-            </div>
-            <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-blue-600 text-white hover:bg-blue-700 h-9 px-2 md:px-3 text-xs md:text-sm whitespace-nowrap">
-                  <Plus className="h-4 w-4 md:mr-1" />
-                  <span className="hidden md:inline">New Task</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-2xl bg-white rounded-lg border border-gray-200 shadow-xl p-0 max-h-[90vh] overflow-y-auto w-[95vw]">
-                <div className="bg-blue-600 text-white p-4 md:p-6 rounded-t-lg">
-                  <DialogHeader>
-                    <DialogTitle className="text-lg md:text-xl font-bold text-white">Create New Task</DialogTitle>
-                    <p className="text-blue-100 text-xs md:text-sm mt-1">Assign a new task to team members</p>
-                  </DialogHeader>
-                </div>
-                <form onSubmit={handleCreateTask} className="space-y-3 md:space-y-4 p-4 md:p-6">
-                  <div>
-                    <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">
-                      Task Title <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      value={formData.title}
-                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                      placeholder="What needs to be done?"
-                      className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">Description</Label>
-                    <textarea
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      placeholder="Add details..."
-                      rows={2}
-                      className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-3">
-                    <div>
-                      <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">
-                        Due Date <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="date"
-                        value={formData.due_date}
-                        onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                        className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">
-                        Est. Time (hours) <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="number"
-                        value={formData.estimated_time_hours}
-                        onChange={(e) => setFormData({ ...formData, estimated_time_hours: e.target.value })}
-                        placeholder="Enter hours"
-                        className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
-                        required
-                        min="0.5"
-                        step="0.5"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Required for task planning and tracking</p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label className="text-xs md:text-sm font-semibold text-gray-900 block mb-1">
-                      Assign To <span className="text-red-500">*</span>
-                    </Label>
-                    <select
-                      value={formData.assigned_to_employee_id}
-                      onChange={(e) => setFormData({ ...formData, assigned_to_employee_id: e.target.value })}
-                      className="w-full border border-gray-300 rounded px-2 py-2 text-sm"
-                      required
-                    >
-                      <option value="">Select employee</option>
-                      {employees.map((emp) => (
-                        <option key={emp.id} value={emp.employee_id}>
-                          {emp.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex gap-2 justify-end pt-2 border-t border-gray-200">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setCreateDialogOpen(false)}
-                      className="h-9 px-3 text-xs md:text-sm"
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      type="submit" 
-                      className="bg-blue-600 text-white hover:bg-blue-700 h-9 px-3 text-xs md:text-sm"
-                    >
-                      <Plus className="h-4 w-4 md:mr-1" />
-                      <span className="hidden md:inline">Create</span>
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          {/* Filters Row */}
-          <div className="flex gap-1 md:gap-2 items-center flex-wrap">
-            {(user?.role === 'Admin' || user?.role === 'Manager') && (
-              <select
-                value={selectedEmployeeFilter}
-                onChange={(e) => setSelectedEmployeeFilter(e.target.value)}
-                className="h-8 border border-gray-300 rounded px-1.5 md:px-2 text-xs bg-white"
-              >
-                <option value="">All Emp</option>
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.employee_id}>
-                    {emp.name.split(' ')[0]}
-                  </option>
-                ))}
-              </select>
-            )}
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="h-8 border border-gray-300 rounded px-1.5 md:px-2 text-xs bg-white flex items-center gap-1 min-w-fit"
-                  title="Start date"
-                >
-                  <CalendarIcon className="h-3 md:h-3.5 w-3 md:w-3.5 text-gray-500 flex-shrink-0" />
-                  <span className="truncate max-w-[80px] md:max-w-none">
-                    {dateRange.startDate ? formatISTDate(dateRange.startDate) : 'Start'}
-                  </span>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={dateRange.startDate ? new Date(dateRange.startDate) : undefined}
-                  onSelect={(date) => {
-                    if (!date) return;
-                    const value = date.toISOString().split('T')[0];
-                    handleDateRangeChange('startDate', value);
-                  }}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-            <span className="text-gray-400 text-xs hidden md:inline">-</span>
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="h-8 border border-gray-300 rounded px-1.5 md:px-2 text-xs bg-white flex items-center gap-1 min-w-fit"
-                  title="End date"
-                >
-                  <CalendarIcon className="h-3 md:h-3.5 w-3 md:w-3.5 text-gray-500 flex-shrink-0" />
-                  <span className="truncate max-w-[80px] md:max-w-none">
-                    {dateRange.endDate ? formatISTDate(dateRange.endDate) : 'End'}
-                  </span>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={dateRange.endDate ? new Date(dateRange.endDate) : undefined}
-                  onSelect={(date) => {
-                    if (!date) return;
-                    const value = date.toISOString().split('T')[0];
-                    handleDateRangeChange('endDate', value);
-                  }}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-
-            <div className="flex-1 md:flex-0 md:w-48 min-w-[120px]">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 md:h-3.5 w-3 md:w-3.5 text-gray-400" />
-                <Input
-                  placeholder="Search..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-6 h-8 text-xs"
-                  onKeyUp={() => setTimeout(() => fetchBoardData(), 300)}
-                />
-              </div>
-            </div>
-
-            {(user?.role === 'Admin' || user?.role === 'Manager') && (
-              <div className="flex gap-1 items-center text-xs text-gray-600">
-                <span className="hidden md:inline">View:</span>
-                <button
-                  onClick={() => setViewMode('board')}
-                  className={`px-2 py-1 rounded text-xs ${
-                    viewMode === 'board'
-                      ? 'bg-blue-100 text-blue-700 font-medium'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  Board
-                </button>
-                <button
-                  onClick={() => setViewMode('dashboard')}
-                  className={`px-2 py-1 rounded text-xs ${
-                    viewMode === 'dashboard'
-                      ? 'bg-blue-100 text-blue-700 font-medium'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  Dash
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+    <div className="space-y-5" data-testid="tasks-page">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Card className="p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Open</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{stats.open}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">In progress</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-indigo-600">{stats.progress}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Overdue</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-rose-600">{stats.overdue}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Done</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-emerald-700">{stats.done}</p>
+        </Card>
       </div>
 
-      {/* Dashboard View */}
-      {viewMode === 'dashboard' && dashboardStats && (
-        <div className="flex-1 overflow-y-auto p-2 md:p-6">
-          <div className="max-w-7xl mx-auto">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 md:gap-4 mb-4 md:mb-6">
-              <div className="bg-white rounded-lg border border-gray-200 p-2 md:p-4">
-                <p className="text-xs text-gray-600 font-medium uppercase">Total</p>
-                <p className="text-xl md:text-3xl font-bold text-gray-900 mt-1 md:mt-2">{dashboardStats.total_tasks}</p>
-              </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-2 md:p-4">
-                <p className="text-xs text-gray-600 font-medium uppercase">Pending</p>
-                <p className="text-xl md:text-3xl font-bold text-orange-600 mt-1 md:mt-2">{dashboardStats.pending_count}</p>
-              </div>
-              <div className="hidden md:block bg-white rounded-lg border border-gray-200 p-2 md:p-4">
-                <p className="text-xs text-gray-600 font-medium uppercase">In Progress</p>
-                <p className="text-xl md:text-3xl font-bold text-blue-600 mt-1 md:mt-2">{dashboardStats.in_progress_count}</p>
-              </div>
-              <div className="hidden lg:block bg-white rounded-lg border border-gray-200 p-2 md:p-4">
-                <p className="text-xs text-gray-600 font-medium uppercase">Completed</p>
-                <p className="text-xl md:text-3xl font-bold text-green-600 mt-1 md:mt-2">{dashboardStats.completed_count}</p>
-              </div>
-              <div className="hidden lg:block bg-white rounded-lg border border-gray-200 p-2 md:p-4">
-                <p className="text-xs text-gray-600 font-medium uppercase">Overdue</p>
-                <p className="text-xl md:text-3xl font-bold text-red-600 mt-1 md:mt-2">{dashboardStats.overdue_count}</p>
-              </div>
+      <Card className="p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          {canSeeAll ? (
+            <div className="flex rounded-lg bg-muted p-0.5">
+              <button
+                type="button"
+                className={cn('h-8 rounded-md px-3 text-sm font-medium', scope === 'mine' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                onClick={() => setScope('mine')}
+              >
+                My tasks
+              </button>
+              <button
+                type="button"
+                className={cn('h-8 rounded-md px-3 text-sm font-medium', scope === 'all' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+                onClick={() => setScope('all')}
+              >
+                Everyone
+              </button>
             </div>
-
-            {/* Visible on mobile but not desktop */}
-            <div className="grid grid-cols-2 md:hidden gap-2 mb-4">
-              <div className="bg-white rounded-lg border border-gray-200 p-2">
-                <p className="text-xs text-gray-600 font-medium uppercase">In Progress</p>
-                <p className="text-lg font-bold text-blue-600 mt-1">{dashboardStats.in_progress_count}</p>
-              </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-2">
-                <p className="text-xs text-gray-600 font-medium uppercase">Overdue</p>
-                <p className="text-lg font-bold text-red-600 mt-1">{dashboardStats.overdue_count}</p>
-              </div>
-            </div>
-
-            {/* Employee Details */}
-            <div className="bg-white rounded-lg border border-gray-200 p-3 md:p-6">
-              <h2 className="text-base md:text-lg font-bold text-gray-900 mb-3 md:mb-4">Task Details by Employee</h2>
-              <div className="overflow-x-auto -mx-3 md:-mx-0">
-                <table className="w-full text-xs md:text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className="text-left py-2 md:py-3 px-3 md:px-4 text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Employee</th>
-                      <th className="text-center py-2 md:py-3 px-1 md:px-4 text-xs font-semibold text-gray-600 uppercase">Total</th>
-                      <th className="hidden md:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs font-semibold text-gray-600 uppercase">Pending</th>
-                      <th className="hidden lg:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs font-semibold text-gray-600 uppercase">Progress</th>
-                      <th className="hidden lg:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs font-semibold text-gray-600 uppercase">Completed</th>
-                      <th className="hidden md:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs font-semibold text-gray-600 uppercase">Overdue</th>
-                      <th className="text-center py-2 md:py-3 px-1 md:px-4 text-xs font-semibold text-gray-600 uppercase">Avg %</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dashboardStats.employees?.map((emp, idx) => (
-                      <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-2 md:py-3 px-3 md:px-4 text-xs md:text-sm font-medium text-gray-900 whitespace-nowrap">{emp.name.split(' ')[0]}</td>
-                        <td className="text-center py-2 md:py-3 px-1 md:px-4 text-xs md:text-sm text-gray-600 font-medium">{emp.total_tasks}</td>
-                        <td className="hidden md:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs md:text-sm text-orange-600 font-medium">{emp.pending}</td>
-                        <td className="hidden lg:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs md:text-sm text-blue-600 font-medium">{emp.in_progress}</td>
-                        <td className="hidden lg:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs md:text-sm text-green-600 font-medium">{emp.completed}</td>
-                        <td className="hidden md:table-cell text-center py-2 md:py-3 px-1 md:px-4 text-xs md:text-sm text-red-600 font-medium">{emp.overdue}</td>
-                        <td className="py-2 md:py-3 px-1 md:px-4">
-                          <div className="flex items-center gap-1 justify-center">
-                            <div className="w-10 md:w-20 bg-gray-200 rounded-full h-1.5 md:h-2">
-                              <div 
-                                className="bg-blue-600 h-1.5 md:h-2 rounded-full"
-                                style={{ width: `${emp.avg_completion_percentage}%` }}
-                              ></div>
-                            </div>
-                            <span className="font-semibold text-gray-700 min-w-[35px] md:min-w-[45px] text-xs md:text-sm">{Math.round(emp.avg_completion_percentage)}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Task List by Employee (if filtered) */}
-            {selectedEmployeeFilter && dashboardStats.tasks && (
-              <div className="bg-white rounded-lg border border-gray-200 p-3 md:p-6 mt-4 md:mt-6">
-                <h2 className="text-base md:text-lg font-bold text-gray-900 mb-3 md:mb-4">
-                  Tasks for {employees.find(e => e.employee_id === selectedEmployeeFilter)?.name}
-                </h2>
-                <div className="space-y-2 md:space-y-3">
-                  {dashboardStats.tasks.map((task) => (
-                    <div 
-                      key={task.id} 
-                      className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 p-2 md:p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
-                      onClick={() => {
-                        setSelectedTask(task);
-                        setDetailsOpen(true);
-                      }}
-                    >
-                      <div className="flex-1">
-                        <p className="font-medium text-xs md:text-sm text-gray-900">{task.title}</p>
-                        <p className="text-xs text-gray-600">{task.task_id} • {task.status}</p>
-                      </div>
-                      <div className="flex items-center gap-2 md:gap-4">
-                        <div className="flex items-center gap-1">
-                          <div className="w-16 md:w-20 bg-gray-200 rounded-full h-1.5 md:h-2">
-                            <div 
-                              className="bg-blue-600 h-1.5 md:h-2 rounded-full"
-                              style={{ width: `${task.completion_percentage}%` }}
-                            ></div>
-                          </div>
-                          <span className="font-semibold text-gray-700 min-w-[35px] md:min-w-[45px] text-xs md:text-sm">{task.completion_percentage}%</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+          ) : null}
+          <div className="flex flex-wrap gap-1.5">
+            {chips.map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                onClick={() => setStatusFilter(chip.id)}
+                className={cn(
+                  'h-8 rounded-full border px-3 text-xs font-medium',
+                  statusFilter === chip.id ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground hover:bg-muted',
+                )}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+          {canSeeAll && scope === 'all' ? (
+            <select
+              value={assigneeFilter}
+              onChange={(e) => setAssigneeFilter(e.target.value)}
+              className="h-9 rounded-lg border border-input bg-card px-2 text-sm"
+            >
+              <option value="">All people</option>
+              {employees.map((emp) => (
+                <option key={emp.id} value={emp.employee_id}>{emp.name}</option>
+              ))}
+            </select>
+          ) : null}
+          <div className="relative min-w-[180px] flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search title, person, or ID…"
+              className="h-9 pl-9"
+            />
           </div>
         </div>
-      )}
+      </Card>
 
-      {/* Kanban Board View */}
-      {viewMode === 'board' && boardData && (
-        <div className="flex-1 overflow-auto p-2 md:p-6">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCorners}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext 
-              items={boardData.columns.flatMap((col) => col.tasks.map((t) => t.id))}
-              strategy={verticalListSortingStrategy}
-            >
-              <div className="flex flex-col lg:flex-row gap-3 md:gap-6 min-h-max">
-                {boardData.columns.map((column) => (
-                  <div key={column.status} className="flex-1 min-w-full lg:min-w-[320px]">
-                    <KanbanColumn
-                      status={column.status}
-                      tasks={column.tasks}
-                      onCardClick={(task) => {
-                        setSelectedTask(task);
-                        setDetailsOpen(true);
-                      }}
-                      onStatusChange={handleStatusChange}
-                      user={user}
-                    />
-                  </div>
+      <Card className="overflow-hidden">
+        {filtered.length === 0 ? (
+          <div className="px-6 py-16 text-center">
+            <p className="font-medium text-foreground">No tasks here</p>
+            <p className="mt-1 text-sm text-muted-foreground">Assign a task to someone, then track it from To do → In progress → Done.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="app-table">
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th>Assigned to</th>
+                  <th>Due</th>
+                  <th>Status</th>
+                  <th className="text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((task) => {
+                  const mine = task.assigned_to_employee_id === user?.employee_id;
+                  const canAct = mine || canSeeAll;
+                  return (
+                    <tr
+                      key={task.id}
+                      className="cursor-pointer border-b border-gray-100 hover:bg-slate-50/80"
+                      onClick={() => setSelected(task)}
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-900">{task.title}</p>
+                        <p className="mt-0.5 font-mono text-[11px] text-gray-500">{task.task_id}</p>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">
+                        <span className="inline-flex items-center gap-1.5">
+                          <User className="h-3.5 w-3.5 text-gray-400" />
+                          {task.assigned_to_name || '—'}
+                        </span>
+                      </td>
+                      <td className={cn('px-4 py-3', isOpenStatus(task.status) && task.due_date < isoToday() ? 'font-medium text-red-600' : 'text-gray-700')}>
+                        <span className="inline-flex items-center gap-1.5">
+                          <CalendarIcon className="h-3.5 w-3.5 text-gray-400" />
+                          {dueLabel(task.due_date, task.status)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusPill status={task.status} />
+                      </td>
+                      <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                        {canAct && task.status !== 'Completed' ? (
+                          <div className="inline-flex gap-1">
+                            {task.status !== 'In Progress' ? (
+                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={(e) => quickStatus(task, 'In Progress', e)}>
+                                Start
+                              </Button>
+                            ) : null}
+                            <Button size="sm" className="h-7 bg-emerald-600 text-xs text-white hover:bg-emerald-700" onClick={(e) => quickStatus(task, 'Completed', e)}>
+                              Done
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">View</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-w-lg bg-white">
+          <DialogHeader>
+            <DialogTitle>Assign a task</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={createTask} className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium text-gray-700">What needs to be done</Label>
+              <Input className="mt-1.5 h-10" value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} placeholder="Short title" required />
+            </div>
+            <div>
+              <Label className="text-sm font-medium text-gray-700">Details</Label>
+              <textarea
+                rows={3}
+                className="mt-1.5 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                value={form.description}
+                onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+                placeholder="Optional context"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium text-gray-700">Assign to</Label>
+              <select
+                className="mt-1.5 h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+                value={form.assigned_to_employee_id}
+                onChange={(e) => setForm((p) => ({ ...p, assigned_to_employee_id: e.target.value }))}
+                required
+              >
+                <option value="">Select a person</option>
+                {employees.filter((e) => String(e.status || 'Active').toLowerCase() === 'active').map((emp) => (
+                  <option key={emp.id} value={emp.employee_id}>{emp.name}</option>
                 ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-sm font-medium text-gray-700">Due date</Label>
+                <Input type="date" className="mt-1.5 h-10" value={form.due_date} onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))} required />
               </div>
-            </SortableContext>
-          </DndContext>
-        </div>
-      )}
+              <div>
+                <Label className="text-sm font-medium text-gray-700">Estimate (hours)</Label>
+                <Input type="number" min="0.5" step="0.5" className="mt-1.5 h-10" value={form.estimated_time_hours} onChange={(e) => setForm((p) => ({ ...p, estimated_time_hours: e.target.value }))} placeholder="Optional" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={creating}>
+                {creating ? 'Assigning…' : 'Assign task'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-      {/* Task Details Modal */}
-      <TaskDetailsModal
-        task={selectedTask}
-        isOpen={detailsOpen}
-        onClose={() => {
-          setDetailsOpen(false);
-          setSelectedTask(null);
+      <TaskDetailsSheet
+        task={selected}
+        open={!!selected}
+        onClose={() => setSelected(null)}
+        onChanged={async () => {
+          const list = await fetchTasks();
+          setSelected((prev) => (prev ? list.find((t) => t.id === prev.id) || null : null));
         }}
-        onUpdate={handleTaskUpdate}
         user={user}
         employees={employees}
       />

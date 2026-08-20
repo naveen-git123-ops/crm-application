@@ -55,8 +55,8 @@ export const LogoutConfirmDialog = ({ isOpen, onClose, onLogoutConfirmed, user }
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-red-600">
-            <AlertCircle className="h-5 w-5" />
+          <DialogTitle className="flex items-center gap-2 text-foreground">
+            <AlertCircle className="h-5 w-5 text-primary" />
             Daily Work Log Required
           </DialogTitle>
           <DialogDescription>
@@ -75,7 +75,7 @@ export const LogoutConfirmDialog = ({ isOpen, onClose, onLogoutConfirmed, user }
               onChange={(e) => setWorkSummary(e.target.value)}
               placeholder="Describe what you worked on today..."
               rows={5}
-              className="w-full mt-2 border border-gray-300 rounded-lg p-3 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full mt-2 border border-input rounded-lg p-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary/50"
             />
           </div>
         </div>
@@ -89,7 +89,6 @@ export const LogoutConfirmDialog = ({ isOpen, onClose, onLogoutConfirmed, user }
             Cancel
           </Button>
           <Button
-            className="bg-blue-600 text-white hover:bg-blue-700"
             onClick={handleSubmitWorkLog}
             disabled={isSubmitting || !workSummary.trim()}
           >
