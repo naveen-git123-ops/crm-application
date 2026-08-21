@@ -4284,11 +4284,11 @@ def telegram_link_status(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    chat_id = (
-        _telegram_chat_id_for_employee(db, current_user.employee_id)
-        if current_user.employee_id
-        else getattr(current_user, 'telegram_chat_id', None)
-    )
+    chat_id = None
+    if current_user.employee_id:
+        chat_id = _telegram_chat_id_for_employee(db, current_user.employee_id)
+    if not chat_id:
+        chat_id = getattr(current_user, 'telegram_chat_id', None)
     return TelegramStatusResponse(
         enabled=telegram_enabled(),
         linked=bool(chat_id),
@@ -4348,15 +4348,15 @@ def telegram_test_notification(
             status_code=503,
             detail='Telegram is not configured on the server (TELEGRAM_BOT_TOKEN missing).',
         )
-    chat_id = (
-        _telegram_chat_id_for_employee(db, current_user.employee_id)
-        if current_user.employee_id
-        else getattr(current_user, 'telegram_chat_id', None)
-    )
+    chat_id = None
+    if current_user.employee_id:
+        chat_id = _telegram_chat_id_for_employee(db, current_user.employee_id)
+    if not chat_id:
+        chat_id = getattr(current_user, 'telegram_chat_id', None)
     if not chat_id:
         raise HTTPException(
             status_code=400,
-            detail='No Telegram Chat ID on your profile. Add it under Employees → Edit, or use Connect to Telegram.',
+            detail='No Telegram Chat ID on your profile. Open Settings and tap Connect to Telegram.',
         )
     message = (
         'Resoline CRM — test notification\n\n'

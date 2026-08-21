@@ -229,7 +229,13 @@ export const Layout = () => {
       label: 'Admin',
       items: [
         { icon: Shield, label: 'Roles', path: '/roles', permission: 'roles' },
-        { icon: Settings, label: 'Settings', path: '/settings', permission: 'settings' },
+      ],
+    },
+    {
+      id: 'account',
+      label: 'Account',
+      items: [
+        { icon: Settings, label: 'Settings', path: '/settings' },
       ],
     },
   ];

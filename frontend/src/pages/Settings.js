@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, Mail, Shield, Calendar, Upload, MapPin, Send, ExternalLink } from 'lucide-react';
+import { User, Mail, Shield, Calendar, Upload, MapPin, Send, ExternalLink, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
@@ -26,6 +26,7 @@ export const Settings = () => {
   const [telegramConnectUrl, setTelegramConnectUrl] = useState(null);
   const [manualChatId, setManualChatId] = useState('');
   const [savingChatId, setSavingChatId] = useState(false);
+  const [showManualChatId, setShowManualChatId] = useState(false);
 
   const refreshTelegramStatus = () => {
     axios
@@ -254,50 +255,84 @@ export const Settings = () => {
       {telegramStatus.enabled ? (
         <Card className="p-5 sm:p-6">
           <div className="flex items-start gap-3 mb-4">
-            <Send className="h-6 w-6 text-blue-600 mt-0.5 shrink-0" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#229ED9]/10">
+              <Send className="h-5 w-5 text-[#1c8ac2]" />
+            </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Telegram notifications</h3>
-              <p className="text-sm text-gray-600 mt-1">
-                Link @{telegramStatus.bot_username || 'Resoline_bot'} to receive login, leave, task, and approval alerts on Telegram.
+              <h3 className="text-sm font-semibold tracking-tight text-foreground">Connect Telegram</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Link your own Telegram to @{telegramStatus.bot_username || 'Resoline_bot'} to get login, leave, task, and approval alerts. You can do this yourself — no admin is needed.
               </p>
             </div>
           </div>
 
           {telegramStatus.linked ? (
-            <div className="space-y-3">
-              <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
-                Telegram Chat ID is configured on your profile{telegramStatus.chat_id ? ` (${telegramStatus.chat_id})` : ''}.
+            <div className="space-y-4">
+              <p className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-start gap-2">
+                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>
+                  Your Telegram is connected{telegramStatus.chat_id ? ` (Chat ID ${telegramStatus.chat_id})` : ''}.
+                  You can punch in/out in the bot with <code className="text-xs bg-white px-1 rounded">/punchin</code> or <code className="text-xs bg-white px-1 rounded">/punchout</code>.
+                </span>
               </p>
-              <p className="text-sm text-gray-600">
-                You can also punch in/out via the bot: send <code className="text-xs bg-gray-100 px-1 rounded">/punchin</code> or <code className="text-xs bg-gray-100 px-1 rounded">/punchout</code> to @{telegramStatus.bot_username || 'Resoline_bot'}.
-              </p>
-              <Button
-                type="button"
-                onClick={handleTestTelegram}
-                disabled={telegramLoading}
-                className="bg-blue-600 text-white hover:bg-blue-700"
-              >
-                {telegramLoading ? 'Sending…' : 'Send test notification'}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  onClick={handleTestTelegram}
+                  disabled={telegramLoading}
+                >
+                  {telegramLoading ? 'Sending…' : 'Send test notification'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleConnectTelegram}
+                  disabled={telegramLoading}
+                >
+                  {telegramLoading ? 'Generating link…' : 'Reconnect Telegram'}
+                </Button>
+                <Button type="button" variant="outline" onClick={refreshTelegramStatus}>
+                  Refresh status
+                </Button>
+              </div>
+              {telegramConnectUrl ? (
+                <a
+                  href={telegramConnectUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setTimeout(refreshTelegramStatus, 8000)}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#229ED9] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#1c8ac2] transition-colors"
+                >
+                  <Send className="h-4 w-4" />
+                  Open @{telegramStatus.bot_username || 'Resoline_bot'} and tap Start
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              ) : null}
             </div>
           ) : (
             <div className="space-y-4">
-              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-                No Telegram Chat ID found yet. Connect automatically via the bot, or enter your Chat ID manually below.
+              <p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                Your Telegram is not connected yet. Use the button below — it opens the bot with your account already identified.
               </p>
 
-              {/* Option 1: One-click connect via bot deep link */}
-              <div className="space-y-2">
+              <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal pl-5">
+                <li>Tap <strong className="text-foreground">Connect Telegram</strong></li>
+                <li>Telegram opens @{telegramStatus.bot_username || 'Resoline_bot'}</li>
+                <li>Tap <strong className="text-foreground">Start</strong> in Telegram</li>
+                <li>Come back here and tap <strong className="text-foreground">Refresh status</strong></li>
+              </ol>
+
+              <div className="flex flex-wrap items-center gap-2">
                 {telegramConnectUrl ? (
                   <a
                     href={telegramConnectUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => setTimeout(refreshTelegramStatus, 8000)}
-                    className="inline-flex items-center gap-2 rounded-md bg-[#229ED9] px-4 py-2 text-sm font-medium text-white hover:bg-[#1c8ac2] transition-colors"
+                    className="inline-flex items-center gap-2 rounded-lg bg-[#229ED9] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#1c8ac2] transition-colors min-h-[44px]"
                   >
                     <Send className="h-4 w-4" />
-                    Open @{telegramStatus.bot_username || 'Resoline_bot'} to connect
+                    Open @{telegramStatus.bot_username || 'Resoline_bot'} and tap Start
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                 ) : (
@@ -305,69 +340,62 @@ export const Settings = () => {
                     type="button"
                     onClick={handleConnectTelegram}
                     disabled={telegramLoading}
-                    className="bg-[#229ED9] text-white hover:bg-[#1c8ac2]"
+                    className="bg-[#229ED9] text-white hover:bg-[#1c8ac2] min-h-[44px]"
                   >
                     <Send className="h-4 w-4 mr-2" />
-                    {telegramLoading ? 'Generating link…' : 'Connect to Telegram'}
+                    {telegramLoading ? 'Generating link…' : 'Connect Telegram'}
                   </Button>
                 )}
-                <p className="text-sm text-gray-600">
-                  {telegramConnectUrl
-                    ? <>Click the button above, then tap <strong>Start</strong> in Telegram to link automatically.</>
-                    : <>We'll generate a link that opens @{telegramStatus.bot_username || 'Resoline_bot'}. Tap <strong>Start</strong> there to link automatically.</>}
-                </p>
+                <Button type="button" variant="outline" onClick={refreshTelegramStatus}>
+                  Refresh status
+                </Button>
               </div>
 
-              <div className="flex items-center gap-3">
-                <div className="h-px flex-1 bg-gray-200" />
-                <span className="text-xs uppercase tracking-wider text-gray-400">or</span>
-                <div className="h-px flex-1 bg-gray-200" />
-              </div>
-
-              {/* Option 2: Manual self-service entry */}
-              <div className="space-y-2">
-                <Label htmlFor="manual_chat_id" className="text-sm font-medium text-gray-700">
-                  Enter your Telegram Chat ID manually
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="manual_chat_id"
-                    value={manualChatId}
-                    onChange={(e) => setManualChatId(e.target.value)}
-                    placeholder="e.g. 123456789"
-                    className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  />
-                  <Button
-                    type="button"
-                    onClick={handleSaveChatId}
-                    disabled={savingChatId}
-                    className="bg-blue-600 text-white hover:bg-blue-700 shrink-0"
-                  >
-                    {savingChatId ? 'Saving…' : 'Save'}
-                  </Button>
-                </div>
-                <p className="text-xs text-gray-500">
-                  Must be the numeric Chat ID (not your @username) — message @{telegramStatus.bot_username || 'Resoline_bot'} then check{' '}
-                  <code className="text-xs bg-gray-100 px-1 rounded">api.telegram.org/bot&lt;token&gt;/getUpdates</code> for it.
-                </p>
-              </div>
-
-              <Button
+              <button
                 type="button"
-                variant="outline"
-                className="border-gray-300"
-                onClick={refreshTelegramStatus}
+                className="text-xs font-medium text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+                onClick={() => setShowManualChatId((v) => !v)}
               >
-                Refresh connection status
-              </Button>
+                {showManualChatId ? 'Hide manual Chat ID' : 'I already have a Chat ID'}
+              </button>
+
+              {showManualChatId ? (
+                <div className="space-y-2">
+                  <Label htmlFor="manual_chat_id" className="text-sm font-medium">
+                    Telegram Chat ID
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="manual_chat_id"
+                      value={manualChatId}
+                      onChange={(e) => setManualChatId(e.target.value)}
+                      placeholder="e.g. 123456789"
+                      className="h-11"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleSaveChatId}
+                      disabled={savingChatId}
+                      className="shrink-0"
+                    >
+                      {savingChatId ? 'Saving…' : 'Save'}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Numeric Chat ID only (not your @username). Prefer Connect Telegram above if you are unsure.
+                  </p>
+                </div>
+              ) : null}
             </div>
           )}
         </Card>
       ) : (
-        <Card className="p-6 rounded-lg border border-amber-200 bg-amber-50 shadow-sm">
-          <h3 className="text-lg font-semibold text-gray-900">Telegram notifications</h3>
+        <Card className="p-5 sm:p-6 border-amber-200 bg-amber-50">
+          <h3 className="text-sm font-semibold tracking-tight text-foreground">Connect Telegram</h3>
           <p className="text-sm text-amber-900 mt-2">
-            Telegram is not configured on the server yet. Ask your admin to set <code className="text-xs bg-white px-1 rounded">TELEGRAM_BOT_TOKEN</code> in the backend environment and restart the API.
+            {user?.role === 'Admin'
+              ? <>Telegram is not configured on the server yet. Set <code className="text-xs bg-white px-1 rounded">TELEGRAM_BOT_TOKEN</code> in the backend environment and restart the API.</>
+              : 'Telegram notifications are not enabled on this workspace yet. You can still use Settings for your profile. Ask an admin to enable the Telegram bot when it is ready.'}
           </p>
         </Card>
       )}

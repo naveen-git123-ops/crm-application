@@ -44,7 +44,7 @@ const PERMISSION_GROUPS = [
   { label: 'Employee', keys: ['attendance', 'monthly-report', 'leaves'] },
   { label: 'HR', keys: ['employees', 'holidays', 'idcards', 'documents'] },
   { label: 'Operations', keys: ['expenses', 'stock-management', 'vehicles', 'workspace'] },
-  { label: 'Admin', keys: ['roles', 'settings'] },
+  { label: 'Admin', keys: ['roles'] },
 ];
 
 export const Roles = () => {
