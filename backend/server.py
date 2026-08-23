@@ -12175,6 +12175,12 @@ def _default_carry_order_workflow_payload() -> dict:
             'business_category': '',
             'product_categories': [],
             'product_category_other': '',
+            'consultancy_category': '',
+            'consultancy_category_other': '',
+            'renewal_cgw_noc_id': '',
+            'renewal_cgw_inventory_id': '',
+            'renewal_cgw_noc_no': '',
+            'renewal_cgw_noc_label': '',
             'technical_datas_required': None,
             'site_visit_required': None,
             'expected_enquiry_closing_date': '',
@@ -12230,6 +12236,8 @@ def _default_carry_order_workflow_payload() -> dict:
         'client_outcome': None,
         'agreed_revision_id': None,
         'closed_won': {
+            'win_confirmation': '',
+            'attachments': [],
             'order_value': None,
             'terms': '',
             'packaging_regulations': '',
@@ -12244,6 +12252,7 @@ def _default_carry_order_workflow_payload() -> dict:
 
 
 PRODUCT_CATEGORY_OTHER = 'Other'
+CONSULTANCY_CATEGORY_OTHER = 'other'
 
 
 def _has_attachment_ref(ref) -> bool:
@@ -12439,17 +12448,23 @@ def _opportunity_assessment_complete(payload: dict) -> bool:
     cats = oa.get('product_categories') or []
     tech_flag = _json_bool(oa.get('technical_datas_required'))
     visit_flag = _json_bool(oa.get('site_visit_required'))
+    consultancy = str(oa.get('business_category') or '').strip().lower() == 'consultancy'
+    consultancy_cat = str(oa.get('consultancy_category') or '').strip()
+    category_ok = bool(consultancy_cat) if consultancy else (isinstance(cats, list) and len(cats) > 0)
     base_ok = bool(
         str(oa.get('business_category') or '').strip()
-        and isinstance(cats, list)
-        and len(cats) > 0
+        and category_ok
         and tech_flag is not None
         and visit_flag is not None
         and str(oa.get('expected_enquiry_closing_date') or '').strip()
     )
     if not base_ok:
         return False
-    if PRODUCT_CATEGORY_OTHER in cats and not str(oa.get('product_category_other') or '').strip():
+    if consultancy and consultancy_cat == CONSULTANCY_CATEGORY_OTHER and not str(oa.get('consultancy_category_other') or '').strip():
+        return False
+    if consultancy and consultancy_cat == 'renewal_cgwb_noc' and not str(oa.get('renewal_cgw_noc_id') or '').strip():
+        return False
+    if not consultancy and PRODUCT_CATEGORY_OTHER in cats and not str(oa.get('product_category_other') or '').strip():
         return False
     if visit_flag is not True:
         return True
@@ -13240,11 +13255,15 @@ def _validate_lead_workflow_transition(
     if payload.get('pipeline_terminal_confirmed'):
         if new_stage == 'closed_won':
             cw = payload.get('closed_won') or {}
-            required = ['order_value', 'terms', 'packaging_regulations', 'payment_terms', 'warranty_delivery']
-            for field in required:
-                val = cw.get(field)
-                if val is None or (isinstance(val, str) and not str(val).strip()):
-                    raise HTTPException(status_code=400, detail=f'Closed Won requires: {field}')
+            confirmation = str(cw.get('win_confirmation') or '').strip()
+            allowed = {'loi', 'po_copy', 'mail_whatsapp', 'verbal'}
+            if confirmation not in allowed:
+                raise HTTPException(status_code=400, detail='Select order win confirmation')
+            if confirmation != 'verbal' and not (cw.get('attachments') or []):
+                raise HTTPException(
+                    status_code=400,
+                    detail='Attach the LOI, PO, or confirmation message',
+                )
         if new_stage == 'closed_lost':
             cl = payload.get('closed_lost') or {}
             reasons = cl.get('reasons') or []
