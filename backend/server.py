@@ -996,6 +996,8 @@ class BusinessPotentialRecordModel(Base):
     village_name = Column(String(255), nullable=True)
     proposed_address = Column(Text, nullable=True)
     communication_address = Column(Text, nullable=True)
+    contact_email = Column(String(255), nullable=True)
+    contact_phone = Column(String(80), nullable=True)
     renewal_apply_area_type = Column(String(255), nullable=True)
     first_apply_area_type = Column(String(255), nullable=True)
     apply_area_type = Column(String(255), nullable=True)
@@ -1987,6 +1989,47 @@ def seed_business_potential_records_if_empty():
 _safe_migrate(seed_business_potential_records_if_empty)
 
 
+def migrate_business_potential_contact_columns():
+    """Add contact_email / contact_phone and backfill from Communication Address."""
+    from sqlalchemy import text, inspect
+    from business_potential_data import parse_communication_contacts
+
+    inspector = inspect(engine)
+    if 'business_potential_records' not in inspector.get_table_names():
+        return
+    existing = {col['name'] for col in inspector.get_columns('business_potential_records')}
+    for col_name, ddl in (
+        ('contact_email', 'VARCHAR(255) NULL'),
+        ('contact_phone', 'VARCHAR(80) NULL'),
+    ):
+        if col_name in existing:
+            continue
+        with engine.connect() as conn:
+            conn.execute(text(f'ALTER TABLE business_potential_records ADD COLUMN {col_name} {ddl}'))
+            conn.commit()
+
+    db = SessionLocal()
+    try:
+        rows = db.query(BusinessPotentialRecordModel).all()
+        changed = 0
+        for row in rows:
+            email, phone = parse_communication_contacts(row.communication_address)
+            next_email = row.contact_email or email
+            next_phone = row.contact_phone or phone
+            if next_email != row.contact_email or next_phone != row.contact_phone:
+                row.contact_email = next_email
+                row.contact_phone = next_phone
+                changed += 1
+        if changed:
+            db.commit()
+            print(f'Backfilled contact fields on {changed} business potential records')
+    finally:
+        db.close()
+
+
+_safe_migrate(migrate_business_potential_contact_columns)
+
+
 def migrate_grant_monthly_report_to_employee_role():
     """Ensure the Employee role includes monthly-report (new screen); other roles stay as configured in DB."""
     db = SessionLocal()
@@ -2682,6 +2725,8 @@ class BusinessPotentialRecord(BaseModel):
     village_name: Optional[str] = None
     proposed_address: Optional[str] = None
     communication_address: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
     renewal_apply_area_type: Optional[str] = None
     first_apply_area_type: Optional[str] = None
     apply_area_type: Optional[str] = None
@@ -10330,6 +10375,32 @@ def delete_business_potential(
     return {'message': 'Business potential record deleted'}
 
 
+def _business_potential_validity_end_expr():
+    return func.substr(func.trim(BusinessPotentialRecordModel.validity_end), 1, 10)
+
+
+def _apply_business_potential_validity_band(query, validity_band: Optional[str] = None):
+    band = (validity_band or '').strip().lower()
+    if not band:
+        return query
+    today = date.today()
+    today_s = today.isoformat()
+    plus90 = (today + timedelta(days=90)).isoformat()
+    plus365 = (today + timedelta(days=365)).isoformat()
+    end = _business_potential_validity_end_expr()
+    query = query.filter(
+        BusinessPotentialRecordModel.validity_end.isnot(None),
+        BusinessPotentialRecordModel.validity_end != '',
+    )
+    if band == 'expired':
+        return query.filter(end < today_s)
+    if band == 'd90':
+        return query.filter(end >= today_s, end <= plus90)
+    if band == 'd365':
+        return query.filter(end > plus90, end <= plus365)
+    return query
+
+
 def _business_potential_record_query(
     db: Session,
     q: Optional[str] = None,
@@ -10337,6 +10408,7 @@ def _business_potential_record_query(
     district: Optional[str] = None,
     status: Optional[str] = None,
     application_type: Optional[str] = None,
+    validity_band: Optional[str] = None,
 ):
     query = db.query(BusinessPotentialRecordModel)
     if q and q.strip():
@@ -10350,6 +10422,9 @@ def _business_potential_record_query(
             | (BusinessPotentialRecordModel.village_name.ilike(like))
             | (BusinessPotentialRecordModel.category_description.ilike(like))
             | (BusinessPotentialRecordModel.proposed_address.ilike(like))
+            | (BusinessPotentialRecordModel.communication_address.ilike(like))
+            | (BusinessPotentialRecordModel.contact_email.ilike(like))
+            | (BusinessPotentialRecordModel.contact_phone.ilike(like))
         )
     if source and source.strip():
         query = query.filter(BusinessPotentialRecordModel.source_key == source.strip())
@@ -10359,7 +10434,17 @@ def _business_potential_record_query(
         query = query.filter(BusinessPotentialRecordModel.application_status == status.strip())
     if application_type and application_type.strip():
         query = query.filter(BusinessPotentialRecordModel.application_type == application_type.strip())
-    return query
+    return _apply_business_potential_validity_band(query, validity_band)
+
+
+def _hydrate_business_potential_record(row):
+    from business_potential_data import parse_communication_contacts
+    email, phone = parse_communication_contacts(getattr(row, 'communication_address', None))
+    if not getattr(row, 'contact_email', None):
+        row.contact_email = email
+    if not getattr(row, 'contact_phone', None):
+        row.contact_phone = phone
+    return row
 
 
 @api_router.get('/business-potential-records', response_model=BusinessPotentialRecordPage)
@@ -10369,12 +10454,13 @@ def list_business_potential_records(
     district: Optional[str] = None,
     status: Optional[str] = None,
     application_type: Optional[str] = None,
+    validity_band: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     current_user: UserModel = Depends(require_business_potential),
     db: Session = Depends(get_db),
 ):
-    query = _business_potential_record_query(db, q, source, district, status, application_type)
+    query = _business_potential_record_query(db, q, source, district, status, application_type, validity_band)
     total = query.count()
     rows = (
         query.order_by(
@@ -10385,7 +10471,12 @@ def list_business_potential_records(
         .limit(page_size)
         .all()
     )
-    return {'items': rows, 'total': total, 'page': page, 'page_size': page_size}
+    return {
+        'items': [_hydrate_business_potential_record(row) for row in rows],
+        'total': total,
+        'page': page,
+        'page_size': page_size,
+    }
 
 
 @api_router.get('/business-potential-records/meta')
@@ -10433,6 +10524,11 @@ def business_potential_records_meta(
         'districts': districts,
         'statuses': statuses,
         'application_types': types,
+        'validity_bands': {
+            'expired': _apply_business_potential_validity_band(db.query(BusinessPotentialRecordModel), 'expired').count(),
+            'd90': _apply_business_potential_validity_band(db.query(BusinessPotentialRecordModel), 'd90').count(),
+            'd365': _apply_business_potential_validity_band(db.query(BusinessPotentialRecordModel), 'd365').count(),
+        },
     }
 
 
@@ -10448,6 +10544,101 @@ def import_business_potential_excel(
     return import_business_potential_records(db, BusinessPotentialRecordModel, replace=replace)
 
 
+BUSINESS_POTENTIAL_EXPORT_COLUMNS = (
+    ('source_label', 'Source'),
+    ('source_sheet', 'Sheet'),
+    ('application_code', 'Application Code'),
+    ('application_number', 'Application Number'),
+    ('application_status', 'Application Status'),
+    ('application_type', 'Application Type'),
+    ('project_name', 'Project Name'),
+    ('noc_number', 'NOC Number'),
+    ('category_description', 'Category'),
+    ('gw_utilisation_for', 'GW Utilisation For'),
+    ('msme', 'MSME'),
+    ('relaxation', 'Relaxation'),
+    ('geology', 'Geology'),
+    ('state_name', 'State'),
+    ('district_name', 'District'),
+    ('sub_district_name', 'Sub-District'),
+    ('village_name', 'Village'),
+    ('proposed_address', 'Proposed Address'),
+    ('contact_email', 'Email'),
+    ('contact_phone', 'Contact'),
+    ('communication_address', 'Communication Address'),
+    ('net_gw_requirement', 'Net GW Requirement (m3/day)'),
+    ('issued_letter_type', 'Issued Letter Type'),
+    ('eligible_exemption', 'Eligible For Exemption Letter'),
+    ('present_area_type', 'Present Area Type'),
+    ('apply_area_type', 'Apply Area Type'),
+    ('renewal_apply_area_type', 'Renewal Apply Area Type'),
+    ('first_apply_area_type', 'First Apply Area Type'),
+    ('latitude', 'Latitude'),
+    ('longitude', 'Longitude'),
+    ('validity_start', 'Validity Start Date'),
+    ('validity_end', 'Validity End Date'),
+    ('date_of_commencement', 'Date Of Commencement'),
+    ('date_of_expansion', 'Date Of Expansion'),
+    ('application_created_date', 'Application Created Date'),
+    ('application_submitted_date', 'Application Submitted Date'),
+    ('application_approved_date', 'Application Approved Date'),
+)
+
+
+@api_router.get('/business-potential-records/export')
+def export_business_potential_records(
+    q: Optional[str] = None,
+    source: Optional[str] = None,
+    district: Optional[str] = None,
+    status: Optional[str] = None,
+    application_type: Optional[str] = None,
+    validity_band: Optional[str] = None,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail='Only an administrator can export Business Potential data')
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    rows = (
+        _business_potential_record_query(db, q, source, district, status, application_type, validity_band)
+        .order_by(
+            BusinessPotentialRecordModel.district_name.asc(),
+            BusinessPotentialRecordModel.project_name.asc(),
+        )
+        .all()
+    )
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Business Potential'
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', fgColor='1E293B')
+    for col_idx, (_key, label) in enumerate(BUSINESS_POTENTIAL_EXPORT_COLUMNS, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=label)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', wrap_text=True)
+    for row_idx, raw in enumerate(rows, start=2):
+        item = _hydrate_business_potential_record(raw)
+        for col_idx, (key, _label) in enumerate(BUSINESS_POTENTIAL_EXPORT_COLUMNS, start=1):
+            ws.cell(row=row_idx, column=col_idx, value=getattr(item, key, None) or '')
+    ws.auto_filter.ref = ws.dimensions
+    ws.freeze_panes = 'A2'
+    for col_idx in range(1, len(BUSINESS_POTENTIAL_EXPORT_COLUMNS) + 1):
+        ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = 22
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f"Business_Potential_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
 @api_router.get('/business-potential-records/{record_id}', response_model=BusinessPotentialRecord)
 def get_business_potential_record(
     record_id: str,
@@ -10457,7 +10648,7 @@ def get_business_potential_record(
     row = db.query(BusinessPotentialRecordModel).filter(BusinessPotentialRecordModel.id == record_id).first()
     if not row:
         raise HTTPException(status_code=404, detail='Business potential record not found')
-    return row
+    return _hydrate_business_potential_record(row)
 
 
 @api_router.post('/documents/upload')
