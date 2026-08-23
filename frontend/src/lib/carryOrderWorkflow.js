@@ -312,6 +312,7 @@ export function newMaterialProductRow(overrides = {}) {
   return {
     id: `mp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     item_name: '',
+    make: '',
     specification: '',
     quantity: '',
     uom: 'Nos',

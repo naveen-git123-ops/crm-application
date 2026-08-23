@@ -2987,7 +2987,7 @@ class Lead(BaseModel):
 
 # Matches frontend LEAD_SOURCES; stored as plain str (no strict Literal) to avoid 422 on deploy drift.
 LEAD_SOURCE_VALUES = (
-    'India Mart', 'Mail Enquiry', 'Telephonic', 'Whats app', 'Other',
+    'India Mart', 'Mail Enquiry', 'Telephonic', 'Whats app', 'Ariba', 'Other',
     'Website', 'Referral', 'Cold Call', 'Social Media', 'Partner', 'Exhibition',
 )
 
@@ -11332,6 +11332,59 @@ def stream_file(file_url: str, current_user: UserModel = Depends(get_current_use
     except Exception as e:
         logging.error(f"Error streaming file from S3: {str(e)}")
         raise HTTPException(status_code=500, detail=f'Error retrieving file: {str(e)}')
+
+
+def _load_attachment_bytes(file_url: str) -> tuple[bytes, str]:
+    if not file_url:
+        raise HTTPException(status_code=400, detail='file_url parameter is required')
+    parsed = urlparse(file_url)
+    filename = (parsed.path or file_url).split('/')[-1] or 'file'
+    if S3_BUCKET_NAME and S3_BUCKET_NAME in file_url:
+        if not s3_client or not USE_S3:
+            raise HTTPException(status_code=503, detail='File service is unavailable')
+        s3_key = parsed.path.lstrip('/')
+        if not s3_key:
+            raise HTTPException(status_code=400, detail='Could not extract file key from URL')
+        response = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
+        return response['Body'].read(), filename
+    path = parsed.path if parsed.scheme else file_url
+    if path.startswith('/uploads/'):
+        rel = path[len('/uploads/'):]
+        local = (UPLOAD_DIR / rel).resolve()
+        if not str(local).startswith(str(UPLOAD_DIR.resolve())) or not local.exists():
+            raise HTTPException(status_code=404, detail='File not found')
+        return local.read_bytes(), local.name
+    raise HTTPException(status_code=400, detail='Invalid file URL')
+
+
+@api_router.get('/files/preview-email')
+def preview_email_attachment(file_url: str, current_user: UserModel = Depends(get_current_user)):
+    from attachment_preview import parse_email_bytes
+    data, filename = _load_attachment_bytes(file_url)
+    try:
+        return parse_email_bytes(data, filename)
+    except Exception as exc:
+        logging.exception('Email preview failed')
+        raise HTTPException(status_code=422, detail=f'Could not preview this Outlook email: {exc}')
+
+
+@api_router.get('/files/preview-raster')
+def preview_raster_attachment(file_url: str, current_user: UserModel = Depends(get_current_user)):
+    from attachment_preview import psd_to_png_bytes
+    from fastapi.responses import Response
+    data, filename = _load_attachment_bytes(file_url)
+    if not filename.lower().endswith('.psd') and not data[:4] == b'8BPS':
+        raise HTTPException(status_code=400, detail='Only PSD files can be previewed as an image')
+    try:
+        png = psd_to_png_bytes(data)
+    except Exception as exc:
+        logging.exception('PSD preview failed')
+        raise HTTPException(status_code=422, detail=f'Could not preview this PSD file: {exc}')
+    return Response(
+        content=png,
+        media_type='image/png',
+        headers={'Content-Disposition': 'inline; filename="preview.png"', 'Cache-Control': 'public, max-age=3600'},
+    )
 
 # ============= EXPENSE ROUTES =============
 

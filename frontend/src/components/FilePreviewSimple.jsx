@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
+import { parseEmlText, parseOutlookMsg } from '@/lib/outlookMsgPreview';
 
 function resolveHref(url) {
   if (!url) return '';
@@ -57,10 +58,63 @@ function DownloadLink({ href, fileName, label }) {
   );
 }
 
+function EmailPreview({ email }) {
+  if (!email) return null;
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white text-left">
+      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Outlook email</p>
+        <h3 className="mt-1 text-base font-semibold text-slate-900">{email.subject || '(No subject)'}</h3>
+      </div>
+      <div className="space-y-1.5 border-b border-slate-100 px-4 py-3 text-sm">
+        <p><span className="inline-block w-14 text-slate-500">From</span>{email.from || '—'}</p>
+        <p><span className="inline-block w-14 text-slate-500">To</span>{email.to || '—'}</p>
+        {email.cc ? <p><span className="inline-block w-14 text-slate-500">Cc</span>{email.cc}</p> : null}
+        <p><span className="inline-block w-14 text-slate-500">Date</span>{email.date || '—'}</p>
+      </div>
+      {email.body_html ? (
+        <iframe
+          title="Email body"
+          sandbox=""
+          srcDoc={email.body_html}
+          className="min-h-[320px] w-full border-0 bg-white"
+        />
+      ) : (
+        <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap px-4 py-3 text-sm text-slate-800">
+          {email.body_text || 'This email has no readable body.'}
+        </pre>
+      )}
+      {Array.isArray(email.attachments) && email.attachments.length > 0 && (
+        <div className="border-t border-slate-100 px-4 py-3 text-sm">
+          <p className="text-xs font-semibold uppercase text-slate-500">Attachments</p>
+          <ul className="mt-1 space-y-1 text-slate-700">
+            {email.attachments.map((item, idx) => (
+              <li key={`${item.name}-${idx}`}>{item.name}{item.size ? ` (${item.size} bytes)` : ''}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+async function loadFileBuffer(fullHref, shouldStream) {
+  const token = localStorage.getItem('token');
+  const res = shouldStream
+    ? await axios.get(`${API_ENDPOINT}/files/stream`, {
+        params: { file_url: fullHref },
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'arraybuffer',
+      })
+    : await axios.get(fullHref, { responseType: 'arraybuffer' });
+  return res.data;
+}
+
 export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
+  const [emailPreview, setEmailPreview] = useState(null);
   const blobRef = useRef(null);
 
   const fullHref = resolveHref(fileUrl);
@@ -75,10 +129,71 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
     }
     setError('');
     setPreviewUrl('');
+    setEmailPreview(null);
 
     if (!fullHref) {
       setError('No file URL provided');
       return undefined;
+    }
+
+    if (['msg', 'eml'].includes(ext)) {
+      let cancelled = false;
+      setLoading(true);
+      (async () => {
+        try {
+          const buffer = await loadFileBuffer(fullHref, shouldStream);
+          if (cancelled) return;
+          if (ext === 'eml') {
+            const text = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+            setEmailPreview(parseEmlText(text));
+            return;
+          }
+          setEmailPreview(parseOutlookMsg(buffer));
+        } catch (_localErr) {
+          if (cancelled) return;
+          try {
+            const token = localStorage.getItem('token');
+            const res = await axios.get(`${API_ENDPOINT}/files/preview-email`, {
+              params: { file_url: fullHref },
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!cancelled) setEmailPreview(res.data);
+          } catch (_err) {
+            if (!cancelled) setError('Could not preview this Outlook email. You can still download it.');
+          }
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (ext === 'psd') {
+      let cancelled = false;
+      setLoading(true);
+      (async () => {
+        try {
+          const token = localStorage.getItem('token');
+          const res = await axios.get(`${API_ENDPOINT}/files/preview-raster`, {
+            params: { file_url: fullHref },
+            headers: { Authorization: `Bearer ${token}` },
+            responseType: 'blob',
+          });
+          if (cancelled) return;
+          const objectUrl = URL.createObjectURL(res.data);
+          blobRef.current = objectUrl;
+          setPreviewUrl(objectUrl);
+        } catch (_err) {
+          if (!cancelled) setError('Could not preview this PSD. The layered file can still be downloaded.');
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
 
     if (!shouldStream) {
@@ -140,12 +255,23 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
     );
   }
 
+  if (emailPreview) {
+    return (
+      <div className="p-4">
+        <EmailPreview email={emailPreview} />
+        <div className="mt-4 text-center">
+          <DownloadLink href={fullHref} fileName={downloadName} label="Download original email" />
+        </div>
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
         <p className="text-sm text-red-700 mb-4">{error}</p>
         <DownloadLink
-          href={shouldStream ? '' : fullHref}
+          href={fullHref}
           fileName={downloadName}
           label="Download file"
         />
@@ -157,7 +283,7 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
     return <p className="p-5 text-sm text-gray-500">Preparing preview…</p>;
   }
 
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) {
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'psd'].includes(ext)) {
     return (
       <div className="flex justify-center p-4">
         <img
