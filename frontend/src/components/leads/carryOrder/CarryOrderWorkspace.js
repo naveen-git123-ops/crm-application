@@ -1050,6 +1050,26 @@ function ExcelGrid({
                         <div className={`px-2 py-1.5 text-sm text-slate-800 ${alignClass}`}>
                           {col.displayValue ? col.displayValue(row) : (row[col.key] ?? '')}
                         </div>
+                      ) : col.type === 'textarea' ? (
+                        <textarea
+                          data-cell={cellRef(rowIdx, colIdx)}
+                          disabled={cellReadOnly}
+                          rows={2}
+                          value={col.displayValue ? col.displayValue(row) : (row[col.key] ?? '')}
+                          placeholder={col.placeholder}
+                          onChange={(e) => {
+                            if (col.onCellChange) {
+                              applyHandler(col.onCellChange, row, e.target.value);
+                              return;
+                            }
+                            updateCell(row.id, col.key, e.target.value);
+                          }}
+                          onBlur={(e) => {
+                            if (col.onCellBlur) applyHandler(col.onCellBlur, row, e.target.value);
+                          }}
+                          onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
+                          className={`min-h-[44px] w-full resize-y border-0 bg-transparent px-2 py-1.5 text-sm leading-snug text-slate-900 outline-none focus:bg-indigo-50/70 focus:ring-1 focus:ring-inset focus:ring-indigo-400 disabled:text-slate-500 ${alignClass}`}
+                        />
                       ) : col.type === 'select' ? (
                         <select
                           data-cell={cellRef(rowIdx, colIdx)}
@@ -2199,9 +2219,17 @@ function ModuleMaterialProduct({
 
   const baseColumns = [
     { key: 'item_name', label: 'Item name', width: '26%', placeholder: 'Item name' },
-    { key: 'specification', label: 'Specification / description', width: '34%', placeholder: 'Specification or description' },
+    { key: 'specification', label: 'Specification / description', width: '34%', type: 'textarea', placeholder: 'Specification or description' },
     { key: 'quantity', label: 'Quantity', width: '12%', type: 'number', placeholder: '0' },
     { key: 'uom', label: 'UOM', width: '12%', options: MATERIAL_UOM_OPTIONS, placeholder: 'Nos' },
+  ];
+
+  const purchaseColumns = [
+    { ...baseColumns[0], width: '20%' },
+    { key: 'make', label: 'Make', width: '14%', placeholder: 'Make / brand' },
+    { ...baseColumns[1], width: '28%' },
+    baseColumns[2],
+    baseColumns[3],
   ];
 
   const stockColumns = [
@@ -2308,7 +2336,7 @@ function ModuleMaterialProduct({
           </p>
         </div>
         <ExcelGrid
-          columns={baseColumns}
+          columns={purchaseColumns}
           rows={purchaseRows}
           onChange={(rows) => updateMp({ purchase_items: rows })}
           canEdit={canEdit}
@@ -2616,7 +2644,7 @@ function ModuleVendorSelection({
 
   const purchaseColumns = [
     { key: 'item_name', label: 'Item name', width: '22%', readOnly: true },
-    { key: 'specification', label: 'Specification / description', width: '28%', readOnly: true },
+    { key: 'specification', label: 'Specification / description', width: '28%', type: 'textarea', readOnly: true },
     { key: 'quantity', label: 'Quantity', width: '10%', readOnly: true },
     { key: 'uom', label: 'UOM', width: '10%', readOnly: true },
     {
@@ -3028,7 +3056,7 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
       displayValue: (row) => row.source_label,
     },
     { key: 'item_name', label: 'Item name', width: '18%', readOnly: true },
-    { key: 'specification', label: 'Specification / description', width: '20%', readOnly: true },
+    { key: 'specification', label: 'Specification / description', width: '20%', type: 'textarea', readOnly: true },
     { key: 'quantity', label: 'Qty', width: '8%', readOnly: true, align: 'right' },
     { key: 'uom', label: 'UOM', width: '8%', readOnly: true },
     {

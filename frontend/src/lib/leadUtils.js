@@ -1,4 +1,4 @@
-export const LEAD_SOURCES = ['India Mart', 'Mail Enquiry', 'Telephonic', 'Whats app', 'Other'];
+export const LEAD_SOURCES = ['India Mart', 'Mail Enquiry', 'Telephonic', 'Whats app', 'Ariba', 'Other'];
 export const LEAD_STATUSES = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
 export const LEAD_ACTIVITY_TYPES = ['Call', 'Email', 'Meeting', 'Note'];
 
