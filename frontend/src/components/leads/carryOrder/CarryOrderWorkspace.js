@@ -84,11 +84,13 @@ import {
   Store,
   FileText,
   Eye,
+  ExternalLink,
   Loader2,
   Lock,
   Check,
   Mail,
 } from 'lucide-react';
+import FilePreviewSimple from '@/components/FilePreviewSimple';
 import { isCarryAndOrder, leadNeedsVendor, LEAD_CATEGORY_OPTIONS } from '@/lib/leadUtils';
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -1094,8 +1096,9 @@ function ExcelGrid({
                         <input
                           data-cell={cellRef(rowIdx, colIdx)}
                           type={col.type === 'number' ? 'number' : 'text'}
-                          min={col.type === 'number' ? '0' : undefined}
-                          step={col.type === 'number' ? 'any' : undefined}
+                          min={col.type === 'number' ? (col.min ?? '0') : undefined}
+                          max={col.type === 'number' ? col.max : undefined}
+                          step={col.type === 'number' ? (col.step ?? 'any') : undefined}
                           list={col.options ? `${col.key}-options` : undefined}
                           disabled={cellReadOnly}
                           value={col.displayValue ? col.displayValue(row) : (row[col.key] ?? '')}
@@ -3006,9 +3009,47 @@ function ModuleVendorSelection({
   );
 }
 
+function LeadAttachmentPreviewDialog({ attachment, open, onOpenChange }) {
+  const fileUrl = attachment?.file_url || '';
+  const fileName = attachment?.file_name || 'Attachment';
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[min(90vh,860px)] w-[min(960px,96vw)] max-w-[min(960px,96vw)] flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="shrink-0 border-b border-slate-200 px-5 py-3 pr-12 text-left">
+          <DialogTitle className="truncate text-base" title={fileName}>
+            Preview · {fileName}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-auto bg-slate-50">
+          {fileUrl ? (
+            <FilePreviewSimple fileUrl={fileUrl} fileName={fileName} />
+          ) : (
+            <p className="p-6 text-sm text-slate-500">No file URL is available for this attachment.</p>
+          )}
+        </div>
+        <DialogFooter className="shrink-0 border-t border-slate-200 px-4 py-3">
+          {fileUrl ? (
+            <Button type="button" variant="outline" size="sm" asChild>
+              <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                Open in new tab
+              </a>
+            </Button>
+          ) : null}
+          <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBomFiles, onRemoveBomAttachment }) {
   const bom = payload.bom || {};
   const bomAttachments = payload.bom_attachments || [];
+  const [previewAttachment, setPreviewAttachment] = useState(null);
   const mp = payload.material_product || defaultMaterialProduct();
   const lines = useMemo(() => buildBomCostingLines(payload), [payload]);
   const useWorkflowLines = lines.length > 0;
@@ -3028,16 +3069,27 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
     setPayload(useWorkflowLines ? { ...next, bom: { ...next.bom, materials: bomMaterialsFromWorkflow(next) } } : next);
   };
 
+  const clampLineProfitPct = (raw) => {
+    if (raw === '' || raw == null) return '';
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    return Math.min(n, 99.99);
+  };
+
   const updateCostingRows = (nextLines) => {
     const stockById = new Map(nextLines.filter((line) => line.source === 'stock').map((line) => [line.id, line]));
     const purchaseById = new Map(nextLines.filter((line) => line.source === 'vendor').map((line) => [line.id, line]));
     const nextStock = materialStockRows(payload).map((item) => {
       const line = stockById.get(item.id);
-      return line ? { ...item, unit_cost: line.unit_price } : item;
+      return line
+        ? { ...item, unit_cost: line.unit_price, profit_margin_pct: clampLineProfitPct(line.profit_margin_pct) }
+        : item;
     });
     const nextPurchase = materialPurchaseRows(payload).map((item) => {
       const line = purchaseById.get(item.id);
-      return line ? { ...item, quoted_price: line.unit_price } : item;
+      return line
+        ? { ...item, quoted_price: line.unit_price, profit_margin_pct: clampLineProfitPct(line.profit_margin_pct) }
+        : item;
     });
     patchPayload({
       ...payload,
@@ -3082,6 +3134,33 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
       align: 'right',
       displayValue: (row) => formatInr(row.amount || 0),
     },
+    {
+      key: 'profit_margin_pct',
+      label: 'Profit %',
+      width: '8%',
+      type: 'number',
+      align: 'right',
+      min: '0',
+      max: '99.99',
+      step: '0.01',
+      placeholder: '0',
+    },
+    {
+      key: 'profit_amount',
+      label: 'Profit amount (₹)',
+      width: '11%',
+      type: 'display',
+      align: 'right',
+      displayValue: (row) => formatInr(row.profit_amount || 0),
+    },
+    {
+      key: 'selling',
+      label: 'After profit (₹)',
+      width: '11%',
+      type: 'display',
+      align: 'right',
+      displayValue: (row) => formatInr(row.selling || row.amount || 0),
+    },
   ];
 
   const rollup = [
@@ -3099,7 +3178,7 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
     <section className="space-y-4">
       <SectionTitle
         title="Module 6 — BOM & costing"
-        subtitle="Items come from Material & product and Vendor management. Enter stock unit prices; vendor prices are taken from quotes. Installation and other charges sit on top of that material total."
+        subtitle="Items come from Material & product and Vendor management. Enter stock unit prices and a profit % on each product. Vendor prices come from quotes. Additional charges sit on top of the material total."
       />
       {useWorkflowLines ? (
         <div className="rounded-xl border border-indigo-200 bg-white p-4 space-y-3">
@@ -3109,7 +3188,7 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
             </p>
             <p className="text-xs text-slate-500">
               Stock lines need a unit price here. Vendor lines use the quoted unit price from Vendor management
-              (qty × unit price).
+              (qty × unit price). Set Profit % on each row — After profit is amount ÷ (1 − profit %).
             </p>
           </div>
           <ExcelGrid
@@ -3199,7 +3278,7 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
       <div>
         <p className="text-sm font-semibold text-slate-800 mb-2">Additional charges</p>
         <p className="text-xs text-slate-500 mb-3">
-          These sit on top of the material total above to give the consignment cost before quotation profit.
+          These sit on top of the material total. Profit % is set on each product row above, not here.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <NumField label="Installation, Commissioning & Cost(₹)" value={bom.install_cost} onChange={(v) => setBom({ install_cost: v })} canEdit={canEdit} />
@@ -3221,23 +3300,6 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
         <NumField label="Transportation cost (₹)" value={bom.transport_cost} onChange={(v) => setBom({ transport_cost: v })} canEdit={canEdit} />
         <NumField label="Tour & Travel Cost (₹)" value={bom.cost_of_ap} onChange={(v) => setBom({ cost_of_ap: v })} canEdit={canEdit} />
         <NumField label="TPC  Cost (₹)" value={bom.margin_amount} onChange={(v) => setBom({ margin_amount: v })} canEdit={canEdit} />
-        <div>
-          <Label className={labelClass}>Profit margin (%)</Label>
-          <Input
-            type="number"
-            min="0"
-            max="99.99"
-            step="0.01"
-            disabled={!canEdit}
-            value={bom.profit_margin_pct ?? ''}
-            onChange={(e) => {
-              const v = parseFloat(e.target.value);
-              setBom({ profit_margin_pct: Number.isFinite(v) ? Math.min(Math.max(v, 0), 99.99) : 0 });
-            }}
-            className={`${inputClass} mt-1`}
-            placeholder="e.g. 20"
-          />
-        </div>
         </div>
       </div>
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
@@ -3260,13 +3322,15 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
             {formatInr(bomTotals.consignmentTotal)}
           </p>
         </div>
-        {bomTotals.profitMarginPct > 0 && (
+        {bomTotals.profitAmount > 0 && (
           <>
             <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
-                <p className="text-sm font-semibold text-slate-800">Total Cost For Consignment after Adding Profit</p>
+                <p className="text-sm font-semibold text-slate-800">Total cost for consignment after adding profit</p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {formatInr(bomTotals.consignmentTotal)} ÷ (1 − {bomTotals.profitMarginPct}%)
+                  {bomTotals.lineMarginApplied
+                    ? 'Each product uses its own profit % · additional charges stay as entered'
+                    : `${formatInr(bomTotals.consignmentTotal)} ÷ (1 − ${bomTotals.profitMarginPct}%)`}
                 </p>
               </div>
               <p className="text-xl font-bold tabular-nums text-emerald-800">
@@ -3293,13 +3357,22 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
                 <button
                   type="button"
                   className="flex-1 flex items-center gap-2 truncate text-left text-indigo-700 hover:underline"
-                  onClick={() => {
-                    if (att.file_url) window.open(att.file_url, '_blank', 'noopener,noreferrer');
-                  }}
+                  onClick={() => setPreviewAttachment(att)}
+                  title={`Preview: ${att.file_name || 'File'}`}
                 >
                   <FileText className="h-4 w-4 shrink-0" />
                   {att.file_name || 'File'}
                 </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-900"
+                  onClick={() => setPreviewAttachment(att)}
+                >
+                  <Eye className="mr-1 h-3.5 w-3.5" />
+                  Preview
+                </Button>
                 {canEdit && (
                   <Button
                     type="button"
@@ -3319,12 +3392,19 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
         <CgwMultiFilePicker
           label="BOM & costing attachment"
           accept={LEAD_ATTACHMENT_ACCEPT}
-          hint={`Upload supporting BOM or costing documents (optional). ${LEAD_ATTACHMENT_HINT}`}
+          hint={`Upload supporting BOM or costing documents (optional). Preview saved files above. ${LEAD_ATTACHMENT_HINT}`}
           disabled={!canEdit || saving}
           files={[]}
           onChange={(files) => onUploadBomFiles?.(files)}
           existingAttachments={null}
           addLabel="Attach"
+        />
+        <LeadAttachmentPreviewDialog
+          attachment={previewAttachment}
+          open={Boolean(previewAttachment)}
+          onOpenChange={(open) => {
+            if (!open) setPreviewAttachment(null);
+          }}
         />
       </div>
     </section>

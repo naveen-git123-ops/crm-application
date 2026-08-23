@@ -330,6 +330,7 @@ export function newMaterialProductRow(overrides = {}) {
     delivery_date: '',
     // Stock-grid only: unit cost entered on BOM & costing.
     unit_cost: '',
+    profit_margin_pct: '',
     ...overrides,
   };
 }
@@ -531,28 +532,48 @@ export function materialLineAmount(row, source) {
   return materialLineQty(row) * materialLineUnitPrice(row, source);
 }
 
+export function materialLineProfitPct(row) {
+  const n = Number(row?.profit_margin_pct);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(n, 99.99);
+}
+
+export function materialLineSelling(row, source) {
+  return applyMarginFormula(materialLineAmount(row, source), materialLineProfitPct(row));
+}
+
 /** Combined customer-supply list for BOM: stock issues + vendor purchases. */
 export function buildBomCostingLines(payload) {
   const stock = materialStockRows(payload).filter(isMaterialProductRowFilled).map((row) => {
     const rate = materialLineUnitPrice(row, 'stock');
+    const amount = materialLineQty(row) * rate;
+    const margin = applyMarginFormula(amount, materialLineProfitPct(row));
     return {
       ...row,
       source: 'stock',
       source_label: 'Stock',
       vendor_name: '',
       unit_price: row.unit_cost ?? '',
-      amount: materialLineQty(row) * rate,
+      amount,
+      profit_margin_pct: row.profit_margin_pct ?? '',
+      selling: margin.value,
+      profit_amount: margin.amount,
       price_editable: true,
     };
   });
   const purchase = materialPurchaseRows(payload).filter(isMaterialProductRowFilled).map((row) => {
     const rate = materialLineUnitPrice(row, 'vendor');
+    const amount = materialLineQty(row) * rate;
+    const margin = applyMarginFormula(amount, materialLineProfitPct(row));
     return {
       ...row,
       source: 'vendor',
       source_label: 'Vendor',
       unit_price: row.quoted_price ?? '',
-      amount: materialLineQty(row) * rate,
+      amount,
+      profit_margin_pct: row.profit_margin_pct ?? '',
+      selling: margin.value,
+      profit_amount: margin.amount,
       price_editable: true,
     };
   });
@@ -571,6 +592,9 @@ export function bomMaterialsFromWorkflow(payload) {
     vendor_name: row.vendor_name || '',
     unit_price: materialLineUnitPrice(row, row.source),
     base_cost: row.amount,
+    profit_margin_pct: materialLineProfitPct(row),
+    selling: row.selling,
+    profit_amount: row.profit_amount,
   }));
 }
 
@@ -1058,10 +1082,21 @@ export function computeBomTotals(bom, payload) {
   const tpcCost = Number(bom?.margin_amount) || 0;
   const consignmentTotal =
     materialsTotal + install + testing + packaging + transport + costOfAp + tpcCost;
-  const { pct, value: profitValue, amount: profitAmount } = applyMarginFormula(
-    consignmentTotal,
-    bom?.profit_margin_pct,
-  );
+  const lineSellingTotal = useWorkflow
+    ? workflowLines.reduce((sum, row) => sum + (Number(row.selling) || Number(row.amount) || 0), 0)
+    : 0;
+  const lineProfitTotal = useWorkflow
+    ? workflowLines.reduce((sum, row) => sum + (Number(row.profit_amount) || 0), 0)
+    : 0;
+  const additionalCharges = install + testing + packaging + transport + costOfAp + tpcCost;
+  const lineMarginApplied = useWorkflow && workflowLines.some((row) => materialLineProfitPct(row) > 0);
+  const { pct, value: profitValue, amount: profitAmount } = useWorkflow
+    ? {
+        pct: 0,
+        value: lineSellingTotal + additionalCharges,
+        amount: lineProfitTotal,
+      }
+    : applyMarginFormula(consignmentTotal, bom?.profit_margin_pct);
   return {
     tpc: materialsTotal,
     materialsTotal,
@@ -1076,6 +1111,10 @@ export function computeBomTotals(bom, payload) {
     totalCost: materialsTotal + install + testing + packaging + transport + costOfAp,
     sellingValue: profitValue,
     consignmentTotal,
+    lineSellingTotal,
+    lineProfitTotal,
+    additionalCharges,
+    lineMarginApplied,
     profitMarginPct: pct,
     profitValue,
     profitAmount,
