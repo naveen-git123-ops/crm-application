@@ -99,6 +99,33 @@ def _clean_text(value):
     return text
 
 
+_LABELED_COMM_RE = re.compile(r'(Email|Contact|Phone|Mobile)\s*:\s*([^,]*)', re.I)
+_EMAIL_FALLBACK_RE = re.compile(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}')
+
+
+def parse_communication_contacts(address: str | None) -> tuple[str | None, str | None]:
+    """Pull Email and Contact out of the Communication Address blob."""
+    text = str(address or '').strip()
+    if not text:
+        return None, None
+    email = None
+    contact = None
+    for label, value in _LABELED_COMM_RE.findall(text):
+        value = re.sub(r'\s+', ' ', value).strip()
+        if not value:
+            continue
+        key = label.lower()
+        if key == 'email':
+            email = value
+        elif key in {'contact', 'phone', 'mobile'} and not contact:
+            contact = value
+    if not email:
+        found = _EMAIL_FALLBACK_RE.search(text)
+        if found:
+            email = found.group(0)
+    return email or None, contact or None
+
+
 def _map_row(raw_row: dict, source: dict, sheet_name: str) -> dict:
     mapped = {
         'id': str(uuid.uuid4()),
@@ -112,6 +139,9 @@ def _map_row(raw_row: dict, source: dict, sheet_name: str) -> dict:
         if not field:
             continue
         mapped[field] = _clean_text(raw_val)
+    email, contact = parse_communication_contacts(mapped.get('communication_address'))
+    mapped['contact_email'] = email
+    mapped['contact_phone'] = contact
     return mapped
 
 

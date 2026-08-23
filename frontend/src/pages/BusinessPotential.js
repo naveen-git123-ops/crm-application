@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Search, TrendingUp, Eye, Upload } from 'lucide-react';
+import { Search, TrendingUp, Eye, Upload, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -23,6 +23,13 @@ const SOURCE_TONES = {
   nocap_old: 'bg-slate-100 text-slate-700',
 };
 
+const COLOR_FILTERS = [
+  { key: '', label: 'All', swatch: 'bg-slate-400', active: 'border-slate-400 bg-slate-100 text-slate-800' },
+  { key: 'expired', label: 'Expired', swatch: 'bg-red-500', active: 'border-red-400 bg-red-50 text-red-700' },
+  { key: 'd90', label: 'Within 90 days', swatch: 'bg-yellow-400', active: 'border-yellow-400 bg-yellow-50 text-yellow-800' },
+  { key: 'd365', label: 'Within 365 days', swatch: 'bg-sky-400', active: 'border-sky-400 bg-sky-50 text-sky-800' },
+];
+
 const DETAIL_FIELDS = [
   ['source_label', 'Source'],
   ['source_sheet', 'Sheet / district tab'],
@@ -42,6 +49,8 @@ const DETAIL_FIELDS = [
   ['sub_district_name', 'Sub-district'],
   ['village_name', 'Village'],
   ['proposed_address', 'Proposed address'],
+  ['contact_email', 'Email'],
+  ['contact_phone', 'Contact'],
   ['communication_address', 'Communication address'],
   ['net_gw_requirement', 'Net GW requirement (m³/day)'],
   ['issued_letter_type', 'Issued letter'],
@@ -54,6 +63,7 @@ const DETAIL_FIELDS = [
   ['longitude', 'Longitude'],
   ['validity_start', 'Validity start'],
   ['validity_end', 'Validity end'],
+  ['days_to_expire', 'Days to expire'],
   ['date_of_commencement', 'Date of commencement'],
   ['date_of_expansion', 'Date of expansion'],
   ['application_created_date', 'Created date'],
@@ -66,23 +76,126 @@ function displayValue(value) {
   return text || '—';
 }
 
+function displayDate(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return '—';
+  const iso = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  return text;
+}
+
+function parseValidDate(raw) {
+  const text = String(raw ?? '').trim();
+  if (!text) return null;
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const dt = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  const parsed = Date.parse(text);
+  if (Number.isNaN(parsed)) return null;
+  const dt = new Date(parsed);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+function startOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function isValidEndPassed(raw) {
+  const end = parseValidDate(raw);
+  if (!end) return false;
+  return end.getTime() < startOfToday().getTime();
+}
+
+function isValidEndUpcoming(raw, days = 90) {
+  const end = parseValidDate(raw);
+  if (!end) return false;
+  const today = startOfToday();
+  const limit = new Date(today);
+  limit.setDate(limit.getDate() + days);
+  return end.getTime() >= today.getTime() && end.getTime() <= limit.getTime();
+}
+
+function validEndRowTone(raw) {
+  if (isValidEndPassed(raw)) return 'red';
+  if (isValidEndUpcoming(raw, 90)) return 'yellow';
+  if (isValidEndUpcoming(raw, 365)) return 'sky';
+  return null;
+}
+
+const BAND_TONE = { expired: 'red', d90: 'yellow', d365: 'sky' };
+
+function rowMatchesValidityBand(row, band) {
+  if (!band) return true;
+  return validEndRowTone(row?.validity_end) === BAND_TONE[band];
+}
+
+function countValidityBands(rows) {
+  const counts = { expired: 0, d90: 0, d365: 0 };
+  (rows || []).forEach((row) => {
+    const tone = validEndRowTone(row?.validity_end);
+    if (tone === 'red') counts.expired += 1;
+    else if (tone === 'yellow') counts.d90 += 1;
+    else if (tone === 'sky') counts.d365 += 1;
+  });
+  return counts;
+}
+
+function daysUntilExpiry(raw) {
+  const end = parseValidDate(raw);
+  if (!end) return null;
+  return Math.round((end.getTime() - startOfToday().getTime()) / 86400000);
+}
+
+function displayDaysUntilExpiry(raw) {
+  const days = daysUntilExpiry(raw);
+  if (days === null) return '—';
+  if (days === 0) return '0 (today)';
+  if (days > 0) return `${days} days`;
+  return `Expired ${Math.abs(days)} days`;
+}
+
+function parseCommunicationContacts(address) {
+  const text = String(address || '');
+  const emailMatch = text.match(/Email\s*:\s*([^,]*)/i);
+  const contactMatch = text.match(/Contact\s*:\s*([^,]*)/i);
+  return {
+    email: (emailMatch?.[1] || '').trim(),
+    contact: (contactMatch?.[1] || '').trim(),
+  };
+}
+
+function rowEmail(row) {
+  return row?.contact_email || parseCommunicationContacts(row?.communication_address).email;
+}
+
+function rowContact(row) {
+  return row?.contact_phone || parseCommunicationContacts(row?.communication_address).contact;
+}
+
 export function BusinessPotential() {
   const { user } = useAuth();
-  const canImport = isAdminUser(user);
+  const isAdmin = isAdminUser(user);
   const [items, setItems] = useState([]);
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [total, setTotal] = useState(0);
-  const [meta, setMeta] = useState({ sources: [], districts: [], statuses: [], application_types: [], total: 0 });
+  const [meta, setMeta] = useState({ sources: [], districts: [], statuses: [], application_types: [], validity_bands: {}, total: 0 });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [source, setSource] = useState('');
   const [district, setDistrict] = useState('');
-  const [status, setStatus] = useState('');
   const [applicationType, setApplicationType] = useState('');
+  const [validityBand, setValidityBand] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [selected, setSelected] = useState(null);
+  const [catalog, setCatalog] = useState(null);
+  const catalogCacheRef = useRef({ key: '', rows: null, promise: null });
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
@@ -91,7 +204,7 @@ export function BusinessPotential() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, source, district, status, applicationType, pageSize]);
+  }, [debouncedSearch, district, applicationType, validityBand, pageSize]);
 
   const fetchMeta = useCallback(async () => {
     try {
@@ -101,6 +214,7 @@ export function BusinessPotential() {
         districts: data?.districts || [],
         statuses: data?.statuses || [],
         application_types: data?.application_types || [],
+        validity_bands: data?.validity_bands || {},
         total: data?.total || 0,
       });
     } catch (err) {
@@ -108,16 +222,67 @@ export function BusinessPotential() {
     }
   }, []);
 
+  const loadCatalog = useCallback(async () => {
+    const key = `${debouncedSearch}|${district}|${applicationType}`;
+    const cache = catalogCacheRef.current;
+    if (cache.key === key && Array.isArray(cache.rows)) return cache.rows;
+    if (cache.key === key && cache.promise) return cache.promise;
+    const request = (async () => {
+      const collected = [];
+      let pageNum = 1;
+      let available = Infinity;
+      const chunkSize = 200;
+      while (collected.length < available && pageNum <= 40) {
+        const { data } = await axios.get(`${API}/business-potential-records`, {
+          ...authHeaders(),
+          params: {
+            q: debouncedSearch || undefined,
+            district: district || undefined,
+            application_type: applicationType || undefined,
+            page: pageNum,
+            page_size: chunkSize,
+          },
+        });
+        available = Number(data?.total) || 0;
+        const chunk = Array.isArray(data?.items) ? data.items : [];
+        collected.push(...chunk);
+        if (!chunk.length || chunk.length < chunkSize) break;
+        pageNum += 1;
+      }
+      return collected;
+    })();
+    catalogCacheRef.current = { key, rows: null, promise: request };
+    try {
+      const rows = await request;
+      catalogCacheRef.current = { key, rows, promise: null };
+      setCatalog(rows);
+      return rows;
+    } catch (err) {
+      catalogCacheRef.current = { key: '', rows: null, promise: null };
+      throw err;
+    }
+  }, [debouncedSearch, district, applicationType]);
+
   const fetchRows = useCallback(async () => {
     setLoading(true);
     try {
+      if (validityBand) {
+        const cacheKey = `${debouncedSearch}|${district}|${applicationType}`;
+        if (catalogCacheRef.current.key !== cacheKey || !catalogCacheRef.current.rows) {
+          setItems([]);
+        }
+        const rows = await loadCatalog();
+        const filtered = rows.filter((row) => rowMatchesValidityBand(row, validityBand));
+        const start = (Math.max(1, page) - 1) * pageSize;
+        setItems(filtered.slice(start, start + pageSize));
+        setTotal(filtered.length);
+        return;
+      }
       const { data } = await axios.get(`${API}/business-potential-records`, {
         ...authHeaders(),
         params: {
           q: debouncedSearch || undefined,
-          source: source || undefined,
           district: district || undefined,
-          status: status || undefined,
           application_type: applicationType || undefined,
           page,
           page_size: pageSize,
@@ -132,7 +297,7 @@ export function BusinessPotential() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, source, district, status, applicationType, page, pageSize]);
+  }, [debouncedSearch, district, applicationType, validityBand, page, pageSize, loadCatalog]);
 
   useEffect(() => {
     fetchMeta();
@@ -144,6 +309,12 @@ export function BusinessPotential() {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
+  const bandCounts = useMemo(() => {
+    if (meta.validity_bands && (meta.validity_bands.expired != null || meta.validity_bands.d90 != null)) {
+      return meta.validity_bands;
+    }
+    return catalog ? countValidityBands(catalog) : {};
+  }, [meta.validity_bands, catalog]);
 
   const pageHeaderSubtitle = useMemo(() => {
     if (total !== meta.total && meta.total) {
@@ -166,74 +337,110 @@ export function BusinessPotential() {
     }
   };
 
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const response = await axios.get(`${API}/business-potential-records/export`, {
+        ...authHeaders(),
+        responseType: 'blob',
+        params: {
+          q: debouncedSearch || undefined,
+          district: district || undefined,
+          application_type: applicationType || undefined,
+          validity_band: validityBand || undefined,
+        },
+      });
+      const type = response.headers['content-type'] || '';
+      if (type.includes('application/json')) {
+        const text = await response.data.text();
+        const parsed = JSON.parse(text);
+        throw new Error(parsed?.detail || 'Failed to export Excel');
+      }
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Business_Potential_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Excel exported');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, err?.message || 'Failed to export Excel'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const pageHeaderActions = useMemo(
     () => (
-      canImport ? (
-        <Button className="h-9" variant="outline" disabled={importing} onClick={importExcel}>
-          <Upload className="h-4 w-4 mr-1.5" />
-          {importing ? 'Importing…' : meta.total ? 'Re-import Excel' : 'Import Excel'}
-        </Button>
+      isAdmin ? (
+        <>
+          <Button className="h-9" variant="outline" disabled={exporting || total === 0} onClick={exportExcel}>
+            <Download className="h-4 w-4 mr-1.5" />
+            {exporting ? 'Exporting…' : 'Export Excel'}
+          </Button>
+          <Button className="h-9" variant="outline" disabled={importing} onClick={importExcel}>
+            <Upload className="h-4 w-4 mr-1.5" />
+            {importing ? 'Importing…' : meta.total ? 'Re-import Excel' : 'Import Excel'}
+          </Button>
+        </>
       ) : null
     ),
-    [canImport, importing, meta.total, importExcel],
+    [isAdmin, exporting, total, exportExcel, importing, meta.total, importExcel],
   );
 
   useRegisterPageHeader({
     subtitle: pageHeaderSubtitle,
     actions: pageHeaderActions,
-    enabled: !loading || items.length > 0 || canImport,
+    enabled: !loading || items.length > 0 || isAdmin,
   });
 
   return (
-    <div className="space-y-5" data-testid="business-potential-page">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">All records</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{meta.total.toLocaleString('en-IN')}</p>
-        </Card>
-        {(meta.sources.length ? meta.sources : [
-          { key: 'bhuneer_renewal', label: 'Bhuneer one-time renewal', count: 0 },
-          { key: 'nocap_new', label: 'NOCAP new', count: 0 },
-          { key: 'nocap_old', label: 'NOCAP old', count: 0 },
-        ]).slice(0, 3).map((src) => (
-          <Card key={src.key} className="p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground truncate">{src.label}</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{Number(src.count || 0).toLocaleString('en-IN')}</p>
-          </Card>
-        ))}
-      </div>
-
-      <Card className="p-4 sm:p-5 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
-          <div className="relative xl:col-span-2">
+    <div className="flex h-[calc(100dvh-13rem)] min-h-0 min-w-0 flex-col lg:h-[calc(100dvh-8.5rem)]" data-testid="business-potential-page">
+      <Card className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4 sm:p-5 space-y-4">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {COLOR_FILTERS.map((item) => {
+            const selected = validityBand === item.key;
+            const count = item.key ? bandCounts?.[item.key] : (meta.total || total);
+            return (
+              <button
+                key={item.key || 'all'}
+                type="button"
+                onClick={() => setValidityBand(item.key)}
+                className={cn(
+                  'inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-medium sm:text-sm',
+                  selected ? item.active : 'border-gray-200 bg-white text-gray-700 hover:bg-slate-50',
+                )}
+              >
+                <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', item.swatch)} />
+                {item.label}
+                {count != null && (
+                  <span className="tabular-nums text-[11px] opacity-70">{Number(count).toLocaleString('en-IN')}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="grid shrink-0 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search project, NOC, application no, district…"
+              placeholder="Search project, NOC, email, contact, district…"
               className="h-10 pl-9"
             />
           </div>
-          <select value={source} onChange={(e) => setSource(e.target.value)} className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
-            <option value="">All sources</option>
-            {meta.sources.map((src) => (
-              <option key={src.key} value={src.key}>{src.label} ({src.count})</option>
-            ))}
-          </select>
           <select value={district} onChange={(e) => setDistrict(e.target.value)} className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
             <option value="">All districts</option>
             {meta.districts.map((d) => (
               <option key={d} value={d}>{d}</option>
             ))}
           </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
-            <option value="">All statuses</option>
-            {meta.statuses.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-wrap gap-3">
           <select value={applicationType} onChange={(e) => setApplicationType(e.target.value)} className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
             <option value="">All application types</option>
             {meta.application_types.map((t) => (
@@ -243,23 +450,29 @@ export function BusinessPotential() {
         </div>
 
         {loading && items.length === 0 ? (
-          <div className="flex justify-center py-16">
+          <div className="flex flex-1 items-center justify-center py-16">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
           </div>
         ) : items.length === 0 ? (
-          <div className="py-12 text-center text-muted-foreground">
+          <div className="flex flex-1 flex-col items-center justify-center py-12 text-center text-muted-foreground">
             <TrendingUp className="mx-auto mb-2 h-12 w-12 opacity-40" />
             <p>No Business Potential records match your search.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-gray-200">
+            <div className="min-h-[240px] flex-1 overflow-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600 shadow-[inset_0_-1px_0_0_rgb(226,232,240)]">
                 <tr>
                   <th className="px-3 py-3 font-semibold">Project</th>
                   <th className="px-3 py-3 font-semibold">Application no</th>
                   <th className="px-3 py-3 font-semibold">NOC number</th>
                   <th className="px-3 py-3 font-semibold">District</th>
+                  <th className="px-3 py-3 font-semibold">Email</th>
+                  <th className="px-3 py-3 font-semibold">Contact</th>
+                  <th className="px-3 py-3 font-semibold">Valid start</th>
+                  <th className="px-3 py-3 font-semibold">Valid end</th>
+                  <th className="px-3 py-3 font-semibold">Days to expire</th>
                   <th className="px-3 py-3 font-semibold">Type</th>
                   <th className="px-3 py-3 font-semibold">Status</th>
                   <th className="px-3 py-3 font-semibold">Source</th>
@@ -267,67 +480,98 @@ export function BusinessPotential() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((row) => (
+                {items.map((row) => {
+                  const tone = validEndRowTone(row.validity_end);
+                  const textMain = tone === 'red' ? 'text-red-600' : tone === 'yellow' ? 'text-yellow-600' : tone === 'sky' ? 'text-sky-600' : 'text-gray-700';
+                  const textStrong = tone === 'red' ? 'text-red-700' : tone === 'yellow' ? 'text-yellow-700' : tone === 'sky' ? 'text-sky-700' : 'text-gray-900';
+                  const textMuted = tone === 'red' ? 'text-red-500' : tone === 'yellow' ? 'text-yellow-600' : tone === 'sky' ? 'text-sky-500' : 'text-gray-500';
+                  const textMono = tone === 'red' ? 'text-red-600' : tone === 'yellow' ? 'text-yellow-600' : tone === 'sky' ? 'text-sky-600' : 'text-gray-800';
+                  return (
                   <tr
                     key={row.id}
-                    className="border-t border-gray-100 hover:bg-slate-50/70 cursor-pointer"
+                    className={cn(
+                      'border-t cursor-pointer',
+                      tone === 'red' && 'border-red-100 bg-red-50/50 hover:bg-red-50',
+                      tone === 'yellow' && 'border-yellow-100 bg-yellow-50/50 hover:bg-yellow-50',
+                      tone === 'sky' && 'border-sky-100 bg-sky-50/50 hover:bg-sky-50',
+                      !tone && 'border-gray-100 hover:bg-slate-50/70',
+                    )}
                     onClick={() => setSelected(row)}
                   >
                     <td className="px-3 py-3">
-                      <div className="font-medium text-gray-900 max-w-[280px] truncate" title={row.project_name || ''}>
+                      <div className={cn('font-medium max-w-[280px] truncate', textStrong)} title={row.project_name || ''}>
                         {displayValue(row.project_name)}
                       </div>
-                      <div className="mt-0.5 text-xs text-gray-500">{displayValue(row.village_name)}</div>
+                      <div className={cn('mt-0.5 text-xs', textMuted)}>{displayValue(row.village_name)}</div>
                     </td>
-                    <td className="px-3 py-3 font-mono text-xs text-gray-800">{displayValue(row.application_number)}</td>
-                    <td className="px-3 py-3 font-mono text-xs text-gray-800">{displayValue(row.noc_number)}</td>
-                    <td className="px-3 py-3 text-gray-700">{displayValue(row.district_name)}</td>
-                    <td className="px-3 py-3 text-gray-700">{displayValue(row.application_type)}</td>
+                    <td className={cn('px-3 py-3 font-mono text-xs', textMono)}>{displayValue(row.application_number)}</td>
+                    <td className={cn('px-3 py-3 font-mono text-xs', textMono)}>{displayValue(row.noc_number)}</td>
+                    <td className={cn('px-3 py-3', textMain)}>{displayValue(row.district_name)}</td>
+                    <td className={cn('px-3 py-3 max-w-[220px] truncate', textMain)} title={rowEmail(row) || ''}>{displayValue(rowEmail(row))}</td>
+                    <td className={cn('px-3 py-3 whitespace-nowrap', textMono)}>{displayValue(rowContact(row))}</td>
+                    <td className={cn('px-3 py-3 whitespace-nowrap font-mono text-xs', textMain)}>{displayDate(row.validity_start)}</td>
+                    <td className={cn('px-3 py-3 whitespace-nowrap font-mono text-xs font-semibold', textStrong)}>{displayDate(row.validity_end)}</td>
+                    <td className={cn('px-3 py-3 whitespace-nowrap font-mono text-xs font-semibold', textStrong)}>{displayDaysUntilExpiry(row.validity_end)}</td>
+                    <td className={cn('px-3 py-3', textMain)}>{displayValue(row.application_type)}</td>
                     <td className="px-3 py-3">
-                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                      <span className={cn(
+                        'inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium',
+                        tone === 'red' ? 'bg-red-100 text-red-700' : tone === 'yellow' ? 'bg-yellow-100 text-yellow-800' : tone === 'sky' ? 'bg-sky-100 text-sky-800' : 'bg-emerald-50 text-emerald-800',
+                      )}>
                         {displayValue(row.application_status)}
                       </span>
                     </td>
                     <td className="px-3 py-3">
-                      <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium', SOURCE_TONES[row.source_key] || SOURCE_TONES.nocap_old)}>
+                      <span className={cn(
+                        'inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium',
+                        tone === 'red' ? 'bg-red-100 text-red-700' : tone === 'yellow' ? 'bg-yellow-100 text-yellow-800' : tone === 'sky' ? 'bg-sky-100 text-sky-800' : (SOURCE_TONES[row.source_key] || SOURCE_TONES.nocap_old),
+                      )}>
                         {displayValue(row.source_label)}
                       </span>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={(e) => { e.stopPropagation(); setSelected(row); }}>
+                      <Button type="button" variant="ghost" size="sm" className={cn('h-8 w-8 p-0', tone === 'red' && 'text-red-600 hover:text-red-700', tone === 'yellow' && 'text-yellow-600 hover:text-yellow-700', tone === 'sky' && 'text-sky-600 hover:text-sky-700')} onClick={(e) => { e.stopPropagation(); setSelected(row); }}>
                         <Eye className="h-4 w-4" />
                       </Button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
+            </div>
+            <div className="flex shrink-0 flex-col gap-3 border-t border-gray-200 bg-slate-50/80 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <p className="shrink-0 text-gray-600">
+                Showing{' '}
+                <span className="font-medium text-gray-900">{total === 0 ? 0 : (safePage - 1) * pageSize + 1}</span>
+                –
+                <span className="font-medium text-gray-900">{Math.min(safePage * pageSize, total)}</span>
+                {' '}of{' '}
+                <span className="font-medium text-gray-900">{total.toLocaleString('en-IN')}</span>
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  className="h-9 shrink-0 rounded-lg border border-gray-300 bg-white px-2 text-sm"
+                >
+                  {PAGE_SIZE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>{n} / page</option>
+                  ))}
+                </select>
+                <Button type="button" variant="outline" className="h-9 shrink-0 px-3" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                  Prev
+                </Button>
+                <span className="min-w-[88px] shrink-0 text-center tabular-nums text-gray-700">
+                  Page {safePage} / {totalPages}
+                </span>
+                <Button type="button" variant="outline" className="h-9 shrink-0 px-3" disabled={safePage >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                  Next
+                </Button>
+              </div>
+            </div>
           </div>
         )}
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-gray-600">
-          <p>
-            Showing {total === 0 ? 0 : (safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, total)} of {total.toLocaleString('en-IN')}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-              className="h-9 rounded-lg border border-gray-300 bg-white px-2 text-sm"
-            >
-              {PAGE_SIZE_OPTIONS.map((n) => (
-                <option key={n} value={n}>{n} / page</option>
-              ))}
-            </select>
-            <Button type="button" variant="outline" className="h-9" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-              Previous
-            </Button>
-            <span className="px-1 tabular-nums">{safePage} / {totalPages}</span>
-            <Button type="button" variant="outline" className="h-9" disabled={safePage >= totalPages} onClick={() => setPage((p) => p + 1)}>
-              Next
-            </Button>
-          </div>
-        </div>
       </Card>
 
       <Dialog open={!!selected} onOpenChange={(open) => { if (!open) setSelected(null); }}>
@@ -346,7 +590,14 @@ export function BusinessPotential() {
             {DETAIL_FIELDS.map(([key, label]) => (
               <div key={key} className={['proposed_address', 'communication_address', 'project_name'].includes(key) ? 'sm:col-span-2' : ''}>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
-                <p className="mt-1 text-sm text-gray-900 break-words">{displayValue(selected?.[key])}</p>
+                <p className="mt-1 text-sm text-gray-900 break-words">
+                  {displayValue(
+                    key === 'contact_email' ? rowEmail(selected)
+                      : key === 'contact_phone' ? rowContact(selected)
+                        : key === 'days_to_expire' ? displayDaysUntilExpiry(selected?.validity_end)
+                          : selected?.[key],
+                  )}
+                </p>
               </div>
             ))}
           </div>
