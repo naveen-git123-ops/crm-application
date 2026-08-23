@@ -32,6 +32,7 @@ import {
   BookOpen,
   Wallet,
   Package,
+  TrendingUp,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PageHeaderProvider, usePageHeader, usePageHeaderActions } from '@/contexts/PageHeaderContext';
@@ -181,6 +182,7 @@ export const Layout = () => {
       items: [
         { icon: Target, label: 'Leads', path: '/leads', permission: 'leads' },
         { icon: BookOpen, label: 'Create Ledger', path: '/customers', permission: 'customers' },
+        { icon: TrendingUp, label: 'Business Potential', path: '/business-potential', permission: 'business-potential' },
         { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
       ],
     },

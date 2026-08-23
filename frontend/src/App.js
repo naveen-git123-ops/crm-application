@@ -28,6 +28,7 @@ import Vehicles from '@/pages/Vehicles';
 import LocationTracker from '@/pages/LocationTracker';
 import CGWFlowMetre from '@/pages/CGWFlowMetre';
 import StockManagement from '@/pages/StockManagement';
+import { BusinessPotential } from '@/pages/BusinessPotential';
 
 function App() {
   return (
@@ -124,6 +125,15 @@ function App() {
                   element={
                     <ProtectedRoute requiredPermission="stock-management">
                       <StockManagement />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/business-potential"
+                  element={
+                    <ProtectedRoute requiredPermission="business-potential">
+                      <BusinessPotential />
                     </ProtectedRoute>
                   }
                 />

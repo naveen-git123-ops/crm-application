@@ -1,10 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { Check, ChevronsUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import {
   LEAD_SOURCES,
   defaultLeadForm,
@@ -12,11 +22,86 @@ import {
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFilePicker';
 import { LEAD_ATTACHMENT_ACCEPT, LEAD_ATTACHMENT_HINT } from '@/lib/leadAttachmentAccept';
+import { cn } from '@/lib/utils';
 
 const selectClass =
   'flex h-11 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900';
 
 const labelClass = 'text-sm font-semibold text-gray-700';
+
+function customerSearchValue(customer) {
+  return [
+    customer?.company_name,
+    customer?.customer_id,
+    customer?.gst_number,
+    customer?.city,
+    customer?.phone,
+    customer?.email,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function SearchableCustomerSelect({ id, customers, value, onSelect, dialogOpen = true, placeholder = 'Select customer' }) {
+  const [open, setOpen] = useState(false);
+  const selected = customers.find((c) => c.id === value);
+
+  useEffect(() => {
+    if (!dialogOpen) setOpen(false);
+  }, [dialogOpen]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen} modal>
+      <PopoverTrigger asChild>
+        <button
+          id={id}
+          type="button"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls="lead-customer-list"
+          className={`${selectClass} items-center justify-between gap-2`}
+        >
+          <span className={cn('truncate', !selected && 'text-gray-400')}>
+            {selected ? selected.company_name : placeholder}
+          </span>
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-gray-400" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="z-[70] w-[var(--radix-popover-trigger-width)] p-0"
+        align="start"
+        onWheel={(e) => e.stopPropagation()}
+      >
+        <Command>
+          <CommandInput placeholder="Search customer..." />
+          <CommandList id="lead-customer-list">
+            <CommandEmpty>No customer found.</CommandEmpty>
+            <CommandGroup>
+              {customers.map((customer) => (
+                <CommandItem
+                  key={customer.id}
+                  value={`${customerSearchValue(customer)} ${customer.id}`}
+                  onSelect={() => {
+                    onSelect(customer);
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn('h-4 w-4', value === customer.id ? 'opacity-100' : 'opacity-0')} />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate">{customer.company_name}</span>
+                    {customer.customer_id ? (
+                      <span className="font-mono text-[11px] text-muted-foreground">{customer.customer_id}</span>
+                    ) : null}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function LeadCreateDialog({
   open,
@@ -62,6 +147,10 @@ export function LeadCreateDialog({
   const submitLead = async () => {
     const resolvedSource =
       form.source === 'Other' ? customSource.trim() : (form.source || '').trim();
+    if (!customerId) {
+      toast.error('Please select a customer');
+      return;
+    }
     if (form.source === 'Other' && !resolvedSource) {
       toast.error('Please enter the source');
       return;
@@ -133,33 +222,22 @@ export function LeadCreateDialog({
         >
           <div className="space-y-2">
             <Label htmlFor="lead-customer" className={labelClass}>Customer *</Label>
-            <select
+            <SearchableCustomerSelect
               id="lead-customer"
+              customers={customers}
               value={customerId}
-              required
-              className={selectClass}
-              onChange={(e) => {
-                const id = e.target.value;
-                setCustomerId(id);
-                const cust = customers.find((c) => c.id === id);
-                if (cust) {
-                  setForm((f) => ({
-                    ...f,
-                    company: cust.company_name,
-                    phone: cust.phone || '',
-                    email: cust.email || '',
-                  }));
-                  fetchContacts(id);
-                } else {
-                  setCustomerContacts([]);
-                }
+              dialogOpen={open}
+              onSelect={(cust) => {
+                setCustomerId(cust.id);
+                setForm((f) => ({
+                  ...f,
+                  company: cust.company_name,
+                  phone: cust.phone || '',
+                  email: cust.email || '',
+                }));
+                fetchContacts(cust.id);
               }}
-            >
-              <option value="">Select customer</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.company_name}</option>
-              ))}
-            </select>
+            />
           </div>
 
           {customerContacts.length > 0 && (

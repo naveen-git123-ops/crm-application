@@ -948,6 +948,30 @@ class StockItemModel(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class BusinessPotentialModel(Base):
+    """CRM business potential / opportunity tracker."""
+    __tablename__ = 'business_potentials'
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    account_name = Column(String(255), index=True, nullable=False)
+    customer_id = Column(String(36), nullable=True, index=True)
+    customer_name = Column(String(255), nullable=True)
+    location = Column(String(255), nullable=True)
+    opportunity = Column(String(255), nullable=True)
+    estimated_value = Column(Float, default=0)
+    probability = Column(Integer, default=0)
+    stage = Column(String(50), nullable=False, default='Identified', index=True)
+    expected_date = Column(String(20), nullable=True)
+    assigned_to_employee_id = Column(String(50), nullable=True, index=True)
+    assigned_to_name = Column(String(255), nullable=True)
+    notes = Column(String(2000), nullable=True)
+    created_by_employee_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    updated_by_employee_id = Column(String(50), nullable=True)
+    updated_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 # Create all tables. Do not crash the process — a hard fail here 502s nginx
 # and browsers report the missing CORS headers as a CORS error.
 try:
@@ -1862,7 +1886,7 @@ _safe_migrate(migrate_cgw_flow_metres_wizard_draft_json)
 DEFAULT_PERMISSION_KEYS = [
     "dashboard", "leads", "employees", "attendance", "monthly-report", "leaves", "expenses",
     "roles", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers",
-    "cgw-flow-metre", "vehicles", "stock-management",
+    "cgw-flow-metre", "vehicles", "stock-management", "business-potential",
 ]
 
 def seed_roles_if_needed():
@@ -2510,6 +2534,69 @@ class StockItemUpdate(BaseModel):
     quantity: Optional[float] = None
     rate: Optional[float] = None
     reorder_level: Optional[float] = None
+    notes: Optional[str] = None
+
+
+BUSINESS_POTENTIAL_STAGES = (
+    'Identified',
+    'In discussion',
+    'Proposal',
+    'Committed',
+    'Converted',
+    'Dropped',
+)
+
+
+class BusinessPotential(BaseModel):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+    id: str
+    account_name: str
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    location: Optional[str] = None
+    opportunity: Optional[str] = None
+    estimated_value: float = 0
+    probability: int = 0
+    stage: str = 'Identified'
+    expected_date: Optional[str] = None
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+    notes: Optional[str] = None
+    created_by_employee_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    updated_by_employee_id: Optional[str] = None
+    updated_by_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class BusinessPotentialCreate(BaseModel):
+    account_name: str
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    location: Optional[str] = None
+    opportunity: Optional[str] = None
+    estimated_value: Optional[float] = 0
+    probability: Optional[int] = 0
+    stage: Optional[str] = 'Identified'
+    expected_date: Optional[str] = None
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class BusinessPotentialUpdate(BaseModel):
+    account_name: Optional[str] = None
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    location: Optional[str] = None
+    opportunity: Optional[str] = None
+    estimated_value: Optional[float] = None
+    probability: Optional[int] = None
+    stage: Optional[str] = None
+    expected_date: Optional[str] = None
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -9981,6 +10068,157 @@ def delete_stock_item(
     db.delete(row)
     db.commit()
     return {'message': 'Stock item deleted'}
+
+
+# ============= BUSINESS POTENTIAL =============
+
+def require_business_potential(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if is_admin_user(current_user):
+        return current_user
+    perms = get_permissions_for_role(db, current_user.role)
+    if 'business-potential' not in perms:
+        raise HTTPException(status_code=403, detail='You do not have access to Business Potential')
+    return current_user
+
+
+def _normalize_potential_stage(stage: Optional[str]) -> str:
+    value = (stage or 'Identified').strip()
+    if value not in BUSINESS_POTENTIAL_STAGES:
+        raise HTTPException(status_code=400, detail='Invalid business potential stage')
+    return value
+
+
+def _clamp_probability(value) -> int:
+    try:
+        n = int(value or 0)
+    except (TypeError, ValueError):
+        n = 0
+    return max(0, min(100, n))
+
+
+def _resolve_potential_customer_name(db: Session, customer_id: Optional[str], fallback: Optional[str]) -> Optional[str]:
+    cid = (customer_id or '').strip() or None
+    if not cid:
+        return (fallback or '').strip() or None
+    customer = db.query(CustomerModel).filter(CustomerModel.id == cid).first()
+    if customer and getattr(customer, 'company_name', None):
+        return customer.company_name
+    return (fallback or '').strip() or None
+
+
+@api_router.get('/business-potentials', response_model=List[BusinessPotential])
+def list_business_potentials(
+    q: Optional[str] = None,
+    stage: Optional[str] = None,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    query = db.query(BusinessPotentialModel)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        query = query.filter(
+            (BusinessPotentialModel.account_name.ilike(like))
+            | (BusinessPotentialModel.customer_name.ilike(like))
+            | (BusinessPotentialModel.location.ilike(like))
+            | (BusinessPotentialModel.opportunity.ilike(like))
+            | (BusinessPotentialModel.assigned_to_name.ilike(like))
+            | (BusinessPotentialModel.notes.ilike(like))
+        )
+    if stage and stage.strip():
+        query = query.filter(BusinessPotentialModel.stage == stage.strip())
+    return query.order_by(BusinessPotentialModel.updated_at.desc()).all()
+
+
+@api_router.post('/business-potentials', response_model=BusinessPotential)
+def create_business_potential(
+    body: BusinessPotentialCreate,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    account_name = (body.account_name or '').strip()
+    if not account_name:
+        raise HTTPException(status_code=400, detail='Account name is required')
+    row = BusinessPotentialModel(
+        account_name=account_name,
+        customer_id=(body.customer_id or '').strip() or None,
+        customer_name=_resolve_potential_customer_name(db, body.customer_id, body.customer_name or account_name),
+        location=(body.location or '').strip() or None,
+        opportunity=(body.opportunity or '').strip() or None,
+        estimated_value=float(body.estimated_value or 0),
+        probability=_clamp_probability(body.probability),
+        stage=_normalize_potential_stage(body.stage),
+        expected_date=(body.expected_date or '').strip() or None,
+        assigned_to_employee_id=(body.assigned_to_employee_id or '').strip() or None,
+        assigned_to_name=(body.assigned_to_name or '').strip() or None,
+        notes=(body.notes or '').strip() or None,
+        created_by_employee_id=current_user.employee_id,
+        created_by_name=current_user.name,
+        updated_by_employee_id=current_user.employee_id,
+        updated_by_name=current_user.name,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@api_router.put('/business-potentials/{item_id}', response_model=BusinessPotential)
+def update_business_potential(
+    item_id: str,
+    body: BusinessPotentialUpdate,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    row = db.query(BusinessPotentialModel).filter(BusinessPotentialModel.id == item_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Business potential record not found')
+    data = body.model_dump(exclude_unset=True)
+    if 'account_name' in data:
+        account_name = (data['account_name'] or '').strip()
+        if not account_name:
+            raise HTTPException(status_code=400, detail='Account name is required')
+        row.account_name = account_name
+    if 'customer_id' in data:
+        row.customer_id = (data['customer_id'] or '').strip() or None
+    if 'customer_name' in data or 'customer_id' in data:
+        row.customer_name = _resolve_potential_customer_name(
+            db,
+            row.customer_id,
+            data.get('customer_name', row.customer_name),
+        )
+    for field in ('location', 'opportunity', 'expected_date', 'assigned_to_employee_id', 'assigned_to_name', 'notes'):
+        if field in data:
+            val = data[field]
+            setattr(row, field, (val or '').strip() or None if isinstance(val, str) else val)
+    if 'estimated_value' in data:
+        row.estimated_value = float(data['estimated_value'] or 0)
+    if 'probability' in data:
+        row.probability = _clamp_probability(data['probability'])
+    if 'stage' in data:
+        row.stage = _normalize_potential_stage(data['stage'])
+    row.updated_by_employee_id = current_user.employee_id
+    row.updated_by_name = current_user.name
+    row.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@api_router.delete('/business-potentials/{item_id}')
+def delete_business_potential(
+    item_id: str,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    row = db.query(BusinessPotentialModel).filter(BusinessPotentialModel.id == item_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Business potential record not found')
+    db.delete(row)
+    db.commit()
+    return {'message': 'Business potential record deleted'}
 
 
 @api_router.post('/documents/upload')
