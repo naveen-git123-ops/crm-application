@@ -1,330 +1,301 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Search, TrendingUp, IndianRupee } from 'lucide-react';
+import { Search, TrendingUp, Eye, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { isAdminUser } from '@/lib/permissions';
 import { API_ENDPOINT } from '@/lib/apiConfig';
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import { cn } from '@/lib/utils';
 
 const API = API_ENDPOINT;
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
 
-const STAGES = [
-  'Identified',
-  'In discussion',
-  'Proposal',
-  'Committed',
-  'Converted',
-  'Dropped',
+const SOURCE_TONES = {
+  bhuneer_renewal: 'bg-amber-50 text-amber-800',
+  nocap_new: 'bg-indigo-50 text-indigo-800',
+  nocap_old: 'bg-slate-100 text-slate-700',
+};
+
+const DETAIL_FIELDS = [
+  ['source_label', 'Source'],
+  ['source_sheet', 'Sheet / district tab'],
+  ['application_code', 'Application code'],
+  ['application_number', 'Application number'],
+  ['application_status', 'Status'],
+  ['application_type', 'Application type'],
+  ['project_name', 'Project name'],
+  ['noc_number', 'NOC number'],
+  ['category_description', 'Category'],
+  ['gw_utilisation_for', 'GW utilisation'],
+  ['msme', 'MSME'],
+  ['relaxation', 'Relaxation'],
+  ['geology', 'Geology'],
+  ['state_name', 'State'],
+  ['district_name', 'District'],
+  ['sub_district_name', 'Sub-district'],
+  ['village_name', 'Village'],
+  ['proposed_address', 'Proposed address'],
+  ['communication_address', 'Communication address'],
+  ['net_gw_requirement', 'Net GW requirement (m³/day)'],
+  ['issued_letter_type', 'Issued letter'],
+  ['eligible_exemption', 'Exemption letter'],
+  ['present_area_type', 'Present area type'],
+  ['apply_area_type', 'Apply area type'],
+  ['renewal_apply_area_type', 'Renewal apply area type'],
+  ['first_apply_area_type', 'First apply area type'],
+  ['latitude', 'Latitude'],
+  ['longitude', 'Longitude'],
+  ['validity_start', 'Validity start'],
+  ['validity_end', 'Validity end'],
+  ['date_of_commencement', 'Date of commencement'],
+  ['date_of_expansion', 'Date of expansion'],
+  ['application_created_date', 'Created date'],
+  ['application_submitted_date', 'Submitted date'],
+  ['application_approved_date', 'Approved date'],
 ];
 
-const STAGE_STYLES = {
-  Identified: 'bg-slate-100 text-slate-700',
-  'In discussion': 'bg-sky-50 text-sky-800',
-  Proposal: 'bg-indigo-50 text-indigo-700',
-  Committed: 'bg-amber-50 text-amber-800',
-  Converted: 'bg-emerald-50 text-emerald-800',
-  Dropped: 'bg-rose-50 text-rose-700',
-};
-
-const emptyForm = () => ({
-  account_name: '',
-  customer_id: '',
-  location: '',
-  opportunity: '',
-  estimated_value: '',
-  probability: '50',
-  stage: 'Identified',
-  expected_date: '',
-  assigned_to_employee_id: '',
-  notes: '',
-});
-
-const formatMoney = (n) => {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return '₹0';
-  return `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-};
-
-const weightedValue = (row) => {
-  const value = Number(row?.estimated_value) || 0;
-  const probability = Number(row?.probability) || 0;
-  return (value * probability) / 100;
-};
-
-const selectClass =
-  'flex h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900';
+function displayValue(value) {
+  const text = String(value ?? '').trim();
+  return text || '—';
+}
 
 export function BusinessPotential() {
+  const { user } = useAuth();
+  const canImport = isAdminUser(user);
   const [items, setItems] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [employees, setEmployees] = useState([]);
+  const [importing, setImporting] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [meta, setMeta] = useState({ sources: [], districts: [], statuses: [], application_types: [], total: 0 });
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
-  const [stageFilter, setStageFilter] = useState('');
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState(emptyForm());
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [source, setSource] = useState('');
+  const [district, setDistrict] = useState('');
+  const [status, setStatus] = useState('');
+  const [applicationType, setApplicationType] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [selected, setSelected] = useState(null);
 
-  const fetchItems = useCallback(async () => {
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, source, district, status, applicationType, pageSize]);
+
+  const fetchMeta = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API}/business-potentials`, authHeaders());
-      setItems(Array.isArray(data) ? data : []);
+      const { data } = await axios.get(`${API}/business-potential-records/meta`, authHeaders());
+      setMeta({
+        sources: data?.sources || [],
+        districts: data?.districts || [],
+        statuses: data?.statuses || [],
+        application_types: data?.application_types || [],
+        total: data?.total || 0,
+      });
     } catch (err) {
-      toast.error(getApiErrorMessage(err, 'Failed to load business potential'));
-      setItems([]);
-    } finally {
-      setLoading(false);
+      toast.error(getApiErrorMessage(err, 'Failed to load Business Potential filters'));
     }
   }, []);
 
-  useEffect(() => {
-    fetchItems();
-    axios
-      .get(`${API}/customers?entity_type=0`, authHeaders())
-      .then((r) => setCustomers(Array.isArray(r.data) ? r.data : []))
-      .catch(() => setCustomers([]));
-    axios
-      .get(`${API}/employees`, authHeaders())
-      .then((r) => setEmployees(Array.isArray(r.data) ? r.data : []))
-      .catch(() => setEmployees([]));
-  }, [fetchItems]);
-
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return items.filter((row) => {
-      if (stageFilter && row.stage !== stageFilter) return false;
-      if (!term) return true;
-      return [
-        row.account_name,
-        row.customer_name,
-        row.location,
-        row.opportunity,
-        row.assigned_to_name,
-        row.notes,
-        row.stage,
-      ].some((v) => String(v || '').toLowerCase().includes(term));
-    });
-  }, [items, search, stageFilter]);
-
-  const summary = useMemo(() => {
-    const active = items.filter((r) => r.stage !== 'Converted' && r.stage !== 'Dropped');
-    const totalPotential = active.reduce((s, r) => s + (Number(r.estimated_value) || 0), 0);
-    const weighted = active.reduce((s, r) => s + weightedValue(r), 0);
-    const converted = items.filter((r) => r.stage === 'Converted').length;
-    return { total: items.length, totalPotential, weighted, converted };
-  }, [items]);
-
-  const openCreate = () => {
-    setEditing(null);
-    setForm(emptyForm());
-    setDialogOpen(true);
-  };
-
-  const openEdit = (row) => {
-    setEditing(row);
-    setForm({
-      account_name: row.account_name || '',
-      customer_id: row.customer_id || '',
-      location: row.location || '',
-      opportunity: row.opportunity || '',
-      estimated_value: row.estimated_value == null ? '' : String(row.estimated_value),
-      probability: row.probability == null ? '' : String(row.probability),
-      stage: row.stage || 'Identified',
-      expected_date: row.expected_date || '',
-      assigned_to_employee_id: row.assigned_to_employee_id || '',
-      notes: row.notes || '',
-    });
-    setDialogOpen(true);
-  };
-
-  const onChange = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
-
-  const onCustomerChange = (customerId) => {
-    const customer = customers.find((c) => c.id === customerId);
-    setForm((prev) => ({
-      ...prev,
-      customer_id: customerId,
-      account_name: customer?.company_name || prev.account_name,
-      location: customer?.city || prev.location,
-    }));
-  };
-
-  const saveRecord = async () => {
-    if (!(form.account_name || '').trim()) {
-      toast.error('Please enter an account name');
-      return;
-    }
-    const assignee = employees.find((e) => e.employee_id === form.assigned_to_employee_id);
-    const payload = {
-      account_name: form.account_name.trim(),
-      customer_id: form.customer_id || null,
-      customer_name: form.account_name.trim(),
-      location: form.location.trim() || null,
-      opportunity: form.opportunity.trim() || null,
-      estimated_value: form.estimated_value === '' ? 0 : Number(form.estimated_value),
-      probability: form.probability === '' ? 0 : Number(form.probability),
-      stage: form.stage,
-      expected_date: form.expected_date || null,
-      assigned_to_employee_id: form.assigned_to_employee_id || null,
-      assigned_to_name: assignee?.name || null,
-      notes: form.notes.trim() || null,
-    };
-    setSaving(true);
+  const fetchRows = useCallback(async () => {
+    setLoading(true);
     try {
-      if (editing?.id) {
-        await axios.put(`${API}/business-potentials/${editing.id}`, payload, authHeaders());
-        toast.success('Business potential updated');
-      } else {
-        await axios.post(`${API}/business-potentials`, payload, authHeaders());
-        toast.success('Business potential added');
-      }
-      setDialogOpen(false);
-      await fetchItems();
+      const { data } = await axios.get(`${API}/business-potential-records`, {
+        ...authHeaders(),
+        params: {
+          q: debouncedSearch || undefined,
+          source: source || undefined,
+          district: district || undefined,
+          status: status || undefined,
+          application_type: applicationType || undefined,
+          page,
+          page_size: pageSize,
+        },
+      });
+      setItems(Array.isArray(data?.items) ? data.items : []);
+      setTotal(Number(data?.total) || 0);
     } catch (err) {
-      toast.error(getApiErrorMessage(err, 'Failed to save business potential'));
+      toast.error(getApiErrorMessage(err, 'Failed to load Business Potential data'));
+      setItems([]);
+      setTotal(0);
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
-  };
+  }, [debouncedSearch, source, district, status, applicationType, page, pageSize]);
 
-  const deleteRecord = async (row) => {
-    if (!window.confirm(`Delete business potential for "${row.account_name}"?`)) return;
+  useEffect(() => {
+    fetchMeta();
+  }, [fetchMeta]);
+
+  useEffect(() => {
+    fetchRows();
+  }, [fetchRows]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+
+  const pageHeaderSubtitle = useMemo(() => {
+    if (total !== meta.total && meta.total) {
+      return `${total.toLocaleString('en-IN')} matches · ${meta.total.toLocaleString('en-IN')} imported`;
+    }
+    return `${(meta.total || total).toLocaleString('en-IN')} imported records`;
+  }, [total, meta.total]);
+
+  const importExcel = async () => {
+    setImporting(true);
     try {
-      await axios.delete(`${API}/business-potentials/${row.id}`, authHeaders());
-      toast.success('Record deleted');
-      await fetchItems();
+      const { data } = await axios.post(`${API}/business-potential-records/import?replace=true`, {}, authHeaders());
+      toast.success(`Imported ${Number(data?.imported || 0).toLocaleString('en-IN')} records`);
+      await fetchMeta();
+      await fetchRows();
     } catch (err) {
-      toast.error(getApiErrorMessage(err, 'Failed to delete record'));
+      toast.error(getApiErrorMessage(err, 'Failed to import Excel data'));
+    } finally {
+      setImporting(false);
     }
   };
 
   const pageHeaderActions = useMemo(
     () => (
-      <Button className="h-9" onClick={openCreate}>
-        <Plus className="h-4 w-4 mr-1.5" />
-        Add potential
-      </Button>
+      canImport ? (
+        <Button className="h-9" variant="outline" disabled={importing} onClick={importExcel}>
+          <Upload className="h-4 w-4 mr-1.5" />
+          {importing ? 'Importing…' : meta.total ? 'Re-import Excel' : 'Import Excel'}
+        </Button>
+      ) : null
     ),
-    [],
+    [canImport, importing, meta.total, importExcel],
   );
 
   useRegisterPageHeader({
-    subtitle: `${summary.total} ${summary.total === 1 ? 'record' : 'records'}`,
+    subtitle: pageHeaderSubtitle,
     actions: pageHeaderActions,
-    enabled: !loading,
+    enabled: !loading || items.length > 0 || canImport,
   });
-
-  if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-5" data-testid="business-potential-page">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Records</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{summary.total}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">All records</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{meta.total.toLocaleString('en-IN')}</p>
         </Card>
-        <Card className="p-4">
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-            <IndianRupee className="h-3.5 w-3.5" /> Active potential
-          </p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{formatMoney(summary.totalPotential)}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-            <TrendingUp className="h-3.5 w-3.5" /> Weighted
-          </p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-indigo-700">{formatMoney(summary.weighted)}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Converted</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-emerald-700">{summary.converted}</p>
-        </Card>
+        {(meta.sources.length ? meta.sources : [
+          { key: 'bhuneer_renewal', label: 'Bhuneer one-time renewal', count: 0 },
+          { key: 'nocap_new', label: 'NOCAP new', count: 0 },
+          { key: 'nocap_old', label: 'NOCAP old', count: 0 },
+        ]).slice(0, 3).map((src) => (
+          <Card key={src.key} className="p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground truncate">{src.label}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{Number(src.count || 0).toLocaleString('en-IN')}</p>
+          </Card>
+        ))}
       </div>
 
       <Card className="p-4 sm:p-5 space-y-4">
-        <div className="flex flex-col gap-3 lg:flex-row">
-          <div className="relative min-w-[180px] flex-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+          <div className="relative xl:col-span-2">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search account, location, opportunity…"
+              placeholder="Search project, NOC, application no, district…"
               className="h-10 pl-9"
             />
           </div>
-          <select
-            value={stageFilter}
-            onChange={(e) => setStageFilter(e.target.value)}
-            className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm"
-          >
-            <option value="">All stages</option>
-            {STAGES.map((stage) => (
-              <option key={stage} value={stage}>{stage}</option>
+          <select value={source} onChange={(e) => setSource(e.target.value)} className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+            <option value="">All sources</option>
+            {meta.sources.map((src) => (
+              <option key={src.key} value={src.key}>{src.label} ({src.count})</option>
+            ))}
+          </select>
+          <select value={district} onChange={(e) => setDistrict(e.target.value)} className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+            <option value="">All districts</option>
+            {meta.districts.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+            <option value="">All statuses</option>
+            {meta.statuses.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <select value={applicationType} onChange={(e) => setApplicationType(e.target.value)} className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+            <option value="">All application types</option>
+            {meta.application_types.map((t) => (
+              <option key={t} value={t}>{t}</option>
             ))}
           </select>
         </div>
 
-        {filtered.length === 0 ? (
+        {loading && items.length === 0 ? (
+          <div className="flex justify-center py-16">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+          </div>
+        ) : items.length === 0 ? (
           <div className="py-12 text-center text-muted-foreground">
             <TrendingUp className="mx-auto mb-2 h-12 w-12 opacity-40" />
-            <p>{items.length === 0 ? 'No business potential records yet.' : 'No records match your search.'}</p>
-            {items.length === 0 ? (
-              <p className="mt-1 text-sm">Add an account to start tracking potential business.</p>
-            ) : null}
+            <p>No Business Potential records match your search.</p>
           </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-gray-200">
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
                 <tr>
-                  <th className="px-3 py-3 font-semibold">Account</th>
-                  <th className="px-3 py-3 font-semibold">Opportunity</th>
-                  <th className="px-3 py-3 font-semibold">Stage</th>
-                  <th className="px-3 py-3 font-semibold text-right">Potential</th>
-                  <th className="px-3 py-3 font-semibold text-right">Weighted</th>
-                  <th className="px-3 py-3 font-semibold">Assigned</th>
-                  <th className="px-3 py-3 font-semibold text-right">Actions</th>
+                  <th className="px-3 py-3 font-semibold">Project</th>
+                  <th className="px-3 py-3 font-semibold">Application no</th>
+                  <th className="px-3 py-3 font-semibold">NOC number</th>
+                  <th className="px-3 py-3 font-semibold">District</th>
+                  <th className="px-3 py-3 font-semibold">Type</th>
+                  <th className="px-3 py-3 font-semibold">Status</th>
+                  <th className="px-3 py-3 font-semibold">Source</th>
+                  <th className="px-3 py-3 font-semibold text-right">View</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((row) => (
-                  <tr key={row.id} className="border-t border-gray-100 hover:bg-slate-50/70">
+                {items.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="border-t border-gray-100 hover:bg-slate-50/70 cursor-pointer"
+                    onClick={() => setSelected(row)}
+                  >
                     <td className="px-3 py-3">
-                      <div className="font-medium text-gray-900">{row.account_name}</div>
-                      <div className="mt-0.5 text-xs text-gray-500">{row.location || '—'}</div>
+                      <div className="font-medium text-gray-900 max-w-[280px] truncate" title={row.project_name || ''}>
+                        {displayValue(row.project_name)}
+                      </div>
+                      <div className="mt-0.5 text-xs text-gray-500">{displayValue(row.village_name)}</div>
                     </td>
-                    <td className="px-3 py-3 text-gray-700">{row.opportunity || '—'}</td>
+                    <td className="px-3 py-3 font-mono text-xs text-gray-800">{displayValue(row.application_number)}</td>
+                    <td className="px-3 py-3 font-mono text-xs text-gray-800">{displayValue(row.noc_number)}</td>
+                    <td className="px-3 py-3 text-gray-700">{displayValue(row.district_name)}</td>
+                    <td className="px-3 py-3 text-gray-700">{displayValue(row.application_type)}</td>
                     <td className="px-3 py-3">
-                      <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium', STAGE_STYLES[row.stage] || STAGE_STYLES.Identified)}>
-                        {row.stage}
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                        {displayValue(row.application_status)}
                       </span>
                     </td>
-                    <td className="px-3 py-3 text-right font-medium text-gray-900">
-                      {formatMoney(row.estimated_value)}
-                      <div className="text-[11px] font-normal text-gray-500">{Number(row.probability) || 0}%</div>
+                    <td className="px-3 py-3">
+                      <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium', SOURCE_TONES[row.source_key] || SOURCE_TONES.nocap_old)}>
+                        {displayValue(row.source_label)}
+                      </span>
                     </td>
-                    <td className="px-3 py-3 text-right text-gray-700">{formatMoney(weightedValue(row))}</td>
-                    <td className="px-3 py-3 text-gray-700">{row.assigned_to_name || '—'}</td>
-                    <td className="px-3 py-3 text-right whitespace-nowrap">
-                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEdit(row)} title="Edit">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 text-rose-600 hover:text-rose-700" onClick={() => deleteRecord(row)} title="Delete">
-                        <Trash2 className="h-4 w-4" />
+                    <td className="px-3 py-3 text-right">
+                      <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={(e) => { e.stopPropagation(); setSelected(row); }}>
+                        <Eye className="h-4 w-4" />
                       </Button>
                     </td>
                   </tr>
@@ -333,120 +304,52 @@ export function BusinessPotential() {
             </table>
           </div>
         )}
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-gray-600">
+          <p>
+            Showing {total === 0 ? 0 : (safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, total)} of {total.toLocaleString('en-IN')}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className="h-9 rounded-lg border border-gray-300 bg-white px-2 text-sm"
+            >
+              {PAGE_SIZE_OPTIONS.map((n) => (
+                <option key={n} value={n}>{n} / page</option>
+              ))}
+            </select>
+            <Button type="button" variant="outline" className="h-9" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              Previous
+            </Button>
+            <span className="px-1 tabular-nums">{safePage} / {totalPages}</span>
+            <Button type="button" variant="outline" className="h-9" disabled={safePage >= totalPages} onClick={() => setPage((p) => p + 1)}>
+              Next
+            </Button>
+          </div>
+        </div>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg bg-white rounded-xl border shadow-xl p-0 max-h-[90vh] overflow-y-auto">
+      <Dialog open={!!selected} onOpenChange={(open) => { if (!open) setSelected(null); }}>
+        <DialogContent className="max-w-3xl bg-white rounded-xl border shadow-xl p-0 max-h-[90vh] overflow-y-auto">
           <div className="bg-gradient-to-r from-slate-900 to-indigo-900 text-white px-6 py-5 rounded-t-xl">
             <DialogHeader>
               <DialogTitle className="text-xl font-bold text-white tracking-tight">
-                {editing ? 'Edit business potential' : 'New business potential'}
+                {selected?.project_name || 'Business potential'}
               </DialogTitle>
+              <p className="text-slate-300 text-sm mt-1">
+                {displayValue(selected?.application_number)} · {displayValue(selected?.source_label)}
+              </p>
             </DialogHeader>
           </div>
-          <form
-            className="p-6 space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              saveRecord();
-            }}
-          >
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold text-gray-700">Customer</Label>
-              <select
-                value={form.customer_id}
-                onChange={(e) => onCustomerChange(e.target.value)}
-                className={selectClass}
-              >
-                <option value="">Select customer (optional)</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>{c.company_name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold text-gray-700">Account name *</Label>
-              <Input
-                value={form.account_name}
-                onChange={(e) => onChange('account_name', e.target.value)}
-                className="h-11"
-                required
-              />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold text-gray-700">Location</Label>
-                <Input value={form.location} onChange={(e) => onChange('location', e.target.value)} className="h-11" />
+          <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {DETAIL_FIELDS.map(([key, label]) => (
+              <div key={key} className={['proposed_address', 'communication_address', 'project_name'].includes(key) ? 'sm:col-span-2' : ''}>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
+                <p className="mt-1 text-sm text-gray-900 break-words">{displayValue(selected?.[key])}</p>
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold text-gray-700">Opportunity</Label>
-                <Input value={form.opportunity} onChange={(e) => onChange('opportunity', e.target.value)} className="h-11" placeholder="Product or service" />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold text-gray-700">Estimated value (₹)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={form.estimated_value}
-                  onChange={(e) => onChange('estimated_value', e.target.value)}
-                  className="h-11"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold text-gray-700">Probability (%)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={form.probability}
-                  onChange={(e) => onChange('probability', e.target.value)}
-                  className="h-11"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold text-gray-700">Stage</Label>
-                <select value={form.stage} onChange={(e) => onChange('stage', e.target.value)} className={selectClass}>
-                  {STAGES.map((stage) => (
-                    <option key={stage} value={stage}>{stage}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold text-gray-700">Expected date</Label>
-                <Input type="date" value={form.expected_date} onChange={(e) => onChange('expected_date', e.target.value)} className="h-11" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold text-gray-700">Assigned to</Label>
-              <select
-                value={form.assigned_to_employee_id}
-                onChange={(e) => onChange('assigned_to_employee_id', e.target.value)}
-                className={selectClass}
-              >
-                <option value="">Unassigned</option>
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.employee_id}>{emp.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold text-gray-700">Notes</Label>
-              <textarea
-                value={form.notes}
-                onChange={(e) => onChange('notes', e.target.value)}
-                rows={3}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm resize-none"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
-                Cancel
-              </Button>
-              <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white" disabled={saving}>
-                {saving ? 'Saving…' : editing ? 'Update' : 'Save'}
-              </Button>
-            </div>
-          </form>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
