@@ -10,6 +10,9 @@ import {
   WORKFLOW_PIPELINE_IDS,
   WORKFLOW_TERMINAL_IDS,
   LOSS_REASONS,
+  ORDER_WIN_CONFIRMATIONS,
+  isClosedWonComplete,
+  closedWonIncompleteMessage,
   TRANSPORT_MODES,
   FOLLOW_UP_CHANNELS,
   followUpChannelLabel,
@@ -20,8 +23,10 @@ import {
   latestOfferRevision,
   agreedOfferRevision,
   offerRevisionLabel,
+  offerRoundLabel,
   resolveLeadOfferBaseNumber,
   formatOfferRevisionNumber,
+  stripOfferRevisionSuffix,
   RTB_OFFER_PREFIX,
   RTB_OFFER_SEQUENCE_START,
   revisionTotalProfit,
@@ -45,6 +50,9 @@ import {
   requirementAnalysisIncompleteMessage,
   defaultOpportunityAssessment,
   PRODUCT_CATEGORY_OTHER,
+  CONSULTANCY_CATEGORIES,
+  CONSULTANCY_CATEGORY_OTHER,
+  isConsultancyBusinessCategory,
   SITE_VISIT_STATUSES,
   SITE_VISIT_FOLLOW_UP_CHANNELS,
   siteVisitAssignees,
@@ -145,11 +153,7 @@ export function CarryOrderWorkspace({
   }, [lead?.id]);
 
   const bomTotals = useMemo(() => computeBomTotals(payload.bom, payload), [payload]);
-  const offerTotals = useMemo(() => {
-    const latest = latestOfferRevision(payload.offer_revisions);
-    const pct = latest?.offer_profit_margin_pct ?? payload.offer_profit_margin_pct;
-    return computeOfferTotals(payload.bom, pct, payload);
-  }, [payload]);
+  const offerTotals = useMemo(() => computeOfferTotals(payload.bom, 0, payload), [payload]);
 
   const saveWorkflow = async (nextStage, nextPayload, comment, successMessage) => {
     if (
@@ -416,14 +420,28 @@ export function CarryOrderWorkspace({
   const stageCtx = { isCarryAndOrder, leadNeedsVendor, payload };
   const pipelineMaxIdx = effectivePipelineMaxIndex(stage, payload);
   const isClosed = WORKFLOW_TERMINAL_IDS.includes(stage);
+  const terminalLocked = isClosed && Boolean(payload.pipeline_terminal_confirmed);
 
   const canOpenStage = (stageId) => canAccessWorkflowStage(stageId, stage, payload);
 
-  const canEditStep = (tabId) =>
-    canEdit
-    && !isClosed
-    && canOpenStage(tabId)
-    && pipelineStageIndex(tabId) <= pipelineMaxIdx;
+  const canEditStep = (tabId) => {
+    if (!canEdit || terminalLocked || !canOpenStage(tabId)) return false;
+    if (WORKFLOW_TERMINAL_IDS.includes(tabId)) return isClosed;
+    return pipelineStageIndex(tabId) <= pipelineMaxIdx;
+  };
+
+  const completeWonScreen = () => {
+    if (!isClosedWonComplete(payload)) {
+      toast.error(closedWonIncompleteMessage(payload));
+      return;
+    }
+    saveWorkflow(
+      'closed_won',
+      { ...payload, pipeline_terminal_confirmed: true },
+      'Won details saved',
+      'Won screen completed',
+    );
+  };
 
   const handleTabSelect = (stageId) => {
     if (!canOpenStage(stageId)) {
@@ -687,11 +705,15 @@ export function CarryOrderWorkspace({
             setPayload={setPayload}
             bomTotals={bomTotals}
             offerTotals={offerTotals}
-            canEdit={editActive && !isClosed}
+            canEdit={editActive}
+            saving={saving}
+            uploadLeadFile={uploadLeadAttachmentFile}
+            onComplete={completeWonScreen}
+            completed={terminalLocked}
           />
         )}
         {canOpenStage(activeTab) && activeTab === 'closed_lost' && (
-          <ModuleClosedLost payload={payload} setPayload={setPayload} canEdit={editActive && !isClosed} />
+          <ModuleClosedLost payload={payload} setPayload={setPayload} canEdit={editActive} />
         )}
       </div>
 
@@ -739,17 +761,22 @@ export function CarryOrderWorkspace({
           </div>
         </div>
       )}
-      {canEdit && !isClosed && ['closed_won', 'closed_lost'].includes(activeTab) && canOpenStage(activeTab) && (
+      {canEdit && !terminalLocked && ['closed_won', 'closed_lost'].includes(activeTab) && canOpenStage(activeTab) && (
         <div className="px-5 py-4 border-t border-slate-100 bg-slate-50">
           <Button
             size="sm"
             className={activeTab === 'closed_won' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}
-            disabled={saving}
-            onClick={() =>
-              saveWorkflow(activeTab, { ...payload, pipeline_terminal_confirmed: true }, `Pipeline closed: ${activeTab}`)
-            }
+            disabled={saving || (activeTab === 'closed_won' && !isClosedWonComplete(payload))}
+            onClick={() => {
+              if (activeTab === 'closed_won') {
+                completeWonScreen();
+                return;
+              }
+              saveWorkflow(activeTab, { ...payload, pipeline_terminal_confirmed: true }, `Pipeline closed: ${activeTab}`);
+            }}
           >
-            Confirm {activeTab === 'closed_won' ? 'Closed Won' : 'Closed Lost'}
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+            {activeTab === 'closed_won' ? 'Complete & save Won' : 'Confirm Closed Lost'}
           </Button>
         </div>
       )}
@@ -824,21 +851,31 @@ function ModuleEnquiry({ lead, attachments, payload, setPayload, canEdit }) {
   );
 }
 
-/** Saved-attachment row with open + remove, used across the Requirement Analysis fields. */
+/** Saved-attachment row with preview + remove, used across Requirement Analysis and vendor files. */
 function OaAttachmentRow({ item, canEdit, busy, onRemove }) {
+  const [previewOpen, setPreviewOpen] = useState(false);
   const name = item?.file_name || item?.name || 'File';
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
       <button
         type="button"
         className="flex-1 flex items-center gap-2 truncate text-left text-indigo-700 hover:underline"
-        onClick={() => {
-          if (item?.file_url) window.open(item.file_url, '_blank', 'noopener,noreferrer');
-        }}
+        onClick={() => setPreviewOpen(true)}
+        title={`Preview: ${name}`}
       >
         <FileText className="h-4 w-4 shrink-0" />
         <span className="truncate">{name}</span>
       </button>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="h-7 shrink-0 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-900"
+        onClick={() => setPreviewOpen(true)}
+      >
+        <Eye className="mr-1 h-3.5 w-3.5" />
+        Preview
+      </Button>
       {canEdit && (
         <Button
           type="button"
@@ -851,6 +888,11 @@ function OaAttachmentRow({ item, canEdit, busy, onRemove }) {
           Remove
         </Button>
       )}
+      <LeadAttachmentPreviewDialog
+        attachment={item}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+      />
     </div>
   );
 }
@@ -1310,6 +1352,8 @@ function ModuleOpportunityAssessment({
     : [...baseOptions, PRODUCT_CATEGORY_OTHER];
   const selected = Array.isArray(oa.product_categories) ? oa.product_categories : [];
   const otherCategorySelected = selected.includes(PRODUCT_CATEGORY_OTHER);
+  const isConsultancy = isConsultancyBusinessCategory(oa.business_category);
+  const consultancyOtherSelected = oa.consultancy_category === CONSULTANCY_CATEGORY_OTHER;
   const siteVisitYes = oa.site_visit_required === true;
   const assignees = siteVisitAssignees(oa);
   const otherPeople = siteVisitOtherPeople(oa);
@@ -1439,7 +1483,16 @@ function ModuleOpportunityAssessment({
             className={selectClass}
             disabled={!canEdit}
             value={oa.business_category || ''}
-            onChange={(e) => updateOa({ business_category: e.target.value })}
+            onChange={(e) => {
+              const next = e.target.value;
+              const consultancy = isConsultancyBusinessCategory(next);
+              updateOa({
+                business_category: next,
+                ...(consultancy
+                  ? { product_categories: [], product_category_other: '' }
+                  : { consultancy_category: '', consultancy_category_other: '' }),
+              });
+            }}
           >
             <option value="">Select business category</option>
             {OPPORTUNITY_BUSINESS_CATEGORIES.map((opt) => (
@@ -1448,43 +1501,75 @@ function ModuleOpportunityAssessment({
           </select>
         </div>
 
-        <div className="space-y-2">
-          <Label className={labelClass}>Product category</Label>
-          <p className="text-xs text-slate-500 normal-case font-normal">Select one or more</p>
-          <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 max-h-48 overflow-y-auto space-y-2">
-            {categoriesLoading && !options.length ? (
-              <p className="text-sm text-slate-500">Loading categories…</p>
-            ) : (
-              options.map((name) => (
-                <label key={name} className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300"
-                    disabled={!canEdit}
-                    checked={selected.includes(name)}
-                    onChange={() => toggleProduct(name)}
-                  />
-                  <span>{name}</span>
-                </label>
-              ))
+        {isConsultancy ? (
+          <div className="space-y-2">
+            <Label className={labelClass}>Consultancy category</Label>
+            <select
+              className={selectClass}
+              disabled={!canEdit}
+              value={oa.consultancy_category || ''}
+              onChange={(e) => updateOa({
+                consultancy_category: e.target.value,
+                ...(e.target.value !== CONSULTANCY_CATEGORY_OTHER ? { consultancy_category_other: '' } : {}),
+              })}
+            >
+              <option value="">Select consultancy category</option>
+              {CONSULTANCY_CATEGORIES.map((opt) => (
+                <option key={opt.id} value={opt.id}>{opt.label}</option>
+              ))}
+            </select>
+            {consultancyOtherSelected && (
+              <div className="space-y-2 pt-1">
+                <Label className={labelClass}>Specify other consultancy category</Label>
+                <Input
+                  className={inputClass}
+                  disabled={!canEdit}
+                  value={oa.consultancy_category_other || ''}
+                  onChange={(e) => updateOa({ consultancy_category_other: e.target.value })}
+                  placeholder="Type the consultancy category"
+                />
+              </div>
             )}
           </div>
-          {selected.length > 0 && (
-            <p className="text-xs text-slate-600">Selected: {selected.join(', ')}</p>
-          )}
-          {otherCategorySelected && (
-            <div className="space-y-2 pt-1">
-              <Label className={labelClass}>Specify other category</Label>
-              <Input
-                className={inputClass}
-                disabled={!canEdit}
-                value={oa.product_category_other || ''}
-                onChange={(e) => updateOa({ product_category_other: e.target.value })}
-                placeholder="Type the product category"
-              />
+        ) : (
+          <div className="space-y-2">
+            <Label className={labelClass}>Product category</Label>
+            <p className="text-xs text-slate-500 normal-case font-normal">Select one or more</p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 max-h-48 overflow-y-auto space-y-2">
+              {categoriesLoading && !options.length ? (
+                <p className="text-sm text-slate-500">Loading categories…</p>
+              ) : (
+                options.map((name) => (
+                  <label key={name} className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300"
+                      disabled={!canEdit}
+                      checked={selected.includes(name)}
+                      onChange={() => toggleProduct(name)}
+                    />
+                    <span>{name}</span>
+                  </label>
+                ))
+              )}
             </div>
-          )}
-        </div>
+            {selected.length > 0 && (
+              <p className="text-xs text-slate-600">Selected: {selected.join(', ')}</p>
+            )}
+            {otherCategorySelected && (
+              <div className="space-y-2 pt-1">
+                <Label className={labelClass}>Specify other category</Label>
+                <Input
+                  className={inputClass}
+                  disabled={!canEdit}
+                  value={oa.product_category_other || ''}
+                  onChange={(e) => updateOa({ product_category_other: e.target.value })}
+                  placeholder="Type the product category"
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -2569,6 +2654,25 @@ function ModuleVendorSelection({
     }
   };
 
+  const uploadProofOfPriceFiles = async (group, files) => {
+    const list = normalizeFileList(files);
+    if (!list.length || !uploadLeadFile) return;
+    const inquiry = inquiryForVendor(payload, group.vendor_id, group.vendor_name)
+      || newVendorInquiry({ vendor_id: group.vendor_id, vendor_name: group.vendor_name });
+    const fieldKey = `vi-price-${group.key}`;
+    setUploadingField(fieldKey);
+    try {
+      const refs = [...(inquiry.proof_of_price_attachments || [])];
+      for (const file of list) refs.push(await uploadLeadFile(file));
+      upsertInquiry(group, { proof_of_price_attachments: refs });
+      toast.success('Proof of price attached');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Upload failed'));
+    } finally {
+      setUploadingField('');
+    }
+  };
+
   const markInquirySent = (group) => {
     upsertInquiry(group, {
       inquiry_status: 'sent',
@@ -2843,6 +2947,17 @@ function ModuleVendorSelection({
                   technical_data_attachments: (inquiry.technical_data_attachments || []).filter((a) => a.id !== refId),
                 })}
                 onPick={(files) => uploadTechnicalFiles(group, files)}
+              />
+              <OaMultiFileField
+                label="Proof of price received from vendor"
+                items={inquiry.proof_of_price_attachments}
+                canEdit={canEdit}
+                busy={saving || uploadingField === `vi-price-${group.key}`}
+                addLabel={uploadingField === `vi-price-${group.key}` ? 'Uploading…' : 'Add proof of price'}
+                onRemove={(refId) => upsertInquiry(group, {
+                  proof_of_price_attachments: (inquiry.proof_of_price_attachments || []).filter((a) => a.id !== refId),
+                })}
+                onPick={(files) => uploadProofOfPriceFiles(group, files)}
               />
               <div className="overflow-x-auto rounded-lg border border-slate-200">
                 <table className="w-full border-collapse text-sm">
@@ -3180,6 +3295,12 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
         title="Module 6 — BOM & costing"
         subtitle="Items come from Material & product and Vendor management. Enter stock unit prices and a profit % on each product. Vendor prices come from quotes. Additional charges sit on top of the material total."
       />
+      {(payload.offer_revisions || []).length > 0 && (
+        <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          {(payload.offer_revisions || []).length} offer(s) already recorded. Changes here update the next offer only —
+          previous offered values stay on Offer & revision.
+        </p>
+      )}
       {useWorkflowLines ? (
         <div className="rounded-xl border border-indigo-200 bg-white p-4 space-y-3">
           <div>
@@ -3468,10 +3589,11 @@ function ModuleOfferFollowUp({
   const [offerDraft, setOfferDraft] = React.useState(() => ({
     date: new Date().toISOString().slice(0, 10),
     comment: '',
-    margin_pct: '',
+    offer_no: '',
     pendingFiles: [],
     proofPendingFiles: [],
   }));
+  const [expandedOfferId, setExpandedOfferId] = React.useState(null);
   const [recording, setRecording] = React.useState(false);
   const [offerRevisionUploadingId, setOfferRevisionUploadingId] = React.useState(null);
   const [offerRevisionProofUploadingId, setOfferRevisionProofUploadingId] = React.useState(null);
@@ -3484,7 +3606,7 @@ function ModuleOfferFollowUp({
   }));
   const [addingFollowUp, setAddingFollowUp] = React.useState(false);
 
-  const draftTotals = computeOfferTotals(payload.bom, offerDraft.margin_pct, payload);
+  const draftTotals = computeOfferTotals(payload.bom, 0, payload);
   const canEditFollowUp = canEdit && isFollowUp;
 
   const uploadOfferRevisionAttachments = async (revId, pickedFiles) => {
@@ -3611,13 +3733,12 @@ function ModuleOfferFollowUp({
   const leadOfferBase = resolveLeadOfferBaseNumber(payload, revisions);
 
   const recordOfferRevision = async () => {
-    const pct = Number(offerDraft.margin_pct) || 0;
     if (!offerDraft.date) {
       toast.error('Enter offer date');
       return;
     }
-    if (pct <= 0) {
-      toast.error('Enter offer profit margin %');
+    if (!(Number(draftTotals.offerValue) > 0) && !(Number(draftTotals.consignmentTotal) > 0)) {
+      toast.error('Complete BOM costing before recording an offer');
       return;
     }
     const pending = normalizeFileList(offerDraft.pendingFiles);
@@ -3636,7 +3757,11 @@ function ModuleOfferFollowUp({
           proofAttachmentRefs.push(await uploadLeadFile(file));
         }
       }
+      const customOfferNo = String(offerDraft.offer_no || '').trim();
       let offerBase = resolveLeadOfferBaseNumber(payload, revisions);
+      if (customOfferNo && !offerBase) {
+        offerBase = stripOfferRevisionSuffix(customOfferNo) || customOfferNo;
+      }
       if (!offerBase) {
         if (!apiBase || !lead?.id) {
           toast.error('Cannot assign offer number — refresh the page and try again');
@@ -3649,7 +3774,7 @@ function ModuleOfferFollowUp({
         );
         offerBase = alloc.offer_base;
       }
-      const entry = buildOfferRevisionEntry(payload.bom, pct, 'offer_revision', {
+      const entry = buildOfferRevisionEntry(payload.bom, 0, 'offer_revision', {
         notes: offerDraft.comment.trim(),
         recordedAt: offerDraft.date,
         attachments: attachmentRefs,
@@ -3657,13 +3782,14 @@ function ModuleOfferFollowUp({
         existingRevisions: revisions,
         lead_offer_no: offerBase,
         offerBase,
+        offer_no: customOfferNo,
         payload,
       });
       const nextPayload = {
         ...payload,
         lead_offer_no: entry.lead_offer_base,
         offer_revisions: [...revisions, entry],
-        offer_profit_margin_pct: pct,
+        offer_profit_margin_pct: 0,
       };
       setPayload(nextPayload);
       if (onPersistPayload) {
@@ -3672,7 +3798,7 @@ function ModuleOfferFollowUp({
       setOfferDraft({
         date: new Date().toISOString().slice(0, 10),
         comment: '',
-        margin_pct: '',
+        offer_no: '',
         pendingFiles: [],
         proofPendingFiles: [],
       });
@@ -3693,12 +3819,43 @@ function ModuleOfferFollowUp({
       ...r,
       revision_index: i,
       lead_offer_base: base || r.lead_offer_base,
-      offer_no: formatOfferRevisionNumber(base || r.lead_offer_base, i),
+      offer_no: String(r.offer_no || '').trim() || formatOfferRevisionNumber(base || r.lead_offer_base, i),
     }));
     setPayload({
       ...payload,
       lead_offer_no: base,
       offer_revisions: next,
+    });
+  };
+
+  const updateRevisionOfferNo = (revId, nextNo) => {
+    const derivedBase = stripOfferRevisionSuffix(nextNo) || payload.lead_offer_no;
+    setPayload({
+      ...payload,
+      lead_offer_no: payload.lead_offer_no || derivedBase,
+      offer_revisions: revisions.map((r) => (
+        r.id === revId
+          ? { ...r, offer_no: nextNo, lead_offer_base: derivedBase || r.lead_offer_base }
+          : r
+      )),
+    });
+  };
+
+  const updateLeadOfferBase = (nextBase) => {
+    const trimmed = String(nextBase || '').trim();
+    const previousBase = leadOfferBase;
+    setPayload({
+      ...payload,
+      lead_offer_no: trimmed,
+      offer_revisions: revisions.map((r) => {
+        const autoNo = formatOfferRevisionNumber(previousBase || r.lead_offer_base, r.revision_index);
+        const keepCustom = String(r.offer_no || '').trim() && r.offer_no !== autoNo;
+        return {
+          ...r,
+          lead_offer_base: trimmed || r.lead_offer_base,
+          offer_no: keepCustom ? r.offer_no : formatOfferRevisionNumber(trimmed || r.lead_offer_base, r.revision_index),
+        };
+      }),
     });
   };
 
@@ -3832,7 +3989,7 @@ function ModuleOfferFollowUp({
     <p className="text-sm text-slate-500 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center">
       {isFollowUp
         ? 'No offers recorded yet — add offers in the Offer & revision step (R0, R1, …).'
-        : 'No offers yet — record R0, then R1, R2 as you revise.'}
+        : 'No offers yet — record the 1st offer from the current BOM. After negotiation, revise BOM costing and record the next offer here.'}
     </p>
   ) : (
     <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -3840,13 +3997,14 @@ function ModuleOfferFollowUp({
         <thead className="bg-slate-100 border-b border-slate-200">
           <tr>
             <th className="p-2 text-left font-semibold text-slate-700">Rev</th>
+            <th className="p-2 text-left font-semibold text-slate-700">Offer</th>
             <th className="p-2 text-left font-semibold text-slate-700">Offer #</th>
             <th className="p-2 text-left font-semibold text-slate-700">Date</th>
-            <th className="p-2 text-right font-semibold text-slate-700">Margin %</th>
+            <th className="p-2 text-right font-semibold text-slate-700">Cost (₹)</th>
             <th className="p-2 text-right font-semibold text-slate-700">Offered value</th>
-            <th className="p-2 text-right font-semibold text-slate-700">Total profit</th>
+            <th className="p-2 text-right font-semibold text-slate-700">Profit</th>
             <th className="p-2 text-left font-semibold text-slate-700">Comment</th>
-            <th className="p-2 text-left font-semibold text-slate-700">Calculation</th>
+            <th className="p-2 text-left font-semibold text-slate-700">BOM at this offer</th>
             <th className="p-2 text-left font-semibold text-slate-700">Offer attachment</th>
             <th className="p-2 text-left font-semibold text-slate-700">Proof of offer attachment</th>
             {canEdit && isOfferStep && <th className="w-8" />}
@@ -3854,17 +4012,31 @@ function ModuleOfferFollowUp({
         </thead>
         <tbody className="text-slate-800">
           {revisions.map((rev) => (
+            <React.Fragment key={rev.id}>
             <tr
-              key={rev.id}
               className={`border-t border-slate-100 ${rev.client_agreed ? 'bg-emerald-50/60' : ''}`}
             >
               <td className="p-2 font-medium text-slate-800">{offerRevisionLabel(rev.revision_index)}</td>
-              <td className="p-2 font-mono text-xs font-semibold text-indigo-800 whitespace-nowrap">
-                {rev.offer_no || '—'}
+              <td className="p-2 text-slate-800 whitespace-nowrap">
+                {offerRoundLabel(rev.revision_index)}
+              </td>
+              <td className="p-2 min-w-[180px]">
+                {canEdit && isOfferStep ? (
+                  <Input
+                    value={rev.offer_no || ''}
+                    className={`${inputClass} font-mono text-xs font-semibold text-indigo-800`}
+                    placeholder="Offer number"
+                    onChange={(e) => updateRevisionOfferNo(rev.id, e.target.value)}
+                  />
+                ) : (
+                  <span className="font-mono text-xs font-semibold text-indigo-800 whitespace-nowrap">
+                    {rev.offer_no || '—'}
+                  </span>
+                )}
               </td>
               <td className="p-2 text-slate-600 whitespace-nowrap">{rev.recorded_at || '—'}</td>
-              <td className="p-2 text-right tabular-nums font-medium text-slate-800">
-                {rev.offer_profit_margin_pct}%
+              <td className="p-2 text-right tabular-nums text-slate-800">
+                {formatInr(rev.consignment_total || rev.bom_snapshot?.consignment_total)}
               </td>
               <td className="p-2 text-right tabular-nums font-semibold text-indigo-800">
                 {formatInr(rev.offer_value)}
@@ -3873,11 +4045,22 @@ function ModuleOfferFollowUp({
                 {formatInr(revisionTotalProfit(rev, payload.bom))}
               </td>
               <td className="p-2 text-slate-600 max-w-[180px]">{rev.notes || '—'}</td>
-              <td className="p-2 text-slate-500 text-xs max-w-[220px]">
-                {rev.calculation_comment
-                  || (rev.offer_profit_margin_pct > 0 && rev.base_after_bom_profit
-                    ? `${formatInr(rev.base_after_bom_profit)} ÷ (1 − ${rev.offer_profit_margin_pct}%) = ${formatInr(rev.offer_value)}`
-                    : '—')}
+              <td className="p-2 text-xs max-w-[220px]">
+                <p className="text-slate-500">
+                  {rev.calculation_comment
+                    || (rev.offer_profit_margin_pct > 0 && rev.base_after_bom_profit
+                      ? `${formatInr(rev.base_after_bom_profit)} ÷ (1 − ${rev.offer_profit_margin_pct}%) = ${formatInr(rev.offer_value)}`
+                      : '—')}
+                </p>
+                {rev.bom_snapshot?.lines?.length ? (
+                  <button
+                    type="button"
+                    className="mt-1 text-indigo-700 hover:underline"
+                    onClick={() => setExpandedOfferId(expandedOfferId === rev.id ? null : rev.id)}
+                  >
+                    {expandedOfferId === rev.id ? 'Hide costing' : 'View costing'}
+                  </button>
+                ) : null}
               </td>
               <td className="p-2 align-top">
                 <OfferRevisionAttachmentPreview rev={rev} />
@@ -3962,6 +4145,50 @@ function ModuleOfferFollowUp({
                 </td>
               )}
             </tr>
+            {expandedOfferId === rev.id && rev.bom_snapshot?.lines?.length ? (
+              <tr className="border-t border-slate-100 bg-slate-50/80">
+                <td colSpan={canEdit && isOfferStep ? 12 : 11} className="p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 mb-2">
+                    Costing frozen with {offerRoundLabel(rev.revision_index)}
+                  </p>
+                  <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-100">
+                        <tr>
+                          <th className="px-2 py-1.5 text-left font-semibold text-slate-600">Item</th>
+                          <th className="px-2 py-1.5 text-right font-semibold text-slate-600">Amount</th>
+                          <th className="px-2 py-1.5 text-right font-semibold text-slate-600">Profit %</th>
+                          <th className="px-2 py-1.5 text-right font-semibold text-slate-600">Profit</th>
+                          <th className="px-2 py-1.5 text-right font-semibold text-slate-600">After profit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rev.bom_snapshot.lines.map((line, idx) => (
+                          <tr key={`${rev.id}-line-${idx}`} className="border-t border-slate-100">
+                            <td className="px-2 py-1.5 text-slate-800">
+                              {line.item_name || '—'}
+                              {line.source_label ? (
+                                <span className="ml-1 text-slate-400">({line.source_label})</span>
+                              ) : null}
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">{formatInr(line.amount)}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">{line.profit_margin_pct || 0}%</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">{formatInr(line.profit_amount)}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">{formatInr(line.selling)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Additional charges {formatInr(rev.bom_snapshot.additional_charges || 0)} ·
+                    Cost {formatInr(rev.bom_snapshot.consignment_total)} ·
+                    Offered {formatInr(rev.bom_snapshot.offered_value)}
+                  </p>
+                </td>
+              </tr>
+            ) : null}
+            </React.Fragment>
           ))}
         </tbody>
       </table>
@@ -3975,26 +4202,38 @@ function ModuleOfferFollowUp({
           title="Offer revision log"
           subtitle={
             isFollowUp
-              ? 'Offers are recorded in Offer & revision (R0, R1, …) — use Client decision below to close Won or Lost'
-              : 'Record each offer from R0 onward — margin %, value, and total profit per row'
+              ? 'Offers are recorded in Offer & revision (1st offer, then after negotiation) — use Client decision below to close Won or Lost'
+              : 'Record the current BOM after-profit value as an offer. After negotiation, revise BOM costing, then record the next offer here — earlier offers are not overwritten.'
           }
         />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
             <p className="text-[10px] font-semibold uppercase text-slate-500">
-              Total cost for consignment after adding profit (BOM base)
+              Current BOM after profit (not yet recorded)
             </p>
             <p className="text-sm font-semibold tabular-nums text-slate-900 mt-1">
-              {formatInr(offerTotals.baseAfterBomProfit)}
+              {formatInr(offerTotals.offerValue)}
+            </p>
+            <p className="text-[10px] text-slate-500 mt-0.5">
+              Cost {formatInr(offerTotals.consignmentTotal)} · profit {formatInr(offerTotals.totalProfit)}
             </p>
           </div>
           <div className="rounded-lg border border-indigo-200 bg-indigo-50/80 px-3 py-2">
             <p className="text-[10px] font-semibold uppercase text-indigo-700">Enquiry offer number</p>
-            <p className="text-sm font-mono font-semibold text-indigo-900 mt-1">
-              {leadOfferBase || 'Assigned on first offer (R0)'}
-            </p>
+            {canEdit && isOfferStep ? (
+              <Input
+                value={leadOfferBase}
+                className={`${inputClass} mt-1 font-mono text-sm font-semibold text-indigo-900`}
+                placeholder="e.g. RTB/OFFER/1001"
+                onChange={(e) => updateLeadOfferBase(e.target.value)}
+              />
+            ) : (
+              <p className="text-sm font-mono font-semibold text-indigo-900 mt-1">
+                {leadOfferBase || 'Assigned on first offer (R0)'}
+              </p>
+            )}
             <p className="text-[10px] text-indigo-600/80 mt-0.5">
-              Format RTB/OFFER/#### — revisions R0, R1, R2 on the same enquiry number
+              You can edit this number. Auto-generated revision numbers follow it unless a row has a custom offer number.
             </p>
           </div>
         </div>
@@ -4002,7 +4241,12 @@ function ModuleOfferFollowUp({
         {canEdit && isOfferStep && (
           <div className="rounded-xl border border-indigo-200 bg-indigo-50/30 p-4 space-y-3">
             <p className="text-xs font-bold uppercase tracking-wide text-indigo-700">
-              {offerRevisionLabel(nextRevIndex)} — {nextRevIndex === 0 ? 'first offer' : 'revised offer'}
+              {offerRevisionLabel(nextRevIndex)} — {offerRoundLabel(nextRevIndex)}
+            </p>
+            <p className="text-xs text-slate-600">
+              {nextRevIndex === 0
+                ? 'This records the 1st offered value from the current BOM costing (profit % is set on each product there).'
+                : 'After negotiation, revise profit or costs on BOM & costing, then record the new offered value here. The previous offer stays in this log.'}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -4015,34 +4259,29 @@ function ModuleOfferFollowUp({
                 />
               </div>
               <div>
-                <Label className={labelClass}>Offer profit margin (%) *</Label>
+                <Label className={labelClass}>
+                  Offer number <span className="font-normal normal-case text-slate-500">(optional)</span>
+                </Label>
                 <Input
-                  type="number"
-                  min="0"
-                  max="99.99"
-                  step="0.01"
-                  value={offerDraft.margin_pct}
-                  onChange={(e) => setOfferDraft({ ...offerDraft, margin_pct: e.target.value })}
-                  className={`${inputClass} mt-1`}
-                  placeholder="e.g. 15"
+                  value={offerDraft.offer_no}
+                  onChange={(e) => setOfferDraft({ ...offerDraft, offer_no: e.target.value })}
+                  className={`${inputClass} mt-1 font-mono`}
+                  placeholder={
+                    leadOfferBase
+                      ? formatOfferRevisionNumber(leadOfferBase, nextRevIndex)
+                      : 'Leave blank to auto-assign'
+                  }
                 />
               </div>
             </div>
             <div className="rounded-lg border border-white bg-white px-3 py-2">
-              <p className="text-[10px] font-semibold uppercase text-slate-500">Offered value</p>
-              {draftTotals.offerMarginPct > 0 ? (
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {formatInr(draftTotals.baseAfterBomProfit)} ÷ (1 − {draftTotals.offerMarginPct}%)
-                </p>
-              ) : null}
+              <p className="text-[10px] font-semibold uppercase text-slate-500">Offered value (from BOM)</p>
               <p className="text-lg font-bold tabular-nums text-indigo-900 mt-1">
                 {formatInr(draftTotals.offerValue)}
               </p>
-              {draftTotals.offerMarginPct > 0 && (
-                <p className="text-xs text-emerald-700 mt-1">
-                  Total profit: {formatInr(draftTotals.totalProfit)}
-                </p>
-              )}
+              <p className="text-xs text-emerald-700 mt-1">
+                Profit: {formatInr(draftTotals.totalProfit)} · cost {formatInr(draftTotals.consignmentTotal)}
+              </p>
             </div>
             <div>
               <Label className={labelClass}>
@@ -4254,27 +4493,112 @@ function ModuleOfferFollowUp({
   );
 }
 
-function ModuleClosedWon({ payload, setPayload, bomTotals, offerTotals, canEdit }) {
+function ModuleClosedWon({
+  payload,
+  setPayload,
+  bomTotals,
+  offerTotals,
+  canEdit,
+  saving,
+  uploadLeadFile,
+  onComplete,
+  completed,
+}) {
   const cw = payload.closed_won || {};
+  const [uploading, setUploading] = useState(false);
   const setCw = (patch) => setPayload({ ...payload, closed_won: { ...cw, ...patch } });
   const defaultOrderValue =
     latestOfferRevision(payload.offer_revisions)?.offer_value
-    ?? (offerTotals?.offerMarginPct > 0 ? offerTotals.offerValue : bomTotals.sellingValue);
+    ?? offerTotals?.offerValue
+    ?? bomTotals.sellingValue;
+  const confirmation = cw.win_confirmation || '';
+  const needsAttachment = confirmation && confirmation !== 'verbal';
+  const attachments = Array.isArray(cw.attachments) ? cw.attachments : [];
+  const busy = Boolean(saving || uploading);
+  const canComplete = isClosedWonComplete(payload);
+
+  const uploadWinFiles = async (files) => {
+    const list = normalizeFileList(files);
+    if (!list.length || !uploadLeadFile) return;
+    setUploading(true);
+    try {
+      const refs = [...attachments];
+      for (const file of list) refs.push(await uploadLeadFile(file));
+      setCw({ attachments: refs });
+      toast.success(list.length > 1 ? 'Attachments added' : 'Attachment added');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Upload failed'));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <section className="space-y-4">
-      <SectionTitle title="Closed won — order execution" subtitle="All contract parameters required before confirm" />
-      <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/30 p-5 space-y-3">
+      <SectionTitle
+        title="Won — order confirmation"
+        subtitle="Select how the order was won, attach proof, then complete to save this screen"
+      />
+      {completed ? (
+        <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+          Won screen completed. These details are locked.
+        </p>
+      ) : null}
+      <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/30 p-5 space-y-4">
+        <div>
+          <Label className={labelClass}>Order win confirmation *</Label>
+          <select
+            disabled={!canEdit}
+            className={`${selectClass} mt-1`}
+            value={confirmation}
+            onChange={(e) => setCw({ win_confirmation: e.target.value })}
+          >
+            <option value="">Select confirmation type</option>
+            {ORDER_WIN_CONFIRMATIONS.map((opt) => (
+              <option key={opt.id} value={opt.id}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+        <OaMultiFileField
+          label={needsAttachment ? 'Confirmation attachment *' : 'Confirmation attachment'}
+          items={attachments}
+          canEdit={canEdit}
+          busy={busy}
+          addLabel={uploading ? 'Uploading…' : 'Add attachment'}
+          onRemove={(refId) => setCw({ attachments: attachments.filter((a) => a.id !== refId) })}
+          onPick={uploadWinFiles}
+        />
+        {needsAttachment && attachments.length === 0 ? (
+          <p className="text-xs text-amber-800">
+            Attach the LOI, PO copy, or mail / WhatsApp confirmation before completing.
+          </p>
+        ) : null}
         <NumField
-          label="Order value target (₹) *"
+          label="Order value target (₹)"
           value={cw.order_value ?? defaultOrderValue}
           onChange={(v) => setCw({ order_value: v })}
           canEdit={canEdit}
         />
-        <TextField label="Terms & conditions of total invoice *" value={cw.terms} onChange={(v) => setCw({ terms: v })} canEdit={canEdit} rows={2} />
-        <TextField label="Packaging & forwarding regulations *" value={cw.packaging_regulations} onChange={(v) => setCw({ packaging_regulations: v })} canEdit={canEdit} rows={2} />
-        <TextField label="Payment terms structure *" value={cw.payment_terms} onChange={(v) => setCw({ payment_terms: v })} canEdit={canEdit} rows={2} />
-        <TextField label="Warranty & delivery period *" value={cw.warranty_delivery} onChange={(v) => setCw({ warranty_delivery: v })} canEdit={canEdit} rows={2} />
+        <TextField label="Terms & conditions of total invoice" value={cw.terms} onChange={(v) => setCw({ terms: v })} canEdit={canEdit} rows={2} />
+        <TextField label="Packaging & forwarding regulations" value={cw.packaging_regulations} onChange={(v) => setCw({ packaging_regulations: v })} canEdit={canEdit} rows={2} />
+        <TextField label="Payment terms structure" value={cw.payment_terms} onChange={(v) => setCw({ payment_terms: v })} canEdit={canEdit} rows={2} />
+        <TextField label="Warranty & delivery period" value={cw.warranty_delivery} onChange={(v) => setCw({ warranty_delivery: v })} canEdit={canEdit} rows={2} />
+        {canEdit && !completed ? (
+          <div className="pt-2 border-t border-emerald-200">
+            <Button
+              type="button"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={busy || !canComplete}
+              onClick={onComplete}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Check className="h-4 w-4 mr-1" />}
+              Complete &amp; save
+            </Button>
+            {!canComplete ? (
+              <p className="text-xs text-slate-500 mt-2">{closedWonIncompleteMessage(payload)}</p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </section>
   );

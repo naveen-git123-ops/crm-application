@@ -33,6 +33,25 @@ export const OPPORTUNITY_BUSINESS_CATEGORIES = [
 /** Sentinel product category that lets the user type a custom category. */
 export const PRODUCT_CATEGORY_OTHER = 'Other';
 
+export const CONSULTANCY_CATEGORY_OTHER = 'other';
+
+export const CONSULTANCY_CATEGORIES = [
+  { id: 'new_cgwb_noc', label: 'New CGWB NOC' },
+  { id: 'renewal_cgwb_noc', label: 'Renewal CGWB NOC' },
+  { id: 'state_gov_water_noc', label: 'State government water NOC' },
+  { id: 'pollution_cte', label: 'Pollution CTE' },
+  { id: 'pollution_cto', label: 'Pollution CTO' },
+  { id: CONSULTANCY_CATEGORY_OTHER, label: 'Others' },
+];
+
+export function isConsultancyBusinessCategory(value) {
+  return String(value || '').trim().toLowerCase() === 'consultancy';
+}
+
+export function consultancyCategoryLabel(value) {
+  return CONSULTANCY_CATEGORIES.find((opt) => opt.id === value)?.label || String(value || '').trim();
+}
+
 export const SITE_VISIT_STATUSES = [
   { id: 'pending', label: 'Pending' },
   { id: 'done', label: 'Done' },
@@ -81,6 +100,8 @@ export function defaultOpportunityAssessment() {
     business_category: '',
     product_categories: [],
     product_category_other: '',
+    consultancy_category: '',
+    consultancy_category_other: '',
     technical_datas_required: null,
     site_visit_required: null,
     expected_enquiry_closing_date: '',
@@ -176,6 +197,8 @@ function normalizeOpportunityAssessment(stored) {
   return {
     ...oa,
     product_categories: Array.isArray(stored?.product_categories) ? stored.product_categories : [],
+    consultancy_category: String(stored?.consultancy_category || '').trim(),
+    consultancy_category_other: String(stored?.consultancy_category_other || ''),
     site_visit_assignees: siteVisitAssignees(oa),
     site_visit_others: siteVisitOtherPeople(oa),
     site_visit_photos: Array.isArray(stored?.site_visit_photos) ? stored.site_visit_photos : [],
@@ -215,16 +238,29 @@ export function isSiteVisitDoneComplete(oa) {
 export function isOpportunityAssessmentComplete(payload) {
   const oa = payload?.opportunity_assessment || {};
   const categories = Array.isArray(oa.product_categories) ? oa.product_categories : [];
+  const consultancy = isConsultancyBusinessCategory(oa.business_category);
+  const consultancyCat = String(oa.consultancy_category || '').trim();
+  const categoryOk = consultancy
+    ? Boolean(consultancyCat)
+    : categories.length > 0;
   const baseOk = Boolean(
     String(oa.business_category || '').trim()
-    && categories.length > 0
+    && categoryOk
     && typeof oa.technical_datas_required === 'boolean'
     && typeof oa.site_visit_required === 'boolean'
     && String(oa.expected_enquiry_closing_date || '').trim(),
   );
   if (!baseOk) return false;
   if (
-    categories.includes(PRODUCT_CATEGORY_OTHER)
+    consultancy
+    && consultancyCat === CONSULTANCY_CATEGORY_OTHER
+    && !String(oa.consultancy_category_other || '').trim()
+  ) {
+    return false;
+  }
+  if (
+    !consultancy
+    && categories.includes(PRODUCT_CATEGORY_OTHER)
     && !String(oa.product_category_other || '').trim()
   ) {
     return false;
@@ -407,6 +443,7 @@ export function newVendorInquiry(overrides = {}) {
     remarks: '',
     technical_data_notes: '',
     technical_data_attachments: [],
+    proof_of_price_attachments: [],
     quote_received_date: '',
     ...overrides,
   };
@@ -420,6 +457,9 @@ function normalizeVendorInquiries(stored) {
     id: row?.id || `vi-${i}`,
     technical_data_attachments: Array.isArray(row?.technical_data_attachments)
       ? row.technical_data_attachments
+      : [],
+    proof_of_price_attachments: Array.isArray(row?.proof_of_price_attachments)
+      ? row.proof_of_price_attachments
       : [],
   }));
 }
@@ -643,10 +683,21 @@ export function bomCostingIncompleteMessage(payload) {
 export function requirementAnalysisIncompleteMessage(payload) {
   const oa = payload?.opportunity_assessment || {};
   const categories = Array.isArray(oa.product_categories) ? oa.product_categories : [];
+  const consultancy = isConsultancyBusinessCategory(oa.business_category);
   if (!String(oa.business_category || '').trim()) return 'Select a business category';
-  if (!categories.length) return 'Select at least one product category';
-  if (categories.includes(PRODUCT_CATEGORY_OTHER) && !String(oa.product_category_other || '').trim()) {
-    return 'Type the custom product category for "Other"';
+  if (consultancy) {
+    if (!String(oa.consultancy_category || '').trim()) return 'Select a consultancy category';
+    if (
+      oa.consultancy_category === CONSULTANCY_CATEGORY_OTHER
+      && !String(oa.consultancy_category_other || '').trim()
+    ) {
+      return 'Type the custom consultancy category for "Others"';
+    }
+  } else {
+    if (!categories.length) return 'Select at least one product category';
+    if (categories.includes(PRODUCT_CATEGORY_OTHER) && !String(oa.product_category_other || '').trim()) {
+      return 'Type the custom product category for "Other"';
+    }
   }
   if (typeof oa.technical_datas_required !== 'boolean') return 'Answer whether technical datas are required';
   if (typeof oa.site_visit_required !== 'boolean') return 'Answer whether a site visit is required';
@@ -784,7 +835,7 @@ export function isStageComplete(stageId, payload, lead, { isCarryAndOrder, leadN
     case 'bom_costing':
       return isBomCostingComplete(payload);
     case 'offer_revision':
-      return (payload.offer_revisions || []).some((r) => (Number(r.offer_profit_margin_pct) || 0) > 0);
+      return (payload.offer_revisions || []).some((r) => Number(r.offer_value) > 0 || Number(r.consignment_total) > 0);
     case 'follow_up':
       return payload.client_outcome === 'won' || payload.client_outcome === 'lost';
     default:
@@ -810,12 +861,39 @@ export function stageIncompleteMessage(stageId, lead, { isCarryAndOrder, leadNee
     case 'bom_costing':
       return bomCostingIncompleteMessage(payload);
     case 'offer_revision':
-      return 'Record at least one offer revision with profit margin %';
+      return 'Record at least one offer from the current BOM costing';
     case 'follow_up':
       return 'Record client decision — agreed (Won) or not agreed (Lost)';
     default:
       return 'Complete the previous step first';
   }
+}
+
+export const ORDER_WIN_CONFIRMATIONS = [
+  { id: 'loi', label: 'Received LOI' },
+  { id: 'po_copy', label: 'PO copy' },
+  { id: 'mail_whatsapp', label: 'Mail or WhatsApp confirmation' },
+  { id: 'verbal', label: 'Verbally confirmed' },
+];
+
+export function isClosedWonComplete(payload) {
+  const cw = payload?.closed_won || {};
+  const type = String(cw.win_confirmation || '').trim();
+  if (!ORDER_WIN_CONFIRMATIONS.some((opt) => opt.id === type)) return false;
+  if (type !== 'verbal' && !(Array.isArray(cw.attachments) && cw.attachments.length)) return false;
+  return true;
+}
+
+export function closedWonIncompleteMessage(payload) {
+  const cw = payload?.closed_won || {};
+  const type = String(cw.win_confirmation || '').trim();
+  if (!ORDER_WIN_CONFIRMATIONS.some((opt) => opt.id === type)) {
+    return 'Select how the order win was confirmed';
+  }
+  if (type !== 'verbal' && !(Array.isArray(cw.attachments) && cw.attachments.length)) {
+    return 'Attach the LOI, PO, or confirmation message';
+  }
+  return 'Complete the Won details';
 }
 
 export const LOSS_REASONS = [
@@ -923,6 +1001,8 @@ export function defaultWorkflowPayload() {
     client_outcome: null,
     agreed_revision_id: null,
     closed_won: {
+      win_confirmation: '',
+      attachments: [],
       order_value: null,
       terms: '',
       packaging_regulations: '',
@@ -953,7 +1033,13 @@ export function mergeWorkflowPayload(stored) {
     technical_assessment: normalizeTechnicalAssessment(stored.technical_assessment),
     material_product: normalizeMaterialProduct(stored.material_product),
     bom: { ...base.bom, ...(stored.bom || {}) },
-    closed_won: { ...base.closed_won, ...(stored.closed_won || {}) },
+    closed_won: {
+      ...base.closed_won,
+      ...(stored.closed_won || {}),
+      attachments: Array.isArray(stored.closed_won?.attachments)
+        ? stored.closed_won.attachments
+        : [],
+    },
     closed_lost: { ...base.closed_lost, ...(stored.closed_lost || {}) },
     technical_attachments: Array.isArray(stored.technical_attachments)
       ? stored.technical_attachments
@@ -1032,11 +1118,12 @@ function normalizeOfferRevisions(stored) {
   return list.map((r, i) => {
     const idx = Number.isFinite(Number(r.revision_index)) ? Number(r.revision_index) : i;
     const rowBase = String(r.lead_offer_base || base).trim() || base;
+    const existingNo = String(r.offer_no || '').trim();
     return {
       ...r,
       revision_index: idx,
       lead_offer_base: rowBase,
-      offer_no: formatOfferRevisionNumber(rowBase, idx),
+      offer_no: existingNo || formatOfferRevisionNumber(rowBase, idx),
     };
   });
 }
@@ -1127,6 +1214,57 @@ export function offerRevisionLabel(revisionIndex) {
   return Number.isFinite(n) && n >= 0 ? `R${n}` : 'R0';
 }
 
+function ordinalSuffix(n) {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return 'th';
+  switch (n % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
+}
+
+/** 1st offer, 2nd offer (after negotiation), … */
+export function offerRoundLabel(revisionIndex) {
+  const n = Number(revisionIndex);
+  const round = Number.isFinite(n) && n >= 0 ? n + 1 : 1;
+  if (round === 1) return '1st offer';
+  return `${round}${ordinalSuffix(round)} offer (after negotiation)`;
+}
+
+/** Frozen BOM costing used when an offer is recorded, so later edits do not overwrite history. */
+export function buildBomOfferSnapshot(bom, payload) {
+  const totals = computeBomTotals(bom, payload);
+  const lines = payload ? buildBomCostingLines(payload) : [];
+  return {
+    captured_at: new Date().toISOString(),
+    materials_total: totals.materialsTotal,
+    stock_total: totals.stockTotal,
+    vendor_total: totals.vendorTotal,
+    additional_charges: totals.additionalCharges,
+    install: totals.install,
+    packaging: totals.packaging,
+    transport: totals.transport,
+    cost_of_ap: totals.costOfAp,
+    tpc_cost: totals.tpcCost,
+    consignment_total: totals.consignmentTotal,
+    profit_amount: totals.profitAmount,
+    offered_value: totals.profitValue,
+    lines: lines.map((row) => ({
+      source: row.source,
+      source_label: row.source_label,
+      item_name: row.item_name,
+      quantity: row.quantity,
+      uom: row.uom,
+      amount: row.amount,
+      profit_margin_pct: materialLineProfitPct(row),
+      profit_amount: row.profit_amount,
+      selling: row.selling,
+    })),
+  };
+}
+
 export function agreedOfferRevision(revisions, agreedRevisionId) {
   const list = Array.isArray(revisions) ? revisions : [];
   if (!list.length) return null;
@@ -1150,7 +1288,7 @@ export function generateOfferNumber(existingRevisions = []) {
   return generateOfferBaseNumber(bases);
 }
 
-export function buildOfferRevisionEntry(bom, marginPct, stage = 'offer_revision', options = {}) {
+export function buildOfferRevisionEntry(bom, _marginPct, stage = 'offer_revision', options = {}) {
   const opts = typeof options === 'string' ? { notes: options } : options || {};
   const notes = (opts.notes || '').trim();
   const recordedAt = opts.recordedAt || new Date().toISOString().slice(0, 10);
@@ -1167,32 +1305,29 @@ export function buildOfferRevisionEntry(bom, marginPct, stage = 'offer_revision'
       opts.explicitOfferSeq,
     );
   }
-  const offerNo = formatOfferRevisionNumber(baseNo, revisionIndex);
+  const offerNo = String(opts.offer_no || '').trim() || formatOfferRevisionNumber(baseNo, revisionIndex);
   const bomTotals = computeBomTotals(bom, opts.payload);
-  const baseAfterBomProfit = bomTotals.profitValue;
-  const { pct, value: offerValue, amount: offerProfitAmount } = applyMarginFormula(
-    baseAfterBomProfit,
-    marginPct,
-  );
+  const snapshot = opts.bom_snapshot || buildBomOfferSnapshot(bom, opts.payload);
+  const offerValue = Number(snapshot.offered_value) || bomTotals.profitValue;
+  const consignmentTotal = Number(snapshot.consignment_total) || bomTotals.consignmentTotal;
+  const offerProfitAmount = Number(snapshot.profit_amount) || bomTotals.profitAmount;
   const calculationComment =
-    pct > 0 && baseAfterBomProfit > 0
-      ? `${formatInr(baseAfterBomProfit)} ÷ (1 − ${pct}%) = ${formatInr(offerValue)}`
-      : '';
-  const consignmentTotal = bomTotals.consignmentTotal;
-  const totalProfit = offerValue - consignmentTotal;
+    `BOM after profit ${formatInr(offerValue)} · cost ${formatInr(consignmentTotal)} · profit ${formatInr(offerProfitAmount)}`;
   return {
     id: `or-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     revision_index: revisionIndex,
     lead_offer_base: baseNo,
     offer_no: offerNo,
-    offer_profit_margin_pct: pct,
-    base_after_bom_profit: baseAfterBomProfit,
+    offer_profit_margin_pct: 0,
+    offer_round: revisionIndex === 0 ? 'first' : 'negotiation',
+    base_after_bom_profit: offerValue,
     consignment_total: consignmentTotal,
     offer_value: offerValue,
     offer_profit_amount: offerProfitAmount,
-    total_profit: totalProfit,
+    total_profit: offerProfitAmount,
     notes,
     calculation_comment: calculationComment,
+    bom_snapshot: snapshot,
     recorded_at: recordedAt,
     stage,
     client_agreed: false,
@@ -1213,21 +1348,17 @@ export function revisionProofOfOfferAttachments(rev) {
   return Array.isArray(rev?.proof_of_offer_attachments) ? rev.proof_of_offer_attachments : [];
 }
 
-export function computeOfferTotals(bom, offerProfitMarginPct, payload) {
+export function computeOfferTotals(bom, _offerProfitMarginPct, payload) {
   const bomTotals = computeBomTotals(bom, payload);
-  const baseAfterBomProfit = bomTotals.profitValue;
-  const { pct, value: offerValue, amount: offerProfitAmount } = applyMarginFormula(
-    baseAfterBomProfit,
-    offerProfitMarginPct,
-  );
+  const offerValue = bomTotals.profitValue;
   return {
     bomTotals,
-    baseAfterBomProfit,
-    offerMarginPct: pct,
+    baseAfterBomProfit: offerValue,
+    offerMarginPct: 0,
     offerValue,
-    offerProfitAmount,
+    offerProfitAmount: bomTotals.profitAmount,
     consignmentTotal: bomTotals.consignmentTotal,
-    totalProfit: offerValue - bomTotals.consignmentTotal,
+    totalProfit: bomTotals.profitAmount,
   };
 }
 
