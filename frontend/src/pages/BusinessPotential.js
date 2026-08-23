@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Search, TrendingUp, Eye, Upload, Download } from 'lucide-react';
+import { Search, TrendingUp, Eye, Upload, Download, Phone, List, Target } from 'lucide-react';
+import { BpoCallDesk } from '@/components/businessPotential/BpoCallDesk';
+import { BpoAdminPanel } from '@/components/businessPotential/BpoAdminPanel';
+import { BPO_STATUS_LABELS } from '@/lib/businessPotential';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -196,6 +199,7 @@ export function BusinessPotential() {
   const [selected, setSelected] = useState(null);
   const [catalog, setCatalog] = useState(null);
   const catalogCacheRef = useRef({ key: '', rows: null, promise: null });
+  const [viewTab, setViewTab] = useState('desk');
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
@@ -316,12 +320,21 @@ export function BusinessPotential() {
     return catalog ? countValidityBands(catalog) : {};
   }, [meta.validity_bands, catalog]);
 
+  const refreshAfterConvert = useCallback(() => {
+    catalogCacheRef.current = { key: '', rows: null, promise: null };
+    setCatalog(null);
+    fetchMeta();
+    fetchRows();
+  }, [fetchMeta, fetchRows]);
+
   const pageHeaderSubtitle = useMemo(() => {
+    if (viewTab === 'desk') return 'Call queue · log follow-ups · convert to ledger';
+    if (viewTab === 'admin') return 'Daily BPO targets and progress';
     if (total !== meta.total && meta.total) {
-      return `${total.toLocaleString('en-IN')} matches · ${meta.total.toLocaleString('en-IN')} imported`;
+      return `${total.toLocaleString('en-IN')} matches · ${meta.total.toLocaleString('en-IN')} open`;
     }
-    return `${(meta.total || total).toLocaleString('en-IN')} imported records`;
-  }, [total, meta.total]);
+    return `${(meta.total || total).toLocaleString('en-IN')} open potential customers`;
+  }, [viewTab, total, meta.total]);
 
   const importExcel = async () => {
     setImporting(true);
@@ -402,6 +415,31 @@ export function BusinessPotential() {
   return (
     <div className="flex h-[calc(100dvh-13rem)] min-h-0 min-w-0 flex-col lg:h-[calc(100dvh-8.5rem)]" data-testid="business-potential-page">
       <Card className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4 sm:p-5 space-y-4">
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {[
+            { key: 'desk', label: 'Call desk', icon: Phone },
+            { key: 'directory', label: 'Directory', icon: List },
+            ...(isAdmin ? [{ key: 'admin', label: 'BPO admin', icon: Target }] : []),
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setViewTab(tab.key)}
+              className={cn(
+                'inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium',
+                viewTab === tab.key ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-gray-200 bg-white text-gray-700 hover:bg-slate-50',
+              )}
+            >
+              <tab.icon className="h-4 w-4" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {viewTab === 'desk' && <BpoCallDesk onConverted={refreshAfterConvert} />}
+        {viewTab === 'admin' && isAdmin && <BpoAdminPanel />}
+        {viewTab === 'directory' && (
+        <>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {COLOR_FILTERS.map((item) => {
             const selected = validityBand === item.key;
@@ -476,6 +514,7 @@ export function BusinessPotential() {
                   <th className="px-3 py-3 font-semibold">Type</th>
                   <th className="px-3 py-3 font-semibold">Status</th>
                   <th className="px-3 py-3 font-semibold">Source</th>
+                  <th className="px-3 py-3 font-semibold">Follow-up</th>
                   <th className="px-3 py-3 font-semibold text-right">View</th>
                 </tr>
               </thead>
@@ -529,6 +568,14 @@ export function BusinessPotential() {
                         {displayValue(row.source_label)}
                       </span>
                     </td>
+                    <td className="px-3 py-3">
+                      <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                        {BPO_STATUS_LABELS[row.bpo_status] || 'New'}
+                      </span>
+                      {row.next_follow_up_date ? (
+                        <div className="mt-1 text-[11px] text-slate-500">Next {row.next_follow_up_date}</div>
+                      ) : null}
+                    </td>
                     <td className="px-3 py-3 text-right">
                       <Button type="button" variant="ghost" size="sm" className={cn('h-8 w-8 p-0', tone === 'red' && 'text-red-600 hover:text-red-700', tone === 'yellow' && 'text-yellow-600 hover:text-yellow-700', tone === 'sky' && 'text-sky-600 hover:text-sky-700')} onClick={(e) => { e.stopPropagation(); setSelected(row); }}>
                         <Eye className="h-4 w-4" />
@@ -571,6 +618,8 @@ export function BusinessPotential() {
               </div>
             </div>
           </div>
+        )}
+        </>
         )}
       </Card>
 

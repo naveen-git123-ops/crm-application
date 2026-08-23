@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, func, cast, ForeignKey
+from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, func, cast, ForeignKey, case
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -1015,6 +1015,41 @@ class BusinessPotentialRecordModel(Base):
     application_approved_date = Column(String(40), nullable=True)
     date_of_commencement = Column(String(40), nullable=True)
     date_of_expansion = Column(String(40), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    assigned_to_employee_id = Column(String(50), index=True, nullable=True)
+    assigned_to_name = Column(String(255), nullable=True)
+    bpo_status = Column(String(40), index=True, nullable=True)
+    next_follow_up_date = Column(String(20), index=True, nullable=True)
+    last_follow_up_at = Column(DateTime, nullable=True)
+    follow_up_count = Column(Integer, default=0)
+    converted_customer_id = Column(String(36), index=True, nullable=True)
+    converted_customer_ledger_id = Column(String(40), nullable=True)
+    converted_at = Column(DateTime, nullable=True)
+    converted_by_employee_id = Column(String(50), nullable=True)
+    converted_by_name = Column(String(255), nullable=True)
+
+
+class BusinessPotentialFollowUpModel(Base):
+    __tablename__ = 'business_potential_follow_ups'
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    record_id = Column(String(36), index=True, nullable=False)
+    outcome = Column(String(40), index=True, nullable=False)
+    notes = Column(Text, nullable=True)
+    next_follow_up_date = Column(String(20), nullable=True)
+    created_by_employee_id = Column(String(50), index=True, nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+class BusinessPotentialBpoTargetModel(Base):
+    __tablename__ = 'business_potential_bpo_targets'
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(String(50), index=True, nullable=False)
+    employee_name = Column(String(255), nullable=True)
+    target_date = Column(String(20), index=True, nullable=False)
+    target_count = Column(Integer, nullable=False, default=0)
+    created_by_employee_id = Column(String(50), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -2030,6 +2065,35 @@ def migrate_business_potential_contact_columns():
 _safe_migrate(migrate_business_potential_contact_columns)
 
 
+def migrate_business_potential_bpo_columns():
+    from sqlalchemy import text, inspect
+    inspector = inspect(engine)
+    if 'business_potential_records' not in inspector.get_table_names():
+        return
+    existing = {col['name'] for col in inspector.get_columns('business_potential_records')}
+    for col_name, ddl in (
+        ('assigned_to_employee_id', 'VARCHAR(50) NULL'),
+        ('assigned_to_name', 'VARCHAR(255) NULL'),
+        ('bpo_status', 'VARCHAR(40) NULL'),
+        ('next_follow_up_date', 'VARCHAR(20) NULL'),
+        ('last_follow_up_at', 'DATETIME NULL'),
+        ('follow_up_count', 'INT NULL'),
+        ('converted_customer_id', 'VARCHAR(36) NULL'),
+        ('converted_customer_ledger_id', 'VARCHAR(40) NULL'),
+        ('converted_at', 'DATETIME NULL'),
+        ('converted_by_employee_id', 'VARCHAR(50) NULL'),
+        ('converted_by_name', 'VARCHAR(255) NULL'),
+    ):
+        if col_name in existing:
+            continue
+        with engine.connect() as conn:
+            conn.execute(text(f'ALTER TABLE business_potential_records ADD COLUMN {col_name} {ddl}'))
+            conn.commit()
+
+
+_safe_migrate(migrate_business_potential_bpo_columns)
+
+
 def migrate_grant_monthly_report_to_employee_role():
     """Ensure the Employee role includes monthly-report (new screen); other roles stay as configured in DB."""
     db = SessionLocal()
@@ -2745,6 +2809,53 @@ class BusinessPotentialRecord(BaseModel):
     date_of_commencement: Optional[str] = None
     date_of_expansion: Optional[str] = None
     created_at: Optional[datetime] = None
+    assigned_to_employee_id: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+    bpo_status: Optional[str] = None
+    next_follow_up_date: Optional[str] = None
+    last_follow_up_at: Optional[datetime] = None
+    follow_up_count: Optional[int] = 0
+    converted_customer_id: Optional[str] = None
+    converted_customer_ledger_id: Optional[str] = None
+    converted_at: Optional[datetime] = None
+    converted_by_employee_id: Optional[str] = None
+    converted_by_name: Optional[str] = None
+
+
+class BusinessPotentialFollowUp(BaseModel):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+    id: str
+    record_id: str
+    outcome: str
+    notes: Optional[str] = None
+    next_follow_up_date: Optional[str] = None
+    created_by_employee_id: Optional[str] = None
+    created_by_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class BusinessPotentialFollowUpCreate(BaseModel):
+    outcome: str
+    notes: Optional[str] = None
+    next_follow_up_date: Optional[str] = None
+
+
+class BusinessPotentialConvertRequest(BaseModel):
+    company_name: str
+    contact_person_name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address_line: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class BusinessPotentialBpoTargetUpsert(BaseModel):
+    employee_id: str
+    target_date: Optional[str] = None
+    target_count: int
 
 
 class BusinessPotentialRecordPage(BaseModel):
@@ -10434,6 +10545,11 @@ def _business_potential_record_query(
         query = query.filter(BusinessPotentialRecordModel.application_status == status.strip())
     if application_type and application_type.strip():
         query = query.filter(BusinessPotentialRecordModel.application_type == application_type.strip())
+    query = query.filter(
+        (BusinessPotentialRecordModel.bpo_status.is_(None))
+        | (BusinessPotentialRecordModel.bpo_status != 'converted')
+    )
+    query = query.filter(BusinessPotentialRecordModel.converted_customer_id.is_(None))
     return _apply_business_potential_validity_band(query, validity_band)
 
 
@@ -10518,16 +10634,17 @@ def business_potential_records_meta(
         .order_by(BusinessPotentialRecordModel.application_type.asc())
         .all()
     ]
+    open_query = _business_potential_record_query(db)
     return {
-        'total': db.query(BusinessPotentialRecordModel).count(),
+        'total': open_query.count(),
         'sources': [{'key': k, 'label': label or k, 'count': count} for k, label, count in source_rows],
         'districts': districts,
         'statuses': statuses,
         'application_types': types,
         'validity_bands': {
-            'expired': _apply_business_potential_validity_band(db.query(BusinessPotentialRecordModel), 'expired').count(),
-            'd90': _apply_business_potential_validity_band(db.query(BusinessPotentialRecordModel), 'd90').count(),
-            'd365': _apply_business_potential_validity_band(db.query(BusinessPotentialRecordModel), 'd365').count(),
+            'expired': _apply_business_potential_validity_band(_business_potential_record_query(db), 'expired').count(),
+            'd90': _apply_business_potential_validity_band(_business_potential_record_query(db), 'd90').count(),
+            'd365': _apply_business_potential_validity_band(_business_potential_record_query(db), 'd365').count(),
         },
     }
 
@@ -10639,6 +10756,252 @@ def export_business_potential_records(
     )
 
 
+BP_FOLLOW_UP_STATUS = {
+    'called_interested': 'follow_up',
+    'callback': 'follow_up',
+    'no_answer': 'follow_up',
+    'busy': 'follow_up',
+    'called_not_interested': 'not_interested',
+    'wrong_number': 'not_reachable',
+    'converted': 'converted',
+}
+
+
+def _bp_actor(user: UserModel):
+    return ((user.employee_id or user.id or '').strip() or None, (user.name or user.email or 'User').strip())
+
+
+def _bp_open_record_query(db: Session):
+    return db.query(BusinessPotentialRecordModel).filter(
+        (BusinessPotentialRecordModel.bpo_status.is_(None)) | (BusinessPotentialRecordModel.bpo_status != 'converted'),
+        BusinessPotentialRecordModel.converted_customer_id.is_(None),
+    )
+
+
+def _serialize_bp_follow_up(row: BusinessPotentialFollowUpModel) -> dict:
+    return {
+        'id': row.id,
+        'record_id': row.record_id,
+        'outcome': row.outcome,
+        'notes': row.notes,
+        'next_follow_up_date': row.next_follow_up_date,
+        'created_by_employee_id': row.created_by_employee_id,
+        'created_by_name': row.created_by_name,
+        'created_at': row.created_at,
+    }
+
+
+@api_router.get('/business-potential-records/queue')
+def get_business_potential_queue(
+    skip_id: Optional[str] = None,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    actor_id, actor_name = _bp_actor(current_user)
+    today_s = date.today().isoformat()
+    query = _bp_open_record_query(db).filter(
+        (BusinessPotentialRecordModel.bpo_status.is_(None))
+        | (~BusinessPotentialRecordModel.bpo_status.in_(['not_interested', 'not_reachable']))
+    )
+    if not is_admin_user(current_user) and actor_id:
+        query = query.filter(
+            (BusinessPotentialRecordModel.assigned_to_employee_id.is_(None))
+            | (BusinessPotentialRecordModel.assigned_to_employee_id == '')
+            | (BusinessPotentialRecordModel.assigned_to_employee_id == actor_id)
+        )
+    if skip_id and skip_id.strip():
+        query = query.filter(BusinessPotentialRecordModel.id != skip_id.strip())
+    due_rank = case(
+        (BusinessPotentialRecordModel.next_follow_up_date <= today_s, 0),
+        (BusinessPotentialRecordModel.next_follow_up_date.is_(None), 1),
+        else_=2,
+    )
+    row = (
+        query.order_by(
+            due_rank.asc(),
+            BusinessPotentialRecordModel.follow_up_count.asc(),
+            BusinessPotentialRecordModel.district_name.asc(),
+            BusinessPotentialRecordModel.project_name.asc(),
+        )
+        .first()
+    )
+    if not row:
+        return {'item': None, 'remaining': 0}
+    if actor_id and not (row.assigned_to_employee_id or '').strip():
+        row.assigned_to_employee_id = actor_id
+        row.assigned_to_name = actor_name
+        if not (row.bpo_status or '').strip():
+            row.bpo_status = 'new'
+        db.commit()
+        db.refresh(row)
+    remaining = query.count()
+    return {'item': _hydrate_business_potential_record(row), 'remaining': remaining}
+
+
+@api_router.get('/business-potential-records/bpo-stats')
+def get_business_potential_bpo_stats(
+    target_date: Optional[str] = None,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    day = (target_date or date.today().isoformat()).strip()[:10]
+    day_start = datetime.strptime(day, '%Y-%m-%d')
+    day_end = day_start + timedelta(days=1)
+    actor_id, _actor_name = _bp_actor(current_user)
+
+    def _counts_for(employee_id: Optional[str]):
+        follow_q = db.query(BusinessPotentialFollowUpModel).filter(
+            BusinessPotentialFollowUpModel.created_at >= day_start,
+            BusinessPotentialFollowUpModel.created_at < day_end,
+        )
+        conv_q = db.query(BusinessPotentialRecordModel).filter(
+            BusinessPotentialRecordModel.converted_at >= day_start,
+            BusinessPotentialRecordModel.converted_at < day_end,
+        )
+        if employee_id:
+            follow_q = follow_q.filter(BusinessPotentialFollowUpModel.created_by_employee_id == employee_id)
+            conv_q = conv_q.filter(BusinessPotentialRecordModel.converted_by_employee_id == employee_id)
+        return follow_q.count(), conv_q.count()
+
+    my_calls, my_conversions = _counts_for(actor_id)
+    my_target_row = None
+    if actor_id:
+        my_target_row = (
+            db.query(BusinessPotentialBpoTargetModel)
+            .filter(
+                BusinessPotentialBpoTargetModel.employee_id == actor_id,
+                BusinessPotentialBpoTargetModel.target_date == day,
+            )
+            .first()
+        )
+    agents = []
+    if is_admin_user(current_user):
+        target_rows = db.query(BusinessPotentialBpoTargetModel).filter(BusinessPotentialBpoTargetModel.target_date == day).all()
+        seen = set()
+        for row in target_rows:
+            seen.add(row.employee_id)
+            calls, conversions = _counts_for(row.employee_id)
+            agents.append({
+                'employee_id': row.employee_id,
+                'employee_name': row.employee_name,
+                'target_count': row.target_count,
+                'calls': calls,
+                'conversions': conversions,
+            })
+        extra_ids = {
+            r[0]
+            for r in db.query(BusinessPotentialFollowUpModel.created_by_employee_id)
+            .filter(
+                BusinessPotentialFollowUpModel.created_at >= day_start,
+                BusinessPotentialFollowUpModel.created_at < day_end,
+                BusinessPotentialFollowUpModel.created_by_employee_id.isnot(None),
+            )
+            .distinct()
+            .all()
+            if r[0] and r[0] not in seen
+        }
+        for emp_id in extra_ids:
+            calls, conversions = _counts_for(emp_id)
+            emp = db.query(EmployeeModel).filter(EmployeeModel.employee_id == emp_id).first()
+            agents.append({
+                'employee_id': emp_id,
+                'employee_name': emp.name if emp else emp_id,
+                'target_count': 0,
+                'calls': calls,
+                'conversions': conversions,
+            })
+        agents.sort(key=lambda a: (a.get('employee_name') or ''))
+    return {
+        'date': day,
+        'my_target': my_target_row.target_count if my_target_row else 0,
+        'my_calls': my_calls,
+        'my_conversions': my_conversions,
+        'open_records': _bp_open_record_query(db).count(),
+        'agents': agents,
+    }
+
+
+@api_router.get('/business-potential-records/bpo-targets')
+def list_business_potential_bpo_targets(
+    target_date: Optional[str] = None,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail='Only an administrator can view BPO targets')
+    day = (target_date or date.today().isoformat()).strip()[:10]
+    rows = (
+        db.query(BusinessPotentialBpoTargetModel)
+        .filter(BusinessPotentialBpoTargetModel.target_date == day)
+        .order_by(BusinessPotentialBpoTargetModel.employee_name.asc())
+        .all()
+    )
+    return {
+        'date': day,
+        'items': [
+            {
+                'id': row.id,
+                'employee_id': row.employee_id,
+                'employee_name': row.employee_name,
+                'target_date': row.target_date,
+                'target_count': row.target_count,
+            }
+            for row in rows
+        ],
+    }
+
+
+@api_router.post('/business-potential-records/bpo-targets')
+def upsert_business_potential_bpo_target(
+    payload: BusinessPotentialBpoTargetUpsert,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail='Only an administrator can set BPO targets')
+    emp_id = (payload.employee_id or '').strip()
+    if not emp_id:
+        raise HTTPException(status_code=400, detail='Select an employee')
+    try:
+        count = max(0, int(payload.target_count))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail='Target must be a number')
+    day = (payload.target_date or date.today().isoformat()).strip()[:10]
+    emp = db.query(EmployeeModel).filter(EmployeeModel.employee_id == emp_id).first()
+    actor_id, actor_name = _bp_actor(current_user)
+    row = (
+        db.query(BusinessPotentialBpoTargetModel)
+        .filter(
+            BusinessPotentialBpoTargetModel.employee_id == emp_id,
+            BusinessPotentialBpoTargetModel.target_date == day,
+        )
+        .first()
+    )
+    if row:
+        row.target_count = count
+        row.employee_name = emp.name if emp else row.employee_name
+    else:
+        row = BusinessPotentialBpoTargetModel(
+            id=str(uuid.uuid4()),
+            employee_id=emp_id,
+            employee_name=emp.name if emp else emp_id,
+            target_date=day,
+            target_count=count,
+            created_by_employee_id=actor_id,
+            created_by_name=actor_name,
+        )
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        'id': row.id,
+        'employee_id': row.employee_id,
+        'employee_name': row.employee_name,
+        'target_date': row.target_date,
+        'target_count': row.target_count,
+    }
+
+
 @api_router.get('/business-potential-records/{record_id}', response_model=BusinessPotentialRecord)
 def get_business_potential_record(
     record_id: str,
@@ -10649,6 +11012,163 @@ def get_business_potential_record(
     if not row:
         raise HTTPException(status_code=404, detail='Business potential record not found')
     return _hydrate_business_potential_record(row)
+
+
+@api_router.get('/business-potential-records/{record_id}/follow-ups', response_model=List[BusinessPotentialFollowUp])
+def list_business_potential_follow_ups(
+    record_id: str,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    row = db.query(BusinessPotentialRecordModel).filter(BusinessPotentialRecordModel.id == record_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Business potential record not found')
+    items = (
+        db.query(BusinessPotentialFollowUpModel)
+        .filter(BusinessPotentialFollowUpModel.record_id == record_id)
+        .order_by(BusinessPotentialFollowUpModel.created_at.desc())
+        .all()
+    )
+    return items
+
+
+@api_router.post('/business-potential-records/{record_id}/follow-ups', response_model=BusinessPotentialFollowUp)
+def add_business_potential_follow_up(
+    record_id: str,
+    payload: BusinessPotentialFollowUpCreate,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    row = db.query(BusinessPotentialRecordModel).filter(BusinessPotentialRecordModel.id == record_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Business potential record not found')
+    if (row.bpo_status or '') == 'converted' or row.converted_customer_id:
+        raise HTTPException(status_code=400, detail='This record is already converted')
+    outcome = (payload.outcome or '').strip()
+    if outcome not in BP_FOLLOW_UP_STATUS:
+        raise HTTPException(status_code=400, detail='Invalid follow-up outcome')
+    if outcome == 'converted':
+        raise HTTPException(status_code=400, detail='Use convert to move this record to Create Ledger')
+    next_date = (payload.next_follow_up_date or '').strip() or None
+    if next_date:
+        try:
+            date.fromisoformat(next_date[:10])
+            next_date = next_date[:10]
+        except ValueError:
+            raise HTTPException(status_code=400, detail='Next follow-up date must be YYYY-MM-DD')
+    actor_id, actor_name = _bp_actor(current_user)
+    note = (payload.notes or '').strip() or None
+    if not note:
+        raise HTTPException(status_code=400, detail='Add follow-up notes')
+    item = BusinessPotentialFollowUpModel(
+        id=str(uuid.uuid4()),
+        record_id=record_id,
+        outcome=outcome,
+        notes=note,
+        next_follow_up_date=next_date,
+        created_by_employee_id=actor_id,
+        created_by_name=actor_name,
+    )
+    db.add(item)
+    row.bpo_status = BP_FOLLOW_UP_STATUS[outcome]
+    row.next_follow_up_date = next_date
+    row.last_follow_up_at = datetime.now()
+    row.follow_up_count = int(row.follow_up_count or 0) + 1
+    if actor_id and not (row.assigned_to_employee_id or '').strip():
+        row.assigned_to_employee_id = actor_id
+        row.assigned_to_name = actor_name
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@api_router.post('/business-potential-records/{record_id}/convert')
+def convert_business_potential_record(
+    record_id: str,
+    payload: BusinessPotentialConvertRequest,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    row = db.query(BusinessPotentialRecordModel).filter(BusinessPotentialRecordModel.id == record_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Business potential record not found')
+    if (row.bpo_status or '') == 'converted' or row.converted_customer_id:
+        raise HTTPException(status_code=400, detail='This record is already converted')
+    company = (payload.company_name or '').strip()
+    contact_name = (payload.contact_person_name or '').strip()
+    if not company or not contact_name:
+        raise HTTPException(status_code=400, detail='Company name and contact person are required')
+    actor_id, actor_name = _bp_actor(current_user)
+    ledger_id = _next_ledger_id(db, 0)
+    customer = CustomerModel(
+        customer_id=ledger_id,
+        company_name=company,
+        contact_person_name=contact_name,
+        phone=(payload.phone or '').strip() or None,
+        email=(payload.email or '').strip() or None,
+        address_line=(payload.address_line or '').strip() or None,
+        city=(payload.city or '').strip() or None,
+        state=(payload.state or '').strip() or None,
+        pincode=(payload.pincode or '').strip() or None,
+        country='India',
+        status='Active',
+        entity_type=0,
+    )
+    db.add(customer)
+    try:
+        db.commit()
+        db.refresh(customer)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Customer already exists')
+    if customer.phone or customer.email:
+        db.add(CustomerContactModel(
+            customer_id=customer.id,
+            contact_person_name=contact_name,
+            phone=customer.phone,
+            email=customer.email,
+            is_primary=1,
+        ))
+    if customer.address_line or customer.city:
+        db.add(CustomerAddressModel(
+            customer_id=customer.id,
+            address_line=customer.address_line or '',
+            city=customer.city,
+            state=customer.state,
+            pincode=customer.pincode,
+            country='India',
+            is_primary=1,
+        ))
+    now = datetime.now()
+    note = (payload.notes or '').strip() or f'Converted from Business Potential to ledger {ledger_id}'
+    db.add(BusinessPotentialFollowUpModel(
+        id=str(uuid.uuid4()),
+        record_id=record_id,
+        outcome='converted',
+        notes=note,
+        created_by_employee_id=actor_id,
+        created_by_name=actor_name,
+        created_at=now,
+    ))
+    row.bpo_status = 'converted'
+    row.converted_customer_id = customer.id
+    row.converted_customer_ledger_id = ledger_id
+    row.converted_at = now
+    row.converted_by_employee_id = actor_id
+    row.converted_by_name = actor_name
+    row.last_follow_up_at = now
+    row.follow_up_count = int(row.follow_up_count or 0) + 1
+    row.next_follow_up_date = None
+    if actor_id and not (row.assigned_to_employee_id or '').strip():
+        row.assigned_to_employee_id = actor_id
+        row.assigned_to_name = actor_name
+    db.commit()
+    return {
+        'record_id': record_id,
+        'customer_id': customer.id,
+        'customer_ledger_id': ledger_id,
+        'company_name': customer.company_name,
+    }
 
 
 @api_router.post('/documents/upload')

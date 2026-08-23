@@ -176,13 +176,22 @@ def import_business_potential_records(db, model_cls, replace: bool = False, data
     if existing and not replace:
         return {'imported': 0, 'skipped': existing, 'replaced': False}
 
+    converted_keys = set()
     if replace and existing:
-        db.query(model_cls).delete()
+        converted_rows = db.query(model_cls).filter(model_cls.converted_customer_id.isnot(None)).all()
+        converted_keys = {
+            ((row.application_number or '').strip(), (row.noc_number or '').strip())
+            for row in converted_rows
+        }
+        db.query(model_cls).filter(model_cls.converted_customer_id.is_(None)).delete(synchronize_session=False)
         db.commit()
 
     imported = 0
     batch = []
     for row in iter_excel_rows(data_dir):
+        key = ((row.get('application_number') or '').strip(), (row.get('noc_number') or '').strip())
+        if key in converted_keys and any(key):
+            continue
         batch.append(model_cls(**row))
         if len(batch) >= 250:
             db.add_all(batch)
