@@ -556,6 +556,62 @@ function nocRecordsFromItem(item) {
   return [];
 }
 
+function collectNocSearchValues(item) {
+  const records = nocRecordsFromItem(item);
+  const nocNumbers = [item?.noc_no, ...records.map((r) => r?.noc_no)]
+    .filter(Boolean)
+    .map((v) => String(v).toLowerCase());
+  const applicationNumbers = [
+    item?.noc_application_no,
+    item?.application_no,
+    ...records.map((r) => r?.application_no),
+  ]
+    .filter(Boolean)
+    .map((v) => String(v).toLowerCase());
+  const projectNames = [item?.noc_project_name, ...records.map((r) => r?.project_name)]
+    .filter(Boolean)
+    .map((v) => String(v).toLowerCase());
+  return { nocNumbers, applicationNumbers, projectNames };
+}
+
+function listIncludesTerm(values, term) {
+  if (!term) return true;
+  return values.some((v) => v.includes(term));
+}
+
+function itemMatchesGlobalSearch(item, term, customerBizId = '') {
+  if (!term) return true;
+  const { nocNumbers, applicationNumbers, projectNames } = collectNocSearchValues(item);
+  const fields = [
+    customerBizId,
+    item?.customer_id,
+    item?.customer_name,
+    item?.inventory_id,
+    item?.location,
+    item?.contact_person,
+    item?.system_mobile_number,
+    item?.person_mobile_number,
+    item?.email_id,
+    item?.equipment_name,
+    item?.flowmeter_details,
+    item?.product_code,
+    item?.model_no,
+    item?.flow_meter_make,
+    item?.flow_meter_size,
+    item?.flow_meter_serial,
+    item?.telemetry_company,
+    item?.telemetry_serial_number,
+    item?.noc_project_name,
+    item?.noc_type,
+    item?.noc_project_status,
+    item?.remarks,
+    ...nocNumbers,
+    ...applicationNumbers,
+    ...projectNames,
+  ];
+  return fields.some((value) => String(value || '').toLowerCase().includes(term));
+}
+
 function isoToday() {
   const d = new Date();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -589,6 +645,8 @@ const FILTER_FIELDS = [
   'customer_name',
   'location',
   'contact_person',
+  'noc_no',
+  'noc_application_no',
   'equipment_name',
   'flowmeter_details',
   'flow_meter_make',
@@ -619,6 +677,8 @@ const FILTER_LABELS = {
   customer_name: 'Customer Name',
   location: 'Location',
   contact_person: 'Contact Person',
+  noc_no: 'NOC Number',
+  noc_application_no: 'Application Number',
   equipment_name: 'Equipment Name',
   flowmeter_details: 'Flowmeter/Piezometer Details',
   flow_meter_make: 'Flow Meter Make',
@@ -646,7 +706,7 @@ const FILTER_LABELS = {
   remarks: 'Remarks'
 };
 const FILTER_GROUPS = [
-  { label: 'Customer & NOC', fields: ['customer_name', 'location', 'contact_person', 'noc_piezometer_applicable', 'noc_piezometer_count'] },
+  { label: 'Customer & NOC', fields: ['customer_name', 'location', 'contact_person', 'noc_no', 'noc_application_no', 'noc_piezometer_applicable', 'noc_piezometer_count'] },
   { label: 'Flow Metre', fields: ['equipment_name', 'flowmeter_details', 'flow_meter_make', 'flow_meter_size', 'flow_meter_serial', 'calibration_valid_from', 'calibration_valid_to'] },
   { label: 'Telemetry', fields: ['product_code', 'model_no', 'telemetry_company', 'telemetry_serial_number'] },
   { label: 'Contact & Access', fields: ['system_mobile_number', 'person_mobile_number', 'email_id', 'url_link', 'user_id', 'password'] },
@@ -1517,21 +1577,15 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
         return false;
       }
 
+      const { nocNumbers, applicationNumbers } = collectNocSearchValues(item);
       const customerBizId = (customerCodeById.get(item.customer_id) || '').toString().toLowerCase();
-      const matchesGlobal =
-        !term ||
-        customerBizId.includes(term) ||
-        item.customer_id?.toLowerCase().includes(term) ||
-        item.customer_name?.toLowerCase().includes(term) ||
-        item.equipment_name?.toLowerCase().includes(term) ||
-        item.location?.toLowerCase().includes(term) ||
-        item.inventory_id?.toLowerCase().includes(term) ||
-        item.product_code?.toLowerCase().includes(term) ||
-        item.model_no?.toLowerCase().includes(term);
+      const matchesGlobal = itemMatchesGlobalSearch(item, term, customerBizId);
 
       const matchesColumns = Object.entries(columnFilters).every(([key, value]) => {
         const filterValue = value.trim().toLowerCase();
         if (!filterValue) return true;
+        if (key === 'noc_no') return listIncludesTerm(nocNumbers, filterValue);
+        if (key === 'noc_application_no') return listIncludesTerm(applicationNumbers, filterValue);
         return String(item[key] ?? '').toLowerCase().includes(filterValue);
       });
 
@@ -4168,9 +4222,10 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
         <>
       <Card className="p-4 sm:p-5">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
-            placeholder="Search across all columns…"
+            id="cgw-search-all"
+            placeholder="Search customer, CGWA ID, project, location, NOC number, application number…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10 h-10"
@@ -4790,7 +4845,11 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
         </Card>
       ) : (
         <Card className="p-12 text-center">
-          <p className="text-muted-foreground">No inventory items found</p>
+          <p className="text-muted-foreground">
+            {searchTerm.trim() || nocValidUptoFilter || telemValidToFilter
+              ? 'No records match your search'
+              : 'No inventory items found'}
+          </p>
         </Card>
       )}
         </>
