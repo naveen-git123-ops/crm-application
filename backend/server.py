@@ -972,6 +972,50 @@ class BusinessPotentialModel(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class BusinessPotentialRecordModel(Base):
+    """Imported CGWA / NOCAP Excel rows shown on Business Potential."""
+    __tablename__ = 'business_potential_records'
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    source_key = Column(String(50), index=True, nullable=False)
+    source_label = Column(String(100), nullable=True)
+    source_file = Column(String(255), nullable=True)
+    source_sheet = Column(String(100), index=True, nullable=True)
+    application_code = Column(String(80), index=True, nullable=True)
+    application_type = Column(String(80), index=True, nullable=True)
+    application_number = Column(String(120), index=True, nullable=True)
+    application_status = Column(String(80), index=True, nullable=True)
+    msme = Column(String(50), nullable=True)
+    relaxation = Column(String(50), nullable=True)
+    project_name = Column(String(500), index=True, nullable=True)
+    geology = Column(String(255), nullable=True)
+    category_description = Column(String(255), nullable=True)
+    gw_utilisation_for = Column(String(255), nullable=True)
+    state_name = Column(String(100), nullable=True)
+    district_name = Column(String(120), index=True, nullable=True)
+    sub_district_name = Column(String(120), nullable=True)
+    village_name = Column(String(255), nullable=True)
+    proposed_address = Column(Text, nullable=True)
+    communication_address = Column(Text, nullable=True)
+    renewal_apply_area_type = Column(String(255), nullable=True)
+    first_apply_area_type = Column(String(255), nullable=True)
+    apply_area_type = Column(String(255), nullable=True)
+    present_area_type = Column(String(255), nullable=True)
+    eligible_exemption = Column(String(80), nullable=True)
+    net_gw_requirement = Column(String(80), nullable=True)
+    issued_letter_type = Column(String(120), nullable=True)
+    latitude = Column(String(50), nullable=True)
+    longitude = Column(String(50), nullable=True)
+    validity_start = Column(String(40), nullable=True)
+    validity_end = Column(String(40), nullable=True)
+    noc_number = Column(String(160), index=True, nullable=True)
+    application_created_date = Column(String(40), nullable=True)
+    application_submitted_date = Column(String(40), nullable=True)
+    application_approved_date = Column(String(40), nullable=True)
+    date_of_commencement = Column(String(40), nullable=True)
+    date_of_expansion = Column(String(40), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 # Create all tables. Do not crash the process — a hard fail here 502s nginx
 # and browsers report the missing CORS headers as a CORS error.
 try:
@@ -1928,6 +1972,21 @@ _safe_migrate(seed_roles_if_needed)
 _safe_migrate(ensure_admin_has_all_permissions)
 
 
+def seed_business_potential_records_if_empty():
+    db = SessionLocal()
+    try:
+        if db.query(BusinessPotentialRecordModel).first() is not None:
+            return
+        from business_potential_data import import_business_potential_records
+        result = import_business_potential_records(db, BusinessPotentialRecordModel)
+        print(f'Imported business potential records: {result}')
+    finally:
+        db.close()
+
+
+_safe_migrate(seed_business_potential_records_if_empty)
+
+
 def migrate_grant_monthly_report_to_employee_role():
     """Ensure the Employee role includes monthly-report (new screen); other roles stay as configured in DB."""
     db = SessionLocal()
@@ -2598,6 +2657,56 @@ class BusinessPotentialUpdate(BaseModel):
     assigned_to_employee_id: Optional[str] = None
     assigned_to_name: Optional[str] = None
     notes: Optional[str] = None
+
+
+class BusinessPotentialRecord(BaseModel):
+    model_config = ConfigDict(extra="ignore", from_attributes=True)
+    id: str
+    source_key: str
+    source_label: Optional[str] = None
+    source_file: Optional[str] = None
+    source_sheet: Optional[str] = None
+    application_code: Optional[str] = None
+    application_type: Optional[str] = None
+    application_number: Optional[str] = None
+    application_status: Optional[str] = None
+    msme: Optional[str] = None
+    relaxation: Optional[str] = None
+    project_name: Optional[str] = None
+    geology: Optional[str] = None
+    category_description: Optional[str] = None
+    gw_utilisation_for: Optional[str] = None
+    state_name: Optional[str] = None
+    district_name: Optional[str] = None
+    sub_district_name: Optional[str] = None
+    village_name: Optional[str] = None
+    proposed_address: Optional[str] = None
+    communication_address: Optional[str] = None
+    renewal_apply_area_type: Optional[str] = None
+    first_apply_area_type: Optional[str] = None
+    apply_area_type: Optional[str] = None
+    present_area_type: Optional[str] = None
+    eligible_exemption: Optional[str] = None
+    net_gw_requirement: Optional[str] = None
+    issued_letter_type: Optional[str] = None
+    latitude: Optional[str] = None
+    longitude: Optional[str] = None
+    validity_start: Optional[str] = None
+    validity_end: Optional[str] = None
+    noc_number: Optional[str] = None
+    application_created_date: Optional[str] = None
+    application_submitted_date: Optional[str] = None
+    application_approved_date: Optional[str] = None
+    date_of_commencement: Optional[str] = None
+    date_of_expansion: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class BusinessPotentialRecordPage(BaseModel):
+    items: List[BusinessPotentialRecord]
+    total: int
+    page: int
+    page_size: int
 
 
 class Document(BaseModel):
@@ -10219,6 +10328,136 @@ def delete_business_potential(
     db.delete(row)
     db.commit()
     return {'message': 'Business potential record deleted'}
+
+
+def _business_potential_record_query(
+    db: Session,
+    q: Optional[str] = None,
+    source: Optional[str] = None,
+    district: Optional[str] = None,
+    status: Optional[str] = None,
+    application_type: Optional[str] = None,
+):
+    query = db.query(BusinessPotentialRecordModel)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        query = query.filter(
+            (BusinessPotentialRecordModel.project_name.ilike(like))
+            | (BusinessPotentialRecordModel.application_number.ilike(like))
+            | (BusinessPotentialRecordModel.application_code.ilike(like))
+            | (BusinessPotentialRecordModel.noc_number.ilike(like))
+            | (BusinessPotentialRecordModel.district_name.ilike(like))
+            | (BusinessPotentialRecordModel.village_name.ilike(like))
+            | (BusinessPotentialRecordModel.category_description.ilike(like))
+            | (BusinessPotentialRecordModel.proposed_address.ilike(like))
+        )
+    if source and source.strip():
+        query = query.filter(BusinessPotentialRecordModel.source_key == source.strip())
+    if district and district.strip():
+        query = query.filter(BusinessPotentialRecordModel.district_name == district.strip())
+    if status and status.strip():
+        query = query.filter(BusinessPotentialRecordModel.application_status == status.strip())
+    if application_type and application_type.strip():
+        query = query.filter(BusinessPotentialRecordModel.application_type == application_type.strip())
+    return query
+
+
+@api_router.get('/business-potential-records', response_model=BusinessPotentialRecordPage)
+def list_business_potential_records(
+    q: Optional[str] = None,
+    source: Optional[str] = None,
+    district: Optional[str] = None,
+    status: Optional[str] = None,
+    application_type: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    query = _business_potential_record_query(db, q, source, district, status, application_type)
+    total = query.count()
+    rows = (
+        query.order_by(
+            BusinessPotentialRecordModel.district_name.asc(),
+            BusinessPotentialRecordModel.project_name.asc(),
+        )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {'items': rows, 'total': total, 'page': page, 'page_size': page_size}
+
+
+@api_router.get('/business-potential-records/meta')
+def business_potential_records_meta(
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    source_rows = (
+        db.query(
+            BusinessPotentialRecordModel.source_key,
+            BusinessPotentialRecordModel.source_label,
+            func.count(BusinessPotentialRecordModel.id),
+        )
+        .group_by(BusinessPotentialRecordModel.source_key, BusinessPotentialRecordModel.source_label)
+        .order_by(BusinessPotentialRecordModel.source_label.asc())
+        .all()
+    )
+    districts = [
+        r[0]
+        for r in db.query(BusinessPotentialRecordModel.district_name)
+        .filter(BusinessPotentialRecordModel.district_name.isnot(None), BusinessPotentialRecordModel.district_name != '')
+        .distinct()
+        .order_by(BusinessPotentialRecordModel.district_name.asc())
+        .all()
+    ]
+    statuses = [
+        r[0]
+        for r in db.query(BusinessPotentialRecordModel.application_status)
+        .filter(BusinessPotentialRecordModel.application_status.isnot(None), BusinessPotentialRecordModel.application_status != '')
+        .distinct()
+        .order_by(BusinessPotentialRecordModel.application_status.asc())
+        .all()
+    ]
+    types = [
+        r[0]
+        for r in db.query(BusinessPotentialRecordModel.application_type)
+        .filter(BusinessPotentialRecordModel.application_type.isnot(None), BusinessPotentialRecordModel.application_type != '')
+        .distinct()
+        .order_by(BusinessPotentialRecordModel.application_type.asc())
+        .all()
+    ]
+    return {
+        'total': db.query(BusinessPotentialRecordModel).count(),
+        'sources': [{'key': k, 'label': label or k, 'count': count} for k, label, count in source_rows],
+        'districts': districts,
+        'statuses': statuses,
+        'application_types': types,
+    }
+
+
+@api_router.post('/business-potential-records/import')
+def import_business_potential_excel(
+    replace: bool = False,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    if not is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail='Only an administrator can import Business Potential data')
+    from business_potential_data import import_business_potential_records
+    return import_business_potential_records(db, BusinessPotentialRecordModel, replace=replace)
+
+
+@api_router.get('/business-potential-records/{record_id}', response_model=BusinessPotentialRecord)
+def get_business_potential_record(
+    record_id: str,
+    current_user: UserModel = Depends(require_business_potential),
+    db: Session = Depends(get_db),
+):
+    row = db.query(BusinessPotentialRecordModel).filter(BusinessPotentialRecordModel.id == record_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail='Business potential record not found')
+    return row
 
 
 @api_router.post('/documents/upload')
