@@ -12177,6 +12177,10 @@ def _default_carry_order_workflow_payload() -> dict:
             'product_category_other': '',
             'consultancy_category': '',
             'consultancy_category_other': '',
+            'renewal_cgw_noc_id': '',
+            'renewal_cgw_inventory_id': '',
+            'renewal_cgw_noc_no': '',
+            'renewal_cgw_noc_label': '',
             'technical_datas_required': None,
             'site_visit_required': None,
             'expected_enquiry_closing_date': '',
@@ -12457,6 +12461,8 @@ def _opportunity_assessment_complete(payload: dict) -> bool:
     if not base_ok:
         return False
     if consultancy and consultancy_cat == CONSULTANCY_CATEGORY_OTHER and not str(oa.get('consultancy_category_other') or '').strip():
+        return False
+    if consultancy and consultancy_cat == 'renewal_cgwb_noc' and not str(oa.get('renewal_cgw_noc_id') or '').strip():
         return False
     if not consultancy and PRODUCT_CATEGORY_OTHER in cats and not str(oa.get('product_category_other') or '').strip():
         return False

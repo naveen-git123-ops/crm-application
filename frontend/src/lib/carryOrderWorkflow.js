@@ -34,6 +34,7 @@ export const OPPORTUNITY_BUSINESS_CATEGORIES = [
 export const PRODUCT_CATEGORY_OTHER = 'Other';
 
 export const CONSULTANCY_CATEGORY_OTHER = 'other';
+export const CONSULTANCY_RENEWAL_CGWB_NOC = 'renewal_cgwb_noc';
 
 export const CONSULTANCY_CATEGORIES = [
   { id: 'new_cgwb_noc', label: 'New CGWB NOC' },
@@ -50,6 +51,71 @@ export function isConsultancyBusinessCategory(value) {
 
 export function consultancyCategoryLabel(value) {
   return CONSULTANCY_CATEGORIES.find((opt) => opt.id === value)?.label || String(value || '').trim();
+}
+
+export function isRenewalCgwbNocSelected(oa) {
+  return isConsultancyBusinessCategory(oa?.business_category)
+    && String(oa?.consultancy_category || '') === CONSULTANCY_RENEWAL_CGWB_NOC;
+}
+
+export function formatCgwNocOptionLabel(opt) {
+  const parts = [
+    opt?.noc_no ? `NOC ${opt.noc_no}` : null,
+    opt?.application_no ? `App ${opt.application_no}` : null,
+    opt?.valid_upto ? `valid to ${opt.valid_upto}` : (opt?.valid_from ? `from ${opt.valid_from}` : null),
+    opt?.project_name || opt?.location || opt?.customer_name || null,
+  ].filter(Boolean);
+  return parts.join(' · ') || 'NOC';
+}
+
+export function cgwItemBelongsToLead(item, lead) {
+  if (!item || !lead) return false;
+  if (lead.customer_id && item.customer_id === lead.customer_id) return true;
+  const company = String(lead.company || '').trim().toLowerCase();
+  const name = String(item.customer_name || '').trim().toLowerCase();
+  return Boolean(company && name && company === name);
+}
+
+export function flattenCustomerCgwNocs(items) {
+  const list = Array.isArray(items) ? items : [];
+  const options = [];
+  list.forEach((item) => {
+    const records = Array.isArray(item?.noc_records) && item.noc_records.length
+      ? item.noc_records
+      : [];
+    const fallback = (!records.length && (item?.noc_no || item?.noc_valid_from || item?.noc_valid_upto || item?.noc_document_url))
+      ? [{
+        id: 'legacy-current',
+        noc_no: item.noc_no,
+        application_no: item.noc_application_no,
+        project_name: item.noc_project_name,
+        valid_from: item.noc_valid_from,
+        valid_upto: item.noc_valid_upto,
+        noc_type: item.noc_type,
+      }]
+      : records;
+    fallback.forEach((rec, idx) => {
+      const nocNo = String(rec?.noc_no || '').trim();
+      const appNo = String(rec?.application_no || rec?.noc_application_no || '').trim();
+      const validFrom = String(rec?.valid_from || rec?.noc_valid_from || '').trim();
+      const validUpto = String(rec?.valid_upto || rec?.noc_valid_upto || '').trim();
+      if (!nocNo && !appNo && !validFrom && !validUpto && !rec?.document_url) return;
+      options.push({
+        id: `${item.id}::${rec?.id || idx}`,
+        inventory_id: item.id,
+        customer_id: item.customer_id || '',
+        customer_name: item.customer_name || '',
+        location: item.location || '',
+        noc_no: nocNo,
+        application_no: appNo,
+        project_name: String(rec?.project_name || item.noc_project_name || '').trim(),
+        valid_from: validFrom,
+        valid_upto: validUpto,
+        noc_type: String(rec?.noc_type || item.noc_type || '').trim(),
+      });
+    });
+  });
+  return options;
 }
 
 export const SITE_VISIT_STATUSES = [
@@ -102,6 +168,10 @@ export function defaultOpportunityAssessment() {
     product_category_other: '',
     consultancy_category: '',
     consultancy_category_other: '',
+    renewal_cgw_noc_id: '',
+    renewal_cgw_inventory_id: '',
+    renewal_cgw_noc_no: '',
+    renewal_cgw_noc_label: '',
     technical_datas_required: null,
     site_visit_required: null,
     expected_enquiry_closing_date: '',
@@ -199,6 +269,10 @@ function normalizeOpportunityAssessment(stored) {
     product_categories: Array.isArray(stored?.product_categories) ? stored.product_categories : [],
     consultancy_category: String(stored?.consultancy_category || '').trim(),
     consultancy_category_other: String(stored?.consultancy_category_other || ''),
+    renewal_cgw_noc_id: String(stored?.renewal_cgw_noc_id || ''),
+    renewal_cgw_inventory_id: String(stored?.renewal_cgw_inventory_id || ''),
+    renewal_cgw_noc_no: String(stored?.renewal_cgw_noc_no || ''),
+    renewal_cgw_noc_label: String(stored?.renewal_cgw_noc_label || ''),
     site_visit_assignees: siteVisitAssignees(oa),
     site_visit_others: siteVisitOtherPeople(oa),
     site_visit_photos: Array.isArray(stored?.site_visit_photos) ? stored.site_visit_photos : [],
@@ -256,6 +330,9 @@ export function isOpportunityAssessmentComplete(payload) {
     && consultancyCat === CONSULTANCY_CATEGORY_OTHER
     && !String(oa.consultancy_category_other || '').trim()
   ) {
+    return false;
+  }
+  if (consultancy && consultancyCat === CONSULTANCY_RENEWAL_CGWB_NOC && !String(oa.renewal_cgw_noc_id || '').trim()) {
     return false;
   }
   if (
@@ -692,6 +769,9 @@ export function requirementAnalysisIncompleteMessage(payload) {
       && !String(oa.consultancy_category_other || '').trim()
     ) {
       return 'Type the custom consultancy category for "Others"';
+    }
+    if (oa.consultancy_category === CONSULTANCY_RENEWAL_CGWB_NOC && !String(oa.renewal_cgw_noc_id || '').trim()) {
+      return 'Select the existing CGWA NOC to renew';
     }
   } else {
     if (!categories.length) return 'Select at least one product category';

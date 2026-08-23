@@ -52,7 +52,12 @@ import {
   PRODUCT_CATEGORY_OTHER,
   CONSULTANCY_CATEGORIES,
   CONSULTANCY_CATEGORY_OTHER,
+  CONSULTANCY_RENEWAL_CGWB_NOC,
   isConsultancyBusinessCategory,
+  isRenewalCgwbNocSelected,
+  flattenCustomerCgwNocs,
+  formatCgwNocOptionLabel,
+  cgwItemBelongsToLead,
   SITE_VISIT_STATUSES,
   SITE_VISIT_FOLLOW_UP_CHANNELS,
   siteVisitAssignees,
@@ -628,6 +633,7 @@ export function CarryOrderWorkspace({
         )}
         {canOpenStage(activeTab) && activeTab === 'opportunity_assessment' && (
           <ModuleOpportunityAssessment
+            lead={lead}
             payload={payload}
             setPayload={setPayload}
             canEdit={editActive}
@@ -1333,6 +1339,7 @@ function FollowUpLogSection({
 }
 
 function ModuleOpportunityAssessment({
+  lead,
   payload,
   setPayload,
   canEdit,
@@ -1344,6 +1351,9 @@ function ModuleOpportunityAssessment({
   const { categories, loading: categoriesLoading } = useLeadCategories({ enabled: true });
   const [employees, setEmployees] = useState([]);
   const [uploadingField, setUploadingField] = useState('');
+  const [cgwNocs, setCgwNocs] = useState([]);
+  const [cgwNocsLoading, setCgwNocsLoading] = useState(false);
+  const [cgwNocsError, setCgwNocsError] = useState('');
   const oa = payload.opportunity_assessment || defaultOpportunityAssessment();
   const productOptions = (categories || []).map((c) => c.name).filter(Boolean);
   const baseOptions = productOptions.length ? productOptions : LEAD_CATEGORY_OPTIONS;
@@ -1354,6 +1364,7 @@ function ModuleOpportunityAssessment({
   const otherCategorySelected = selected.includes(PRODUCT_CATEGORY_OTHER);
   const isConsultancy = isConsultancyBusinessCategory(oa.business_category);
   const consultancyOtherSelected = oa.consultancy_category === CONSULTANCY_CATEGORY_OTHER;
+  const renewalCgwbSelected = isRenewalCgwbNocSelected(oa);
   const siteVisitYes = oa.site_visit_required === true;
   const assignees = siteVisitAssignees(oa);
   const otherPeople = siteVisitOtherPeople(oa);
@@ -1367,6 +1378,46 @@ function ModuleOpportunityAssessment({
       .then((r) => setEmployees(Array.isArray(r.data) ? r.data : []))
       .catch(() => setEmployees([]));
   }, [apiBase, authHeader]);
+
+  useEffect(() => {
+    if (!renewalCgwbSelected) {
+      setCgwNocs([]);
+      setCgwNocsError('');
+      setCgwNocsLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    const loadNocs = async () => {
+      setCgwNocsLoading(true);
+      setCgwNocsError('');
+      try {
+        let items = [];
+        if (lead?.customer_id) {
+          const { data } = await axios.get(
+            `${apiBase}/cgw-flow-metres/customer/${lead.customer_id}`,
+            { headers: authHeader() },
+          );
+          items = Array.isArray(data) ? data : [];
+        }
+        if (!items.length) {
+          const { data } = await axios.get(`${apiBase}/cgw-flow-metres`, { headers: authHeader() });
+          items = (Array.isArray(data) ? data : []).filter((row) => cgwItemBelongsToLead(row, lead));
+        }
+        if (!cancelled) setCgwNocs(flattenCustomerCgwNocs(items));
+      } catch (err) {
+        if (!cancelled) {
+          setCgwNocs([]);
+          setCgwNocsError(getApiErrorMessage(err, 'Could not load CGWA NOCs for this customer'));
+        }
+      } finally {
+        if (!cancelled) setCgwNocsLoading(false);
+      }
+    };
+    loadNocs();
+    return () => {
+      cancelled = true;
+    };
+  }, [renewalCgwbSelected, lead?.customer_id, lead?.company, apiBase, authHeader]);
 
   const updateOa = (patch) => {
     setPayload({
@@ -1490,7 +1541,14 @@ function ModuleOpportunityAssessment({
                 business_category: next,
                 ...(consultancy
                   ? { product_categories: [], product_category_other: '' }
-                  : { consultancy_category: '', consultancy_category_other: '' }),
+                  : {
+                    consultancy_category: '',
+                    consultancy_category_other: '',
+                    renewal_cgw_noc_id: '',
+                    renewal_cgw_inventory_id: '',
+                    renewal_cgw_noc_no: '',
+                    renewal_cgw_noc_label: '',
+                  }),
               });
             }}
           >
@@ -1511,6 +1569,14 @@ function ModuleOpportunityAssessment({
               onChange={(e) => updateOa({
                 consultancy_category: e.target.value,
                 ...(e.target.value !== CONSULTANCY_CATEGORY_OTHER ? { consultancy_category_other: '' } : {}),
+                ...(e.target.value !== CONSULTANCY_RENEWAL_CGWB_NOC
+                  ? {
+                    renewal_cgw_noc_id: '',
+                    renewal_cgw_inventory_id: '',
+                    renewal_cgw_noc_no: '',
+                    renewal_cgw_noc_label: '',
+                  }
+                  : {}),
               })}
             >
               <option value="">Select consultancy category</option>
@@ -1528,6 +1594,53 @@ function ModuleOpportunityAssessment({
                   onChange={(e) => updateOa({ consultancy_category_other: e.target.value })}
                   placeholder="Type the consultancy category"
                 />
+              </div>
+            )}
+            {renewalCgwbSelected && (
+              <div className="space-y-2 pt-2">
+                <Label className={labelClass}>Existing CGWA NOC *</Label>
+                <p className="text-xs text-slate-500 normal-case font-normal">
+                  NOCs from the CGWA screen for {lead?.company || 'this customer'}
+                </p>
+                <select
+                  className={selectClass}
+                  disabled={!canEdit || cgwNocsLoading}
+                  value={oa.renewal_cgw_noc_id || ''}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    const picked = cgwNocs.find((opt) => opt.id === nextId);
+                    updateOa({
+                      renewal_cgw_noc_id: nextId,
+                      renewal_cgw_inventory_id: picked?.inventory_id || '',
+                      renewal_cgw_noc_no: picked?.noc_no || '',
+                      renewal_cgw_noc_label: picked ? formatCgwNocOptionLabel(picked) : '',
+                    });
+                  }}
+                >
+                  <option value="">
+                    {cgwNocsLoading ? 'Loading NOCs…' : 'Select NOC to renew'}
+                  </option>
+                  {cgwNocs.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {formatCgwNocOptionLabel(opt)}
+                    </option>
+                  ))}
+                  {oa.renewal_cgw_noc_id
+                    && !cgwNocs.some((opt) => opt.id === oa.renewal_cgw_noc_id)
+                    && oa.renewal_cgw_noc_label ? (
+                    <option value={oa.renewal_cgw_noc_id}>{oa.renewal_cgw_noc_label}</option>
+                  ) : null}
+                </select>
+                {cgwNocsError ? (
+                  <p className="text-xs text-rose-700">{cgwNocsError}</p>
+                ) : null}
+                {!cgwNocsLoading && !cgwNocsError && cgwNocs.length === 0 ? (
+                  <p className="text-xs text-amber-800">
+                    {lead?.customer_id || lead?.company
+                      ? 'No NOC found for this customer on the CGWA screen.'
+                      : 'This lead has no customer linked, so CGWA NOCs cannot be loaded.'}
+                  </p>
+                ) : null}
               </div>
             )}
           </div>
