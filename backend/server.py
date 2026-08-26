@@ -5410,6 +5410,117 @@ def is_within_office(db: Session, lat: float, lng: float) -> bool:
     dist = _haversine_m(office[0], office[1], lat, lng)
     return dist <= OFFICE_RADIUS_METRES
 
+
+def _coord_pair_outside_office(office, lat, lng) -> bool:
+    if office is None or lat is None or lng is None:
+        return False
+    try:
+        lat_f = float(lat)
+        lng_f = float(lng)
+    except (TypeError, ValueError):
+        return False
+    return _haversine_m(office[0], office[1], lat_f, lng_f) > OFFICE_RADIUS_METRES
+
+
+def backfill_outside_office_tours(db: Session) -> dict:
+    """Mark historical punches outside the office as pending tour requests (blank reason)."""
+    office = get_office_location(db)
+    if office is None:
+        raise HTTPException(status_code=400, detail='Office location is not set')
+
+    already_in_queue = {'pending', 'approved', 'rejected'}
+    updated = []
+    records = db.query(AttendanceModel).filter(
+        (AttendanceModel.punch_in_lat.isnot(None))
+        | (AttendanceModel.punch_out_lat.isnot(None))
+    ).all()
+    session_parents = {
+        row[0]
+        for row in db.query(AttendanceSessionModel.attendance_id)
+        .filter(
+            (AttendanceSessionModel.punch_in_lat.isnot(None))
+            | (AttendanceSessionModel.punch_out_lat.isnot(None))
+        )
+        .distinct()
+        .all()
+        if row[0]
+    }
+    extra_ids = session_parents - {r.id for r in records}
+    if extra_ids:
+        records.extend(
+            db.query(AttendanceModel).filter(AttendanceModel.id.in_(list(extra_ids))).all()
+        )
+
+    for rec in records:
+        current_status = (rec.tour_approval_status or '').strip().lower()
+        if rec.is_tour == 1 and current_status in already_in_queue:
+            continue
+        outside = (
+            _coord_pair_outside_office(office, rec.punch_in_lat, rec.punch_in_lng)
+            or _coord_pair_outside_office(office, rec.punch_out_lat, rec.punch_out_lng)
+        )
+        sessions = db.query(AttendanceSessionModel).filter(
+            AttendanceSessionModel.attendance_id == rec.id
+        ).all()
+        if not outside:
+            for ses in sessions:
+                if (
+                    _coord_pair_outside_office(office, ses.punch_in_lat, ses.punch_in_lng)
+                    or _coord_pair_outside_office(office, ses.punch_out_lat, ses.punch_out_lng)
+                ):
+                    outside = True
+                    break
+        if not outside:
+            continue
+        rec.is_tour = 1
+        rec.tour_approval_status = 'pending'
+        rec.tour_reason = None
+        for ses in sessions:
+            ses.is_tour = 1
+            ses.tour_approval_status = 'pending'
+        updated.append({
+            'id': rec.id,
+            'employee_id': rec.employee_id,
+            'employee_name': rec.employee_name,
+            'date': rec.date,
+            'punch_in': rec.punch_in,
+        })
+    db.commit()
+    return {
+        'office': {'latitude': office[0], 'longitude': office[1], 'radius_metres': OFFICE_RADIUS_METRES},
+        'updated_count': len(updated),
+        'updated': updated,
+    }
+
+
+def migrate_backfill_outside_office_tours():
+    """One-time: after office GPS is set, convert historical outside punches to pending tours."""
+    db = SessionLocal()
+    try:
+        flag = db.query(SettingsModel).filter(
+            SettingsModel.config_key == 'outside_office_tours_backfilled'
+        ).first()
+        if flag and str(flag.value or '').strip() == '1':
+            return
+        office = get_office_location(db)
+        if office is None:
+            print('Outside-office tour backfill skipped: office location not set')
+            return
+        result = backfill_outside_office_tours(db)
+        if flag:
+            flag.value = '1'
+        else:
+            db.add(SettingsModel(config_key='outside_office_tours_backfilled', value='1'))
+        db.commit()
+        print(
+            f'Outside-office tour backfill updated {result.get("updated_count", 0)} attendance record(s)'
+        )
+    finally:
+        db.close()
+
+
+_safe_migrate(migrate_backfill_outside_office_tours)
+
 # ============= CUSTOMERS =============
 
 def _customer_attachments_from_db(customer: CustomerModel) -> List[dict]:
@@ -8571,6 +8682,17 @@ def set_office_location_api(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f'Error setting office location: {str(e)}')
+
+
+@api_router.post('/attendance/backfill-outside-office-tours')
+def backfill_outside_office_tours_api(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """One-time: convert punches outside the office into pending tour requests (blank reason). Admin only."""
+    if current_user.role != 'Admin':
+        raise HTTPException(status_code=403, detail='Only Admin can backfill tour requests')
+    return backfill_outside_office_tours(db)
 
 
 @api_router.get('/attendance/tour-pending')
