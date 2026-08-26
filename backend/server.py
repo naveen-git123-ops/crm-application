@@ -12,6 +12,9 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.exc import IntegrityError, OperationalError
 import os
 import logging
+import hashlib
+import hmac
+import secrets
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict, field_validator, AliasChoices
 from typing import List, Optional, Literal, Any, Dict, Tuple
@@ -229,6 +232,8 @@ class UserModel(Base):
     telegram_chat_id = Column(String(64), nullable=True)
     telegram_link_code = Column(String(12), nullable=True)
     telegram_link_expires = Column(DateTime, nullable=True)
+    password_reset_code_hash = Column(String(128), nullable=True)
+    password_reset_expires = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -1645,6 +1650,31 @@ def migrate_users_telegram_columns():
 
 
 _safe_migrate(migrate_users_telegram_columns)
+
+
+def migrate_users_password_reset_columns():
+    from sqlalchemy import inspect
+    try:
+        inspector = inspect(engine)
+        existing_columns = [col['name'] for col in inspector.get_columns('users')]
+        new_cols = [
+            ('password_reset_code_hash', 'VARCHAR(128) NULL'),
+            ('password_reset_expires', 'DATETIME NULL'),
+        ]
+        with engine.connect() as conn:
+            for col_name, col_type in new_cols:
+                if col_name not in existing_columns:
+                    try:
+                        conn.execute(text(f'ALTER TABLE users ADD COLUMN {col_name} {col_type}'))
+                        conn.commit()
+                    except Exception as alter_err:
+                        print(f'Could not add column {col_name}: {alter_err}')
+                        conn.rollback()
+    except Exception as e:
+        print(f'Migration error for users password reset columns: {e}')
+
+
+_safe_migrate(migrate_users_password_reset_columns)
 def migrate_employees_telegram_chat_id():
     """Add telegram_chat_id to employees if missing (NULL for existing rows)."""
     from sqlalchemy import inspect
@@ -2143,6 +2173,16 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=12)
+    new_password: str = Field(min_length=6, max_length=255)
 
 class UserDetails(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -3795,6 +3835,34 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
+
+_PASSWORD_RESET_REQUESTS: Dict[str, List[float]] = {}
+
+
+def _password_reset_rate_ok(email: str, limit: int = 3, window_sec: int = 900) -> bool:
+    now = time.time()
+    stamps = [t for t in _PASSWORD_RESET_REQUESTS.get(email, []) if now - t < window_sec]
+    if len(stamps) >= limit:
+        _PASSWORD_RESET_REQUESTS[email] = stamps
+        return False
+    stamps.append(now)
+    _PASSWORD_RESET_REQUESTS[email] = stamps
+    return True
+
+
+def _hash_password_reset_code(user_id: str, code: str) -> str:
+    payload = f'{user_id}:{code}'.encode('utf-8')
+    return hmac.new(JWT_SECRET.encode('utf-8'), payload, hashlib.sha256).hexdigest()
+
+
+def _telegram_chat_id_for_user(db: Session, user: UserModel) -> Optional[str]:
+    chat_id = (user.telegram_chat_id or '').strip()
+    if chat_id:
+        return chat_id
+    if user.employee_id:
+        return _telegram_chat_id_for_employee(db, user.employee_id)
+    return None
+
 def create_access_token(user_id: str, email: str, role: str) -> str:
     expiration = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
     payload = {
@@ -4984,6 +5052,80 @@ def telegram_register_webhook(current_user: UserModel = Depends(get_current_user
     except Exception as exc:
         logging.error('Telegram setWebhook failed: %s', exc)
         raise HTTPException(status_code=502, detail='Failed to register Telegram webhook')
+
+
+@api_router.post('/auth/forgot-password')
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    email = str(payload.email or '').strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail='Email is required')
+    if not _password_reset_rate_ok(email):
+        raise HTTPException(status_code=429, detail='Too many reset requests. Try again in a few minutes.')
+    if not telegram_enabled():
+        raise HTTPException(status_code=503, detail='Telegram is not configured on the server')
+
+    user = db.query(UserModel).filter(func.lower(UserModel.email) == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail='No account found for this email')
+    chat_id = _telegram_chat_id_for_user(db, user)
+    if not chat_id:
+        raise HTTPException(
+            status_code=400,
+            detail='Telegram is not connected for this account. Connect Telegram in Settings, or ask Admin to reset your password.',
+        )
+
+    code = f'{secrets.randbelow(1000000):06d}'
+    user.password_reset_code_hash = _hash_password_reset_code(user.id, code)
+    user.password_reset_expires = datetime.now(timezone.utc) + timedelta(minutes=10)
+    db.commit()
+
+    message = (
+        f'Resoline CRM password reset\n\n'
+        f'Hi {user.name or "there"},\n'
+        f'Your verification code is: {code}\n\n'
+        f'This code expires in 10 minutes. If you did not request a reset, ignore this message.'
+    )
+    ok, error = send_telegram_message_verbose(message, chat_id)
+    if not ok:
+        user.password_reset_code_hash = None
+        user.password_reset_expires = None
+        db.commit()
+        raise HTTPException(status_code=502, detail=f'Could not send the code on Telegram. {error or ""}'.strip())
+    return {'message': 'A verification code was sent to your Telegram.'}
+
+
+@api_router.post('/auth/reset-password')
+def reset_password_with_telegram_code(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    email = str(payload.email or '').strip().lower()
+    code = re.sub(r'\s+', '', str(payload.code or '').strip())
+    new_password = (payload.new_password or '').strip()
+    if not email or not code or not new_password:
+        raise HTTPException(status_code=400, detail='Email, verification code, and new password are required')
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail='Password must be at least 6 characters')
+
+    user = db.query(UserModel).filter(func.lower(UserModel.email) == email).first()
+    if not user or not user.password_reset_code_hash or not user.password_reset_expires:
+        raise HTTPException(status_code=400, detail='Invalid or expired verification code')
+
+    expires = user.password_reset_expires
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires:
+        user.password_reset_code_hash = None
+        user.password_reset_expires = None
+        db.commit()
+        raise HTTPException(status_code=400, detail='Verification code expired. Request a new one.')
+
+    expected = _hash_password_reset_code(user.id, code)
+    if not hmac.compare_digest(expected, user.password_reset_code_hash):
+        raise HTTPException(status_code=400, detail='Invalid verification code')
+
+    user.password = hash_password(new_password)
+    user.password_reset_code_hash = None
+    user.password_reset_expires = None
+    db.commit()
+    return {'message': 'Password updated. You can log in with your new password.'}
 
 
 @api_router.post('/auth/login')
