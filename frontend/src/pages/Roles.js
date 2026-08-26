@@ -36,11 +36,13 @@ const PERMISSION_LABELS = {
   holidays: 'Government Holidays',
   'stock-management': 'Stock Management',
   'business-potential': 'Business Potential',
+  'bpo-desk': 'BPO Desk',
+  'bpo-site-visit': 'BPO Site Visit',
 };
 
 const PERMISSION_GROUPS = [
   { label: 'Overview', keys: ['dashboard'] },
-  { label: 'CRM', keys: ['leads', 'customers', 'business-potential', 'tasks'] },
+  { label: 'CRM', keys: ['leads', 'customers', 'business-potential', 'bpo-desk', 'bpo-site-visit', 'tasks'] },
   { label: 'CGWA', keys: ['cgw-flow-metre'], hint: 'One checkbox unlocks Create CGWA, My Drafts, and View CGWA.' },
   { label: 'Employee', keys: ['attendance', 'monthly-report', 'leaves'] },
   { label: 'HR', keys: ['employees', 'holidays', 'idcards', 'documents'] },
