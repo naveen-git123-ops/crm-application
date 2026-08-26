@@ -1,20 +1,27 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { Mail, Lock, User, Briefcase, Eye, EyeOff, ShieldCheck, Zap, Users } from 'lucide-react';
+import { Mail, Lock, User, Briefcase, Eye, EyeOff, ShieldCheck, Zap, Users, KeyRound } from 'lucide-react';
+import { API_ENDPOINT } from '@/lib/apiConfig';
+import { getApiErrorMessage } from '@/lib/apiErrors';
 
 export const Login = () => {
   const [isLogin, setIsLogin] = useState(true);
+  const [mode, setMode] = useState('login');
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     name: '',
     employee_id: '',
-    role: 'Employee'
+    role: 'Employee',
+    code: '',
+    newPassword: '',
+    confirmPassword: '',
   });
   const [loading, setLoading] = useState(false);
   const { login, register } = useAuth();
@@ -43,6 +50,30 @@ export const Login = () => {
     setLoading(true);
 
     try {
+      if (mode === 'forgot') {
+        const { data } = await axios.post(`${API_ENDPOINT}/auth/forgot-password`, {
+          email: formData.email.trim().toLowerCase(),
+        });
+        toast.success(data?.message || 'Verification code sent to your Telegram');
+        setMode('reset');
+        return;
+      }
+      if (mode === 'reset') {
+        if (formData.newPassword !== formData.confirmPassword) {
+          toast.error('New password and confirmation do not match');
+          return;
+        }
+        const { data } = await axios.post(`${API_ENDPOINT}/auth/reset-password`, {
+          email: formData.email.trim().toLowerCase(),
+          code: formData.code.trim(),
+          new_password: formData.newPassword,
+        });
+        toast.success(data?.message || 'Password updated');
+        setMode('login');
+        setIsLogin(true);
+        setFormData((prev) => ({ ...prev, password: '', code: '', newPassword: '', confirmPassword: '' }));
+        return;
+      }
       if (isLogin) {
         await login(formData.email, formData.password);
         toast.success('Login successful!');
@@ -52,7 +83,7 @@ export const Login = () => {
       }
       navigate('/dashboard');
     } catch (error) {
-      toast.error(getErrorMessage(error));
+      toast.error(mode === 'login' || mode === 'signup' ? getErrorMessage(error) : getApiErrorMessage(error, getErrorMessage(error)));
     } finally {
       setLoading(false);
     }
@@ -124,17 +155,24 @@ export const Login = () => {
             <div className="rounded-2xl border border-border bg-card p-5 sm:p-8 shadow-soft">
               <div className="mb-6">
                 <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground">
-                  {isLogin ? 'Welcome back' : 'Create your account'}
+                  {mode === 'forgot' || mode === 'reset'
+                    ? 'Reset your password'
+                    : isLogin ? 'Welcome back' : 'Create your account'}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {isLogin ? 'Sign in to continue to your workspace.' : 'Set up access in a few seconds.'}
+                  {mode === 'forgot'
+                    ? 'We will send a verification code to your linked Telegram.'
+                    : mode === 'reset'
+                      ? 'Enter the code from Telegram and choose a new password.'
+                      : isLogin ? 'Sign in to continue to your workspace.' : 'Set up access in a few seconds.'}
                 </p>
               </div>
 
+              {mode !== 'forgot' && mode !== 'reset' ? (
               <div className="mb-6 grid grid-cols-2 rounded-lg bg-muted p-1">
                 <button
                   type="button"
-                  onClick={() => setIsLogin(true)}
+                  onClick={() => { setIsLogin(true); setMode('login'); }}
                   className={`h-10 min-h-[40px] rounded-md text-sm font-semibold transition-all ${
                     isLogin
                       ? 'bg-card text-foreground shadow-sm'
@@ -145,7 +183,7 @@ export const Login = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsLogin(false)}
+                  onClick={() => { setIsLogin(false); setMode('login'); }}
                   className={`h-10 min-h-[40px] rounded-md text-sm font-semibold transition-all ${
                     !isLogin
                       ? 'bg-card text-foreground shadow-sm'
@@ -155,9 +193,10 @@ export const Login = () => {
                   Sign Up
                 </button>
               </div>
+              ) : null}
 
               <form onSubmit={handleSubmit} className="space-y-4">
-                {!isLogin && (
+                {!isLogin && mode === 'login' && (
                   <>
                     <div className="relative">
                       <Briefcase className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -198,9 +237,27 @@ export const Login = () => {
                     required
                     placeholder="Email address"
                     className={fieldClass}
+                    disabled={mode === 'reset'}
                   />
                 </div>
 
+                {mode === 'reset' && (
+                  <div className="relative">
+                    <KeyRound className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="code"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={formData.code}
+                      onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                      required
+                      placeholder="6-digit Telegram code"
+                      className={fieldClass}
+                    />
+                  </div>
+                )}
+
+                {mode === 'login' && (
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -222,6 +279,56 @@ export const Login = () => {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                )}
+
+                {mode === 'reset' && (
+                  <>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        type={showPassword ? 'text' : 'password'}
+                        value={formData.newPassword}
+                        onChange={(e) => setFormData({ ...formData, newPassword: e.target.value })}
+                        required
+                        minLength={6}
+                        placeholder="New password"
+                        className={`${fieldClass} pr-11`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        type={showPassword ? 'text' : 'password'}
+                        value={formData.confirmPassword}
+                        onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                        required
+                        minLength={6}
+                        placeholder="Confirm new password"
+                        className={fieldClass}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {isLogin && mode === 'login' && (
+                  <div className="flex justify-end -mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setMode('forgot')}
+                      className="text-sm font-semibold text-primary hover:text-primary/80"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                )}
 
                 <Button
                   type="submit"
@@ -229,9 +336,32 @@ export const Login = () => {
                   className="w-full h-11"
                   data-testid="submit-button"
                 >
-                  {loading ? 'Processing...' : isLogin ? 'Continue' : 'Create account'}
+                  {loading
+                    ? 'Processing...'
+                    : mode === 'forgot'
+                      ? 'Send Telegram code'
+                      : mode === 'reset'
+                        ? 'Update password'
+                        : isLogin ? 'Continue' : 'Create account'}
                 </Button>
 
+                {mode === 'forgot' || mode === 'reset' ? (
+                  <p className="text-sm text-muted-foreground text-center pt-1">
+                    {mode === 'reset' ? (
+                      <button type="button" onClick={() => setMode('forgot')} className="font-semibold text-primary hover:text-primary/80">
+                        Resend code
+                      </button>
+                    ) : null}
+                    {mode === 'reset' ? ' · ' : null}
+                    <button
+                      type="button"
+                      onClick={() => { setMode('login'); setIsLogin(true); }}
+                      className="font-semibold text-primary hover:text-primary/80"
+                    >
+                      Back to login
+                    </button>
+                  </p>
+                ) : (
                 <p className="text-sm text-muted-foreground text-center pt-1">
                   {isLogin ? "Don't have an account? " : 'Already have an account? '}
                   <button
@@ -242,6 +372,7 @@ export const Login = () => {
                     {isLogin ? 'Sign up' : 'Log in'}
                   </button>
                 </p>
+                )}
               </form>
             </div>
           </div>
