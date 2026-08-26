@@ -21,6 +21,7 @@ export const Settings = () => {
   const [loading, setLoading] = useState(false);
   const [officeLocation, setOfficeLocation] = useState({ configured: false, latitude: null, longitude: null });
   const [officeLoading, setOfficeLoading] = useState(false);
+  const [tourBackfillLoading, setTourBackfillLoading] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState({ enabled: false, linked: false });
   const [telegramLoading, setTelegramLoading] = useState(false);
   const [telegramConnectUrl, setTelegramConnectUrl] = useState(null);
@@ -510,14 +511,42 @@ export const Settings = () => {
           ) : (
             <p className="text-sm text-amber-700 mb-4">Office location not set. Set it so that attendance uses location-based rules.</p>
           )}
-          <Button
-            onClick={setOfficeFromCurrentLocation}
-            disabled={officeLoading}
-            className="bg-blue-600 text-white hover:bg-blue-700"
-          >
-            <MapPin className="h-4 w-4 mr-2" />
-            {officeLoading ? 'Getting location...' : 'Use my current location as office'}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={setOfficeFromCurrentLocation}
+              disabled={officeLoading}
+              className="bg-blue-600 text-white hover:bg-blue-700"
+            >
+              <MapPin className="h-4 w-4 mr-2" />
+              {officeLoading ? 'Getting location...' : 'Use my current location as office'}
+            </Button>
+            {officeLocation.configured && (
+              <Button
+                variant="outline"
+                disabled={tourBackfillLoading}
+                onClick={async () => {
+                  if (!window.confirm('Move all past punches outside the office (50 m) into pending tour requests with a blank reason? Existing approved or rejected tours will be left as they are.')) {
+                    return;
+                  }
+                  setTourBackfillLoading(true);
+                  try {
+                    const { data } = await axios.post(
+                      `${API}/attendance/backfill-outside-office-tours`,
+                      {},
+                      { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+                    );
+                    toast.success(`Moved ${data.updated_count || 0} punch(es) to tour requests`);
+                  } catch (err) {
+                    toast.error(err.response?.data?.detail || 'Failed to convert outside-office punches');
+                  } finally {
+                    setTourBackfillLoading(false);
+                  }
+                }}
+              >
+                {tourBackfillLoading ? 'Converting punches...' : 'Move past outside punches to tour requests'}
+              </Button>
+            )}
+          </div>
         </Card>
       )}
 
