@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, func, cast, ForeignKey, case
+from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, func, cast, ForeignKey, case, and_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -1027,6 +1027,8 @@ class BusinessPotentialRecordModel(Base):
     converted_at = Column(DateTime, nullable=True)
     converted_by_employee_id = Column(String(50), nullable=True)
     converted_by_name = Column(String(255), nullable=True)
+    bpo_disqualify_reason = Column(Text, nullable=True)
+    last_follow_up_notes = Column(Text, nullable=True)
 
 
 class BusinessPotentialFollowUpModel(Base):
@@ -1968,6 +1970,7 @@ DEFAULT_PERMISSION_KEYS = [
     "dashboard", "leads", "employees", "attendance", "monthly-report", "leaves", "expenses",
     "roles", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers",
     "cgw-flow-metre", "vehicles", "stock-management", "business-potential",
+    "bpo-desk", "bpo-site-visit",
 ]
 
 def seed_roles_if_needed():
@@ -2083,6 +2086,8 @@ def migrate_business_potential_bpo_columns():
         ('converted_at', 'DATETIME NULL'),
         ('converted_by_employee_id', 'VARCHAR(50) NULL'),
         ('converted_by_name', 'VARCHAR(255) NULL'),
+        ('bpo_disqualify_reason', 'TEXT NULL'),
+        ('last_follow_up_notes', 'TEXT NULL'),
     ):
         if col_name in existing:
             continue
@@ -2820,6 +2825,8 @@ class BusinessPotentialRecord(BaseModel):
     converted_at: Optional[datetime] = None
     converted_by_employee_id: Optional[str] = None
     converted_by_name: Optional[str] = None
+    bpo_disqualify_reason: Optional[str] = None
+    last_follow_up_notes: Optional[str] = None
 
 
 class BusinessPotentialFollowUp(BaseModel):
@@ -2838,6 +2845,7 @@ class BusinessPotentialFollowUpCreate(BaseModel):
     outcome: str
     notes: Optional[str] = None
     next_follow_up_date: Optional[str] = None
+    reason: Optional[str] = None
 
 
 class BusinessPotentialConvertRequest(BaseModel):
@@ -10349,6 +10357,40 @@ def require_business_potential(
     return current_user
 
 
+def _user_has_any_permission(current_user: UserModel, db: Session, *keys: str) -> bool:
+    if is_admin_user(current_user):
+        return True
+    perms = get_permissions_for_role(db, current_user.role)
+    return any(key in perms for key in keys)
+
+
+def require_bpo_desk(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if _user_has_any_permission(current_user, db, 'bpo-desk'):
+        return current_user
+    raise HTTPException(status_code=403, detail='You do not have access to the BPO desk')
+
+
+def require_bpo_site_visit(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if _user_has_any_permission(current_user, db, 'bpo-site-visit'):
+        return current_user
+    raise HTTPException(status_code=403, detail='You do not have access to BPO site visits')
+
+
+def require_bpo_workflow(
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if _user_has_any_permission(current_user, db, 'bpo-desk', 'bpo-site-visit', 'business-potential'):
+        return current_user
+    raise HTTPException(status_code=403, detail='You do not have access to this Business Potential workflow')
+
+
 def _normalize_potential_stage(stage: Optional[str]) -> str:
     value = (stage or 'Identified').strip()
     if value not in BUSINESS_POTENTIAL_STAGES:
@@ -10520,6 +10562,7 @@ def _business_potential_record_query(
     status: Optional[str] = None,
     application_type: Optional[str] = None,
     validity_band: Optional[str] = None,
+    bpo_status: Optional[str] = None,
 ):
     query = db.query(BusinessPotentialRecordModel)
     if q and q.strip():
@@ -10545,11 +10588,21 @@ def _business_potential_record_query(
         query = query.filter(BusinessPotentialRecordModel.application_status == status.strip())
     if application_type and application_type.strip():
         query = query.filter(BusinessPotentialRecordModel.application_type == application_type.strip())
-    query = query.filter(
-        (BusinessPotentialRecordModel.bpo_status.is_(None))
-        | (BusinessPotentialRecordModel.bpo_status != 'converted')
-    )
-    query = query.filter(BusinessPotentialRecordModel.converted_customer_id.is_(None))
+    if bpo_status and bpo_status.strip():
+        wanted = bpo_status.strip()
+        if wanted == 'our_client':
+            query = query.filter(
+                (BusinessPotentialRecordModel.bpo_status.in_(['our_client', 'converted']))
+                | (BusinessPotentialRecordModel.converted_customer_id.isnot(None))
+            )
+        elif wanted == 'new':
+            query = query.filter(
+                (BusinessPotentialRecordModel.bpo_status.is_(None))
+                | (BusinessPotentialRecordModel.bpo_status == '')
+                | (BusinessPotentialRecordModel.bpo_status == 'new')
+            )
+        else:
+            query = query.filter(BusinessPotentialRecordModel.bpo_status == wanted)
     return _apply_business_potential_validity_band(query, validity_band)
 
 
@@ -10571,12 +10624,13 @@ def list_business_potential_records(
     status: Optional[str] = None,
     application_type: Optional[str] = None,
     validity_band: Optional[str] = None,
+    bpo_status: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     current_user: UserModel = Depends(require_business_potential),
     db: Session = Depends(get_db),
 ):
-    query = _business_potential_record_query(db, q, source, district, status, application_type, validity_band)
+    query = _business_potential_record_query(db, q, source, district, status, application_type, validity_band, bpo_status)
     total = query.count()
     rows = (
         query.order_by(
@@ -10699,6 +10753,11 @@ BUSINESS_POTENTIAL_EXPORT_COLUMNS = (
     ('application_created_date', 'Application Created Date'),
     ('application_submitted_date', 'Application Submitted Date'),
     ('application_approved_date', 'Application Approved Date'),
+    ('bpo_status', 'BPO Status'),
+    ('last_follow_up_notes', 'BPO last follow-up'),
+    ('bpo_disqualify_reason', 'Not qualified reason'),
+    ('next_follow_up_date', 'Next follow-up'),
+    ('converted_customer_ledger_id', 'Ledger ID'),
 )
 
 
@@ -10710,6 +10769,7 @@ def export_business_potential_records(
     status: Optional[str] = None,
     application_type: Optional[str] = None,
     validity_band: Optional[str] = None,
+    bpo_status: Optional[str] = None,
     current_user: UserModel = Depends(require_business_potential),
     db: Session = Depends(get_db),
 ):
@@ -10719,7 +10779,7 @@ def export_business_potential_records(
     from openpyxl.styles import Font, PatternFill, Alignment
 
     rows = (
-        _business_potential_record_query(db, q, source, district, status, application_type, validity_band)
+        _business_potential_record_query(db, q, source, district, status, application_type, validity_band, bpo_status)
         .order_by(
             BusinessPotentialRecordModel.district_name.asc(),
             BusinessPotentialRecordModel.project_name.asc(),
@@ -10763,18 +10823,59 @@ BP_FOLLOW_UP_STATUS = {
     'busy': 'follow_up',
     'called_not_interested': 'not_interested',
     'wrong_number': 'not_reachable',
-    'converted': 'converted',
+    'converted': 'our_client',
+    'our_client': 'our_client',
+    'on_hold': 'on_hold',
+    'site_visit': 'site_visit',
+    'not_qualified': 'not_qualified',
+    'visit_note': 'site_visit',
 }
+BP_DESK_QUEUE_STATUSES = ('new', 'follow_up', 'on_hold', '')
 
 
 def _bp_actor(user: UserModel):
     return ((user.employee_id or user.id or '').strip() or None, (user.name or user.email or 'User').strip())
 
 
+def _bp_status_value(row) -> str:
+    return (getattr(row, 'bpo_status', None) or '').strip()
+
+
+def _bp_is_our_client(row) -> bool:
+    return _bp_status_value(row) in ('our_client', 'converted') or bool(getattr(row, 'converted_customer_id', None))
+
+
+def _bp_is_closed(row) -> bool:
+    if _bp_is_our_client(row):
+        return True
+    return _bp_status_value(row) == 'not_qualified'
+
+
+def _bp_validity_priority_expr():
+    """BPO queue color order: yellow (0–90 days), then red (expired), then blue (91–365)."""
+    today_s = date.today().isoformat()
+    plus90 = (date.today() + timedelta(days=90)).isoformat()
+    plus365 = (date.today() + timedelta(days=365)).isoformat()
+    end = _business_potential_validity_end_expr()
+    has_end = and_(
+        BusinessPotentialRecordModel.validity_end.isnot(None),
+        BusinessPotentialRecordModel.validity_end != '',
+    )
+    return case(
+        (and_(has_end, end >= today_s, end <= plus90), 0),
+        (and_(has_end, end < today_s), 1),
+        (and_(has_end, end > plus90, end <= plus365), 2),
+        else_=3,
+    )
+
+
 def _bp_open_record_query(db: Session):
     return db.query(BusinessPotentialRecordModel).filter(
-        (BusinessPotentialRecordModel.bpo_status.is_(None)) | (BusinessPotentialRecordModel.bpo_status != 'converted'),
         BusinessPotentialRecordModel.converted_customer_id.is_(None),
+        (
+            BusinessPotentialRecordModel.bpo_status.is_(None)
+            | BusinessPotentialRecordModel.bpo_status.in_(BP_DESK_QUEUE_STATUSES)
+        ),
     )
 
 
@@ -10794,15 +10895,12 @@ def _serialize_bp_follow_up(row: BusinessPotentialFollowUpModel) -> dict:
 @api_router.get('/business-potential-records/queue')
 def get_business_potential_queue(
     skip_id: Optional[str] = None,
-    current_user: UserModel = Depends(require_business_potential),
+    current_user: UserModel = Depends(require_bpo_desk),
     db: Session = Depends(get_db),
 ):
     actor_id, actor_name = _bp_actor(current_user)
     today_s = date.today().isoformat()
-    query = _bp_open_record_query(db).filter(
-        (BusinessPotentialRecordModel.bpo_status.is_(None))
-        | (~BusinessPotentialRecordModel.bpo_status.in_(['not_interested', 'not_reachable']))
-    )
+    query = _bp_open_record_query(db)
     if not is_admin_user(current_user) and actor_id:
         query = query.filter(
             (BusinessPotentialRecordModel.assigned_to_employee_id.is_(None))
@@ -10818,7 +10916,9 @@ def get_business_potential_queue(
     )
     row = (
         query.order_by(
+            _bp_validity_priority_expr().asc(),
             due_rank.asc(),
+            _business_potential_validity_end_expr().asc(),
             BusinessPotentialRecordModel.follow_up_count.asc(),
             BusinessPotentialRecordModel.district_name.asc(),
             BusinessPotentialRecordModel.project_name.asc(),
@@ -10838,10 +10938,47 @@ def get_business_potential_queue(
     return {'item': _hydrate_business_potential_record(row), 'remaining': remaining}
 
 
+@api_router.get('/business-potential-records/site-visit-queue')
+def get_business_potential_site_visit_queue(
+    q: Optional[str] = None,
+    current_user: UserModel = Depends(require_bpo_site_visit),
+    db: Session = Depends(get_db),
+):
+    query = db.query(BusinessPotentialRecordModel).filter(
+        BusinessPotentialRecordModel.bpo_status == 'site_visit'
+    )
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        query = query.filter(
+            (BusinessPotentialRecordModel.project_name.ilike(like))
+            | (BusinessPotentialRecordModel.application_number.ilike(like))
+            | (BusinessPotentialRecordModel.noc_number.ilike(like))
+            | (BusinessPotentialRecordModel.district_name.ilike(like))
+            | (BusinessPotentialRecordModel.village_name.ilike(like))
+            | (BusinessPotentialRecordModel.proposed_address.ilike(like))
+            | (BusinessPotentialRecordModel.contact_phone.ilike(like))
+        )
+    total = query.count()
+    rows = (
+        query.order_by(
+            _bp_validity_priority_expr().asc(),
+            _business_potential_validity_end_expr().asc(),
+            BusinessPotentialRecordModel.district_name.asc(),
+            BusinessPotentialRecordModel.project_name.asc(),
+        )
+        .limit(200)
+        .all()
+    )
+    return {
+        'items': [_hydrate_business_potential_record(row) for row in rows],
+        'total': total,
+    }
+
+
 @api_router.get('/business-potential-records/bpo-stats')
 def get_business_potential_bpo_stats(
     target_date: Optional[str] = None,
-    current_user: UserModel = Depends(require_business_potential),
+    current_user: UserModel = Depends(require_bpo_desk),
     db: Session = Depends(get_db),
 ):
     day = (target_date or date.today().isoformat()).strip()[:10]
@@ -10924,7 +11061,7 @@ def get_business_potential_bpo_stats(
 @api_router.get('/business-potential-records/bpo-targets')
 def list_business_potential_bpo_targets(
     target_date: Optional[str] = None,
-    current_user: UserModel = Depends(require_business_potential),
+    current_user: UserModel = Depends(require_bpo_desk),
     db: Session = Depends(get_db),
 ):
     if not is_admin_user(current_user):
@@ -10954,7 +11091,7 @@ def list_business_potential_bpo_targets(
 @api_router.post('/business-potential-records/bpo-targets')
 def upsert_business_potential_bpo_target(
     payload: BusinessPotentialBpoTargetUpsert,
-    current_user: UserModel = Depends(require_business_potential),
+    current_user: UserModel = Depends(require_bpo_desk),
     db: Session = Depends(get_db),
 ):
     if not is_admin_user(current_user):
@@ -11005,7 +11142,7 @@ def upsert_business_potential_bpo_target(
 @api_router.get('/business-potential-records/{record_id}', response_model=BusinessPotentialRecord)
 def get_business_potential_record(
     record_id: str,
-    current_user: UserModel = Depends(require_business_potential),
+    current_user: UserModel = Depends(require_bpo_workflow),
     db: Session = Depends(get_db),
 ):
     row = db.query(BusinessPotentialRecordModel).filter(BusinessPotentialRecordModel.id == record_id).first()
@@ -11017,7 +11154,7 @@ def get_business_potential_record(
 @api_router.get('/business-potential-records/{record_id}/follow-ups', response_model=List[BusinessPotentialFollowUp])
 def list_business_potential_follow_ups(
     record_id: str,
-    current_user: UserModel = Depends(require_business_potential),
+    current_user: UserModel = Depends(require_bpo_workflow),
     db: Session = Depends(get_db),
 ):
     row = db.query(BusinessPotentialRecordModel).filter(BusinessPotentialRecordModel.id == record_id).first()
@@ -11036,19 +11173,21 @@ def list_business_potential_follow_ups(
 def add_business_potential_follow_up(
     record_id: str,
     payload: BusinessPotentialFollowUpCreate,
-    current_user: UserModel = Depends(require_business_potential),
+    current_user: UserModel = Depends(require_bpo_workflow),
     db: Session = Depends(get_db),
 ):
     row = db.query(BusinessPotentialRecordModel).filter(BusinessPotentialRecordModel.id == record_id).first()
     if not row:
         raise HTTPException(status_code=404, detail='Business potential record not found')
-    if (row.bpo_status or '') == 'converted' or row.converted_customer_id:
-        raise HTTPException(status_code=400, detail='This record is already converted')
+    if _bp_is_closed(row):
+        if _bp_is_our_client(row):
+            raise HTTPException(status_code=400, detail='This record is already marked Our client')
+        raise HTTPException(status_code=400, detail='This record is marked not qualified')
     outcome = (payload.outcome or '').strip()
     if outcome not in BP_FOLLOW_UP_STATUS:
         raise HTTPException(status_code=400, detail='Invalid follow-up outcome')
-    if outcome == 'converted':
-        raise HTTPException(status_code=400, detail='Use convert to move this record to Create Ledger')
+    if outcome in ('converted', 'our_client'):
+        raise HTTPException(status_code=400, detail='Use convert to mark this record as Our client')
     next_date = (payload.next_follow_up_date or '').strip() or None
     if next_date:
         try:
@@ -11057,23 +11196,37 @@ def add_business_potential_follow_up(
         except ValueError:
             raise HTTPException(status_code=400, detail='Next follow-up date must be YYYY-MM-DD')
     actor_id, actor_name = _bp_actor(current_user)
+    reason = (payload.reason or '').strip() or None
     note = (payload.notes or '').strip() or None
-    if not note:
+    if outcome == 'not_qualified' and not reason:
+        raise HTTPException(status_code=400, detail='Select a reason for not qualified')
+    if outcome == 'not_qualified':
+        stored_notes = f'{reason}. {note}'.strip() if note else reason
+    else:
+        stored_notes = note
+    if not stored_notes:
         raise HTTPException(status_code=400, detail='Add follow-up notes')
+    if outcome == 'on_hold' and not next_date:
+        next_date = date.today().isoformat()
+    if outcome in ('site_visit', 'not_qualified'):
+        next_date = None if outcome == 'not_qualified' else next_date
     item = BusinessPotentialFollowUpModel(
         id=str(uuid.uuid4()),
         record_id=record_id,
         outcome=outcome,
-        notes=note,
+        notes=stored_notes,
         next_follow_up_date=next_date,
         created_by_employee_id=actor_id,
         created_by_name=actor_name,
     )
     db.add(item)
     row.bpo_status = BP_FOLLOW_UP_STATUS[outcome]
-    row.next_follow_up_date = next_date
+    row.next_follow_up_date = None if outcome == 'not_qualified' else next_date
     row.last_follow_up_at = datetime.now()
+    row.last_follow_up_notes = stored_notes
     row.follow_up_count = int(row.follow_up_count or 0) + 1
+    if outcome == 'not_qualified':
+        row.bpo_disqualify_reason = reason
     if actor_id and not (row.assigned_to_employee_id or '').strip():
         row.assigned_to_employee_id = actor_id
         row.assigned_to_name = actor_name
@@ -11086,14 +11239,16 @@ def add_business_potential_follow_up(
 def convert_business_potential_record(
     record_id: str,
     payload: BusinessPotentialConvertRequest,
-    current_user: UserModel = Depends(require_business_potential),
+    current_user: UserModel = Depends(require_bpo_workflow),
     db: Session = Depends(get_db),
 ):
     row = db.query(BusinessPotentialRecordModel).filter(BusinessPotentialRecordModel.id == record_id).first()
     if not row:
         raise HTTPException(status_code=404, detail='Business potential record not found')
-    if (row.bpo_status or '') == 'converted' or row.converted_customer_id:
-        raise HTTPException(status_code=400, detail='This record is already converted')
+    if _bp_is_closed(row):
+        if _bp_is_our_client(row):
+            raise HTTPException(status_code=400, detail='This record is already marked Our client')
+        raise HTTPException(status_code=400, detail='This record is marked not qualified')
     company = (payload.company_name or '').strip()
     contact_name = (payload.contact_person_name or '').strip()
     if not company or not contact_name:
@@ -11144,13 +11299,14 @@ def convert_business_potential_record(
     db.add(BusinessPotentialFollowUpModel(
         id=str(uuid.uuid4()),
         record_id=record_id,
-        outcome='converted',
+        outcome='our_client',
         notes=note,
         created_by_employee_id=actor_id,
         created_by_name=actor_name,
         created_at=now,
     ))
-    row.bpo_status = 'converted'
+    row.bpo_status = 'our_client'
+    row.last_follow_up_notes = note
     row.converted_customer_id = customer.id
     row.converted_customer_ledger_id = ledger_id
     row.converted_at = now

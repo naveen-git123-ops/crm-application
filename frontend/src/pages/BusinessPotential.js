@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Search, TrendingUp, Eye, Upload, Download, Phone, List, Target } from 'lucide-react';
-import { BpoCallDesk } from '@/components/businessPotential/BpoCallDesk';
-import { BpoAdminPanel } from '@/components/businessPotential/BpoAdminPanel';
-import { BPO_STATUS_LABELS } from '@/lib/businessPotential';
+import { Search, TrendingUp, Eye, Upload, Download } from 'lucide-react';
+import {
+  BPO_STATUS_FILTERS,
+  BPO_STATUS_TONES,
+  bpoOutcomeLabel,
+  bpoStatusLabel,
+} from '@/lib/businessPotential';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -197,9 +200,10 @@ export function BusinessPotential() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [selected, setSelected] = useState(null);
+  const [followUps, setFollowUps] = useState([]);
   const [catalog, setCatalog] = useState(null);
   const catalogCacheRef = useRef({ key: '', rows: null, promise: null });
-  const [viewTab, setViewTab] = useState('desk');
+  const [bpoStatus, setBpoStatus] = useState('');
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
@@ -208,7 +212,7 @@ export function BusinessPotential() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, district, applicationType, validityBand, pageSize]);
+  }, [debouncedSearch, district, applicationType, validityBand, bpoStatus, pageSize]);
 
   const fetchMeta = useCallback(async () => {
     try {
@@ -227,7 +231,7 @@ export function BusinessPotential() {
   }, []);
 
   const loadCatalog = useCallback(async () => {
-    const key = `${debouncedSearch}|${district}|${applicationType}`;
+    const key = `${debouncedSearch}|${district}|${applicationType}|${bpoStatus}`;
     const cache = catalogCacheRef.current;
     if (cache.key === key && Array.isArray(cache.rows)) return cache.rows;
     if (cache.key === key && cache.promise) return cache.promise;
@@ -243,6 +247,7 @@ export function BusinessPotential() {
             q: debouncedSearch || undefined,
             district: district || undefined,
             application_type: applicationType || undefined,
+            bpo_status: bpoStatus || undefined,
             page: pageNum,
             page_size: chunkSize,
           },
@@ -265,13 +270,13 @@ export function BusinessPotential() {
       catalogCacheRef.current = { key: '', rows: null, promise: null };
       throw err;
     }
-  }, [debouncedSearch, district, applicationType]);
+  }, [debouncedSearch, district, applicationType, bpoStatus]);
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
     try {
       if (validityBand) {
-        const cacheKey = `${debouncedSearch}|${district}|${applicationType}`;
+        const cacheKey = `${debouncedSearch}|${district}|${applicationType}|${bpoStatus}`;
         if (catalogCacheRef.current.key !== cacheKey || !catalogCacheRef.current.rows) {
           setItems([]);
         }
@@ -288,6 +293,7 @@ export function BusinessPotential() {
           q: debouncedSearch || undefined,
           district: district || undefined,
           application_type: applicationType || undefined,
+          bpo_status: bpoStatus || undefined,
           page,
           page_size: pageSize,
         },
@@ -301,7 +307,7 @@ export function BusinessPotential() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, district, applicationType, validityBand, page, pageSize, loadCatalog]);
+  }, [debouncedSearch, district, applicationType, validityBand, bpoStatus, page, pageSize, loadCatalog]);
 
   useEffect(() => {
     fetchMeta();
@@ -320,21 +326,28 @@ export function BusinessPotential() {
     return catalog ? countValidityBands(catalog) : {};
   }, [meta.validity_bands, catalog]);
 
-  const refreshAfterConvert = useCallback(() => {
-    catalogCacheRef.current = { key: '', rows: null, promise: null };
-    setCatalog(null);
-    fetchMeta();
-    fetchRows();
-  }, [fetchMeta, fetchRows]);
+  useEffect(() => {
+    if (!selected?.id) {
+      setFollowUps([]);
+      return undefined;
+    }
+    let cancelled = false;
+    axios.get(`${API}/business-potential-records/${selected.id}/follow-ups`, authHeaders())
+      .then(({ data }) => {
+        if (!cancelled) setFollowUps(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled) setFollowUps([]);
+      });
+    return () => { cancelled = true; };
+  }, [selected?.id]);
 
   const pageHeaderSubtitle = useMemo(() => {
-    if (viewTab === 'desk') return 'Call queue · log follow-ups · convert to ledger';
-    if (viewTab === 'admin') return 'Daily BPO targets and progress';
     if (total !== meta.total && meta.total) {
-      return `${total.toLocaleString('en-IN')} matches · ${meta.total.toLocaleString('en-IN')} open`;
+      return `${total.toLocaleString('en-IN')} matches · ${meta.total.toLocaleString('en-IN')} records`;
     }
-    return `${(meta.total || total).toLocaleString('en-IN')} open potential customers`;
-  }, [viewTab, total, meta.total]);
+    return `${(meta.total || total).toLocaleString('en-IN')} potential records · all BPO statuses`;
+  }, [total, meta.total]);
 
   const importExcel = async () => {
     setImporting(true);
@@ -361,6 +374,7 @@ export function BusinessPotential() {
           district: district || undefined,
           application_type: applicationType || undefined,
           validity_band: validityBand || undefined,
+          bpo_status: bpoStatus || undefined,
         },
       });
       const type = response.headers['content-type'] || '';
@@ -413,78 +427,60 @@ export function BusinessPotential() {
   });
 
   return (
-    <div className="flex h-[calc(100dvh-13rem)] min-h-0 min-w-0 flex-col lg:h-[calc(100dvh-8.5rem)]" data-testid="business-potential-page">
-      <Card className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4 sm:p-5 space-y-4">
-        <div className="flex shrink-0 flex-wrap gap-2">
-          {[
-            { key: 'desk', label: 'Call desk', icon: Phone },
-            { key: 'directory', label: 'Directory', icon: List },
-            ...(isAdmin ? [{ key: 'admin', label: 'BPO admin', icon: Target }] : []),
-          ].map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setViewTab(tab.key)}
-              className={cn(
-                'inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium',
-                viewTab === tab.key ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-gray-200 bg-white text-gray-700 hover:bg-slate-50',
-              )}
-            >
-              <tab.icon className="h-4 w-4" />
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {viewTab === 'desk' && <BpoCallDesk onConverted={refreshAfterConvert} />}
-        {viewTab === 'admin' && isAdmin && <BpoAdminPanel />}
-        {viewTab === 'directory' && (
-        <>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {COLOR_FILTERS.map((item) => {
-            const selected = validityBand === item.key;
-            const count = item.key ? bandCounts?.[item.key] : (meta.total || total);
-            return (
-              <button
-                key={item.key || 'all'}
-                type="button"
-                onClick={() => setValidityBand(item.key)}
-                className={cn(
-                  'inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-medium sm:text-sm',
-                  selected ? item.active : 'border-gray-200 bg-white text-gray-700 hover:bg-slate-50',
-                )}
-              >
-                <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', item.swatch)} />
-                {item.label}
-                {count != null && (
-                  <span className="tabular-nums text-[11px] opacity-70">{Number(count).toLocaleString('en-IN')}</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-        <div className="grid shrink-0 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search project, NOC, email, contact, district…"
-              className="h-10 pl-9"
-            />
+    <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 min-w-0 flex-col -mx-4 -mt-4 p-3 sm:-mx-6 sm:-mt-6 lg:-mx-8 lg:-mt-8 lg:-mb-8" data-testid="business-potential-page">
+      <Card className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2.5 sm:p-3 space-y-2">
+        <div className="flex shrink-0 flex-col gap-2 xl:flex-row xl:items-center">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {COLOR_FILTERS.map((item) => {
+              const selected = validityBand === item.key;
+              const count = item.key ? bandCounts?.[item.key] : (meta.total || total);
+              return (
+                <button
+                  key={item.key || 'all'}
+                  type="button"
+                  onClick={() => setValidityBand(item.key)}
+                  className={cn(
+                    'inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium',
+                    selected ? item.active : 'border-gray-200 bg-white text-gray-700 hover:bg-slate-50',
+                  )}
+                >
+                  <span className={cn('h-2 w-2 shrink-0 rounded-full', item.swatch)} />
+                  {item.label}
+                  {count != null && (
+                    <span className="tabular-nums text-[11px] opacity-70">{Number(count).toLocaleString('en-IN')}</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <select value={district} onChange={(e) => setDistrict(e.target.value)} className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
-            <option value="">All districts</option>
-            {meta.districts.map((d) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
-          <select value={applicationType} onChange={(e) => setApplicationType(e.target.value)} className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
-            <option value="">All application types</option>
-            {meta.application_types.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
+          <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="relative min-w-0">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search project, NOC, email, contact, district…"
+                className="h-8 pl-8 text-sm"
+              />
+            </div>
+            <select value={district} onChange={(e) => setDistrict(e.target.value)} className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm">
+              <option value="">All districts</option>
+              {meta.districts.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+            <select value={applicationType} onChange={(e) => setApplicationType(e.target.value)} className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm">
+              <option value="">All application types</option>
+              {meta.application_types.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <select value={bpoStatus} onChange={(e) => setBpoStatus(e.target.value)} className="h-8 rounded-md border border-gray-300 bg-white px-2 text-sm">
+              {BPO_STATUS_FILTERS.map((item) => (
+                <option key={item.key || 'all'} value={item.key}>{item.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {loading && items.length === 0 ? (
@@ -498,24 +494,26 @@ export function BusinessPotential() {
           </div>
         ) : (
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-gray-200">
-            <div className="min-h-[240px] flex-1 overflow-auto">
-            <table className="min-w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600 shadow-[inset_0_-1px_0_0_rgb(226,232,240)]">
+            <div className="min-h-0 flex-1 overflow-auto">
+            <table className="min-w-full text-[13px] leading-5">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-600 shadow-[inset_0_-1px_0_0_rgb(226,232,240)]">
                 <tr>
-                  <th className="px-3 py-3 font-semibold">Project</th>
-                  <th className="px-3 py-3 font-semibold">Application no</th>
-                  <th className="px-3 py-3 font-semibold">NOC number</th>
-                  <th className="px-3 py-3 font-semibold">District</th>
-                  <th className="px-3 py-3 font-semibold">Email</th>
-                  <th className="px-3 py-3 font-semibold">Contact</th>
-                  <th className="px-3 py-3 font-semibold">Valid start</th>
-                  <th className="px-3 py-3 font-semibold">Valid end</th>
-                  <th className="px-3 py-3 font-semibold">Days to expire</th>
-                  <th className="px-3 py-3 font-semibold">Type</th>
-                  <th className="px-3 py-3 font-semibold">Status</th>
-                  <th className="px-3 py-3 font-semibold">Source</th>
-                  <th className="px-3 py-3 font-semibold">Follow-up</th>
-                  <th className="px-3 py-3 font-semibold text-right">View</th>
+                  <th className="px-2 py-1.5 font-semibold">Project</th>
+                  <th className="px-2 py-1.5 font-semibold">Application no</th>
+                  <th className="px-2 py-1.5 font-semibold">NOC number</th>
+                  <th className="px-2 py-1.5 font-semibold">District</th>
+                  <th className="px-2 py-1.5 font-semibold">Email</th>
+                  <th className="px-2 py-1.5 font-semibold">Contact</th>
+                  <th className="px-2 py-1.5 font-semibold">Valid start</th>
+                  <th className="px-2 py-1.5 font-semibold">Valid end</th>
+                  <th className="px-2 py-1.5 font-semibold">Days to expire</th>
+                  <th className="px-2 py-1.5 font-semibold">Type</th>
+                  <th className="px-2 py-1.5 font-semibold">Status</th>
+                  <th className="px-2 py-1.5 font-semibold">Source</th>
+                  <th className="px-2 py-1.5 font-semibold">BPO status</th>
+                  <th className="px-2 py-1.5 font-semibold">BPO follow-up</th>
+                  <th className="px-2 py-1.5 font-semibold">Reason</th>
+                  <th className="px-2 py-1.5 font-semibold text-right">View</th>
                 </tr>
               </thead>
               <tbody>
@@ -523,7 +521,6 @@ export function BusinessPotential() {
                   const tone = validEndRowTone(row.validity_end);
                   const textMain = tone === 'red' ? 'text-red-600' : tone === 'yellow' ? 'text-yellow-600' : tone === 'sky' ? 'text-sky-600' : 'text-gray-700';
                   const textStrong = tone === 'red' ? 'text-red-700' : tone === 'yellow' ? 'text-yellow-700' : tone === 'sky' ? 'text-sky-700' : 'text-gray-900';
-                  const textMuted = tone === 'red' ? 'text-red-500' : tone === 'yellow' ? 'text-yellow-600' : tone === 'sky' ? 'text-sky-500' : 'text-gray-500';
                   const textMono = tone === 'red' ? 'text-red-600' : tone === 'yellow' ? 'text-yellow-600' : tone === 'sky' ? 'text-sky-600' : 'text-gray-800';
                   return (
                   <tr
@@ -537,22 +534,21 @@ export function BusinessPotential() {
                     )}
                     onClick={() => setSelected(row)}
                   >
-                    <td className="px-3 py-3">
-                      <div className={cn('font-medium max-w-[280px] truncate', textStrong)} title={row.project_name || ''}>
+                    <td className="px-2 py-1">
+                      <div className={cn('font-medium max-w-[260px] truncate', textStrong)} title={`${row.project_name || ''} · ${row.village_name || ''}`}>
                         {displayValue(row.project_name)}
                       </div>
-                      <div className={cn('mt-0.5 text-xs', textMuted)}>{displayValue(row.village_name)}</div>
                     </td>
-                    <td className={cn('px-3 py-3 font-mono text-xs', textMono)}>{displayValue(row.application_number)}</td>
-                    <td className={cn('px-3 py-3 font-mono text-xs', textMono)}>{displayValue(row.noc_number)}</td>
-                    <td className={cn('px-3 py-3', textMain)}>{displayValue(row.district_name)}</td>
-                    <td className={cn('px-3 py-3 max-w-[220px] truncate', textMain)} title={rowEmail(row) || ''}>{displayValue(rowEmail(row))}</td>
-                    <td className={cn('px-3 py-3 whitespace-nowrap', textMono)}>{displayValue(rowContact(row))}</td>
-                    <td className={cn('px-3 py-3 whitespace-nowrap font-mono text-xs', textMain)}>{displayDate(row.validity_start)}</td>
-                    <td className={cn('px-3 py-3 whitespace-nowrap font-mono text-xs font-semibold', textStrong)}>{displayDate(row.validity_end)}</td>
-                    <td className={cn('px-3 py-3 whitespace-nowrap font-mono text-xs font-semibold', textStrong)}>{displayDaysUntilExpiry(row.validity_end)}</td>
-                    <td className={cn('px-3 py-3', textMain)}>{displayValue(row.application_type)}</td>
-                    <td className="px-3 py-3">
+                    <td className={cn('px-2 py-1 font-mono text-xs whitespace-nowrap', textMono)}>{displayValue(row.application_number)}</td>
+                    <td className={cn('px-2 py-1 font-mono text-xs whitespace-nowrap', textMono)}>{displayValue(row.noc_number)}</td>
+                    <td className={cn('px-2 py-1 whitespace-nowrap', textMain)}>{displayValue(row.district_name)}</td>
+                    <td className={cn('px-2 py-1 max-w-[200px] truncate', textMain)} title={rowEmail(row) || ''}>{displayValue(rowEmail(row))}</td>
+                    <td className={cn('px-2 py-1 whitespace-nowrap font-mono text-xs', textMono)}>{displayValue(rowContact(row))}</td>
+                    <td className={cn('px-2 py-1 whitespace-nowrap font-mono text-xs', textMain)}>{displayDate(row.validity_start)}</td>
+                    <td className={cn('px-2 py-1 whitespace-nowrap font-mono text-xs font-semibold', textStrong)}>{displayDate(row.validity_end)}</td>
+                    <td className={cn('px-2 py-1 whitespace-nowrap font-mono text-xs font-semibold', textStrong)}>{displayDaysUntilExpiry(row.validity_end)}</td>
+                    <td className={cn('px-2 py-1 whitespace-nowrap', textMain)}>{displayValue(row.application_type)}</td>
+                    <td className="px-2 py-1 whitespace-nowrap">
                       <span className={cn(
                         'inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium',
                         tone === 'red' ? 'bg-red-100 text-red-700' : tone === 'yellow' ? 'bg-yellow-100 text-yellow-800' : tone === 'sky' ? 'bg-sky-100 text-sky-800' : 'bg-emerald-50 text-emerald-800',
@@ -560,7 +556,7 @@ export function BusinessPotential() {
                         {displayValue(row.application_status)}
                       </span>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-2 py-1 whitespace-nowrap">
                       <span className={cn(
                         'inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium',
                         tone === 'red' ? 'bg-red-100 text-red-700' : tone === 'yellow' ? 'bg-yellow-100 text-yellow-800' : tone === 'sky' ? 'bg-sky-100 text-sky-800' : (SOURCE_TONES[row.source_key] || SOURCE_TONES.nocap_old),
@@ -568,16 +564,26 @@ export function BusinessPotential() {
                         {displayValue(row.source_label)}
                       </span>
                     </td>
-                    <td className="px-3 py-3">
-                      <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                        {BPO_STATUS_LABELS[row.bpo_status] || 'New'}
+                    <td className="px-2 py-1 whitespace-nowrap">
+                      <span className={cn(
+                        'inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium',
+                        BPO_STATUS_TONES[row.bpo_status] || BPO_STATUS_TONES.new,
+                      )}>
+                        {bpoStatusLabel(row.bpo_status)}
                       </span>
-                      {row.next_follow_up_date ? (
-                        <div className="mt-1 text-[11px] text-slate-500">Next {row.next_follow_up_date}</div>
-                      ) : null}
                     </td>
-                    <td className="px-3 py-3 text-right">
-                      <Button type="button" variant="ghost" size="sm" className={cn('h-8 w-8 p-0', tone === 'red' && 'text-red-600 hover:text-red-700', tone === 'yellow' && 'text-yellow-600 hover:text-yellow-700', tone === 'sky' && 'text-sky-600 hover:text-sky-700')} onClick={(e) => { e.stopPropagation(); setSelected(row); }}>
+                    <td className="px-2 py-1 max-w-[200px]">
+                      <p className={cn('truncate text-xs', textMain)} title={row.last_follow_up_notes || ''}>
+                        {displayValue(row.last_follow_up_notes)}
+                      </p>
+                    </td>
+                    <td className="px-2 py-1 max-w-[160px]">
+                      <p className={cn('truncate text-xs', textMain)} title={row.bpo_disqualify_reason || ''}>
+                        {displayValue(row.bpo_disqualify_reason)}
+                      </p>
+                    </td>
+                    <td className="px-2 py-1 text-right">
+                      <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', tone === 'red' && 'text-red-600 hover:text-red-700', tone === 'yellow' && 'text-yellow-600 hover:text-yellow-700', tone === 'sky' && 'text-sky-600 hover:text-sky-700')} onClick={(e) => { e.stopPropagation(); setSelected(row); }}>
                         <Eye className="h-4 w-4" />
                       </Button>
                     </td>
@@ -587,7 +593,7 @@ export function BusinessPotential() {
               </tbody>
             </table>
             </div>
-            <div className="flex shrink-0 flex-col gap-3 border-t border-gray-200 bg-slate-50/80 px-3 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex shrink-0 flex-col gap-2 border-t border-gray-200 bg-slate-50/80 px-3 py-1.5 text-sm sm:flex-row sm:items-center sm:justify-between">
               <p className="shrink-0 text-gray-600">
                 Showing{' '}
                 <span className="font-medium text-gray-900">{total === 0 ? 0 : (safePage - 1) * pageSize + 1}</span>
@@ -600,26 +606,24 @@ export function BusinessPotential() {
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="h-9 shrink-0 rounded-lg border border-gray-300 bg-white px-2 text-sm"
+                  className="h-8 shrink-0 rounded-md border border-gray-300 bg-white px-2 text-sm"
                 >
                   {PAGE_SIZE_OPTIONS.map((n) => (
                     <option key={n} value={n}>{n} / page</option>
                   ))}
                 </select>
-                <Button type="button" variant="outline" className="h-9 shrink-0 px-3" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                <Button type="button" variant="outline" className="h-8 shrink-0 px-3" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                   Prev
                 </Button>
                 <span className="min-w-[88px] shrink-0 text-center tabular-nums text-gray-700">
                   Page {safePage} / {totalPages}
                 </span>
-                <Button type="button" variant="outline" className="h-9 shrink-0 px-3" disabled={safePage >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                <Button type="button" variant="outline" className="h-8 shrink-0 px-3" disabled={safePage >= totalPages} onClick={() => setPage((p) => p + 1)}>
                   Next
                 </Button>
               </div>
             </div>
           </div>
-        )}
-        </>
         )}
       </Card>
 
@@ -633,9 +637,66 @@ export function BusinessPotential() {
               <p className="text-slate-300 text-sm mt-1">
                 {displayValue(selected?.application_number)} · {displayValue(selected?.source_label)}
               </p>
+              {selected && (
+                <span className={cn(
+                  'mt-3 inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium',
+                  BPO_STATUS_TONES[selected.bpo_status] || BPO_STATUS_TONES.new,
+                )}>
+                  {bpoStatusLabel(selected.bpo_status)}
+                </span>
+              )}
             </DialogHeader>
           </div>
-          <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-6 space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">BPO status</p>
+                <p className="mt-1 text-sm text-gray-900">{bpoStatusLabel(selected?.bpo_status)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Assigned</p>
+                <p className="mt-1 text-sm text-gray-900">{displayValue(selected?.assigned_to_name)}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Last follow-up</p>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-gray-900">{displayValue(selected?.last_follow_up_notes)}</p>
+              </div>
+              {selected?.bpo_disqualify_reason ? (
+                <div className="sm:col-span-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Not qualified reason</p>
+                  <p className="mt-1 text-sm text-rose-800">{selected.bpo_disqualify_reason}</p>
+                </div>
+              ) : null}
+              {selected?.converted_customer_ledger_id ? (
+                <div className="sm:col-span-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Ledger customer</p>
+                  <p className="mt-1 text-sm text-emerald-800">{selected.converted_customer_ledger_id}</p>
+                </div>
+              ) : null}
+            </div>
+            <div>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">BPO follow-up history</p>
+              {followUps.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No BPO activity yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {followUps.map((item) => (
+                    <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                        <span className="font-medium text-slate-800">{bpoOutcomeLabel(item.outcome)}</span>
+                        <span>{item.created_at ? String(item.created_at).replace('T', ' ').slice(0, 16) : ''}</span>
+                      </div>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{item.notes || '—'}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {item.created_by_name || 'BPO'}
+                        {item.next_follow_up_date ? ` · next ${item.next_follow_up_date}` : ''}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {DETAIL_FIELDS.map(([key, label]) => (
               <div key={key} className={['proposed_address', 'communication_address', 'project_name'].includes(key) ? 'sm:col-span-2' : ''}>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
@@ -649,6 +710,7 @@ export function BusinessPotential() {
                 </p>
               </div>
             ))}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

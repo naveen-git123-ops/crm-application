@@ -1,19 +1,12 @@
 /**
- * API Configuration
- * Local UI talks to the production API unless REACT_APP_USE_LOCAL_API=true.
+ * Local UI always talks to the production API.
+ * Set REACT_APP_USE_LOCAL_API=true only when you intentionally want localhost:8000.
  */
 
 export const PRODUCTION_BACKEND_URL = 'https://api.resoline.in';
 export const LOCAL_BACKEND_URL = 'http://localhost:8000';
 
 function resolveBackendUrl() {
-  if (process.env.REACT_APP_USE_LOCAL_API === 'true') {
-    return LOCAL_BACKEND_URL;
-  }
-  const fromEnv = String(process.env.REACT_APP_BACKEND_URL || '').trim().replace(/\/$/, '');
-  if (fromEnv && !/localhost|127\.0\.0\.1/i.test(fromEnv)) {
-    return fromEnv;
-  }
   return PRODUCTION_BACKEND_URL;
 }
 

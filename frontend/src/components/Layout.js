@@ -33,6 +33,7 @@ import {
   Wallet,
   Package,
   TrendingUp,
+  Phone,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PageHeaderProvider, usePageHeader, usePageHeaderActions } from '@/contexts/PageHeaderContext';
@@ -183,6 +184,8 @@ export const Layout = () => {
         { icon: Target, label: 'Leads', path: '/leads', permission: 'leads' },
         { icon: BookOpen, label: 'Create Ledger', path: '/customers', permission: 'customers' },
         { icon: TrendingUp, label: 'Business Potential', path: '/business-potential', permission: 'business-potential' },
+        { icon: Phone, label: 'BPO Desk', path: '/bpo-desk', permission: 'bpo-desk' },
+        { icon: MapPin, label: 'BPO Site Visit', path: '/bpo-site-visit', permission: 'bpo-site-visit' },
         { icon: CheckSquare, label: 'Tasks', path: '/tasks', permission: 'tasks' },
       ],
     },

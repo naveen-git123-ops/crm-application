@@ -133,7 +133,7 @@ export function BpoAdminPanel() {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-500">Open potential records still on this screen: {Number(stats.open_records || 0).toLocaleString('en-IN')}</p>
+      <p className="text-xs text-slate-500">Open records still in the BPO queue: {Number(stats.open_records || 0).toLocaleString('en-IN')}</p>
     </div>
   );
 }

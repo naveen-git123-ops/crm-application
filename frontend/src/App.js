@@ -29,6 +29,8 @@ import LocationTracker from '@/pages/LocationTracker';
 import CGWFlowMetre from '@/pages/CGWFlowMetre';
 import StockManagement from '@/pages/StockManagement';
 import { BusinessPotential } from '@/pages/BusinessPotential';
+import { BpoDesk } from '@/pages/BpoDesk';
+import { BpoSiteVisit } from '@/pages/BpoSiteVisit';
 
 function App() {
   return (
@@ -134,6 +136,24 @@ function App() {
                   element={
                     <ProtectedRoute requiredPermission="business-potential">
                       <BusinessPotential />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/bpo-desk"
+                  element={
+                    <ProtectedRoute requiredPermission="bpo-desk">
+                      <BpoDesk />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/bpo-site-visit"
+                  element={
+                    <ProtectedRoute requiredPermission="bpo-site-visit">
+                      <BpoSiteVisit />
                     </ProtectedRoute>
                   }
                 />
