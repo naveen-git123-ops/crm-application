@@ -24,7 +24,8 @@ import {
   LayoutGrid,
   UserCheck,
   Search,
-  Filter
+  Filter,
+  Download
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, subMonths, addMonths, eachDayOfInterval, getDate, isToday as isTodayDate, isWeekend, subDays } from 'date-fns';
 import { formatISTDate, formatISTDateTime, todayISTDateString } from '@/utils/date';
@@ -76,6 +77,12 @@ const formatPunchTime = (punchTimeStr) => {
   }
   
   return punchTimeStr;
+};
+
+const csvCell = (value) => {
+  const text = value == null ? '' : String(value);
+  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
 };
 
 // Helper function to format current time in IST (HH:MM:SS format)
@@ -425,6 +432,52 @@ export const Attendance = () => {
     } catch {
       toast.error('Failed to load summary');
     }
+  };
+
+  const downloadMonthlyOverview = () => {
+    if (!attendanceSummary.length) {
+      toast.error('No summary to download for this month');
+      return;
+    }
+    const header = canManageAttendance
+      ? ['Employee', 'Employee ID', 'Present', 'Late', 'Half Day', 'Absent', 'Total Days']
+      : ['Summary', 'Present', 'Late', 'Half Day', 'Absent', 'Total Days'];
+    const lines = [
+      header.map(csvCell).join(','),
+      ...attendanceSummary.map((row) => {
+        const present = formatDayCount(row.present_days);
+        const absent = formatDayCount(row.absent_days);
+        if (canManageAttendance) {
+          return [
+            csvCell(row.employee_name),
+            csvCell(row.employee_id),
+            csvCell(present),
+            csvCell(row.late_days),
+            csvCell(row.half_day_days),
+            csvCell(absent),
+            csvCell(row.total_days)
+          ].join(',');
+        }
+        return [
+          csvCell('My Attendance'),
+          csvCell(present),
+          csvCell(row.late_days),
+          csvCell(row.half_day_days),
+          csvCell(absent),
+          csvCell(row.total_days)
+        ].join(',');
+      })
+    ];
+    const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Attendance_Monthly_Overview_${summaryMonth}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast.success('Monthly overview downloaded');
   };
 
   const fetchTodayAttendanceWithSessions = async () => {
@@ -2654,7 +2707,7 @@ export const Attendance = () => {
                 {canManageAttendance ? 'Present, late, absent summary per employee' : 'Your attendance summary'}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <label className="text-sm font-medium text-gray-700">Month</label>
               <input
                 type="month"
@@ -2662,6 +2715,16 @@ export const Attendance = () => {
                 onChange={(e) => setSummaryMonth(e.target.value)}
                 className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900"
               />
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 border-gray-300"
+                onClick={downloadMonthlyOverview}
+                disabled={attendanceSummary.length === 0}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download
+              </Button>
             </div>
           </div>
           <div className="overflow-x-auto border border-gray-200 rounded-lg">
