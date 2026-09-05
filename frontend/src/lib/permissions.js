@@ -66,15 +66,15 @@ export function isCgwDraftRecord(item) {
   return String(item?.status || '').trim().toLowerCase() === 'draft';
 }
 
-/** Edit or delete a submitted (non-draft) CGWA row — Admin only. */
+/** Edit or delete a submitted (non-draft) CGWA row — anyone with CGWA screen access. */
 export function userCanEditSubmittedCgw(user) {
-  return isAdminUser(user);
+  return userCanManageCgw(user);
 }
 
 export function userCanEditCgwRecord(user, item) {
-  if (isAdminUser(user)) return true;
   if (!userCanManageCgw(user)) return false;
-  return isCgwDraftRecord(item);
+  if (isCgwDraftRecord(item)) return true;
+  return userCanEditSubmittedCgw(user);
 }
 
 /** Delete entire CGW inventory rows — Admin only (own drafts still allowed in the UI). */
