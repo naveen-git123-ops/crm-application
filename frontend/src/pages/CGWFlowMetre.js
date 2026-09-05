@@ -2494,7 +2494,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
   const handleEdit = (item) => {
     if (!item?.id) return;
     if (!userCanEditCgwRecord(user, item)) {
-      toast.error('Only an administrator can edit a submitted CGWA record');
+      toast.error('You do not have permission to edit this CGWA record');
       return;
     }
     navigate(`${CREATE_CGWA_PATH}/${item.id}`);
@@ -2520,7 +2520,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
         if (cancelled) return;
         const full = res.data;
         if (!userCanEditCgwRecord(user, full)) {
-          toast.error('Only an administrator can edit a submitted CGWA record');
+          toast.error('You do not have permission to edit this CGWA record');
           navigate(VIEW_CGWA_PATH);
           return;
         }
@@ -2556,7 +2556,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
   const handleInlineSave = async (id) => {
     if (!userCanEditSubmittedCgw(user)) {
-      toast.error('Only an administrator can edit a submitted CGWA record');
+      toast.error('You do not have permission to edit this CGWA record');
       return;
     }
     try {
@@ -4233,7 +4233,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
         </div>
       </Card>
 
-      {canManage && SHOW_CGW_DIGEST_EMAIL_SECTION && (
+      {isAdminUser(user) && SHOW_CGW_DIGEST_EMAIL_SECTION && (
         <Card className="rounded-lg border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1 min-w-0 flex-1">
