@@ -295,7 +295,7 @@ function normalizeOpportunityAssessment(stored) {
   };
 }
 
-/** Post-visit capture is mandatory once the engineer marks the visit Done. */
+/** Optional post-visit capture when the engineer marks the visit Done. */
 export function isSiteVisitDoneComplete(oa) {
   return Boolean(
     (oa?.site_visit_photos || []).length > 0
@@ -353,9 +353,7 @@ export function isOpportunityAssessmentComplete(payload) {
 
   const status = String(oa.site_visit_status || '').trim();
   if (!status) return false;
-  if (status !== 'done') return true;
-
-  return isSiteVisitDoneComplete(oa);
+  return true;
 }
 
 /** Free-form technical Q&A the engineer builds per enquiry. */
@@ -793,9 +791,6 @@ export function requirementAnalysisIncompleteMessage(payload) {
   }
   const status = String(oa.site_visit_status || '').trim();
   if (!status) return 'Set the site visit status (Pending or Done)';
-  if (status === 'done' && !isSiteVisitDoneComplete(oa)) {
-    return 'Site visit marked Done — add photos, technical discussions, datasheet/drawing, existing equipment, process parameters, minutes of meeting and both signatures';
-  }
   return 'Complete Requirement Analysis details';
 }
 
