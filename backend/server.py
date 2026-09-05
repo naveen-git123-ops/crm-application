@@ -12901,9 +12901,7 @@ def _opportunity_assessment_complete(payload: dict) -> bool:
     status = str(oa.get('site_visit_status') or '').strip().lower()
     if not status:
         return False
-    if status != 'done':
-        return True
-    return _site_visit_done_complete(oa)
+    return True
 
 # Site-visit Telegram: morning notice at 06:00, then 3 hourly reminders (07/08/09).
 SITE_VISIT_TELEGRAM_SLOTS = {

@@ -1896,7 +1896,7 @@ function ModuleOpportunityAssessment({
                 ))}
               </select>
               <p className="text-xs text-slate-500">
-                Mark Done to record the site visit report below
+                Mark Done to record the site visit report below (optional)
               </p>
             </div>
 
@@ -1904,10 +1904,10 @@ function ModuleOpportunityAssessment({
               <div className="rounded-lg border border-emerald-200 bg-white p-4 space-y-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
-                    Site visit report
+                    Site visit report <span className="font-normal normal-case text-slate-500">(optional)</span>
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
-                    Capture everything gathered on site — required to complete this step
+                    Capture everything gathered on site — you can fill this later and still continue
                   </p>
                 </div>
 
