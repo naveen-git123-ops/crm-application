@@ -2000,7 +2000,7 @@ DEFAULT_PERMISSION_KEYS = [
     "dashboard", "leads", "employees", "attendance", "monthly-report", "leaves", "expenses",
     "roles", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers",
     "cgw-flow-metre", "vehicles", "stock-management", "business-potential",
-    "bpo-desk", "bpo-site-visit",
+    "bpo-desk", "bpo-site-visit", "operations",
 ]
 
 def seed_roles_if_needed():
@@ -13789,6 +13789,12 @@ def update_lead_workflow(
         ))
     db.commit()
     db.refresh(lead)
+    if new_stage == 'closed_won':
+        try:
+            from operations import ensure_operation_for_won_lead
+            ensure_operation_for_won_lead(db, lead, current_user)
+        except Exception as exc:
+            logging.exception('Auto-create operation from closed_won failed: %s', exc)
     return _normalize_lead_for_response(lead, db)
 
 
@@ -14110,6 +14116,12 @@ def update_lead(
     
     db.commit()
     db.refresh(lead)
+    if status_changed and new_status == 'Won':
+        try:
+            from operations import ensure_operation_for_won_lead
+            ensure_operation_for_won_lead(db, lead, current_user)
+        except Exception as exc:
+            logging.exception('Auto-create operation from Won lead failed: %s', exc)
     return _normalize_lead_for_response(lead, db)
 
 @api_router.delete('/leads/{lead_id}')
@@ -16860,6 +16872,13 @@ def get_dashboard_stats(current_user: UserModel = Depends(get_current_user), db:
     )
 
 # ============= MIDDLEWARE & CONFIG =============
+
+from operations import mount_operation_routes  # noqa: E402
+mount_operation_routes(api_router)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f'Operation tables create_all skipped: {e}')
 
 app.include_router(api_router)
 

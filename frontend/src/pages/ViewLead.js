@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowLeft, Edit2, Store, AlertCircle, Trash2 } from 'lucide-react';
+import { ArrowLeft, Edit2, Store, AlertCircle, Trash2, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
@@ -14,6 +14,7 @@ import { isCarryAndOrder, leadNeedsVendor } from '@/lib/leadUtils';
 import { workflowStageLabel } from '@/lib/carryOrderWorkflow';
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import { API_ENDPOINT } from '@/lib/apiConfig';
+import { userHasPermission } from '@/lib/permissions';
 
 const API = API_ENDPOINT;
 
@@ -42,6 +43,8 @@ export default function ViewLead() {
   const [editOpen, setEditOpen] = useState(false);
   const [vendorOpen, setVendorOpen] = useState(false);
   const [vendorId, setVendorId] = useState('');
+  const [linkedOperation, setLinkedOperation] = useState(null);
+  const [creatingOp, setCreatingOp] = useState(false);
 
   const canManageEveryLead = canManageAllLeads(user);
   const canEditLead = useCallback(
@@ -81,6 +84,18 @@ export default function ViewLead() {
   useEffect(() => {
     loadLead();
   }, [loadLead]);
+
+  useEffect(() => {
+    if (!leadId || !userHasPermission(user, 'operations')) {
+      setLinkedOperation(null);
+      return undefined;
+    }
+    axios
+      .get(`${API}/operations/by-lead/${leadId}`, { headers: authHeader() })
+      .then((res) => setLinkedOperation(res.data?.exists ? res.data.operation : null))
+      .catch(() => setLinkedOperation(null));
+    return undefined;
+  }, [leadId, authHeader, user, lead?.status]);
 
   useEffect(() => {
     axios.get(`${API}/customers?entity_type=0`, { headers: authHeader() }).then((r) => setCustomers(r.data || [])).catch(() => {});
@@ -139,6 +154,36 @@ export default function ViewLead() {
             Back to leads
           </Link>
         </Button>
+        {userHasPermission(user, 'operations') && lead?.status === 'Won' && linkedOperation && (
+          <Button size="sm" asChild>
+            <Link to={`/operations/${linkedOperation.id}`}>
+              <ClipboardList className="h-4 w-4 mr-1" />
+              Open operation
+            </Link>
+          </Button>
+        )}
+        {userHasPermission(user, 'operations') && lead?.status === 'Won' && !linkedOperation && (
+          <Button
+            size="sm"
+            disabled={creatingOp}
+            onClick={async () => {
+              setCreatingOp(true);
+              try {
+                const { data } = await axios.post(`${API}/operations/from-lead/${lead.id}`, {}, { headers: authHeader() });
+                toast.success(`${data.operation_code} created`);
+                setLinkedOperation(data);
+                navigate(`/operations/${data.id}`);
+              } catch (err) {
+                toast.error(getApiErrorMessage(err, 'Could not create operation'));
+              } finally {
+                setCreatingOp(false);
+              }
+            }}
+          >
+            <ClipboardList className="h-4 w-4 mr-1" />
+            {creatingOp ? 'Creating…' : 'Create operation'}
+          </Button>
+        )}
         {canEdit && (
           <>
             <Button size="sm" variant="outline" className="border-slate-300" onClick={() => setEditOpen(true)}>

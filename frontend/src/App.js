@@ -31,6 +31,8 @@ import StockManagement from '@/pages/StockManagement';
 import { BusinessPotential } from '@/pages/BusinessPotential';
 import { BpoDesk } from '@/pages/BpoDesk';
 import { BpoSiteVisit } from '@/pages/BpoSiteVisit';
+import { Operations } from '@/pages/Operations';
+import { OperationWorkspace } from '@/pages/OperationWorkspace';
 
 function App() {
   return (
@@ -190,6 +192,23 @@ function App() {
                   element={
                     <ProtectedRoute requiredPermission="leaves">
                       <Leaves />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/operations"
+                  element={
+                    <ProtectedRoute requiredPermission="operations">
+                      <Operations />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/operations/:operationId"
+                  element={
+                    <ProtectedRoute requiredPermission="operations">
+                      <OperationWorkspace />
                     </ProtectedRoute>
                   }
                 />
