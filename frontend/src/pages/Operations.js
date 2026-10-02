@@ -46,6 +46,8 @@ export function Operations() {
   const [meta, setMeta] = useState({ operation_types: [] });
   const [employees, setEmployees] = useState([]);
   const [wonLeads, setWonLeads] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [createMode, setCreateMode] = useState('scratch');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [view, setView] = useState('active');
@@ -53,18 +55,23 @@ export function Operations() {
   const [typeFilter, setTypeFilter] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({
+  const blankForm = {
     lead_id: '',
+    customer_id: '',
     customer_name: '',
     project_name: '',
     po_number: '',
     po_value: '',
     estimated_cost: '',
     operation_type: 'Stock & Sell',
+    start_date: '',
     target_date: '',
+    enquiry_id: '',
+    quotation_id: '',
     responsible_employee_id: '',
     priority: 'Medium',
-  });
+  };
+  const [form, setForm] = useState(blankForm);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,7 +80,7 @@ export function Operations() {
       if (search) params.set('q', search);
       if (health) params.set('health', health);
       if (typeFilter) params.set('operation_type', typeFilter);
-      const [statsRes, attRes, listRes, workRes, metaRes, wonRes, empRes] = await Promise.all([
+      const [statsRes, attRes, listRes, workRes, metaRes, wonRes, empRes, custRes] = await Promise.all([
         axios.get(`${API}/operations/stats`, { headers: authHeader() }),
         axios.get(`${API}/operations/attention`, { headers: authHeader() }),
         axios.get(`${API}/operations?${params.toString()}`, { headers: authHeader() }),
@@ -81,6 +88,7 @@ export function Operations() {
         axios.get(`${API}/operations/meta`, { headers: authHeader() }),
         axios.get(`${API}/operations/won-leads`, { headers: authHeader() }).catch(() => ({ data: [] })),
         axios.get(`${API}/employees`, { headers: authHeader() }).catch(() => ({ data: [] })),
+        axios.get(`${API}/customers?entity_type=0`, { headers: authHeader() }).catch(() => ({ data: [] })),
       ]);
       setStats(statsRes.data || {});
       setAttention(attRes.data || []);
@@ -89,6 +97,7 @@ export function Operations() {
       setMeta(metaRes.data || { operation_types: [] });
       setWonLeads(wonRes.data || []);
       setEmployees(empRes.data || []);
+      setCustomers(custRes.data || []);
     } catch (err) {
       toast.error(getApiErrorMessage(err, 'Failed to load operations'));
     } finally {
@@ -101,9 +110,9 @@ export function Operations() {
   }, [load]);
 
   useRegisterPageHeader({
-    subtitle: 'Control confirmed customer work after a lead is won',
+    subtitle: 'Active jobs, existing clients, and work created from won leads',
     actions: (
-      <Button size="sm" onClick={() => setCreateOpen(true)}>
+      <Button size="sm" onClick={() => { setCreateMode('scratch'); setForm(blankForm); setCreateOpen(true); }}>
         <Plus className="h-4 w-4 mr-1" />
         New operation
       </Button>
@@ -124,28 +133,46 @@ export function Operations() {
   };
 
   const submitCreate = async () => {
-    if (!form.lead_id && !form.customer_name) {
-      toast.error('Select a won lead or enter a customer name');
+    const fromLead = createMode === 'lead' && form.lead_id;
+    if (!fromLead && !form.customer_name.trim()) {
+      toast.error('Enter or select a customer to create the operation');
       return;
     }
     setCreating(true);
     try {
-      const payload = {
-        lead_id: form.lead_id || undefined,
-        customer_name: form.customer_name || undefined,
-        project_name: form.project_name || undefined,
-        po_number: form.po_number || undefined,
-        po_value: form.po_value ? Number(form.po_value) : undefined,
-        estimated_cost: form.estimated_cost ? Number(form.estimated_cost) : undefined,
-        operation_type: form.operation_type,
-        target_date: form.target_date || undefined,
-        responsible_employee_id: form.responsible_employee_id || user?.employee_id,
-        responsible_name: employees.find((e) => e.employee_id === form.responsible_employee_id)?.name || user?.name,
-        priority: form.priority,
-      };
+      const payload = fromLead
+        ? {
+            lead_id: form.lead_id,
+            po_number: form.po_number || undefined,
+            po_value: form.po_value ? Number(form.po_value) : undefined,
+            estimated_cost: form.estimated_cost ? Number(form.estimated_cost) : undefined,
+            operation_type: form.operation_type,
+            target_date: form.target_date || undefined,
+            start_date: form.start_date || undefined,
+            responsible_employee_id: form.responsible_employee_id || user?.employee_id,
+            responsible_name: employees.find((e) => e.employee_id === form.responsible_employee_id)?.name || user?.name,
+            priority: form.priority,
+          }
+        : {
+            customer_id: form.customer_id || undefined,
+            customer_name: form.customer_name.trim(),
+            project_name: form.project_name || undefined,
+            po_number: form.po_number || undefined,
+            po_value: form.po_value ? Number(form.po_value) : undefined,
+            estimated_cost: form.estimated_cost ? Number(form.estimated_cost) : undefined,
+            operation_type: form.operation_type,
+            start_date: form.start_date || undefined,
+            target_date: form.target_date || undefined,
+            enquiry_id: form.enquiry_id || undefined,
+            quotation_id: form.quotation_id || undefined,
+            responsible_employee_id: form.responsible_employee_id || user?.employee_id,
+            responsible_name: employees.find((e) => e.employee_id === form.responsible_employee_id)?.name || user?.name,
+            priority: form.priority,
+          };
       const { data } = await axios.post(`${API}/operations`, payload, { headers: authHeader() });
       toast.success(`${data.operation_code} created`);
       setCreateOpen(false);
+      setForm(blankForm);
       navigate(`/operations/${data.id}`);
     } catch (err) {
       toast.error(getApiErrorMessage(err, 'Could not create operation'));
@@ -335,38 +362,102 @@ export function Operations() {
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>New operation</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div>
-              <Label>Won lead</Label>
-              <select
-                className="mt-1 h-10 w-full rounded-md border border-slate-200 px-2 text-sm"
-                value={form.lead_id}
-                onChange={(e) => {
-                  const lead = wonLeads.find((item) => item.id === e.target.value);
-                  setForm((prev) => ({
-                    ...prev,
-                    lead_id: e.target.value,
-                    customer_name: lead?.company || prev.customer_name,
-                    operation_type: lead?.suggested_type || prev.operation_type,
-                    po_value: lead?.value || prev.po_value,
-                    responsible_employee_id: lead?.assigned_to_employee_id || prev.responsible_employee_id,
-                  }));
-                }}
-              >
-                <option value="">Select a won enquiry</option>
-                {wonLeads.map((lead) => (
-                  <option key={lead.id} value={lead.id}>{lead.company} · {lead.suggested_type}</option>
-                ))}
-              </select>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: 'scratch', label: 'Existing client / from scratch' },
+                { key: 'lead', label: 'From won lead' },
+              ].map((mode) => (
+                <button
+                  key={mode.key}
+                  type="button"
+                  onClick={() => {
+                    setCreateMode(mode.key);
+                    setForm(blankForm);
+                  }}
+                  className={cn(
+                    'rounded-lg border px-3 py-2 text-left text-sm font-medium',
+                    createMode === mode.key ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-700',
+                  )}
+                >
+                  {mode.label}
+                </button>
+              ))}
             </div>
-            <div>
-              <Label>Customer</Label>
-              <Input value={form.customer_name} onChange={(e) => setForm((p) => ({ ...p, customer_name: e.target.value }))} />
-            </div>
+
+            {createMode === 'lead' ? (
+              <div>
+                <Label>Won lead</Label>
+                <select
+                  className="mt-1 h-10 w-full rounded-md border border-slate-200 px-2 text-sm"
+                  value={form.lead_id}
+                  onChange={(e) => {
+                    const lead = wonLeads.find((item) => item.id === e.target.value);
+                    setForm((prev) => ({
+                      ...prev,
+                      lead_id: e.target.value,
+                      customer_name: lead?.company || prev.customer_name,
+                      operation_type: lead?.suggested_type || prev.operation_type,
+                      po_value: lead?.value || prev.po_value,
+                      responsible_employee_id: lead?.assigned_to_employee_id || prev.responsible_employee_id,
+                    }));
+                  }}
+                >
+                  <option value="">Select a won enquiry</option>
+                  {wonLeads.map((lead) => (
+                    <option key={lead.id} value={lead.id}>{lead.company} · {lead.suggested_type}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <Label>Existing customer (ledger)</Label>
+                  <select
+                    className="mt-1 h-10 w-full rounded-md border border-slate-200 px-2 text-sm"
+                    value={form.customer_id}
+                    onChange={(e) => {
+                      const customer = customers.find((item) => item.id === e.target.value);
+                      setForm((prev) => ({
+                        ...prev,
+                        customer_id: e.target.value,
+                        customer_name: customer?.company_name || customer?.name || prev.customer_name,
+                      }));
+                    }}
+                  >
+                    <option value="">Type a name below, or pick from ledger</option>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.company_name || customer.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label>Customer name</Label>
+                  <Input
+                    placeholder="Required — existing operational client"
+                    value={form.customer_name}
+                    onChange={(e) => setForm((p) => ({ ...p, customer_name: e.target.value }))}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label>Old enquiry / ref (optional)</Label>
+                    <Input value={form.enquiry_id} onChange={(e) => setForm((p) => ({ ...p, enquiry_id: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Quotation (optional)</Label>
+                    <Input value={form.quotation_id} onChange={(e) => setForm((p) => ({ ...p, quotation_id: e.target.value }))} />
+                  </div>
+                </div>
+              </>
+            )}
+
             <div>
               <Label>Project / requirement</Label>
               <Input value={form.project_name} onChange={(e) => setForm((p) => ({ ...p, project_name: e.target.value }))} />
@@ -387,6 +478,21 @@ export function Operations() {
                 <select className="mt-1 h-10 w-full rounded-md border border-slate-200 px-2 text-sm" value={form.operation_type} onChange={(e) => setForm((p) => ({ ...p, operation_type: e.target.value }))}>
                   {(meta.operation_types || ['Stock & Sell']).map((type) => <option key={type}>{type}</option>)}
                 </select>
+              </div>
+              <div>
+                <Label>Responsible</Label>
+                <select className="mt-1 h-10 w-full rounded-md border border-slate-200 px-2 text-sm" value={form.responsible_employee_id} onChange={(e) => setForm((p) => ({ ...p, responsible_employee_id: e.target.value }))}>
+                  <option value="">Me</option>
+                  {employees.map((emp) => (
+                    <option key={emp.employee_id || emp.id} value={emp.employee_id || emp.id}>{emp.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>Start date</Label>
+                <Input type="date" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} />
               </div>
               <div>
                 <Label>Target completion</Label>

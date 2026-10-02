@@ -728,6 +728,7 @@ def ensure_operation_for_won_lead(db: Session, lead, user) -> Optional['Operatio
 
 class OperationCreate(BaseModel):
     lead_id: Optional[str] = None
+    enquiry_id: Optional[str] = None
     customer_name: Optional[str] = None
     customer_id: Optional[str] = None
     project_name: Optional[str] = None
@@ -1284,6 +1285,8 @@ def mount_operation_routes(api_router: APIRouter):
             emp_name = emp.name if emp else current_user.name
         op = OperationModel(
             operation_code=next_operation_code(db),
+            lead_id=None,
+            enquiry_id=body.enquiry_id or None,
             customer_id=body.customer_id,
             customer_name=body.customer_name,
             project_name=body.project_name,

@@ -14,7 +14,6 @@ import { isCarryAndOrder, leadNeedsVendor } from '@/lib/leadUtils';
 import { workflowStageLabel } from '@/lib/carryOrderWorkflow';
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import { API_ENDPOINT } from '@/lib/apiConfig';
-import { userHasPermission } from '@/lib/permissions';
 
 const API = API_ENDPOINT;
 
