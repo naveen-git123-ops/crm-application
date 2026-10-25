@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, func, cast, ForeignKey, case, and_
+from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, Numeric, func, cast, ForeignKey, case, and_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -944,6 +944,14 @@ class StockItemModel(Base):
     rate = Column(Float, default=0)
     value = Column(Float, default=0)  # usually quantity * rate
     reorder_level = Column(Float, nullable=True)
+    sku = Column(String(100), nullable=True, unique=True)
+    barcode = Column(String(100), nullable=True)
+    selling_price = Column(Numeric(14, 2), nullable=False, default=0)
+    tax_percent = Column(Numeric(14, 2), nullable=False, default=0)
+    min_stock = Column(Numeric(14, 3), nullable=True)
+    reorder_qty = Column(Numeric(14, 3), nullable=True)
+    preferred_supplier_id = Column(String(36), nullable=True)
+    status = Column(String(20), nullable=False, default='active', index=True)
     notes = Column(String(1000), nullable=True)
     created_by_employee_id = Column(String(50), nullable=True)
     created_by_name = Column(String(255), nullable=True)
@@ -2709,6 +2717,14 @@ class StockItem(BaseModel):
     rate: float = 0
     value: float = 0
     reorder_level: Optional[float] = None
+    sku: Optional[str] = None
+    barcode: Optional[str] = None
+    selling_price: float = 0
+    tax_percent: float = 0
+    min_stock: Optional[float] = None
+    reorder_qty: Optional[float] = None
+    preferred_supplier_id: Optional[str] = None
+    status: str = 'active'
     notes: Optional[str] = None
     created_by_employee_id: Optional[str] = None
     created_by_name: Optional[str] = None
@@ -10445,7 +10461,9 @@ def list_stock_items(
     current_user: UserModel = Depends(require_stock_management),
     db: Session = Depends(get_db),
 ):
-    query = db.query(StockItemModel)
+    query = db.query(StockItemModel).filter(
+        (StockItemModel.status == None) | (StockItemModel.status == 'active')  # noqa: E711
+    )
     if q and q.strip():
         like = f"%{q.strip()}%"
         query = query.filter(
@@ -10486,7 +10504,9 @@ def stock_item_lookup(
     db: Session = Depends(get_db),
 ):
     """Read-only picker feed for lead workflows — no Stock Management permission needed."""
-    query = db.query(StockItemModel)
+    query = db.query(StockItemModel).filter(
+        (StockItemModel.status == None) | (StockItemModel.status == 'active')  # noqa: E711
+    )
     if q and q.strip():
         like = f"%{q.strip()}%"
         query = query.filter(
@@ -10527,36 +10547,15 @@ def create_stock_item(
     current_user: UserModel = Depends(require_stock_management),
     db: Session = Depends(get_db),
 ):
-    name = (body.name or '').strip()
-    if not name:
-        raise HTTPException(status_code=400, detail='Item name is required')
-    unit = (body.unit or 'Nos').strip() or 'Nos'
-    opening = float(body.opening_qty or 0)
-    qty = float(body.quantity) if body.quantity is not None else opening
-    rate = float(body.rate or 0)
-    row = StockItemModel(
-        name=name,
-        alias=(body.alias or '').strip() or None,
-        item_code=(body.item_code or '').strip() or None,
-        stock_group=(body.stock_group or '').strip() or None,
-        unit=unit,
-        hsn_code=(body.hsn_code or '').strip() or None,
-        godown=(body.godown or '').strip() or None,
-        opening_qty=opening,
-        quantity=qty,
-        rate=rate,
-        value=_stock_item_value(qty, rate),
-        reorder_level=body.reorder_level,
-        notes=(body.notes or '').strip() or None,
-        created_by_employee_id=current_user.employee_id,
-        created_by_name=current_user.name,
-        updated_by_employee_id=current_user.employee_id,
-        updated_by_name=current_user.name,
-    )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
+    from inventory import InventoryError, create_product
+    try:
+        row = create_product(db, body.model_dump(), current_user)
+        db.commit()
+        db.refresh(row)
+        return row
+    except InventoryError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
 @api_router.put('/stock-items/{item_id}', response_model=StockItem)
@@ -10566,31 +10565,15 @@ def update_stock_item(
     current_user: UserModel = Depends(require_stock_management),
     db: Session = Depends(get_db),
 ):
-    row = db.query(StockItemModel).filter(StockItemModel.id == item_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail='Stock item not found')
-    data = body.model_dump(exclude_unset=True)
-    if 'name' in data:
-        name = (data['name'] or '').strip()
-        if not name:
-            raise HTTPException(status_code=400, detail='Item name is required')
-        row.name = name
-    for field in ('alias', 'item_code', 'stock_group', 'hsn_code', 'godown', 'notes'):
-        if field in data:
-            val = data[field]
-            setattr(row, field, (val or '').strip() or None if isinstance(val, str) else val)
-    if 'unit' in data:
-        row.unit = (data['unit'] or 'Nos').strip() or 'Nos'
-    for field in ('opening_qty', 'quantity', 'rate', 'reorder_level'):
-        if field in data:
-            setattr(row, field, data[field])
-    row.value = _stock_item_value(row.quantity, row.rate)
-    row.updated_by_employee_id = current_user.employee_id
-    row.updated_by_name = current_user.name
-    row.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(row)
-    return row
+    from inventory import InventoryError, update_product
+    try:
+        row = update_product(db, item_id, body.model_dump(exclude_unset=True), current_user)
+        db.commit()
+        db.refresh(row)
+        return row
+    except InventoryError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
 @api_router.delete('/stock-items/{item_id}')
@@ -10599,12 +10582,14 @@ def delete_stock_item(
     current_user: UserModel = Depends(require_stock_management),
     db: Session = Depends(get_db),
 ):
-    row = db.query(StockItemModel).filter(StockItemModel.id == item_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail='Stock item not found')
-    db.delete(row)
-    db.commit()
-    return {'message': 'Stock item deleted'}
+    from inventory import InventoryError, archive_or_delete_product
+    try:
+        result = archive_or_delete_product(db, item_id)
+        db.commit()
+        return result
+    except InventoryError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
 # ============= BUSINESS POTENTIAL =============
@@ -16875,10 +16860,20 @@ def get_dashboard_stats(current_user: UserModel = Depends(get_current_user), db:
 
 from operations import mount_operation_routes  # noqa: E402
 mount_operation_routes(api_router)
+from inventory import (  # noqa: E402
+    backfill_opening_balances,
+    ensure_inventory_schema,
+    mount_inventory_routes,
+    setup as setup_inventory,
+)
+setup_inventory(Base, StockItemModel)
+mount_inventory_routes(api_router)
 try:
     Base.metadata.create_all(bind=engine)
+    ensure_inventory_schema(engine)
+    backfill_opening_balances(SessionLocal)
 except Exception as e:
-    print(f'Operation tables create_all skipped: {e}')
+    print(f'Inventory setup skipped: {e}')
 
 app.include_router(api_router)
 

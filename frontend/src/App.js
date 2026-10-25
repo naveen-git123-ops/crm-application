@@ -27,7 +27,19 @@ import { GovernmentHolidays } from '@/pages/GovernmentHolidays';
 import Vehicles from '@/pages/Vehicles';
 import LocationTracker from '@/pages/LocationTracker';
 import CGWFlowMetre from '@/pages/CGWFlowMetre';
-import StockManagement from '@/pages/StockManagement';
+import StockShell from '@/pages/stock/StockShell';
+import StockDashboard from '@/pages/stock/DashboardPage';
+import StockProducts from '@/pages/stock/ProductsPage';
+import StockProductDetail from '@/pages/stock/ProductDetailPage';
+import StockWarehouses from '@/pages/stock/WarehousesPage';
+import StockMovements from '@/pages/stock/MovementsPage';
+import StockAdjustments from '@/pages/stock/AdjustmentsPage';
+import StockTransfers from '@/pages/stock/TransfersPage';
+import StockSuppliers from '@/pages/stock/SuppliersPage';
+import StockPurchases from '@/pages/stock/PurchasesPage';
+import StockPurchaseDetail from '@/pages/stock/PurchaseDetailPage';
+import StockAlerts from '@/pages/stock/AlertsPage';
+import StockReports from '@/pages/stock/ReportsPage';
 import { BusinessPotential } from '@/pages/BusinessPotential';
 import { BpoDesk } from '@/pages/BpoDesk';
 import { BpoSiteVisit } from '@/pages/BpoSiteVisit';
@@ -128,10 +140,23 @@ function App() {
                   path="/stock-management"
                   element={
                     <ProtectedRoute requiredPermission="stock-management">
-                      <StockManagement />
+                      <StockShell />
                     </ProtectedRoute>
                   }
-                />
+                >
+                  <Route index element={<StockDashboard />} />
+                  <Route path="products" element={<StockProducts />} />
+                  <Route path="products/:itemId" element={<StockProductDetail />} />
+                  <Route path="warehouses" element={<StockWarehouses />} />
+                  <Route path="movements" element={<StockMovements />} />
+                  <Route path="adjustments" element={<StockAdjustments />} />
+                  <Route path="transfers" element={<StockTransfers />} />
+                  <Route path="suppliers" element={<StockSuppliers />} />
+                  <Route path="purchases" element={<StockPurchases />} />
+                  <Route path="purchases/:poId" element={<StockPurchaseDetail />} />
+                  <Route path="alerts" element={<StockAlerts />} />
+                  <Route path="reports" element={<StockReports />} />
+                </Route>
 
                 <Route
                   path="/business-potential"
