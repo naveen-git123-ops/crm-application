@@ -1423,18 +1423,23 @@ _safe_migrate(migrate_leads_carry_order_workflow)
 _safe_migrate(migrate_orders_add_attachments_and_estimation)
 _safe_migrate(migrate_leads_add_category_and_contacts)
 DEFAULT_LEAD_CATEGORIES = [
-    'Project',
-    'Automation',
+    'Electrical Automation',
     'Instrumentation',
     'Electrical & Electronics',
+    'Water and Waste Water',
+    'Environment Liaisoning',
+]
+REMOVED_LEAD_CATEGORIES = [
+    'Project',
     'ION Exchange SSD',
     'ION Exchange Chemical',
     'CGWA NOC',
     'CGWA Flowmeter',
 ]
-DEFAULT_LEAD_SUBCATEGORIES_BY_CATEGORY = {
-    'Project': ['carry and order', 'stock and sell', 'consultancy'],
+LEAD_CATEGORY_RENAMES = {
+    'Automation': 'Electrical Automation',
 }
+DEFAULT_LEAD_SUBCATEGORIES_BY_CATEGORY = {}
 
 
 def seed_default_lead_categories():
@@ -1464,6 +1469,57 @@ def seed_default_lead_categories():
 
 
 seed_default_lead_categories()
+
+
+def _lead_category_key(name: Optional[str]) -> str:
+    return re.sub(r'\s+', ' ', (name or '').strip()).casefold()
+
+
+def sync_lead_product_categories():
+    """Bring stored lead categories in line with the Requirement Analysis list.
+
+    Renames Automation, removes the retired product categories, and adds any
+    missing current options. Existing lead records keep their saved text.
+    """
+    db = SessionLocal()
+    try:
+        rows = db.query(LeadCategoryModel).all()
+        by_key = {_lead_category_key(row.name): row for row in rows}
+        for old_name, new_name in LEAD_CATEGORY_RENAMES.items():
+            old_row = by_key.get(_lead_category_key(old_name))
+            new_row = by_key.get(_lead_category_key(new_name))
+            if old_row and new_row and old_row.id != new_row.id:
+                db.query(LeadSubCategoryModel).filter(LeadSubCategoryModel.category_id == old_row.id).delete()
+                db.delete(old_row)
+                by_key.pop(_lead_category_key(old_name), None)
+            elif old_row and not new_row:
+                old_row.name = new_name
+                by_key.pop(_lead_category_key(old_name), None)
+                by_key[_lead_category_key(new_name)] = old_row
+        removed = {_lead_category_key(name) for name in REMOVED_LEAD_CATEGORIES}
+        for key, row in list(by_key.items()):
+            if key not in removed:
+                continue
+            db.query(LeadSubCategoryModel).filter(LeadSubCategoryModel.category_id == row.id).delete()
+            db.delete(row)
+            by_key.pop(key, None)
+        for idx, name in enumerate(DEFAULT_LEAD_CATEGORIES):
+            row = by_key.get(_lead_category_key(name))
+            if row:
+                row.name = name
+                row.sort_order = idx
+            else:
+                db.add(LeadCategoryModel(id=str(uuid.uuid4()), name=name, sort_order=idx))
+        db.commit()
+        print('Lead product categories synced')
+    except Exception as e:
+        db.rollback()
+        print(f'Lead product category sync skipped: {e}')
+    finally:
+        db.close()
+
+
+_safe_migrate(sync_lead_product_categories)
 
 def migrate_lead_status_history():
     """Create lead_status_history table if missing."""
@@ -2009,6 +2065,7 @@ DEFAULT_PERMISSION_KEYS = [
     "roles", "workspace", "idcards", "documents", "settings", "holidays", "tasks", "customers",
     "cgw-flow-metre", "vehicles", "stock-management", "business-potential",
     "bpo-desk", "bpo-site-visit", "operations",
+    "service-maintenance", "service-maintenance-edit", "service-maintenance-coordinate", "service-maintenance-manage",
 ]
 
 def seed_roles_if_needed():
@@ -5579,6 +5636,69 @@ def _customer_delete_attachment_files(items: List[dict]) -> None:
                 pass
 
 
+def _normalize_ledger_name(value: Optional[str]) -> str:
+    return re.sub(r'\s+', ' ', (value or '').strip())
+
+
+def _ledger_name_key(value: Optional[str]) -> str:
+    return _normalize_ledger_name(value).casefold()
+
+
+def _normalize_gst(value: Optional[str]) -> Optional[str]:
+    cleaned = re.sub(r'[^A-Za-z0-9]', '', (value or '')).upper()
+    return cleaned or None
+
+
+def _ledger_kind(entity_type: int) -> str:
+    return 'vendor' if int(entity_type or 0) == 1 else 'customer'
+
+
+def _assert_unique_ledger(
+    db: Session,
+    entity_type: int,
+    company_name: Optional[str],
+    gst_number: Optional[str],
+    exclude_id: Optional[str] = None,
+) -> None:
+    """Reject the same company name or GST inside one ledger section.
+
+    Customers are compared only with customers, and vendors only with vendors.
+    Matching ignores letter case and extra spaces.
+    """
+    from sqlalchemy import or_
+
+    kind = _ledger_kind(entity_type)
+    name_key = _ledger_name_key(company_name)
+    if not name_key:
+        raise HTTPException(status_code=400, detail='Company name is required')
+    gst_key = _normalize_gst(gst_number)
+    query = db.query(
+        CustomerModel.id,
+        CustomerModel.customer_id,
+        CustomerModel.company_name,
+        CustomerModel.gst_number,
+    )
+    if int(entity_type or 0) == 1:
+        query = query.filter(CustomerModel.entity_type == 1)
+    else:
+        query = query.filter(or_(CustomerModel.entity_type == 0, CustomerModel.entity_type.is_(None)))
+    for row in query.all():
+        if exclude_id and row.id == exclude_id:
+            continue
+        if _ledger_name_key(row.company_name) == name_key:
+            existing_name = _normalize_ledger_name(row.company_name)
+            raise HTTPException(
+                status_code=409,
+                detail=f'A {kind} named "{existing_name}" already exists ({row.customer_id}).',
+            )
+        existing_gst = _normalize_gst(row.gst_number)
+        if gst_key and existing_gst == gst_key:
+            raise HTTPException(
+                status_code=409,
+                detail=f'GST number {gst_key} is already used by {kind} {row.customer_id} ({row.company_name}).',
+            )
+
+
 def _next_ledger_id(db: Session, entity_type: int) -> str:
     """Generate CUST##### or VEND##### id based on entity_type (0=customer, 1=vendor)."""
     from sqlalchemy import or_
@@ -5624,12 +5744,15 @@ def _sync_customer_summary_from_related(customer: CustomerModel, db: Session) ->
 def create_customer(cust_data: CustomerCreateUpdate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_customers_manage(current_user, db)
     entity_type = 1 if int(getattr(cust_data, 'entity_type', 0) or 0) == 1 else 0
+    company_name = _normalize_ledger_name(cust_data.company_name)
+    gst_number = _normalize_gst(cust_data.gst_number)
+    _assert_unique_ledger(db, entity_type, company_name, gst_number)
     cust_id = _next_ledger_id(db, entity_type)
     
     new_customer = CustomerModel(
         customer_id=cust_id,
-        company_name=cust_data.company_name,
-        gst_number=cust_data.gst_number,
+        company_name=company_name,
+        gst_number=gst_number,
         contact_person_name=cust_data.contact_person_name,
         phone=cust_data.phone,
         email=cust_data.email,
@@ -5728,11 +5851,18 @@ def update_customer(customer_id: str, cust_data: CustomerCreateUpdate, current_u
     if not customer:
         raise HTTPException(status_code=404, detail='Customer not found')
     
+    company_name = _normalize_ledger_name(cust_data.company_name)
+    gst_number = _normalize_gst(cust_data.gst_number)
+    entity_type = 1 if int(getattr(customer, 'entity_type', 0) or 0) == 1 else 0
+    _assert_unique_ledger(db, entity_type, company_name, gst_number, exclude_id=customer.id)
+
     # Update basic customer fields
-    basic_fields = ['company_name', 'gst_number', 'contact_person_name', 'phone', 'email', 'address_line', 'city', 'state', 'pincode', 'country', 'status']
+    basic_fields = ['contact_person_name', 'phone', 'email', 'address_line', 'city', 'state', 'pincode', 'country', 'status']
     for field in basic_fields:
         if hasattr(cust_data, field):
             setattr(customer, field, getattr(cust_data, field))
+    customer.company_name = company_name
+    customer.gst_number = gst_number
     
     customer.updated_at = datetime.now()
     db.commit()
@@ -11498,10 +11628,11 @@ def convert_business_potential_record(
         if _bp_is_our_client(row):
             raise HTTPException(status_code=400, detail='This record is already marked Our client')
         raise HTTPException(status_code=400, detail='This record is marked not qualified')
-    company = (payload.company_name or '').strip()
+    company = _normalize_ledger_name(payload.company_name)
     contact_name = (payload.contact_person_name or '').strip()
     if not company or not contact_name:
         raise HTTPException(status_code=400, detail='Company name and contact person are required')
+    _assert_unique_ledger(db, 0, company, None)
     actor_id, actor_name = _bp_actor(current_user)
     ledger_id = _next_ledger_id(db, 0)
     customer = CustomerModel(
@@ -12816,8 +12947,58 @@ def _positive_number(value) -> bool:
     return _parse_money(value) > 0
 
 
+def _is_cgwb_noc_consultancy(payload: dict) -> bool:
+    oa = (payload or {}).get('opportunity_assessment') or {}
+    if str(oa.get('business_category') or '').strip().lower() != 'consultancy':
+        return False
+    return str(oa.get('consultancy_category') or '').strip() in ('new_cgwb_noc', 'renewal_cgwb_noc')
+
+
+def _cgwb_required_data_complete(oa: dict) -> bool:
+    data = oa.get('cgwb_required_data') or {}
+    if data.get('skipped') is True:
+        return True
+    pan = str(data.get('pan') or '').strip()
+    gst = str(data.get('gst') or '').strip()
+    attachments = data.get('attachments') or []
+    ready = [
+        row for row in attachments
+        if isinstance(row, dict)
+        and str(row.get('attachment_name') or '').strip()
+        and str(row.get('file_url') or row.get('file_name') or '').strip()
+    ]
+    return bool(pan and gst and ready)
+
+
+def _liaison_costing_complete(payload: dict) -> bool:
+    rows = ((payload or {}).get('bom') or {}).get('liaison_lines') or []
+    started = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if (
+            str(row.get('liaison_name') or '').strip()
+            or str(row.get('government_body') or '').strip()
+            or _positive_number(row.get('amount'))
+        ):
+            started.append(row)
+    if not started:
+        return False
+    for row in started:
+        body = str(row.get('government_body') or '').strip().upper()
+        if body not in ('SPCB', 'CGWA'):
+            return False
+        if not str(row.get('liaison_name') or '').strip():
+            return False
+        if not _positive_number(row.get('amount')):
+            return False
+    return True
+
+
 def _bom_costing_complete(payload: dict) -> bool:
     """Priced stock + vendor lines that are fully filled. Legacy BOM materials still allowed."""
+    if _is_cgwb_noc_consultancy(payload):
+        return _liaison_costing_complete(payload)
     mp = payload.get('material_product') or {}
     stock = [row for row in _named_material_rows(mp.get('stock_items')) if _material_row_filled(row)]
     purchase = [row for row in _named_material_rows(mp.get('purchase_items')) if _material_row_filled(row)]
@@ -12856,6 +13037,14 @@ def _opportunity_assessment_complete(payload: dict) -> bool:
     consultancy = str(oa.get('business_category') or '').strip().lower() == 'consultancy'
     consultancy_cat = str(oa.get('consultancy_category') or '').strip()
     category_ok = bool(consultancy_cat) if consultancy else (isinstance(cats, list) and len(cats) > 0)
+    if _is_cgwb_noc_consultancy(payload):
+        if not str(oa.get('business_category') or '').strip() or not category_ok:
+            return False
+        if consultancy_cat == CONSULTANCY_CATEGORY_OTHER and not str(oa.get('consultancy_category_other') or '').strip():
+            return False
+        if consultancy_cat == 'renewal_cgwb_noc' and not str(oa.get('renewal_cgw_noc_id') or '').strip():
+            return False
+        return _cgwb_required_data_complete(oa)
     base_ok = bool(
         str(oa.get('business_category') or '').strip()
         and category_ok
@@ -13582,6 +13771,7 @@ def _validate_lead_workflow_transition(
     old_stage = old_stage or 'enquiry_logged'
     old_idx = _workflow_stage_index(old_stage)
     new_idx = _workflow_stage_index(new_stage)
+    cgwb_noc = _is_cgwb_noc_consultancy(payload)
 
     # Draft save at the same stage — allow without re-running forward gates
     if new_idx == old_idx:
@@ -13589,14 +13779,25 @@ def _validate_lead_workflow_transition(
 
     if old_idx >= 0 and new_idx > old_idx + 1:
         terminal_from_follow_up = old_stage == 'follow_up' and new_stage in ('closed_won', 'closed_lost')
-        if not terminal_from_follow_up:
+        cgwb_jump = (
+            cgwb_noc
+            and new_stage == 'bom_costing'
+            and old_stage in (
+                'opportunity_assessment',
+                'technical_assessment',
+                'material_product',
+                'technical_clearance',
+            )
+        )
+        if not terminal_from_follow_up and not cgwb_jump:
             raise HTTPException(
                 status_code=400,
                 detail='Complete each workflow step in order before continuing',
             )
 
     if (
-        _is_carry_and_order_subcategory(lead.sub_category)
+        not cgwb_noc
+        and _is_carry_and_order_subcategory(lead.sub_category)
         and not lead.vendor_id
         and new_stage not in (
             'enquiry_logged',
@@ -13621,7 +13822,8 @@ def _validate_lead_workflow_transition(
             detail='Complete Requirement Analysis before proceeding',
         )
     if (
-        old_stage in ('enquiry_logged', 'opportunity_assessment', 'technical_assessment')
+        not cgwb_noc
+        and old_stage in ('enquiry_logged', 'opportunity_assessment', 'technical_assessment')
         and new_idx > _workflow_stage_index('technical_assessment')
         and not _technical_assessment_complete(payload)
     ):
@@ -13630,7 +13832,8 @@ def _validate_lead_workflow_transition(
             detail='Add at least one technical question with its answer before proceeding',
         )
     if (
-        old_stage in (
+        not cgwb_noc
+        and old_stage in (
             'enquiry_logged',
             'opportunity_assessment',
             'technical_assessment',
@@ -13643,7 +13846,7 @@ def _validate_lead_workflow_transition(
             status_code=400,
             detail='Add at least one material/product item with quantity and UOM before proceeding',
         )
-    if new_stage in ('bom_costing', 'offer_revision', 'follow_up', 'closed_won', 'closed_lost'):
+    if not cgwb_noc and new_stage in ('bom_costing', 'offer_revision', 'follow_up', 'closed_won', 'closed_lost'):
         if not _vendor_selection_stage_complete(payload):
             raise HTTPException(
                 status_code=400,
@@ -13652,7 +13855,11 @@ def _validate_lead_workflow_transition(
     if new_stage in ('offer_revision', 'follow_up', 'closed_won', 'closed_lost') and not _bom_costing_complete(payload):
         raise HTTPException(
             status_code=400,
-            detail='Enter a unit price for every stock item (vendor prices come from quotes) before offer stage',
+            detail=(
+                'Enter a liaisoning name, government body and amount before the offer stage'
+                if cgwb_noc else
+                'Enter a unit price for every stock item (vendor prices come from quotes) before offer stage'
+            ),
         )
     # Won/Lost detail fields are filled on the terminal step after client decision routing.
     if payload.get('pipeline_terminal_confirmed'):
@@ -16868,6 +17075,10 @@ from inventory import (  # noqa: E402
 )
 setup_inventory(Base, StockItemModel)
 mount_inventory_routes(api_router)
+import service_maintenance  # noqa: E402
+from service_routes import mount_service_routes  # noqa: E402
+service_maintenance.setup(Base)  # svc_* tables are created by create_all below
+mount_service_routes(api_router)
 try:
     Base.metadata.create_all(bind=engine)
     ensure_inventory_schema(engine)

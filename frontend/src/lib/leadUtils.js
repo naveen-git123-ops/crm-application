@@ -3,15 +3,40 @@ export const LEAD_STATUSES = ['New', 'Contacted', 'Qualified', 'Proposal', 'Nego
 export const LEAD_ACTIVITY_TYPES = ['Call', 'Email', 'Meeting', 'Note'];
 
 export const LEAD_CATEGORY_OPTIONS = [
-  'Project',
-  'Automation',
+  'Electrical Automation',
   'Instrumentation',
   'Electrical & Electronics',
-  'ION Exchange SSD',
-  'ION Exchange Chemical',
-  'CGWA NOC',
-  'CGWA Flowmeter',
+  'Water and Waste Water',
+  'Environment Liaisoning',
 ];
+
+const RETIRED_PRODUCT_CATEGORIES = new Set([
+  'project',
+  'ion exchange ssd',
+  'ion exchange chemical',
+  'cgwa noc',
+  'cgwa flowmeter',
+]);
+
+export function canonicalProductCategory(name) {
+  const trimmed = String(name || '').trim().replace(/\s+/g, ' ');
+  if (trimmed.toLowerCase() === 'automation') return 'Electrical Automation';
+  return trimmed;
+}
+
+/** Drop retired product categories and rename Automation on saved leads. */
+export function normalizeProductCategories(values) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(values) ? values : []) {
+    const name = canonicalProductCategory(raw);
+    const key = name.toLowerCase();
+    if (!name || RETIRED_PRODUCT_CATEGORIES.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
 
 export const BUSINESS_CATEGORY_OPTIONS = ['carry and order', 'stock and sell', 'consultancy'];
 export const CARRY_AND_ORDER = 'carry and order';

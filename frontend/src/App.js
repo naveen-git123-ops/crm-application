@@ -45,6 +45,8 @@ import { BpoDesk } from '@/pages/BpoDesk';
 import { BpoSiteVisit } from '@/pages/BpoSiteVisit';
 import { Operations } from '@/pages/Operations';
 import { OperationWorkspace } from '@/pages/OperationWorkspace';
+import { ServiceMaintenance } from '@/pages/ServiceMaintenance';
+import { ServiceRequestDetail } from '@/pages/ServiceRequestDetail';
 
 function App() {
   return (
@@ -234,6 +236,23 @@ function App() {
                   element={
                     <ProtectedRoute requiredPermission="operations">
                       <OperationWorkspace />
+                    </ProtectedRoute>
+                  }
+                />
+
+                <Route
+                  path="/service-maintenance"
+                  element={
+                    <ProtectedRoute requiredPermission="service-maintenance">
+                      <ServiceMaintenance />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/service-maintenance/:serviceId"
+                  element={
+                    <ProtectedRoute requiredPermission="service-maintenance">
+                      <ServiceRequestDetail />
                     </ProtectedRoute>
                   }
                 />

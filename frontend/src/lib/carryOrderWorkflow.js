@@ -1,3 +1,5 @@
+import { normalizeProductCategories } from '@/lib/leadUtils';
+
 export const CARRY_ORDER_STAGES = [
   { id: 'enquiry_logged', label: 'Enquiry', short: '1' },
   { id: 'opportunity_assessment', label: 'Requirement Analysis', short: '2' },
@@ -34,7 +36,14 @@ export const OPPORTUNITY_BUSINESS_CATEGORIES = [
 export const PRODUCT_CATEGORY_OTHER = 'Other';
 
 export const CONSULTANCY_CATEGORY_OTHER = 'other';
+export const CONSULTANCY_NEW_CGWB_NOC = 'new_cgwb_noc';
 export const CONSULTANCY_RENEWAL_CGWB_NOC = 'renewal_cgwb_noc';
+export const CGWB_NOC_SKIPPED_STAGES = [
+  'technical_assessment',
+  'material_product',
+  'technical_clearance',
+];
+export const LIAISON_GOVERNMENT_BODIES = ['SPCB', 'CGWA'];
 
 export const CONSULTANCY_CATEGORIES = [
   { id: 'new_cgwb_noc', label: 'New CGWB NOC' },
@@ -56,6 +65,90 @@ export function consultancyCategoryLabel(value) {
 export function isRenewalCgwbNocSelected(oa) {
   return isConsultancyBusinessCategory(oa?.business_category)
     && String(oa?.consultancy_category || '') === CONSULTANCY_RENEWAL_CGWB_NOC;
+}
+
+export function isCgwbNocConsultancy(oa) {
+  if (!isConsultancyBusinessCategory(oa?.business_category)) return false;
+  const category = String(oa?.consultancy_category || '');
+  return category === CONSULTANCY_NEW_CGWB_NOC || category === CONSULTANCY_RENEWAL_CGWB_NOC;
+}
+
+export function isCgwbNocConsultancyPayload(payload) {
+  return isCgwbNocConsultancy(payload?.opportunity_assessment);
+}
+
+export function defaultCgwbRequiredData() {
+  return {
+    skipped: false,
+    pan: '',
+    gst: '',
+    attachments: [],
+  };
+}
+
+export function newCgwbRequiredAttachment() {
+  return {
+    id: `cgwb-att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    attachment_name: '',
+    attachment_id: null,
+    file_name: '',
+    file_url: '',
+    file_type: null,
+  };
+}
+
+export function cgwbRequiredData(oa) {
+  const stored = oa?.cgwb_required_data;
+  return {
+    ...defaultCgwbRequiredData(),
+    ...(stored && typeof stored === 'object' ? stored : {}),
+    skipped: stored?.skipped === true,
+    pan: String(stored?.pan || ''),
+    gst: String(stored?.gst || ''),
+    attachments: Array.isArray(stored?.attachments) ? stored.attachments : [],
+  };
+}
+
+export function isCgwbRequiredDataComplete(oa) {
+  const data = cgwbRequiredData(oa);
+  if (data.skipped) return true;
+  const attachments = data.attachments.filter((row) => (
+    String(row?.attachment_name || '').trim()
+    && String(row?.file_url || row?.file_name || '').trim()
+  ));
+  return Boolean(String(data.pan || '').trim() && String(data.gst || '').trim() && attachments.length);
+}
+
+export function newLiaisonCostingRow() {
+  return {
+    id: `liaison-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    liaison_name: '',
+    government_body: '',
+    amount: '',
+  };
+}
+
+export function liaisonCostingLines(payload) {
+  const rows = payload?.bom?.liaison_lines;
+  return Array.isArray(rows) ? rows : [];
+}
+
+function liaisonRowStarted(row) {
+  return Boolean(
+    String(row?.liaison_name || '').trim()
+    || String(row?.government_body || '').trim()
+    || Number(row?.amount) > 0
+  );
+}
+
+export function isLiaisonCostingComplete(payload) {
+  const started = liaisonCostingLines(payload).filter(liaisonRowStarted);
+  if (!started.length) return false;
+  return started.every((row) => (
+    String(row?.liaison_name || '').trim()
+    && LIAISON_GOVERNMENT_BODIES.includes(String(row?.government_body || '').trim().toUpperCase())
+    && Number(row?.amount) > 0
+  ));
 }
 
 export function formatCgwNocOptionLabel(opt) {
@@ -172,6 +265,7 @@ export function defaultOpportunityAssessment() {
     renewal_cgw_inventory_id: '',
     renewal_cgw_noc_no: '',
     renewal_cgw_noc_label: '',
+    cgwb_required_data: defaultCgwbRequiredData(),
     technical_datas_required: null,
     site_visit_required: null,
     expected_enquiry_closing_date: '',
@@ -266,13 +360,14 @@ function normalizeOpportunityAssessment(stored) {
   const oa = { ...base, ...(stored || {}) };
   return {
     ...oa,
-    product_categories: Array.isArray(stored?.product_categories) ? stored.product_categories : [],
+    product_categories: normalizeProductCategories(stored?.product_categories),
     consultancy_category: String(stored?.consultancy_category || '').trim(),
     consultancy_category_other: String(stored?.consultancy_category_other || ''),
     renewal_cgw_noc_id: String(stored?.renewal_cgw_noc_id || ''),
     renewal_cgw_inventory_id: String(stored?.renewal_cgw_inventory_id || ''),
     renewal_cgw_noc_no: String(stored?.renewal_cgw_noc_no || ''),
     renewal_cgw_noc_label: String(stored?.renewal_cgw_noc_label || ''),
+    cgwb_required_data: cgwbRequiredData(stored),
     site_visit_assignees: siteVisitAssignees(oa),
     site_visit_others: siteVisitOtherPeople(oa),
     site_visit_photos: Array.isArray(stored?.site_visit_photos) ? stored.site_visit_photos : [],
@@ -317,6 +412,19 @@ export function isOpportunityAssessmentComplete(payload) {
   const categoryOk = consultancy
     ? Boolean(consultancyCat)
     : categories.length > 0;
+  if (isCgwbNocConsultancy(oa)) {
+    if (!String(oa.business_category || '').trim() || !categoryOk) return false;
+    if (
+      consultancyCat === CONSULTANCY_CATEGORY_OTHER
+      && !String(oa.consultancy_category_other || '').trim()
+    ) {
+      return false;
+    }
+    if (consultancyCat === CONSULTANCY_RENEWAL_CGWB_NOC && !String(oa.renewal_cgw_noc_id || '').trim()) {
+      return false;
+    }
+    return isCgwbRequiredDataComplete(oa);
+  }
   const baseOk = Boolean(
     String(oa.business_category || '').trim()
     && categoryOk
@@ -726,6 +834,7 @@ export function withSyncedBomMaterials(payload) {
 }
 
 export function isBomCostingComplete(payload) {
+  if (isCgwbNocConsultancyPayload(payload)) return isLiaisonCostingComplete(payload);
   const lines = buildBomCostingLines(payload);
   if (lines.length) {
     return lines.every((row) => materialLineUnitPrice(row, row.source) > 0);
@@ -736,6 +845,15 @@ export function isBomCostingComplete(payload) {
 }
 
 export function bomCostingIncompleteMessage(payload) {
+  if (isCgwbNocConsultancyPayload(payload)) {
+    const started = liaisonCostingLines(payload).filter(liaisonRowStarted);
+    if (!started.length) return 'Add a liaisoning line with a name, government body and amount';
+    const missingName = started.some((row) => !String(row?.liaison_name || '').trim());
+    if (missingName) return 'Enter a liaisoning name on every line';
+    const missingBody = started.some((row) => !LIAISON_GOVERNMENT_BODIES.includes(String(row?.government_body || '').trim().toUpperCase()));
+    if (missingBody) return 'Select SPCB or CGWA on every liaisoning line';
+    return 'Enter an amount on every liaisoning line';
+  }
   const lines = buildBomCostingLines(payload);
   if (!lines.length) {
     if ((payload?.bom?.materials || []).length) {
@@ -771,12 +889,19 @@ export function requirementAnalysisIncompleteMessage(payload) {
     if (oa.consultancy_category === CONSULTANCY_RENEWAL_CGWB_NOC && !String(oa.renewal_cgw_noc_id || '').trim()) {
       return 'Select the existing CGWA NOC to renew';
     }
+    if (isCgwbNocConsultancy(oa) && !isCgwbRequiredDataComplete(oa)) {
+      const data = cgwbRequiredData(oa);
+      if (!String(data.pan || '').trim()) return 'Enter the company PAN, or skip required data';
+      if (!String(data.gst || '').trim()) return 'Enter the company GST, or skip required data';
+      return 'Add at least one named attachment under company details, or skip required data';
+    }
   } else {
     if (!categories.length) return 'Select at least one product category';
     if (categories.includes(PRODUCT_CATEGORY_OTHER) && !String(oa.product_category_other || '').trim()) {
       return 'Type the custom product category for "Other"';
     }
   }
+  if (isCgwbNocConsultancy(oa)) return 'Complete Requirement Analysis details';
   if (typeof oa.technical_datas_required !== 'boolean') return 'Answer whether technical datas are required';
   if (typeof oa.site_visit_required !== 'boolean') return 'Answer whether a site visit is required';
   if (!String(oa.expected_enquiry_closing_date || '').trim()) return 'Set the expected enquiry closing date';
@@ -870,6 +995,7 @@ export function vendorManagementIncompleteMessage(payload) {
 /** Max pipeline index reachable given saved stage and vendor selection gate. */
 export function effectivePipelineMaxIndex(workflowStage, payload) {
   const max = resolvedPipelineIndex(workflowStage);
+  if (isCgwbNocConsultancyPayload(payload)) return max;
   const vendorIdx = pipelineStageIndex('technical_clearance');
   if (vendorIdx < 0) return max;
   if (max > vendorIdx && !isVendorSelectionComplete(payload)) {
@@ -879,6 +1005,9 @@ export function effectivePipelineMaxIndex(workflowStage, payload) {
 }
 
 export function canAccessWorkflowStage(targetStageId, workflowStage, payload) {
+  if (isCgwbNocConsultancyPayload(payload) && CGWB_NOC_SKIPPED_STAGES.includes(targetStageId)) {
+    return false;
+  }
   const max = effectivePipelineMaxIndex(workflowStage, payload);
   if (WORKFLOW_TERMINAL_IDS.includes(targetStageId)) {
     return max >= WORKFLOW_PIPELINE_IDS.length - 1;
@@ -892,6 +1021,20 @@ export function nextPipelineStageId(currentWorkflowStage) {
   const idx = resolvedPipelineIndex(currentWorkflowStage);
   if (idx < 0 || idx >= WORKFLOW_PIPELINE_IDS.length - 1) return null;
   return WORKFLOW_PIPELINE_IDS[idx + 1];
+}
+
+/** Next step, including the shortened New/Renewal CGWB NOC path. */
+export function nextWorkflowStageId(currentWorkflowStage, payload) {
+  if (
+    isCgwbNocConsultancyPayload(payload)
+    && (
+      currentWorkflowStage === 'opportunity_assessment'
+      || CGWB_NOC_SKIPPED_STAGES.includes(currentWorkflowStage)
+    )
+  ) {
+    return 'bom_costing';
+  }
+  return nextPipelineStageId(currentWorkflowStage);
 }
 
 export function isStageComplete(stageId, payload, lead, { isCarryAndOrder, leadNeedsVendor }) {
@@ -1059,6 +1202,7 @@ export function defaultWorkflowPayload() {
     material_product: defaultMaterialProduct(),
     bom: {
       materials: [],
+      liaison_lines: [],
       install_cost: 0,
       testing_cost: 0,
       packaging_cost: 0,
@@ -1107,7 +1251,17 @@ export function mergeWorkflowPayload(stored) {
     opportunity_assessment: normalizeOpportunityAssessment(stored.opportunity_assessment),
     technical_assessment: normalizeTechnicalAssessment(stored.technical_assessment),
     material_product: normalizeMaterialProduct(stored.material_product),
-    bom: { ...base.bom, ...(stored.bom || {}) },
+    bom: {
+      ...base.bom,
+      ...(stored.bom || {}),
+      liaison_lines: Array.isArray(stored.bom?.liaison_lines)
+        ? stored.bom.liaison_lines.map((row, index) => ({
+          ...newLiaisonCostingRow(),
+          ...row,
+          id: row?.id || `liaison-${index}`,
+        }))
+        : [],
+    },
     closed_won: {
       ...base.closed_won,
       ...(stored.closed_won || {}),
@@ -1225,6 +1379,34 @@ export function applyMarginFormula(base, marginPct) {
 }
 
 export function computeBomTotals(bom, payload) {
+  if (payload && isCgwbNocConsultancyPayload(payload)) {
+    const liaisonTotal = liaisonCostingLines(payload).reduce(
+      (sum, row) => sum + (Number(row.amount) || 0),
+      0,
+    );
+    return {
+      tpc: liaisonTotal,
+      materialsTotal: liaisonTotal,
+      stockTotal: 0,
+      vendorTotal: 0,
+      install: 0,
+      testing: 0,
+      packaging: 0,
+      transport: 0,
+      costOfAp: 0,
+      tpcCost: 0,
+      totalCost: liaisonTotal,
+      sellingValue: liaisonTotal,
+      consignmentTotal: liaisonTotal,
+      lineSellingTotal: liaisonTotal,
+      lineProfitTotal: 0,
+      additionalCharges: 0,
+      lineMarginApplied: false,
+      profitMarginPct: 0,
+      profitValue: liaisonTotal,
+      profitAmount: 0,
+    };
+  }
   const workflowLines = payload ? buildBomCostingLines(payload) : [];
   const useWorkflow = workflowLines.length > 0;
   const materialsTotal = useWorkflow
@@ -1311,7 +1493,19 @@ export function offerRoundLabel(revisionIndex) {
 /** Frozen BOM costing used when an offer is recorded, so later edits do not overwrite history. */
 export function buildBomOfferSnapshot(bom, payload) {
   const totals = computeBomTotals(bom, payload);
-  const lines = payload ? buildBomCostingLines(payload) : [];
+  const lines = payload && isCgwbNocConsultancyPayload(payload)
+    ? liaisonCostingLines(payload).map((row, index) => ({
+      source: 'liaison',
+      source_label: 'Liaisoning',
+      item_name: row.liaison_name,
+      quantity: index + 1,
+      uom: row.government_body,
+      amount: Number(row.amount) || 0,
+      profit_margin_pct: 0,
+      profit_amount: 0,
+      selling: Number(row.amount) || 0,
+    }))
+    : (payload ? buildBomCostingLines(payload) : []);
   return {
     captured_at: new Date().toISOString(),
     materials_total: totals.materialsTotal,

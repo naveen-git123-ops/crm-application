@@ -39,7 +39,7 @@ import {
   pipelineStageIndex,
   canAccessWorkflowStage,
   effectivePipelineMaxIndex,
-  nextPipelineStageId,
+  nextWorkflowStageId,
   newTechnicalAttachmentRef,
   newVendorSelectionRow,
   isVendorSelectionComplete,
@@ -55,6 +55,14 @@ import {
   CONSULTANCY_RENEWAL_CGWB_NOC,
   isConsultancyBusinessCategory,
   isRenewalCgwbNocSelected,
+  isCgwbNocConsultancy,
+  isCgwbNocConsultancyPayload,
+  CGWB_NOC_SKIPPED_STAGES,
+  cgwbRequiredData,
+  newCgwbRequiredAttachment,
+  LIAISON_GOVERNMENT_BODIES,
+  newLiaisonCostingRow,
+  liaisonCostingLines,
   flattenCustomerCgwNocs,
   formatCgwNocOptionLabel,
   cgwItemBelongsToLead,
@@ -109,8 +117,6 @@ import { getApiErrorMessage } from '@/lib/apiErrors';
 import { useAuth } from '@/contexts/AuthContext';
 import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFilePicker';
 import { LEAD_ATTACHMENT_ACCEPT, LEAD_ATTACHMENT_HINT } from '@/lib/leadAttachmentAccept';
-import { useLeadCategories } from '@/hooks/useLeadCategories';
-
 const inputClass = 'h-9 rounded-lg border-slate-200 bg-white text-sm text-slate-900';
 const selectClass =
   'h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900';
@@ -162,7 +168,8 @@ export function CarryOrderWorkspace({
 
   const saveWorkflow = async (nextStage, nextPayload, comment, successMessage) => {
     if (
-      isCarryAndOrder(lead)
+      !isCgwbNocConsultancyPayload(nextPayload || payload)
+      && isCarryAndOrder(lead)
       && leadNeedsVendor(lead)
       && nextStage !== 'enquiry_logged'
       && nextStage !== 'opportunity_assessment'
@@ -453,7 +460,8 @@ export function CarryOrderWorkspace({
       const blocked = CARRY_ORDER_STAGES.find((s) => s.id === stageId);
       const techIdx = pipelineStageIndex('technical_clearance');
       if (
-        !isVendorSelectionComplete(payload)
+        !isCgwbNocConsultancyPayload(payload)
+        && !isVendorSelectionComplete(payload)
         && pipelineStageIndex(stageId) > techIdx
         && pipelineMaxIdx <= techIdx
       ) {
@@ -517,7 +525,7 @@ export function CarryOrderWorkspace({
       }
       return;
     }
-    const next = nextPipelineStageId(activeTab);
+    const next = nextWorkflowStageId(activeTab, payload);
     if (!next) return;
     const comment =
       next === 'bom_costing' && isVendorSelectionComplete(payload)
@@ -617,6 +625,7 @@ export function CarryOrderWorkspace({
         onSelect={handleTabSelect}
         canOpenStage={canOpenStage}
         maxIdx={pipelineMaxIdx}
+        hiddenStageIds={isCgwbNocConsultancyPayload(payload) ? CGWB_NOC_SKIPPED_STAGES : []}
       />
 
       {!canOpenStage(activeTab) && (
@@ -753,7 +762,7 @@ export function CarryOrderWorkspace({
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
               Save progress
             </Button>
-            {onCurrentStep && nextPipelineStageId(activeTab) && (
+            {onCurrentStep && nextWorkflowStageId(activeTab, payload) && (
               <Button
                 size="sm"
                 className="bg-indigo-600 hover:bg-indigo-700 text-white"
@@ -1348,23 +1357,25 @@ function ModuleOpportunityAssessment({
   apiBase,
   authHeader,
 }) {
-  const { categories, loading: categoriesLoading } = useLeadCategories({ enabled: true });
   const [employees, setEmployees] = useState([]);
   const [uploadingField, setUploadingField] = useState('');
   const [cgwNocs, setCgwNocs] = useState([]);
   const [cgwNocsLoading, setCgwNocsLoading] = useState(false);
   const [cgwNocsError, setCgwNocsError] = useState('');
   const oa = payload.opportunity_assessment || defaultOpportunityAssessment();
-  const productOptions = (categories || []).map((c) => c.name).filter(Boolean);
-  const baseOptions = productOptions.length ? productOptions : LEAD_CATEGORY_OPTIONS;
-  const options = baseOptions.includes(PRODUCT_CATEGORY_OTHER)
-    ? baseOptions
-    : [...baseOptions, PRODUCT_CATEGORY_OTHER];
+  const options = LEAD_CATEGORY_OPTIONS.includes(PRODUCT_CATEGORY_OTHER)
+    ? LEAD_CATEGORY_OPTIONS
+    : [...LEAD_CATEGORY_OPTIONS, PRODUCT_CATEGORY_OTHER];
   const selected = Array.isArray(oa.product_categories) ? oa.product_categories : [];
   const otherCategorySelected = selected.includes(PRODUCT_CATEGORY_OTHER);
   const isConsultancy = isConsultancyBusinessCategory(oa.business_category);
   const consultancyOtherSelected = oa.consultancy_category === CONSULTANCY_CATEGORY_OTHER;
   const renewalCgwbSelected = isRenewalCgwbNocSelected(oa);
+  const cgwbNocPath = isCgwbNocConsultancy(oa);
+  const requiredData = cgwbRequiredData(oa);
+  const setRequiredData = (patch) => updateOa({
+    cgwb_required_data: { ...requiredData, ...patch },
+  });
   const siteVisitYes = oa.site_visit_required === true;
   const assignees = siteVisitAssignees(oa);
   const otherPeople = siteVisitOtherPeople(oa);
@@ -1649,22 +1660,18 @@ function ModuleOpportunityAssessment({
             <Label className={labelClass}>Product category</Label>
             <p className="text-xs text-slate-500 normal-case font-normal">Select one or more</p>
             <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 max-h-48 overflow-y-auto space-y-2">
-              {categoriesLoading && !options.length ? (
-                <p className="text-sm text-slate-500">Loading categories…</p>
-              ) : (
-                options.map((name) => (
-                  <label key={name} className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300"
-                      disabled={!canEdit}
-                      checked={selected.includes(name)}
-                      onChange={() => toggleProduct(name)}
-                    />
-                    <span>{name}</span>
-                  </label>
-                ))
-              )}
+              {options.map((name) => (
+                <label key={name} className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300"
+                    disabled={!canEdit}
+                    checked={selected.includes(name)}
+                    onChange={() => toggleProduct(name)}
+                  />
+                  <span>{name}</span>
+                </label>
+              ))}
             </div>
             {selected.length > 0 && (
               <p className="text-xs text-slate-600">Selected: {selected.join(', ')}</p>
@@ -1684,6 +1691,152 @@ function ModuleOpportunityAssessment({
           </div>
         )}
 
+        {cgwbNocPath && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Required data</p>
+                <p className="text-xs text-slate-500 normal-case font-normal">
+                  Company details for this CGWB NOC. Skip if you do not have them yet.
+                </p>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-slate-800 shrink-0">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300"
+                  disabled={!canEdit}
+                  checked={requiredData.skipped === true}
+                  onChange={(e) => setRequiredData({ skipped: e.target.checked })}
+                />
+                Skip
+              </label>
+            </div>
+            {requiredData.skipped ? (
+              <p className="text-sm text-slate-600">Required data skipped. Uncheck Skip to enter company details.</p>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Company details</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className={labelClass}>PAN *</Label>
+                    <Input
+                      className={inputClass}
+                      disabled={!canEdit}
+                      value={requiredData.pan || ''}
+                      onChange={(e) => setRequiredData({ pan: e.target.value.toUpperCase() })}
+                      placeholder="Company PAN"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className={labelClass}>GST *</Label>
+                    <Input
+                      className={inputClass}
+                      disabled={!canEdit}
+                      value={requiredData.gst || ''}
+                      onChange={(e) => setRequiredData({ gst: e.target.value.toUpperCase() })}
+                      placeholder="Company GST"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <Label className={labelClass}>Attachments</Label>
+                      <p className="text-xs text-slate-500 normal-case font-normal">
+                        Add a name and a file for each attachment. You can add more than one.
+                      </p>
+                    </div>
+                    {canEdit && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs"
+                        onClick={() => setRequiredData({
+                          attachments: [...requiredData.attachments, newCgwbRequiredAttachment()],
+                        })}
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        Add attachment
+                      </Button>
+                    )}
+                  </div>
+                  {requiredData.attachments.length === 0 ? (
+                    <p className="text-sm text-slate-500">No attachments yet</p>
+                  ) : requiredData.attachments.map((row) => (
+                    <div key={row.id} className="rounded-lg border border-slate-200 bg-white p-3 space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 space-y-2">
+                          <Label className={labelClass}>Attachment name</Label>
+                          <Input
+                            className={inputClass}
+                            disabled={!canEdit}
+                            value={row.attachment_name || ''}
+                            onChange={(e) => setRequiredData({
+                              attachments: requiredData.attachments.map((item) => (
+                                item.id === row.id ? { ...item, attachment_name: e.target.value } : item
+                              )),
+                            })}
+                            placeholder="Name this attachment"
+                          />
+                        </div>
+                        {canEdit && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-rose-600 hover:text-rose-700"
+                            onClick={() => setRequiredData({
+                              attachments: requiredData.attachments.filter((item) => item.id !== row.id),
+                            })}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                      {row.file_url || row.file_name ? (
+                        <p className="text-sm text-slate-700">{row.file_name || 'File attached'}</p>
+                      ) : (
+                        <p className="text-sm text-slate-500">No file attached</p>
+                      )}
+                      {canEdit && (
+                        <CgwMultiFilePicker
+                          label=""
+                          accept={LEAD_ATTACHMENT_ACCEPT}
+                          hint={LEAD_ATTACHMENT_HINT}
+                          files={[]}
+                          disabled={saving || uploadingField === `cgwb-${row.id}`}
+                          addLabel={uploadingField === `cgwb-${row.id}` ? 'Uploading…' : (row.file_url ? 'Replace file' : 'Attach file')}
+                          onChange={(files) => uploadSingle(
+                            `cgwb-${row.id}`,
+                            files,
+                            (ref) => setRequiredData({
+                              attachments: requiredData.attachments.map((item) => (
+                                item.id === row.id
+                                  ? {
+                                    ...item,
+                                    attachment_id: ref.attachment_id,
+                                    file_name: ref.file_name,
+                                    file_url: ref.file_url,
+                                    file_type: ref.file_type,
+                                  }
+                                  : item
+                              )),
+                            }),
+                            'Attachment uploaded',
+                          )}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!cgwbNocPath && (
+        <>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label className={labelClass}>Technical datas required</Label>
@@ -2059,6 +2212,8 @@ function ModuleOpportunityAssessment({
             onChange={(e) => updateOa({ expected_enquiry_closing_date: e.target.value })}
           />
         </div>
+        </>
+        )}
       </div>
     </section>
   );
@@ -3326,6 +3481,122 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
   };
 
   const costingIncomplete = !isBomCostingComplete(payload);
+  const cgwbNocPath = isCgwbNocConsultancyPayload(payload);
+  const liaisonLines = liaisonCostingLines(payload);
+
+  if (cgwbNocPath) {
+    const updateLiaison = (id, patch) => {
+      setPayload({
+        ...payload,
+        bom: {
+          ...bom,
+          liaison_lines: liaisonLines.map((row) => (row.id === id ? { ...row, ...patch } : row)),
+        },
+      });
+    };
+    return (
+      <section className="space-y-4">
+        <SectionTitle
+          title="Module 6 — BOM & costing"
+          subtitle="Enter each liaisoning charge. The next step is Offer & revision."
+        />
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-sm min-w-[640px]">
+            <thead className="bg-slate-100 border-b border-slate-200">
+              <tr>
+                <th className="text-left p-2 font-semibold text-slate-700 w-16">S.No</th>
+                <th className="text-left p-2 font-semibold text-slate-700">Liaisoning name</th>
+                <th className="text-left p-2 font-semibold text-slate-700">Government bodies</th>
+                <th className="text-right p-2 font-semibold text-slate-700 w-36">Amount (₹)</th>
+                <th className="w-10" />
+              </tr>
+            </thead>
+            <tbody>
+              {liaisonLines.map((row, index) => (
+                <tr key={row.id} className="border-b border-slate-100">
+                  <td className="p-2 text-slate-600 tabular-nums">{index + 1}</td>
+                  <td className="p-2">
+                    <Input
+                      className={inputClass}
+                      disabled={!canEdit}
+                      value={row.liaison_name || ''}
+                      onChange={(e) => updateLiaison(row.id, { liaison_name: e.target.value })}
+                      placeholder="Liaisoning name"
+                    />
+                  </td>
+                  <td className="p-2">
+                    <select
+                      className={selectClass}
+                      disabled={!canEdit}
+                      value={row.government_body || ''}
+                      onChange={(e) => updateLiaison(row.id, { government_body: e.target.value })}
+                    >
+                      <option value="">Select</option>
+                      {LIAISON_GOVERNMENT_BODIES.map((body) => (
+                        <option key={body} value={body}>{body}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="p-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className={`${inputClass} text-right`}
+                      disabled={!canEdit}
+                      value={row.amount}
+                      onChange={(e) => updateLiaison(row.id, { amount: e.target.value })}
+                      placeholder="0.00"
+                    />
+                  </td>
+                  <td className="p-2">
+                    {canEdit && (
+                      <button
+                        type="button"
+                        className="text-rose-500 hover:bg-rose-50 p-1 rounded"
+                        onClick={() => setPayload({
+                          ...payload,
+                          bom: {
+                            ...bom,
+                            liaison_lines: liaisonLines.filter((item) => item.id !== row.id),
+                          },
+                        })}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {canEdit && (
+            <div className="p-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setPayload({
+                  ...payload,
+                  bom: { ...bom, liaison_lines: [...liaisonLines, newLiaisonCostingRow()] },
+                })}
+              >
+                <Plus className="h-4 w-4 mr-1" /> Add line
+              </Button>
+            </div>
+          )}
+        </div>
+        {costingIncomplete && (
+          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            {bomCostingIncompleteMessage(payload)}
+          </p>
+        )}
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <p className="text-sm font-semibold text-slate-800">Total amount</p>
+          <p className="text-xl font-bold tabular-nums text-indigo-900">{formatInr(bomTotals.consignmentTotal)}</p>
+        </div>
+      </section>
+    );
+  }
 
   const costingColumns = [
     {
@@ -4756,10 +5027,13 @@ function ModuleClosedLost({ payload, setPayload, canEdit }) {
   );
 }
 
-function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage, maxIdx }) {
+function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage, maxIdx, hiddenStageIds = [] }) {
   const terminalUnlocked = canOpenStage('closed_won');
+  const hidden = new Set(hiddenStageIds);
 
-  const pipelineSteps = WORKFLOW_PIPELINE_IDS.map((id) => CARRY_ORDER_STAGES.find((s) => s.id === id));
+  const pipelineSteps = WORKFLOW_PIPELINE_IDS
+    .filter((id) => !hidden.has(id))
+    .map((id) => CARRY_ORDER_STAGES.find((s) => s.id === id));
   const terminalSteps = WORKFLOW_TERMINAL_IDS.map((id) => CARRY_ORDER_STAGES.find((s) => s.id === id));
 
   const stepButtonClass = (stepId, variant) => {

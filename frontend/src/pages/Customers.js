@@ -46,6 +46,30 @@ function customerDisplayCity(customer) {
 const ENTITY_CUSTOMER = 0;
 const ENTITY_VENDOR = 1;
 
+function normalizeLedgerName(value) {
+  return (value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function normalizeGst(value) {
+  return (value || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+}
+
+function findLedgerDuplicate(records, { companyName, gstNumber, excludeId, label }) {
+  const nameKey = normalizeLedgerName(companyName);
+  const gstKey = normalizeGst(gstNumber);
+  const kind = (label || 'record').toLowerCase();
+  for (const row of records) {
+    if (excludeId && row.id === excludeId) continue;
+    if (nameKey && normalizeLedgerName(row.company_name) === nameKey) {
+      return `A ${kind} named "${(row.company_name || '').trim()}" already exists (${row.customer_id}).`;
+    }
+    if (gstKey && normalizeGst(row.gst_number) === gstKey) {
+      return `GST number ${gstKey} is already used by ${kind} ${row.customer_id} (${row.company_name}).`;
+    }
+  }
+  return '';
+}
+
 export const Customers = () => {
   const { user } = useAuth();
   const canManageRecords = userCanManageAnyRecord(user) || userHasPermission(user, 'customers');
@@ -178,6 +202,16 @@ export const Customers = () => {
 
       const savedType = editingRecord?.entity_type ?? dialogEntityType;
       const savedLabel = savedType === ENTITY_VENDOR ? 'Vendor' : 'Customer';
+      const duplicateMessage = findLedgerDuplicate(recordsForActiveTab, {
+        companyName: dataToSubmit.company_name,
+        gstNumber: dataToSubmit.gst_number,
+        excludeId: editingRecord?.id,
+        label: savedLabel,
+      });
+      if (duplicateMessage) {
+        toast.error(duplicateMessage);
+        return;
+      }
 
       if (editingRecord) {
         await axios.put(`${API}/customers/${editingRecord.id}`, dataToSubmit, authHeaders());

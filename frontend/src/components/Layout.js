@@ -35,6 +35,7 @@ import {
   TrendingUp,
   Phone,
   ClipboardList,
+  Wrench,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PageHeaderProvider, usePageHeader, usePageHeaderActions } from '@/contexts/PageHeaderContext';
@@ -225,6 +226,7 @@ export const Layout = () => {
       label: 'Operations',
       items: [
         { icon: ClipboardList, label: 'Operations', path: '/operations', permission: 'operations' },
+        { icon: Wrench, label: 'Service & Maintenance', path: '/service-maintenance', permission: 'service-maintenance' },
         { icon: Receipt, label: 'Expenses', path: '/expenses', permission: 'expenses' },
         { icon: Package, label: 'Stock Management', path: '/stock-management', permission: 'stock-management' },
         { icon: Fuel, label: 'Vehicle Tracking', path: '/vehicles', permission: 'vehicles' },

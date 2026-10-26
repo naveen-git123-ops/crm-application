@@ -39,6 +39,10 @@ const PERMISSION_LABELS = {
   'bpo-desk': 'BPO Desk',
   'bpo-site-visit': 'BPO Site Visit',
   operations: 'Operations',
+  'service-maintenance': 'Service & Maintenance (view)',
+  'service-maintenance-edit': 'Service & Maintenance: technician work on assigned requests',
+  'service-maintenance-coordinate': 'Service & Maintenance: create, assign, vendor repair',
+  'service-maintenance-manage': 'Service & Maintenance: close, amend, locked edits, settings',
 };
 
 const PERMISSION_GROUPS = [
@@ -47,7 +51,7 @@ const PERMISSION_GROUPS = [
   { label: 'CGWA', keys: ['cgw-flow-metre'], hint: 'One checkbox unlocks Create CGWA, My Drafts, and View CGWA.' },
   { label: 'Employee', keys: ['attendance', 'monthly-report', 'leaves'] },
   { label: 'HR', keys: ['employees', 'holidays', 'idcards', 'documents'] },
-  { label: 'Operations', keys: ['operations', 'expenses', 'stock-management', 'vehicles', 'workspace'] },
+  { label: 'Operations', keys: ['operations', 'service-maintenance', 'service-maintenance-edit', 'service-maintenance-coordinate', 'service-maintenance-manage', 'expenses', 'stock-management', 'vehicles', 'workspace'] },
   { label: 'Admin', keys: ['roles'] },
 ];
 
