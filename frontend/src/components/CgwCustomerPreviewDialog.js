@@ -537,7 +537,7 @@ export function CgwCustomerPreviewDialog({
                     </SubSection>
                     <SubSection title="Lifecycle dates">
                       <FieldGrid cols="sm:grid-cols-2 lg:grid-cols-4">
-                        <PreviewField label="Renewal date" value={previewDisplay(fd.renewal_date)} mono />
+                        <PreviewField label="NOC Renewal date" value={previewDisplay(fd.renewal_date)} mono />
                         <PreviewField label="Commissioning date" value={previewDisplay(fd.date_of_commissioning)} mono />
                         <PreviewField label="Portal URL" value={previewDisplay(fd.url_link)} className="sm:col-span-2" />
                       </FieldGrid>

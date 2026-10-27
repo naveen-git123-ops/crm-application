@@ -121,6 +121,38 @@ function compareCgwaIds(a, b) {
   return String(a || '').localeCompare(String(b || ''));
 }
 
+/** True for dropped connections, timeouts and gateway hiccups, where trying the same request again is safe and useful. */
+function isTransientNetworkError(error) {
+  if (!error || error.__cancel) return false;
+  if (!error.response) {
+    return (
+      error.code === 'ERR_NETWORK' ||
+      error.code === 'ECONNABORTED' ||
+      error.code === 'ETIMEDOUT' ||
+      /network error|timeout/i.test(String(error.message || ''))
+    );
+  }
+  return [408, 425, 429, 502, 503, 504].includes(Number(error.response.status));
+}
+
+/**
+ * Retries an idempotent request (file upload, draft overwrite) a couple of times when the connection
+ * drops. Never use it for requests that create records, or a lost response could create duplicates.
+ */
+async function withNetworkRetry(fn, attempts = 3) {
+  let lastError;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientNetworkError(error) || i === attempts - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1500 * (i + 1)));
+    }
+  }
+  throw lastError;
+}
+
 /** Record save succeeded; list any files that did not upload so the user can retry on the record. */
 function notifyCgwSaveWithUploads(successMsg, failures) {
   const list = Array.isArray(failures) ? failures.filter(Boolean) : [];
@@ -139,7 +171,10 @@ function notifyCgwSaveWithUploads(successMsg, failures) {
   const listed = unique
     .map((f) => `${cgwUploadCategoryLabel(f.category)}: "${f.fileName || 'file'}"`)
     .join('; ');
-  toast.error(`File upload failed — ${listed}`, { duration: 14000 });
+  const networkHint = unique.some((f) => f.network)
+    ? ' The connection dropped while uploading. Your data is saved; check your internet and upload these files again from the record.'
+    : '';
+  toast.error(`File upload failed — ${listed}.${networkHint}`, { duration: 16000 });
 }
 
 /** Wizard-aligned grid sections: colspan when expanded vs collapsed (single summary column). */
@@ -1711,12 +1746,14 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
   const postCgwMediaFormData = async (inventoryRowId, fd) => {
     try {
-      await axios.post(`${API}/cgw-flow-metres/${inventoryRowId}/media-attachments`, fd, {
-        headers: authHeaders(),
-        timeout: 120000,
-        maxBodyLength: Infinity,
-        maxContentLength: Infinity,
-      });
+      await withNetworkRetry(() =>
+        axios.post(`${API}/cgw-flow-metres/${inventoryRowId}/media-attachments`, fd, {
+          headers: authHeaders(),
+          timeout: 120000,
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+        }),
+      );
     } catch (error) {
       const status = Number(error?.response?.status || 0);
       if (status === 413) {
@@ -1743,6 +1780,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
         failures.push({
           category,
           fileName: raw?.name || 'file',
+          network: isTransientNetworkError(err),
           reason: getApiErrorMessage(err, 'upload failed'),
         });
       }
@@ -1869,9 +1907,11 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
       };
       let saved;
       if (editingItemId) {
-        const res = await axios.put(`${API}/cgw-flow-metres/${editingItemId}/draft`, body, {
-          headers: authHeaders(),
-        });
+        const res = await withNetworkRetry(() =>
+          axios.put(`${API}/cgw-flow-metres/${editingItemId}/draft`, body, {
+            headers: authHeaders(),
+          }),
+        );
         saved = res.data;
       } else {
         const res = await axios.post(`${API}/cgw-flow-metres/draft`, body, { headers: authHeaders() });
@@ -1895,22 +1935,30 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
             const fd = new FormData();
             fd.append('file', addNocFile);
             appendCgwNocFormData(fd, addNocForm, piezometerWizardCount);
-            await axios.post(`${API}/cgw-flow-metres/${saved.id}/noc`, fd, {
-              headers: authHeaders(),
-              timeout: 120000,
-              maxBodyLength: Infinity,
-              maxContentLength: Infinity,
-            });
+            await withNetworkRetry(() =>
+              axios.post(`${API}/cgw-flow-metres/${saved.id}/noc`, fd, {
+                headers: authHeaders(),
+                timeout: 120000,
+                maxBodyLength: Infinity,
+                maxContentLength: Infinity,
+              }),
+            );
           } catch (nocErr) {
             uploadFailures.push({
               category: 'noc',
               fileName: addNocFile.name || 'NOC PDF',
+              network: isTransientNetworkError(nocErr),
               reason: getApiErrorMessage(nocErr, 'upload failed'),
             });
           }
         }
-        const fresh = await axios.get(`${API}/cgw-flow-metres/${saved.id}`, { headers: authHeaders() });
-        setEditingItem(fresh.data);
+        // The draft is already saved; a failed refresh must not turn that into a "failed to save" error.
+        try {
+          const fresh = await axios.get(`${API}/cgw-flow-metres/${saved.id}`, { headers: authHeaders() });
+          setEditingItem(fresh.data);
+        } catch (_refreshErr) {
+          /* the draft stays saved; the list reloads it */
+        }
         // Pending local picks are now on the server — show as saved files with preview/delete.
         setEquipmentFlowFiles(equipmentRows.map(() => EMPTY_EQUIPMENT_FLOW_FILES()));
         setPiezometerFiles(Array.from({ length: piezometerRows.length }, () => EMPTY_PIEZO_FILES()));
@@ -1947,6 +1995,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
     const submittingDraft = editMode && isDraftRecord(editingItem);
     const draftIdToRemove = submittingDraft ? editingItemId : null;
     const useSingleRowEdit = editMode && editingItemId && (!submittingDraft || equipmentRows.length <= 1);
+    let recordsAlreadySaved = false;
     const finalStatus =
       (formData.status || '').trim().toLowerCase() === 'draft'
         ? 'Active'
@@ -2065,21 +2114,42 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
           fd.append('nocap_user_id', addNocForm.nocap_user_id || '');
           fd.append('nocap_password', addNocForm.nocap_password || '');
           try {
-            await axios.post(`${API}/cgw-flow-metres/${editingItemId}/noc`, fd, { headers: authHeaders() });
+            await withNetworkRetry(() =>
+              axios.post(`${API}/cgw-flow-metres/${editingItemId}/noc`, fd, {
+                headers: authHeaders(),
+                timeout: 120000,
+                maxBodyLength: Infinity,
+                maxContentLength: Infinity,
+              }),
+            );
           } catch (nocErr) {
             uploadFailures.push({
               category: 'noc',
               fileName: addNocFile.name || 'NOC PDF',
+              network: isTransientNetworkError(nocErr),
               reason: getApiErrorMessage(nocErr, 'upload failed'),
             });
             try {
-              await axios.put(`${API}/cgw-flow-metres/${editingItemId}`, nocMetaPut, { headers: authHeaders() });
+              await withNetworkRetry(() =>
+                axios.put(`${API}/cgw-flow-metres/${editingItemId}`, nocMetaPut, { headers: authHeaders() }),
+              );
             } catch (_metaErr) {
               /* record already saved; user can edit NOC after opening it */
             }
           }
         } else {
-          await axios.put(`${API}/cgw-flow-metres/${editingItemId}`, nocMetaPut, { headers: authHeaders() });
+          try {
+            await withNetworkRetry(() =>
+              axios.put(`${API}/cgw-flow-metres/${editingItemId}`, nocMetaPut, { headers: authHeaders() }),
+            );
+          } catch (metaErr) {
+            uploadFailures.push({
+              category: 'noc',
+              fileName: 'NOC details',
+              network: isTransientNetworkError(metaErr),
+              reason: getApiErrorMessage(metaErr, 'save failed'),
+            });
+          }
         }
 
         notifyCgwSaveWithUploads(
@@ -2250,6 +2320,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
       });
 
       const createdRows = Array.isArray(createdRes.data) ? createdRes.data : [];
+      recordsAlreadySaved = createdRows.length > 0;
       const uploadFailures = [];
 
       for (let i = 0; i < createdRows.length; i += 1) {
@@ -2343,16 +2414,19 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
             fd.append('nocap_user_id', addNocForm.nocap_user_id || '');
             fd.append('nocap_password', addNocForm.nocap_password || '');
             try {
-              await axios.post(`${API}/cgw-flow-metres/${row.id}/noc`, fd, {
-                headers: authHeaders(),
-                timeout: 120000,
-                maxBodyLength: Infinity,
-                maxContentLength: Infinity,
-              });
+              await withNetworkRetry(() =>
+                axios.post(`${API}/cgw-flow-metres/${row.id}/noc`, fd, {
+                  headers: authHeaders(),
+                  timeout: 120000,
+                  maxBodyLength: Infinity,
+                  maxContentLength: Infinity,
+                }),
+              );
             } catch (nocErr) {
               uploadFailures.push({
                 category: 'noc',
                 fileName: nocFileToAttach.name || 'NOC PDF',
+                network: isTransientNetworkError(nocErr),
                 reason: getApiErrorMessage(nocErr, 'upload failed'),
               });
               try {
@@ -2389,7 +2463,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
               }
             }
           } else {
-            await axios.put(`${API}/cgw-flow-metres/${row.id}`, {
+            try {
+            await withNetworkRetry(() => axios.put(`${API}/cgw-flow-metres/${row.id}`, {
               noc_bhuneer_user_id: addNocForm.bhuneer_user_id || null,
               noc_bhuneer_password: addNocForm.bhuneer_password || null,
               noc_nocap_user_id: (addNocForm.nocap_user_id || '').trim().toLowerCase() || null,
@@ -2416,7 +2491,15 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                     ? String(piezometerWizardCount)
                     : addNocForm.piezometer_count || ''
                   : '',
-            }, { headers: authHeaders() });
+            }, { headers: authHeaders() }));
+            } catch (metaErr) {
+              uploadFailures.push({
+                category: 'noc',
+                fileName: 'NOC details',
+                network: isTransientNetworkError(metaErr),
+                reason: getApiErrorMessage(metaErr, 'save failed'),
+              });
+            }
           }
         }
       }
@@ -2438,7 +2521,37 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
       resetForm();
       navigate(VIEW_CGWA_PATH);
     } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Operation failed'));
+      if (recordsAlreadySaved) {
+        // The records exist already. Staying on the form would make a retry create duplicates.
+        toast.warning(
+          `Your data was saved, but a follow-up step failed (${getApiErrorMessage(error, 'network error')}). Open the record to check its files and NOC details.`,
+          { duration: 14000 },
+        );
+        resetForm();
+        navigate(VIEW_CGWA_PATH);
+      } else if (
+        isTransientNetworkError(error) &&
+        !(editingItemId && editingItem && !isDraftRecord(editingItem))
+      ) {
+        // The final save never reached the server. Keep everything the employee typed by saving it as a
+        // draft (a small JSON request, no files) instead of leaving it only in the browser.
+        try {
+          await persistCreateDraftQuietly();
+          toast.warning(
+            'The network dropped while saving, so your entries were saved as a draft. Open My Drafts to finish and submit; re-select any files.',
+            { duration: 16000 },
+          );
+          resetForm();
+          navigate(DRAFTS_CGWA_PATH);
+        } catch (_draftErr) {
+          toast.error(
+            'Network problem: your entries could not be saved yet. They are still on this screen; check your connection and press Save again.',
+            { duration: 12000 },
+          );
+        }
+      } else {
+        toast.error(getApiErrorMessage(error, 'Operation failed'));
+      }
     } finally {
       setAddWizardSubmitting(false);
     }
@@ -2613,9 +2726,11 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
       customer_name: formData.customer_name || '',
     };
     if (editingItemId) {
-      const res = await axios.put(`${API}/cgw-flow-metres/${editingItemId}/draft`, body, {
-        headers: authHeaders(),
-      });
+      const res = await withNetworkRetry(() =>
+        axios.put(`${API}/cgw-flow-metres/${editingItemId}/draft`, body, {
+          headers: authHeaders(),
+        }),
+      );
       setEditingItem(res.data);
       setEditMode(true);
       return res.data;
@@ -2658,16 +2773,22 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
       const fd = new FormData();
       fd.append('file', f);
       appendCgwNocFormData(fd, addNocForm, piezometerWizardCount);
-      const nocRes = await axios.post(`${API}/cgw-flow-metres/${saved.id}/noc`, fd, {
-        headers: authHeaders(),
-        timeout: 120000,
-        maxBodyLength: Infinity,
-        maxContentLength: Infinity,
-      });
+      const nocRes = await withNetworkRetry(() =>
+        axios.post(`${API}/cgw-flow-metres/${saved.id}/noc`, fd, {
+          headers: authHeaders(),
+          timeout: 120000,
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+        }),
+      );
       setEditingItem(nocRes.data);
       toast.success('NOC saved to draft');
     } catch (err) {
-      toast.error(getApiErrorMessage(err, 'Could not save NOC to draft'));
+      toast.error(
+        isTransientNetworkError(err)
+          ? 'Network problem while saving the NOC to the draft. Your entries are still on screen; the NOC will be uploaded again when you save.'
+          : getApiErrorMessage(err, 'Could not save NOC to draft'),
+      );
     } finally {
       setAddNocUploading(false);
     }
@@ -3276,7 +3397,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                         </select>
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Renewal date</Label>
+                        <Label className="text-sm font-medium text-gray-700">NOC Renewal date</Label>
                         <Input type="date" value={formData.renewal_date} onChange={(e) => setFormData({ ...formData, renewal_date: e.target.value })} className="border border-gray-300 h-11" />
                       </div>
                       <div className="space-y-2 col-span-2">

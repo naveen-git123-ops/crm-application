@@ -4032,12 +4032,11 @@ def _is_cgw_draft_record(item) -> bool:
 
 
 def can_mutate_cgw_item(current_user: UserModel, item, db: Session) -> bool:
-    """Admin may change any row; other CGW users may only change drafts."""
+    """Admin and every employee whose role has CGWA access may edit any row (drafts and submitted).
+    Deleting a submitted row stays admin-only (see can_delete_cgw)."""
     if is_admin_user(current_user):
         return True
-    if not can_manage_cgw(current_user, db):
-        return False
-    return _is_cgw_draft_record(item)
+    return can_manage_cgw(current_user, db)
 
 
 def _require_cgw_item_mutation(current_user: UserModel, item, db: Session) -> None:
@@ -4045,7 +4044,7 @@ def _require_cgw_item_mutation(current_user: UserModel, item, db: Session) -> No
         return
     raise HTTPException(
         status_code=403,
-        detail='Only an administrator can edit or delete a submitted CGWA record',
+        detail='You do not have CGWA access to edit this record',
     )
 
 
