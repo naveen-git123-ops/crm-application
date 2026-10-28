@@ -130,11 +130,11 @@ export default function TransfersPage() {
                 <option value="">Product</option>
                 {products.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
               </select>
-              <input type="number" min="0" step="any" className={inputClass} value={line.quantity} placeholder="Qty" onChange={(e) => setLines(lines.map((item, i) => i === index ? { ...item, quantity: e.target.value } : item))} />
+              <input aria-label="Qty" type="number" min="0" step="any" className={inputClass} value={line.quantity} placeholder="Qty" onChange={(e) => setLines(lines.map((item, i) => i === index ? { ...item, quantity: e.target.value } : item))} />
             </div>
           ))}
           <button type="button" className="text-sm text-primary" onClick={() => setLines([...lines, blankLine()])}>Add line</button>
-          <textarea className={`${inputClass} h-20`} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes" />
+          <textarea aria-label="Notes" className={`${inputClass} h-20`} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes" />
           <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</Button>
         </form>
       </Card>

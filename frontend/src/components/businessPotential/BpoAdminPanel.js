@@ -69,19 +69,19 @@ export function BpoAdminPanel() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
-      <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
+      <div className="rounded-xl border border-border bg-white p-4 space-y-4">
         <div className="flex items-center gap-2">
           <Target className="h-4 w-4 text-indigo-600" />
-          <h3 className="text-sm font-semibold text-slate-900">Set daily calling target</h3>
+          <h3 className="text-sm font-semibold text-foreground">Set daily calling target</h3>
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div>
-            <Label>Date</Label>
-            <Input type="date" className="mt-1" value={day} onChange={(e) => setDay(e.target.value)} />
+            <Label htmlFor="bpoadminpanel-field-1">Date</Label>
+            <Input id="bpoadminpanel-field-1" type="date" className="mt-1" value={day} onChange={(e) => setDay(e.target.value)} />
           </div>
           <div className="md:col-span-2">
-            <Label>BPO person</Label>
-            <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm">
+            <Label htmlFor="bpoadminpanel-field-2">BPO person</Label>
+            <select id="bpoadminpanel-field-2" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-input bg-white px-3 text-sm">
               <option value="">Select employee</option>
               {employees.map((emp) => (
                 <option key={emp.employee_id || emp.id} value={emp.employee_id}>
@@ -91,8 +91,8 @@ export function BpoAdminPanel() {
             </select>
           </div>
           <div>
-            <Label>Calls today</Label>
-            <Input type="number" min="1" className="mt-1" value={targetCount} onChange={(e) => setTargetCount(e.target.value)} />
+            <Label htmlFor="bpoadminpanel-field-3">Calls today</Label>
+            <Input id="bpoadminpanel-field-3" type="number" min="1" className="mt-1" value={targetCount} onChange={(e) => setTargetCount(e.target.value)} />
           </div>
         </div>
         <Button type="button" disabled={saving} onClick={saveTarget}>
@@ -100,9 +100,9 @@ export function BpoAdminPanel() {
         </Button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200">
+      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border">
         <table className="min-w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
+          <thead className="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-3 py-3 font-semibold">BPO person</th>
               <th className="px-3 py-3 font-semibold">Target</th>
@@ -114,14 +114,14 @@ export function BpoAdminPanel() {
           <tbody>
             {(stats.agents || []).length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-10 text-center text-slate-500">No target or activity for this date yet.</td>
+                <td colSpan={5} className="px-3 py-10 text-center text-muted-foreground">No target or activity for this date yet.</td>
               </tr>
             ) : (
               stats.agents.map((agent) => {
                 const pending = Math.max(0, Number(agent.target_count || 0) - Number(agent.calls || 0));
                 return (
-                  <tr key={agent.employee_id} className="border-t border-slate-100">
-                    <td className="px-3 py-3 font-medium text-slate-900">{agent.employee_name}</td>
+                  <tr key={agent.employee_id} className="border-t border-border">
+                    <td className="px-3 py-3 font-medium text-foreground">{agent.employee_name}</td>
                     <td className="px-3 py-3 tabular-nums">{agent.target_count || 0}</td>
                     <td className="px-3 py-3 tabular-nums text-indigo-700">{agent.calls || 0}</td>
                     <td className="px-3 py-3 tabular-nums text-emerald-700">{agent.conversions || 0}</td>
@@ -133,7 +133,7 @@ export function BpoAdminPanel() {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-500">Open records still in the BPO queue: {Number(stats.open_records || 0).toLocaleString('en-IN')}</p>
+      <p className="text-xs text-muted-foreground">Open records still in the BPO queue: {Number(stats.open_records || 0).toLocaleString('en-IN')}</p>
     </div>
   );
 }

@@ -51,7 +51,7 @@ function DownloadLink({ href, fileName, label }) {
       download={fileName}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+      className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
     >
       {label}
     </a>
@@ -61,16 +61,16 @@ function DownloadLink({ href, fileName, label }) {
 function EmailPreview({ email }) {
   if (!email) return null;
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white text-left">
-      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Outlook email</p>
-        <h3 className="mt-1 text-base font-semibold text-slate-900">{email.subject || '(No subject)'}</h3>
+    <div className="overflow-hidden rounded-lg border border-border bg-white text-left">
+      <div className="border-b border-border bg-muted px-4 py-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Outlook email</p>
+        <h3 className="mt-1 text-base font-semibold text-foreground">{email.subject || '(No subject)'}</h3>
       </div>
-      <div className="space-y-1.5 border-b border-slate-100 px-4 py-3 text-sm">
-        <p><span className="inline-block w-14 text-slate-500">From</span>{email.from || '—'}</p>
-        <p><span className="inline-block w-14 text-slate-500">To</span>{email.to || '—'}</p>
-        {email.cc ? <p><span className="inline-block w-14 text-slate-500">Cc</span>{email.cc}</p> : null}
-        <p><span className="inline-block w-14 text-slate-500">Date</span>{email.date || '—'}</p>
+      <div className="space-y-1.5 border-b border-border px-4 py-3 text-sm">
+        <p><span className="inline-block w-14 text-muted-foreground">From</span>{email.from || '—'}</p>
+        <p><span className="inline-block w-14 text-muted-foreground">To</span>{email.to || '—'}</p>
+        {email.cc ? <p><span className="inline-block w-14 text-muted-foreground">Cc</span>{email.cc}</p> : null}
+        <p><span className="inline-block w-14 text-muted-foreground">Date</span>{email.date || '—'}</p>
       </div>
       {email.body_html ? (
         <iframe
@@ -80,14 +80,14 @@ function EmailPreview({ email }) {
           className="min-h-[320px] w-full border-0 bg-white"
         />
       ) : (
-        <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap px-4 py-3 text-sm text-slate-800">
+        <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap px-4 py-3 text-sm text-foreground">
           {email.body_text || 'This email has no readable body.'}
         </pre>
       )}
       {Array.isArray(email.attachments) && email.attachments.length > 0 && (
-        <div className="border-t border-slate-100 px-4 py-3 text-sm">
-          <p className="text-xs font-semibold uppercase text-slate-500">Attachments</p>
-          <ul className="mt-1 space-y-1 text-slate-700">
+        <div className="border-t border-border px-4 py-3 text-sm">
+          <p className="text-xs font-semibold uppercase text-muted-foreground">Attachments</p>
+          <ul className="mt-1 space-y-1 text-foreground">
             {email.attachments.map((item, idx) => (
               <li key={`${item.name}-${idx}`}>{item.name}{item.size ? ` (${item.size} bytes)` : ''}</li>
             ))}
@@ -243,13 +243,13 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
   );
 
   if (!fileUrl) {
-    return <p className="p-5 text-sm text-gray-500">No file URL provided</p>;
+    return <p className="p-5 text-sm text-muted-foreground">No file URL provided</p>;
   }
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center gap-2 p-10 text-sm text-gray-600">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+      <div className="flex flex-col items-center justify-center gap-2 p-10 text-sm text-muted-foreground">
+        <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-primary/60 border-t-transparent" />
         Loading preview…
       </div>
     );
@@ -280,7 +280,7 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
   }
 
   if (!previewUrl) {
-    return <p className="p-5 text-sm text-gray-500">Preparing preview…</p>;
+    return <p className="p-5 text-sm text-muted-foreground">Preparing preview…</p>;
   }
 
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'psd'].includes(ext)) {
@@ -300,7 +300,7 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
       <iframe
         title="PDF preview"
         src={previewUrl}
-        className="h-[70vh] w-full rounded-md border border-gray-200 bg-white"
+        className="h-[70vh] w-full rounded-md border border-border bg-white"
       />
     );
   }
@@ -326,9 +326,9 @@ export function FilePreviewSimple({ fileUrl, fileName = 'File' }) {
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center">
-      <p className="text-sm font-medium text-gray-900 mb-1">{downloadName}</p>
-      <p className="text-xs text-gray-500 mb-4">Preview is not available for this file type</p>
+    <div className="rounded-lg border border-border bg-muted p-6 text-center">
+      <p className="text-sm font-medium text-foreground mb-1">{downloadName}</p>
+      <p className="text-xs text-muted-foreground mb-4">Preview is not available for this file type</p>
       <DownloadLink href={previewUrl} fileName={downloadName} label={`Download ${ext ? ext.toUpperCase() : 'file'}`} />
     </div>
   );

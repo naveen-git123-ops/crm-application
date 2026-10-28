@@ -250,7 +250,7 @@ export const Roles = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -282,9 +282,9 @@ export const Roles = () => {
             </thead>
             <tbody>
               {roles.map((r) => (
-                <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                  <td className="py-3 px-4 font-medium text-gray-900">{r.name}</td>
-                  <td className="py-3 px-4 text-gray-600">
+                <tr key={r.id} className="border-b border-border hover:bg-muted/50">
+                  <td className="py-3 px-4 font-medium text-foreground">{r.name}</td>
+                  <td className="py-3 px-4 text-muted-foreground">
                     {(r.permissions || []).map(p => PERMISSION_LABELS[p] || p).join(', ') || '—'}
                   </td>
                   <td className="py-3 px-4">
@@ -293,7 +293,7 @@ export const Roles = () => {
                         <Lock className="h-3 w-3" /> Protected
                       </span>
                     ) : (
-                      <span className="text-gray-500 text-xs">Editable</span>
+                      <span className="text-muted-foreground text-xs">Editable</span>
                     )}
                   </td>
                   <td className="py-3 px-4">
@@ -313,7 +313,7 @@ export const Roles = () => {
                         </Button>
                       </div>
                     ) : (
-                      <span className="text-xs text-gray-400">—</span>
+                      <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </td>
                 </tr>
@@ -332,34 +332,34 @@ export const Roles = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Email</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee ID</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Department</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Current Role</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Action</th>
+              <tr className="border-b border-border bg-muted">
+                <th className="text-left py-3 px-4 font-semibold text-foreground">Name</th>
+                <th className="text-left py-3 px-4 font-semibold text-foreground">Email</th>
+                <th className="text-left py-3 px-4 font-semibold text-foreground">Employee ID</th>
+                <th className="text-left py-3 px-4 font-semibold text-foreground">Department</th>
+                <th className="text-left py-3 px-4 font-semibold text-foreground">Current Role</th>
+                <th className="text-left py-3 px-4 font-semibold text-foreground">Action</th>
               </tr>
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                  <td className="py-3 px-4 font-medium text-gray-900">{u.name}</td>
-                  <td className="py-3 px-4 text-gray-600 min-w-[240px]">
+                <tr key={u.id} className="border-b border-border hover:bg-muted/50">
+                  <td className="py-3 px-4 font-medium text-foreground">{u.name}</td>
+                  <td className="py-3 px-4 text-muted-foreground min-w-[240px]">
                     <Input
                       value={u.email || ''}
                       onChange={(e) => handleEmailChange(u.id, e.target.value)}
                       className="h-9"
                     />
                   </td>
-                  <td className="py-3 px-4 text-gray-600">{u.employee_id || '—'}</td>
-                  <td className="py-3 px-4 text-gray-600">{u.department || '—'}</td>
+                  <td className="py-3 px-4 text-muted-foreground">{u.employee_id || '—'}</td>
+                  <td className="py-3 px-4 text-muted-foreground">{u.department || '—'}</td>
                   <td className="py-3 px-4">
                     <select
                       value={u.role}
                       onChange={(e) => handleRoleChange(u.id, e.target.value)}
                       disabled={u.id === user?.id}
-                      className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="rounded-lg border border-input bg-white px-3 py-2 text-sm text-foreground focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       {roles.map((r) => (
                         <option key={r.id} value={r.name}>{r.name}</option>
@@ -403,7 +403,7 @@ export const Roles = () => {
                         )}
                       </Button>
                       {u.id === user?.id && (
-                        <span className="text-xs text-gray-500">(You)</span>
+                        <span className="text-xs text-muted-foreground">(You)</span>
                       )}
 
                       {user?.role === 'Admin' && (
@@ -451,26 +451,26 @@ export const Roles = () => {
           </div>
           <div className="space-y-4 p-6">
             <div>
-              <Label htmlFor="role-name" className="text-sm font-semibold text-gray-900 block mb-2">Role Name *</Label>
+              <Label htmlFor="role-name" className="text-sm font-semibold text-foreground block mb-2">Role Name *</Label>
               <Input
                 id="role-name"
                 value={roleForm.name}
                 onChange={(e) => setRoleForm(prev => ({ ...prev, name: e.target.value }))}
                 placeholder="e.g. Sales, Support"
-                className="h-10 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="h-10 border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 disabled={editingRole?.name === 'Admin'}
               />
             </div>
             <div>
-              <Label className="text-sm font-semibold text-gray-900 mb-2 block">Screens this role can access *</Label>
-              <div className="space-y-3 border border-gray-300 rounded-lg p-3 bg-gray-50 max-h-72 overflow-y-auto">
+              <Label className="text-sm font-semibold text-foreground mb-2 block">Screens this role can access *</Label>
+              <div className="space-y-3 border border-input rounded-lg p-3 bg-muted max-h-72 overflow-y-auto">
                 {PERMISSION_GROUPS.map((group) => (
                   <div key={group.label}>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
                       {group.label}
                     </p>
                     {group.hint ? (
-                      <p className="text-xs text-gray-500 mb-1.5">{group.hint}</p>
+                      <p className="text-xs text-muted-foreground mb-1.5">{group.hint}</p>
                     ) : null}
                     <div className="grid grid-cols-2 gap-2">
                       {group.keys.map((key) => (
@@ -479,9 +479,9 @@ export const Roles = () => {
                             type="checkbox"
                             checked={roleForm.permissions.includes(key)}
                             onChange={() => togglePermission(key)}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            className="rounded border-input text-accent-foreground focus:ring-ring"
                           />
-                          <span className="text-gray-700">{PERMISSION_LABELS[key]}</span>
+                          <span className="text-foreground">{PERMISSION_LABELS[key]}</span>
                         </label>
                       ))}
                     </div>
@@ -489,7 +489,7 @@ export const Roles = () => {
                 ))}
               </div>
             </div>
-            <div className="flex justify-end gap-3 pt-2 border-t border-gray-200">
+            <div className="flex justify-end gap-3 pt-2 border-t border-border">
               <Button variant="outline" onClick={() => setRoleDialogOpen(false)} className="px-4 py-2">Cancel</Button>
               <Button onClick={saveRoleForm} disabled={savingRole} className="px-4 py-2">
                 {savingRole ? <Loader2 className="h-4 w-4 animate-spin" /> : (editingRole ? 'Update' : 'Create')}
@@ -522,7 +522,7 @@ export const Roles = () => {
           </div>
           <div className="space-y-4 p-6">
             <div className="space-y-2">
-              <Label htmlFor="new-password" className="text-sm font-semibold text-gray-900 block">
+              <Label htmlFor="new-password" className="text-sm font-semibold text-foreground block">
                 New Password *
               </Label>
               <Input
@@ -531,12 +531,12 @@ export const Roles = () => {
                 value={resetPassword}
                 onChange={(e) => setResetPassword(e.target.value)}
                 placeholder="Enter new password"
-                className="h-10 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="h-10 border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 disabled={resetSaving}
               />
             </div>
 
-            <div className="flex justify-end gap-3 pt-2 border-t border-gray-200">
+            <div className="flex justify-end gap-3 pt-2 border-t border-border">
               <Button
                 variant="outline"
                 onClick={() => setResetDialogOpen(false)}

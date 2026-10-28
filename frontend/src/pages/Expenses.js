@@ -384,7 +384,7 @@ export const Expenses = () => {
       default:
         return {
           label: expense.status,
-          color: `${base} bg-slate-100 text-slate-800 ring-slate-200/80`
+          color: `${base} bg-muted text-foreground ring-slate-200/80`
         };
     }
   };
@@ -472,9 +472,9 @@ export const Expenses = () => {
     if (exp.status === 'Pending')
       return <span className="inline-flex h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-amber-100" title="Pending" />;
     if (exp.status === 'Rejected' && !exp.accountant_approver_name)
-      return <span className="text-[10px] font-semibold text-rose-600">—</span>;
+      return <span className="text-[11px] font-semibold text-rose-600">—</span>;
     return (
-      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800 ring-1 ring-emerald-200/80">
+      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-emerald-800 ring-1 ring-emerald-200/80">
         OK
       </span>
     );
@@ -483,22 +483,22 @@ export const Expenses = () => {
   const l2StatusUi = (exp) => {
     if (exp.status === 'Approved')
       return (
-        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-200/80">
+        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-200/80">
           OK
         </span>
       );
     if (exp.status === 'Accountant-Approved' || exp.status === 'Partially-Approved')
       return <span className="inline-flex h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-amber-100" title="Awaiting admin" />;
-    if (exp.status === 'Pending') return <span className="text-[10px] font-semibold text-slate-400">—</span>;
+    if (exp.status === 'Pending') return <span className="text-[11px] font-semibold text-slate-400">—</span>;
     if (exp.status === 'Rejected')
-      return <span className="text-[10px] font-semibold text-rose-600">—</span>;
-    return <span className="text-[10px] font-semibold text-slate-400">—</span>;
+      return <span className="text-[11px] font-semibold text-rose-600">—</span>;
+    return <span className="text-[11px] font-semibold text-slate-400">—</span>;
   };
 
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -521,22 +521,22 @@ export const Expenses = () => {
                   <p className="text-[13px] font-semibold uppercase tracking-wide text-sky-900/85">
                     Approval process
                   </p>
-                  <p className="mt-2 text-xs leading-relaxed text-slate-600">
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                     You can request any amount. The accountant will review and approve, reject, or partially approve based on company policy. Category amounts are suggestions only.
                   </p>
                 </div>
 
-                <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm ring-1 ring-slate-100">
+                <div className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm ring-1 ring-slate-100">
                   <div className="absolute left-0 top-0 h-full w-1 rounded-l-2xl bg-primary" aria-hidden />
                   <div className="pl-3">
                     <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
                       <User className="h-3.5 w-3.5 text-primary" aria-hidden />
                       Employee
                     </div>
-                    <div className="mt-1.5 text-base font-semibold text-slate-900">
+                    <div className="mt-1.5 text-base font-semibold text-foreground">
                       {formData.employee_name || user?.name}
                     </div>
-                    <div className="mt-0.5 text-sm text-slate-600">ID {user?.employee_id}</div>
+                    <div className="mt-0.5 text-sm text-muted-foreground">ID {user?.employee_id}</div>
                   </div>
                 </div>
 
@@ -578,7 +578,7 @@ export const Expenses = () => {
                       <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     </div>
                     {formData.category && (
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-muted-foreground">
                         Suggested max: ₹{CATEGORY_MAX_AMOUNTS[formData.category]}
                       </p>
                     )}
@@ -602,7 +602,7 @@ export const Expenses = () => {
 
                 <div className="space-y-2">
                   <Label className={standardFormLabelClass}>Receipt / screenshot *</Label>
-                  <div className="rounded-xl border border-dashed border-slate-200/90 bg-slate-50/40 p-3 ring-1 ring-inset ring-slate-100/60 transition-colors hover:border-red-200/80 hover:bg-red-50/20">
+                  <div className="rounded-xl border border-dashed border-border/90 bg-muted/40 p-3 ring-1 ring-inset ring-slate-100/60 transition-colors hover:border-red-200/80 hover:bg-red-50/20">
                     <div className="flex flex-wrap items-center gap-2">
                       <Input
                         type="file"
@@ -626,17 +626,17 @@ export const Expenses = () => {
 
                 <div className="space-y-2">
                   <Label className={standardFormLabelClass}>Additional attachment 1 (optional)</Label>
-                  <div className="rounded-xl border border-dashed border-slate-200/90 bg-slate-50/30 p-3">
+                  <div className="rounded-xl border border-dashed border-border/90 bg-muted/30 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <Input
                         type="file"
                         accept="image/*,.pdf"
                         onChange={(e) => setOptionalAttachment1(e.target.files?.[0] || null)}
-                        className="h-10 min-w-[8rem] flex-1 cursor-pointer border-0 bg-transparent p-0 text-sm shadow-none file:mr-2 file:rounded-lg file:border-0 file:bg-slate-200 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-800"
+                        className="h-10 min-w-[8rem] flex-1 cursor-pointer border-0 bg-transparent p-0 text-sm shadow-none file:mr-2 file:rounded-lg file:border-0 file:bg-slate-200 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-foreground"
                         disabled={isSubmitting}
                       />
                       {optionalAttachment1 && (
-                        <span className="max-w-[180px] truncate text-xs text-slate-600" title={optionalAttachment1.name}>
+                        <span className="max-w-[180px] truncate text-xs text-muted-foreground" title={optionalAttachment1.name}>
                           ✓ {optionalAttachment1.name}
                         </span>
                       )}
@@ -646,17 +646,17 @@ export const Expenses = () => {
 
                 <div className="space-y-2">
                   <Label className={standardFormLabelClass}>Additional attachment 2 (optional)</Label>
-                  <div className="rounded-xl border border-dashed border-slate-200/90 bg-slate-50/30 p-3">
+                  <div className="rounded-xl border border-dashed border-border/90 bg-muted/30 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <Input
                         type="file"
                         accept="image/*,.pdf"
                         onChange={(e) => setOptionalAttachment2(e.target.files?.[0] || null)}
-                        className="h-10 min-w-[8rem] flex-1 cursor-pointer border-0 bg-transparent p-0 text-sm shadow-none file:mr-2 file:rounded-lg file:border-0 file:bg-slate-200 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-800"
+                        className="h-10 min-w-[8rem] flex-1 cursor-pointer border-0 bg-transparent p-0 text-sm shadow-none file:mr-2 file:rounded-lg file:border-0 file:bg-slate-200 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-foreground"
                         disabled={isSubmitting}
                       />
                       {optionalAttachment2 && (
-                        <span className="max-w-[180px] truncate text-xs text-slate-600" title={optionalAttachment2.name}>
+                        <span className="max-w-[180px] truncate text-xs text-muted-foreground" title={optionalAttachment2.name}>
                           ✓ {optionalAttachment2.name}
                         </span>
                       )}
@@ -708,7 +708,7 @@ export const Expenses = () => {
               className={`h-9 gap-2 rounded-xl px-4 text-sm font-semibold ${
                 pageTab === 'Requests'
                   ? 'bg-indigo-50 text-indigo-800'
-                  : 'text-slate-600 hover:bg-slate-50'
+                  : 'text-muted-foreground hover:bg-muted'
               }`}
               onClick={() => setPageTab('Requests')}
             >
@@ -721,7 +721,7 @@ export const Expenses = () => {
               className={`h-9 gap-2 rounded-xl px-4 text-sm font-semibold ${
                 pageTab === 'Summary'
                   ? 'bg-indigo-50 text-indigo-800'
-                  : 'text-slate-600 hover:bg-slate-50'
+                  : 'text-muted-foreground hover:bg-muted'
               }`}
               onClick={() => setPageTab('Summary')}
             >
@@ -734,21 +734,21 @@ export const Expenses = () => {
 
       {pageTab === 'Summary' && user?.role === 'Admin' ? (
         <Card className="overflow-hidden rounded-2xl border-0 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/60">
-          <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50/80 to-white px-5 py-4 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
+          <div className="border-b border-border bg-gradient-to-r from-slate-50/80 to-white px-5 py-4 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
             <div className="flex items-start gap-3">
               <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-sky-600 text-white shadow-md shadow-sky-500/25">
                 <Calculator className="h-5 w-5" aria-hidden />
               </span>
               <div>
-                <h2 className="text-lg font-bold text-slate-900">Summary by employee</h2>
-                <p className="mt-0.5 text-sm text-slate-500">Payroll and month-end reconciliation.</p>
+                <h2 className="text-lg font-bold text-foreground">Summary by employee</h2>
+                <p className="mt-0.5 text-sm text-muted-foreground">Payroll and month-end reconciliation.</p>
               </div>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2 sm:mt-0">
               <select
                 value={summaryMonth}
                 onChange={(e) => setSummaryMonth(Number(e.target.value))}
-                className="h-10 rounded-xl border border-slate-200/90 bg-white px-3 text-sm font-medium text-slate-900 shadow-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20"
+                className="h-10 rounded-xl border border-border/90 bg-white px-3 text-sm font-medium text-foreground shadow-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20"
               >
                 {MONTHS.map((m, i) => (
                   <option key={m} value={i + 1}>{m}</option>
@@ -757,7 +757,7 @@ export const Expenses = () => {
               <select
                 value={summaryYear}
                 onChange={(e) => setSummaryYear(Number(e.target.value))}
-                className="h-10 rounded-xl border border-slate-200/90 bg-white px-3 text-sm font-medium text-slate-900 shadow-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20"
+                className="h-10 rounded-xl border border-border/90 bg-white px-3 text-sm font-medium text-foreground shadow-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20"
               >
                 {[summaryYear - 2, summaryYear - 1, summaryYear, summaryYear + 1].map((y) => (
                   <option key={y} value={y}>{y}</option>
@@ -766,7 +766,7 @@ export const Expenses = () => {
               <select
                 value={summaryEmployeeFilter}
                 onChange={(e) => setSummaryEmployeeFilter(e.target.value)}
-                className="h-10 min-w-[10rem] rounded-xl border border-slate-200/90 bg-white px-3 text-sm font-medium text-slate-900 shadow-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20"
+                className="h-10 min-w-[10rem] rounded-xl border border-border/90 bg-white px-3 text-sm font-medium text-foreground shadow-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20"
               >
                 <option value="">All employees</option>
                 {summary?.employees?.map((emp) => (
@@ -782,7 +782,7 @@ export const Expenses = () => {
             <div className="overflow-x-auto rounded-xl ring-1 ring-slate-200/60">
               <table className="w-full min-w-[720px] border-collapse text-sm">
                 <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50/90 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  <tr className="border-b border-border bg-muted/90 text-xs font-bold uppercase tracking-wide text-muted-foreground">
                     <th className="w-10 px-3 py-3 text-left" />
                     <th className="px-4 py-3 text-left">Employee</th>
                     <th className="px-4 py-3 text-right text-emerald-700">Approved</th>
@@ -803,20 +803,20 @@ export const Expenses = () => {
                     
                     return (
                       <React.Fragment key={row.employee_id}>
-                        <tr key={`main-${row.employee_id}`} className="border-b border-slate-50 transition-colors hover:bg-slate-50/60">
+                        <tr key={`main-${row.employee_id}`} className="border-b border-border transition-colors hover:bg-muted/60">
                           <td className="px-3 py-3">
-                            <button
+                            <button aria-label={isExpanded ? 'Collapse' : 'Expand'}
                               type="button"
                               onClick={() => setExpandedEmployees(prev => ({ ...prev, [row.employee_id]: !prev[row.employee_id] }))}
-                              className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-white hover:text-sky-700 hover:ring-1 hover:ring-slate-200"
+                              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-white hover:text-sky-700 hover:ring-1 hover:ring-slate-200"
                               title={isExpanded ? 'Collapse' : 'Expand'}
                             >
                               {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </button>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="font-semibold text-slate-900">{row.employee_name}</span>
-                            <span className="ml-1 text-slate-500">({row.employee_id})</span>
+                            <span className="font-semibold text-foreground">{row.employee_name}</span>
+                            <span className="ml-1 text-muted-foreground">({row.employee_id})</span>
                           </td>
                           <td className="px-4 py-3 text-right font-medium tabular-nums text-emerald-800">
                             ₹{Number(row.total_approved).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -835,28 +835,28 @@ export const Expenses = () => {
                           </td>
                         </tr>
                         {isExpanded && (
-                          <tr key={`detail-${row.employee_id}`} className="border-b border-slate-100 bg-slate-50/50">
+                          <tr key={`detail-${row.employee_id}`} className="border-b border-border bg-muted/50">
                             <td colSpan="7" className="p-4">
-                              <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
-                                <h4 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Line items</h4>
+                              <div className="rounded-xl border border-border/80 bg-white p-4 shadow-sm">
+                                <h4 className="mb-3 text-sm font-bold uppercase tracking-wide text-muted-foreground">Line items</h4>
                                 {employeeExpenses.length > 0 ? (
                                   <div className="space-y-2">
                                     {employeeExpenses.map(expense => (
-                                      <div key={expense.id} className="flex flex-wrap gap-4 rounded-xl border border-slate-100 bg-slate-50/40 p-3 text-sm ring-1 ring-slate-100/80">
+                                      <div key={expense.id} className="flex flex-wrap gap-4 rounded-xl border border-border bg-muted/40 p-3 text-sm ring-1 ring-slate-100/80">
                                         <div className="min-w-[140px] flex-1">
-                                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Category</p>
-                                          <p className="font-semibold text-slate-900">{expense.category}</p>
+                                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Category</p>
+                                          <p className="font-semibold text-foreground">{expense.category}</p>
                                         </div>
                                         <div className="min-w-[100px] flex-1">
-                                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Amount</p>
-                                          <p className="font-semibold tabular-nums text-slate-900">₹{Number(expense.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+                                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Amount</p>
+                                          <p className="font-semibold tabular-nums text-foreground">₹{Number(expense.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
                                         </div>
                                         <div className="min-w-[120px] flex-[2]">
-                                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Description</p>
-                                          <p className="text-slate-800">{expense.description}</p>
+                                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Description</p>
+                                          <p className="text-foreground">{expense.description}</p>
                                         </div>
                                         <div className="min-w-[100px] flex-1">
-                                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Status</p>
+                                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Status</p>
                                           <p className={`font-semibold ${
                                             expense.status === 'Approved' ? 'text-emerald-700' :
                                             expense.status === 'Partially-Approved' ? 'text-violet-700' :
@@ -867,21 +867,21 @@ export const Expenses = () => {
                                         </div>
                                         {expense.status === 'Partially-Approved' && (
                                           <div className="min-w-[100px] flex-1">
-                                            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Approved</p>
-                                            <p className="font-semibold tabular-nums text-slate-900">₹{Number(expense.accountant_approved_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Approved</p>
+                                            <p className="font-semibold tabular-nums text-foreground">₹{Number(expense.accountant_approved_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
                                           </div>
                                         )}
                                         {expense.accountant_approval_reason && (
                                           <div className="min-w-[150px] flex-[2]">
-                                            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Reason</p>
-                                            <p className="text-slate-800">{expense.accountant_approval_reason}</p>
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Reason</p>
+                                            <p className="text-foreground">{expense.accountant_approval_reason}</p>
                                           </div>
                                         )}
                                       </div>
                                     ))}
                                   </div>
                                 ) : (
-                                  <p className="text-sm text-slate-500">No expenses for this employee in the selected month.</p>
+                                  <p className="text-sm text-muted-foreground">No expenses for this employee in the selected month.</p>
                                 )}
                               </div>
                             </td>
@@ -894,28 +894,28 @@ export const Expenses = () => {
               </table>
             </div>
           ) : (
-            <p className="py-6 text-center text-sm text-slate-500">No data for {summary ? `${MONTHS[summary.month - 1]} ${summary.year}` : 'this period'}.</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">No data for {summary ? `${MONTHS[summary.month - 1]} ${summary.year}` : 'this period'}.</p>
           )}
           </div>
         </Card>
       ) : (
         <>
           <Card className="overflow-hidden rounded-2xl border-0 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/60">
-            <div className="border-b border-slate-100 px-5 py-4">
-              <h2 className="text-lg font-bold text-slate-900">Employee expenses</h2>
-              <p className="mt-1 text-xs text-slate-500">
+            <div className="border-b border-border px-5 py-4">
+              <h2 className="text-lg font-bold text-foreground">Employee expenses</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
                 Totals below include all your visible claims (every status). Use filters for the list.
               </p>
             </div>
             <div className="flex flex-col lg:flex-row lg:items-stretch">
-              <div className="grid flex-1 grid-cols-2 divide-x divide-slate-100 border-b border-slate-100 sm:grid-cols-3 lg:border-b-0">
+              <div className="grid flex-1 grid-cols-2 divide-x divide-border border-b border-border sm:grid-cols-3 lg:border-b-0">
                 <div className="flex flex-col justify-center px-4 py-4 sm:py-5">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total pending</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total pending</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
                     ₹{Number(expenseKpis.pending).toLocaleString('en-IN')}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-slate-400">Awaiting accountant</p>
-                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <p className="mt-0.5 text-xs text-slate-400">Awaiting accountant</p>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
                     <div
                       className="h-full rounded-full bg-sky-400"
                       style={{
@@ -925,12 +925,12 @@ export const Expenses = () => {
                   </div>
                 </div>
                 <div className="flex flex-col justify-center px-4 py-4 sm:py-5">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Level 1 cleared</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Level 1 cleared</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
                     ₹{Number(expenseKpis.level1).toLocaleString('en-IN')}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-slate-400">Through accountant</p>
-                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <p className="mt-0.5 text-xs text-slate-400">Through accountant</p>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
                     <div
                       className="h-full rounded-full bg-sky-400"
                       style={{
@@ -939,13 +939,13 @@ export const Expenses = () => {
                     />
                   </div>
                 </div>
-                <div className="col-span-2 flex flex-col justify-center border-t border-slate-100 px-4 py-4 sm:col-span-1 sm:border-t-0 sm:py-5">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Level 2 approved</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                <div className="col-span-2 flex flex-col justify-center border-t border-border px-4 py-4 sm:col-span-1 sm:border-t-0 sm:py-5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Level 2 approved</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
                     ₹{Number(expenseKpis.level2).toLocaleString('en-IN')}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-slate-400">Admin final</p>
-                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <p className="mt-0.5 text-xs text-slate-400">Admin final</p>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
                     <div
                       className="h-full rounded-full bg-sky-400"
                       style={{
@@ -955,7 +955,7 @@ export const Expenses = () => {
                   </div>
                 </div>
               </div>
-              <div className="hidden items-center justify-center border-t border-slate-100 p-4 md:flex lg:w-52 lg:border-l lg:border-t-0 lg:px-5">
+              <div className="hidden items-center justify-center border-t border-border p-4 md:flex lg:w-52 lg:border-l lg:border-t-0 lg:px-5">
                 <Button
                   type="button"
                   className="h-11 w-full rounded-xl bg-sky-600 px-5 text-sm font-semibold text-white shadow-md shadow-sky-600/25 hover:bg-sky-700 lg:w-auto"
@@ -972,22 +972,22 @@ export const Expenses = () => {
           {canApprove && (
             <Card className="rounded-2xl border-0 bg-white p-5 shadow-[0_2px_12px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
               <div className="mb-3 flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-muted text-muted-foreground">
                   <Receipt className="h-4 w-4" />
                 </div>
-                <h3 className="text-base font-bold text-slate-900">Two-step approval</h3>
+                <h3 className="text-base font-bold text-foreground">Two-step approval</h3>
               </div>
-              <div className="grid gap-3 text-xs text-slate-600 sm:grid-cols-3">
-                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
-                  <p className="font-semibold text-slate-900">1 · Accountant</p>
+              <div className="grid gap-3 text-xs text-muted-foreground sm:grid-cols-3">
+                <div className="rounded-xl border border-border bg-muted/50 p-3">
+                  <p className="font-semibold text-foreground">1 · Accountant</p>
                   <p className="mt-1 leading-relaxed">Reviews pending claims and receipt.</p>
                 </div>
-                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
-                  <p className="font-semibold text-slate-900">2 · Handoff</p>
+                <div className="rounded-xl border border-border bg-muted/50 p-3">
+                  <p className="font-semibold text-foreground">2 · Handoff</p>
                   <p className="mt-1 leading-relaxed">Approved items move to admin queue.</p>
                 </div>
-                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
-                  <p className="font-semibold text-slate-900">3 · Admin</p>
+                <div className="rounded-xl border border-border bg-muted/50 p-3">
+                  <p className="font-semibold text-foreground">3 · Admin</p>
                   <p className="mt-1 leading-relaxed">Final sign-off marks expense approved.</p>
                 </div>
               </div>
@@ -1005,7 +1005,7 @@ export const Expenses = () => {
                     className={`h-9 shrink-0 whitespace-nowrap rounded-xl px-4 text-sm font-semibold ${
                       activeTab === tab
                         ? 'bg-indigo-50 text-indigo-800'
-                        : 'text-slate-600 hover:bg-slate-50'
+                        : 'text-muted-foreground hover:bg-muted'
                     }`}
                     onClick={() => setActiveTab(tab)}
                   >
@@ -1017,7 +1017,7 @@ export const Expenses = () => {
                 <select
                   value={requestEmployeeFilter}
                   onChange={(e) => setRequestEmployeeFilter(e.target.value)}
-                  className="h-9 w-full min-w-[220px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                  className="h-9 w-full min-w-[220px] rounded-xl border border-border bg-white px-3 text-sm font-medium text-foreground outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
                 >
                   <option value="">All employees</option>
                   {requestEmployeeOptions.map((emp) => (
@@ -1033,14 +1033,14 @@ export const Expenses = () => {
           <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_min(38vw,26rem)] lg:items-start lg:gap-5">
             <div className="min-w-0 space-y-4">
               <Card className="hidden overflow-hidden rounded-2xl border-0 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/60 lg:block">
-                <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50/90 to-white px-4 py-3">
-                  <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Requests summary</h2>
+                <div className="border-b border-border bg-gradient-to-r from-slate-50/90 to-white px-4 py-3">
+                  <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Requests summary</h2>
                   <p className="text-xs text-slate-400">Select a row to preview the receipt and notes.</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[860px] border-collapse text-left text-sm">
                     <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50/80 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                      <tr className="border-b border-border bg-muted/80 text-xs font-bold uppercase tracking-wide text-muted-foreground">
                         <th className="px-3 py-3">Employee</th>
                         <th className="px-3 py-3">Category</th>
                         <th className="px-3 py-3">Date</th>
@@ -1053,7 +1053,7 @@ export const Expenses = () => {
                     <tbody>
                       {filteredExpenses.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
+                          <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">
                             No requests match this filter.
                           </td>
                         </tr>
@@ -1070,32 +1070,32 @@ export const Expenses = () => {
                                 setDetailExpenseId(exp.id);
                               }
                             }}
-                            className={`cursor-pointer border-b border-slate-50 transition-colors hover:bg-slate-50/60 ${
+                            className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/60 ${
                               detailExpenseId === exp.id ? 'bg-sky-50/50 ring-1 ring-inset ring-sky-100' : ''
                             }`}
                           >
                             <td className="px-3 py-3">
                               <div className="flex items-center gap-2">
-                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-foreground">
                                   {employeeInitial(exp.employee_name)}
                                 </span>
                                 <div className="min-w-0">
-                                  <div className="truncate font-semibold text-slate-900">{exp.employee_name}</div>
-                                  <div className="text-xs text-slate-500">{exp.employee_id}</div>
+                                  <div className="truncate font-semibold text-foreground">{exp.employee_name}</div>
+                                  <div className="text-xs text-muted-foreground">{exp.employee_id}</div>
                                 </div>
                                 <ChevronDown className="h-4 w-4 shrink-0 text-slate-300" aria-hidden />
                               </div>
                             </td>
-                            <td className="px-3 py-3 text-slate-700">{exp.category}</td>
-                            <td className="px-3 py-3 text-slate-700">
+                            <td className="px-3 py-3 text-foreground">{exp.category}</td>
+                            <td className="px-3 py-3 text-foreground">
                               {exp.created_at
                                 ? new Date(exp.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })
                                 : '—'}
                             </td>
-                            <td className="px-3 py-3 text-right font-semibold tabular-nums text-slate-900">
+                            <td className="px-3 py-3 text-right font-semibold tabular-nums text-foreground">
                               ₹{Number(exp.amount).toLocaleString('en-IN')}
                             </td>
-                            <td className="max-w-[220px] truncate px-3 py-3 text-slate-600" title={exp.description}>
+                            <td className="max-w-[220px] truncate px-3 py-3 text-muted-foreground" title={exp.description}>
                               {exp.description}
                             </td>
                             <td className="px-3 py-3 text-center">{l1StatusUi(exp)}</td>
@@ -1117,15 +1117,15 @@ export const Expenses = () => {
                 }`}
                 onClick={() => setDetailExpenseId(exp.id)}
               >
-                <div className="border-b border-slate-100 bg-slate-50/50 px-5 py-4">
+                <div className="border-b border-border bg-muted/50 px-5 py-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Employee</p>
-                      <h3 className="text-lg font-bold text-slate-900">{exp.employee_name}</h3>
-                      <p className="mt-1 text-sm font-medium text-slate-600">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Employee</p>
+                      <h3 className="text-lg font-bold text-foreground">{exp.employee_name}</h3>
+                      <p className="mt-1 text-sm font-medium text-muted-foreground">
                         {exp.category}
                         <span className="text-slate-400"> · </span>
-                        <span className="tabular-nums text-slate-900">₹{Number(exp.amount).toLocaleString('en-IN')}</span>
+                        <span className="tabular-nums text-foreground">₹{Number(exp.amount).toLocaleString('en-IN')}</span>
                       </p>
                     </div>
                     {(() => {
@@ -1134,35 +1134,35 @@ export const Expenses = () => {
                     })()}
                   </div>
                 </div>
-                <div className="flex items-center justify-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-3">
+                <div className="flex items-center justify-center gap-2 border-b border-border bg-muted/60 px-4 py-3">
                   <div className="flex flex-col items-center gap-1">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-[10px] font-bold uppercase text-slate-600 shadow-sm ring-1 ring-slate-200">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-[11px] font-bold uppercase text-muted-foreground shadow-sm ring-1 ring-slate-200">
                       L1
                     </span>
-                    <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Accountant</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Accountant</span>
                   </div>
                   <ArrowRight className="h-4 w-4 text-slate-300" aria-hidden />
                   <div className="flex flex-col items-center gap-1">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-[10px] font-bold uppercase text-slate-600 shadow-sm ring-1 ring-slate-200">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-[11px] font-bold uppercase text-muted-foreground shadow-sm ring-1 ring-slate-200">
                       L2
                     </span>
-                    <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Admin</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Admin</span>
                   </div>
                 </div>
                 <div className="space-y-4 px-5 py-4">
-                  <p className="text-sm leading-relaxed text-slate-700">{exp.description}</p>
+                  <p className="text-sm leading-relaxed text-foreground">{exp.description}</p>
                   <p className="text-xs text-slate-400">
                     Submitted {new Date(exp.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}
                   </p>
                   <div className="space-y-4" onClick={(e) => e.stopPropagation()}>
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Attachments</p>
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Attachments</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {exp.receipt_path && (
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-9 gap-1.5 rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm hover:border-sky-200 hover:bg-sky-50/50 hover:text-sky-900"
+                          className="h-9 gap-1.5 rounded-xl border-border bg-white text-foreground shadow-sm hover:border-sky-200 hover:bg-sky-50/50 hover:text-sky-900"
                           onClick={() => {
                             setPreviewFileUrl(exp.receipt_path);
                             setPreviewFileName(`Receipt-${exp.id}`);
@@ -1177,14 +1177,14 @@ export const Expenses = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-9 gap-1.5 rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm hover:border-sky-200 hover:bg-sky-50/50 hover:text-sky-900"
+                          className="h-9 gap-1.5 rounded-xl border-border bg-white text-foreground shadow-sm hover:border-sky-200 hover:bg-sky-50/50 hover:text-sky-900"
                           onClick={() => {
                             setPreviewFileUrl(exp.attachment_path_1);
                             setPreviewFileName(`Attachment 1-${exp.id}`);
                             setPreviewOpen(true);
                           }}
                         >
-                          <ImageIcon className="h-4 w-4 text-slate-500" />
+                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
                           Attachment 1
                         </Button>
                       )}
@@ -1192,14 +1192,14 @@ export const Expenses = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-9 gap-1.5 rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm hover:border-sky-200 hover:bg-sky-50/50 hover:text-sky-900"
+                          className="h-9 gap-1.5 rounded-xl border-border bg-white text-foreground shadow-sm hover:border-sky-200 hover:bg-sky-50/50 hover:text-sky-900"
                           onClick={() => {
                             setPreviewFileUrl(exp.attachment_path_2);
                             setPreviewFileName(`Attachment 2-${exp.id}`);
                             setPreviewOpen(true);
                           }}
                         >
-                          <ImageIcon className="h-4 w-4 text-slate-500" />
+                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
                           Attachment 2
                         </Button>
                       )}
@@ -1208,7 +1208,7 @@ export const Expenses = () => {
                       )}
                     </div>
                   </div>
-                  <div className="space-y-3 rounded-xl border border-slate-100 bg-slate-50/40 p-3 ring-1 ring-slate-100/80">
+                  <div className="space-y-3 rounded-xl border border-border bg-muted/40 p-3 ring-1 ring-slate-100/80">
                     <div className="flex gap-2">
                       <span
                         className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
@@ -1220,8 +1220,8 @@ export const Expenses = () => {
                         }`}
                       />
                       <div>
-                        <p className="text-xs font-semibold text-slate-800">Accountant</p>
-                        <p className="text-xs text-slate-600">
+                        <p className="text-xs font-semibold text-foreground">Accountant</p>
+                        <p className="text-xs text-muted-foreground">
                           {exp.accountant_approver_name
                             ? exp.status === 'Partially-Approved'
                               ? `Partial ₹${Number(exp.accountant_approved_amount).toLocaleString('en-IN')} · ${exp.accountant_approver_name}`
@@ -1229,7 +1229,7 @@ export const Expenses = () => {
                             : 'Pending'}
                         </p>
                         {exp.accountant_approval_reason && exp.status === 'Partially-Approved' && (
-                          <p className="mt-1 text-xs text-slate-500">Reason: {exp.accountant_approval_reason}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Reason: {exp.accountant_approval_reason}</p>
                         )}
                       </div>
                     </div>
@@ -1240,8 +1240,8 @@ export const Expenses = () => {
                         }`}
                       />
                       <div>
-                        <p className="text-xs font-semibold text-slate-800">Admin</p>
-                        <p className="text-xs text-slate-600">
+                        <p className="text-xs font-semibold text-foreground">Admin</p>
+                        <p className="text-xs text-muted-foreground">
                           {exp.admin_approver_name
                             ? `Approved · ${exp.admin_approver_name}`
                             : exp.accountant_approver_name
@@ -1255,7 +1255,7 @@ export const Expenses = () => {
                     )}
                   </div>
                   {canApprove && (
-                    <div className="flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:flex-wrap">
+                    <div className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:flex-wrap">
                       {canAccountantApprove(exp) && (
                         <>
                           <Button
@@ -1331,9 +1331,9 @@ export const Expenses = () => {
             <aside className="sticky top-4 hidden max-h-[calc(100dvh-5.5rem)] min-h-[320px] w-full flex-col overflow-y-auto rounded-2xl border-0 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/60 lg:flex">
               {detailExpense ? (
                 <>
-                  <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50/90 to-white px-4 py-3">
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Receipt & detail</p>
-                    <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">
+                  <div className="border-b border-border bg-gradient-to-r from-slate-50/90 to-white px-4 py-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Receipt & detail</p>
+                    <p className="mt-1 text-lg font-bold tabular-nums text-foreground">
                       ₹{Number(detailExpense.amount).toLocaleString('en-IN')}
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1341,20 +1341,20 @@ export const Expenses = () => {
                         const s = getStatusDisplay(detailExpense);
                         return <span className={s.color}>{s.label}</span>;
                       })()}
-                      <span className="text-xs text-slate-500">{detailExpense.employee_name}</span>
+                      <span className="text-xs text-muted-foreground">{detailExpense.employee_name}</span>
                     </div>
                   </div>
                   <div className="flex-1 space-y-4 overflow-y-auto p-4">
                     <div>
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">PDF / receipt</p>
-                      <div className="mt-2 max-h-[min(52vh,420px)] overflow-hidden rounded-xl border border-slate-200/90 bg-slate-50/50 shadow-inner ring-1 ring-slate-100">
+                      <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">PDF / receipt</p>
+                      <div className="mt-2 max-h-[min(52vh,420px)] overflow-hidden rounded-xl border border-border/90 bg-muted/50 shadow-inner ring-1 ring-slate-100">
                         {detailExpense.receipt_path ? (
                           <FilePreviewSimple
                             fileUrl={detailExpense.receipt_path}
                             fileName={`Receipt-${detailExpense.id}`}
                           />
                         ) : (
-                          <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 p-6 text-center text-sm text-slate-500">
+                          <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
                             <Receipt className="h-10 w-10 text-slate-300" />
                             No receipt uploaded yet.
                           </div>
@@ -1362,21 +1362,21 @@ export const Expenses = () => {
                       </div>
                     </div>
                     <div>
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Description</p>
-                      <div className="mt-2 rounded-xl border border-slate-200/90 bg-slate-50/50 px-3 py-2 text-sm leading-relaxed text-slate-800">
+                      <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Description</p>
+                      <div className="mt-2 rounded-xl border border-border/90 bg-muted/50 px-3 py-2 text-sm leading-relaxed text-foreground">
                         {detailExpense.description || '—'}
                       </div>
                     </div>
                     {detailExpense.accountant_approval_reason && (
                       <div>
-                        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Approver reason</p>
+                        <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Approver reason</p>
                         <div className="mt-2 rounded-xl border border-violet-100 bg-violet-50/60 px-3 py-2 text-sm text-violet-950">
                           {detailExpense.accountant_approval_reason}
                         </div>
                       </div>
                     )}
                     {canApprove && (
-                      <div className="flex flex-col gap-2 border-t border-slate-100 pt-3" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex flex-col gap-2 border-t border-border pt-3" onClick={(e) => e.stopPropagation()}>
                         {canAccountantApprove(detailExpense) && (
                           <>
                             <Button
@@ -1438,7 +1438,7 @@ export const Expenses = () => {
                   </div>
                 </>
               ) : (
-                <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-sm text-slate-500">
+                <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-sm text-muted-foreground">
                   <Receipt className="h-10 w-10 text-slate-200" />
                   Select a request to preview the receipt here.
                 </div>
@@ -1449,8 +1449,8 @@ export const Expenses = () => {
           {filteredExpenses.length === 0 && (
             <Card className="rounded-2xl border-0 bg-white py-16 text-center shadow-[0_4px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/60">
               <Receipt className="mx-auto mb-3 h-12 w-12 text-slate-200" />
-              <p className="font-medium text-slate-700">No expenses in this view</p>
-              <p className="mt-1 text-sm text-slate-500">Try another status filter or submit a new expense.</p>
+              <p className="font-medium text-foreground">No expenses in this view</p>
+              <p className="mt-1 text-sm text-muted-foreground">Try another status filter or submit a new expense.</p>
             </Card>
           )}
         </>
@@ -1466,7 +1466,7 @@ export const Expenses = () => {
           />
           <StandardAppDialogBody className="min-h-0 flex-1 py-4">
             {previewFileUrl ? (
-              <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-slate-50/50 shadow-inner ring-1 ring-slate-100">
+              <div className="overflow-hidden rounded-xl border border-border/90 bg-muted/50 shadow-inner ring-1 ring-slate-100">
                 <FilePreviewSimple fileUrl={previewFileUrl} fileName={previewFileName} />
               </div>
             ) : null}
@@ -1485,8 +1485,8 @@ export const Expenses = () => {
           <StandardAppDialogBody className="space-y-5 pb-2">
             <div className="space-y-2">
               <Label className={standardFormLabelClass}>Total expense amount</Label>
-              <div className="flex h-14 items-center rounded-xl border border-slate-200/90 bg-gradient-to-r from-slate-50 to-white px-4 shadow-inner ring-1 ring-slate-100/80">
-                <span className="text-2xl font-bold tabular-nums tracking-tight text-slate-900">
+              <div className="flex h-14 items-center rounded-xl border border-border/90 bg-gradient-to-r from-slate-50 to-white px-4 shadow-inner ring-1 ring-slate-100/80">
+                <span className="text-2xl font-bold tabular-nums tracking-tight text-foreground">
                   ₹{Number(selectedExpenseAmount).toLocaleString('en-IN')}
                 </span>
               </div>
@@ -1506,7 +1506,7 @@ export const Expenses = () => {
                 className={standardTextInputClass}
                 placeholder="0.00"
               />
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Max ₹{Number(selectedExpenseAmount).toLocaleString('en-IN')}
               </p>
             </div>
@@ -1555,7 +1555,7 @@ export const Expenses = () => {
           <StandardAppDialogBody>
             <div className="space-y-2">
               <Label className={standardFormLabelClass}>Receipt / screenshot *</Label>
-              <div className="rounded-xl border border-dashed border-slate-200/90 bg-slate-50/40 p-3 ring-1 ring-inset ring-slate-100/60 transition-colors hover:border-red-200/80 hover:bg-red-50/20">
+              <div className="rounded-xl border border-dashed border-border/90 bg-muted/40 p-3 ring-1 ring-inset ring-slate-100/60 transition-colors hover:border-red-200/80 hover:bg-red-50/20">
                 <div className="flex flex-wrap items-center gap-2">
                   <Input
                     type="file"

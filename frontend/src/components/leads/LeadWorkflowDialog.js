@@ -30,13 +30,13 @@ export function LeadWorkflowDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="flex h-[min(92vh,920px)] max-h-[min(92vh,920px)] w-[min(1280px,96vw)] max-w-[min(1280px,96vw)] flex-col gap-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-0 shadow-xl"
+        className="flex h-[min(92vh,920px)] max-h-[min(92vh,920px)] w-[min(1280px,96vw)] max-w-[min(1280px,96vw)] flex-col gap-0 overflow-hidden rounded-xl border border-border bg-white p-0 shadow-xl"
       >
-        <div className="shrink-0 border-b border-slate-200 bg-gradient-to-r from-slate-900 to-indigo-950 text-white px-5 py-4">
+        <div className="shrink-0 border-b border-border bg-gradient-to-r from-slate-900 to-indigo-950 text-white px-5 py-4">
           <DialogHeader className="space-y-0 text-left">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-300">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-indigo-300">
                   Lead workflow
                 </p>
                 <DialogTitle className="text-xl font-bold text-white mt-0.5 truncate">
@@ -51,10 +51,10 @@ export function LeadWorkflowDialog({
                     {stageLabel}
                   </span>
                   {lead.sub_category && (
-                    <span className="text-xs text-slate-400 capitalize">{lead.sub_category}</span>
+                    <span className="text-xs text-muted-foreground capitalize">{lead.sub_category}</span>
                   )}
                   {pendingVendor && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/90 px-2 py-0.5 text-[11px] font-semibold text-white">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/90 px-2 py-0.5 text-xs font-semibold text-white">
                       <AlertCircle className="h-3 w-3" />
                       Vendor pending
                     </span>
@@ -119,7 +119,7 @@ export function LeadWorkflowDialog({
           </DialogHeader>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50/50 p-4 text-slate-900">
+        <div className="flex-1 min-h-0 overflow-y-auto bg-muted/50 p-4 text-foreground">
           <CarryOrderWorkspace
             embedded
             lead={lead}

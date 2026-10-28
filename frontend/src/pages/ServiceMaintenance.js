@@ -173,7 +173,7 @@ export function ServiceMaintenance() {
           <Button variant="outline" size="sm" className="relative" aria-label="Service notifications">
             <Bell className="h-4 w-4" />
             {notifications.unread > 0 && (
-              <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold text-white">
+              <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[11px] font-semibold text-white">
                 {notifications.unread}
               </span>
             )}
@@ -185,16 +185,16 @@ export function ServiceMaintenance() {
             <Button variant="ghost" size="sm" onClick={markRead} disabled={notifications.unread === 0}>Mark all read</Button>
           </div>
           <ul className="max-h-80 divide-y overflow-y-auto">
-            {notifications.items.length === 0 && <li className="px-3 py-6 text-center text-sm text-slate-500">Nothing new.</li>}
+            {notifications.items.length === 0 && <li className="px-3 py-6 text-center text-sm text-muted-foreground">Nothing new.</li>}
             {notifications.items.map((item) => (
               <li key={item.id}>
                 <button
                   type="button"
                   onClick={() => openNotification(item)}
-                  className={cn('block w-full px-3 py-2 text-left text-sm hover:bg-slate-50', !item.read && 'bg-indigo-50/50')}
+                  className={cn('block w-full px-3 py-2 text-left text-sm hover:bg-muted', !item.read && 'bg-indigo-50/50')}
                 >
-                  <span className="block text-slate-800">{item.message}</span>
-                  <span className="text-[11px] text-slate-500">{fmtDateTime(item.created_at)}</span>
+                  <span className="block text-foreground">{item.message}</span>
+                  <span className="text-xs text-muted-foreground">{fmtDateTime(item.created_at)}</span>
                 </button>
               </li>
             ))}
@@ -247,13 +247,13 @@ export function ServiceMaintenance() {
               onClick={() => (card.key === '' ? clearFilters() : pickCard(card.key))}
               className={cn(
                 'rounded-xl border bg-white px-3 py-3 text-left transition-colors hover:border-indigo-200 hover:shadow-sm',
-                active ? 'border-indigo-400 ring-1 ring-indigo-200' : 'border-slate-200',
+                active ? 'border-indigo-400 ring-1 ring-indigo-200' : 'border-border',
                 card.key === 'overdue' && (stats.overdue || 0) > 0 && 'border-rose-200',
               )}
               data-testid={`summary-card-${card.stat}`}
             >
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{card.label}</div>
-              <div className={cn('mt-1 text-2xl font-semibold', card.key === 'overdue' && (stats.overdue || 0) > 0 ? 'text-rose-700' : 'text-slate-900')}>
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{card.label}</div>
+              <div className={cn('mt-1 text-2xl font-semibold', card.key === 'overdue' && (stats.overdue || 0) > 0 ? 'text-rose-700' : 'text-foreground')}>
                 {stats[card.stat] ?? 0}
               </div>
             </button>
@@ -264,8 +264,8 @@ export function ServiceMaintenance() {
       <Card className="space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[14rem] flex-1">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-            <Input className="pl-8" placeholder="Search service ID, customer, product, serial, mobile, lead" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input aria-label="Search service ID, customer, product, serial, mobile, lead" className="pl-8" placeholder="Search service ID, customer, product, serial, mobile, lead" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
           <select className={cn(INPUT_CLASS, 'w-auto')} value={filters.customer_type} onChange={setFilter('customer_type')} aria-label="Customer type">
             <option value="">All customers</option>
@@ -303,11 +303,11 @@ export function ServiceMaintenance() {
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-[11px] uppercase tracking-wide text-slate-500">
+              <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                 {COLUMNS.map((column) => (
                   <th key={column.key} className="whitespace-nowrap py-2 pr-3">
                     {column.sort ? (
-                      <button type="button" className="inline-flex items-center gap-1 hover:text-slate-800" onClick={() => toggleSort(column)}>
+                      <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => toggleSort(column)}>
                         {column.label}
                         {sort.by === column.sort && (sort.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
                       </button>
@@ -319,24 +319,24 @@ export function ServiceMaintenance() {
             </thead>
             <tbody>
               {loading && data.items.length === 0 && (
-                <tr><td colSpan={COLUMNS.length + 1} className="py-8 text-center text-slate-500">Loading service requests…</td></tr>
+                <tr><td colSpan={COLUMNS.length + 1} className="py-8 text-center text-muted-foreground">Loading service requests…</td></tr>
               )}
               {data.items.map((row) => (
                 <tr
                   key={row.id}
-                  className="cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+                  className="cursor-pointer border-b border-border hover:bg-muted"
                   onClick={() => navigate(`/service-maintenance/${row.id}`)}
                 >
                   <td className="whitespace-nowrap py-2 pr-3 font-mono text-xs">{row.service_code}</td>
                   <td className="whitespace-nowrap py-2 pr-3">{fmtDate(row.request_date)}</td>
-                  <td className="py-2 pr-3 font-medium text-slate-800">{row.customer_name}</td>
-                  <td className="py-2 pr-3 text-slate-600">{row.customer_type}</td>
-                  <td className="max-w-[12rem] truncate py-2 pr-3 text-slate-600" title={row.lead_label || ''}>{row.lead_label || '—'}</td>
+                  <td className="py-2 pr-3 font-medium text-foreground">{row.customer_name}</td>
+                  <td className="py-2 pr-3 text-muted-foreground">{row.customer_type}</td>
+                  <td className="max-w-[12rem] truncate py-2 pr-3 text-muted-foreground" title={row.lead_label || ''}>{row.lead_label || '—'}</td>
                   <td className="max-w-[12rem] truncate py-2 pr-3" title={row.product_name || ''}>{row.product_name || '—'}</td>
                   <td className="py-2 pr-3 font-mono text-xs">{row.serial_number || '—'}</td>
                   <td className="py-2 pr-3">{row.service_type || '—'}</td>
                   <td className="py-2 pr-3"><PriorityBadge priority={row.priority} /></td>
-                  <td className="py-2 pr-3">{row.assigned_name || <span className="text-slate-400">Unassigned</span>}</td>
+                  <td className="py-2 pr-3">{row.assigned_name || <span className="text-muted-foreground">Unassigned</span>}</td>
                   <td className="py-2 pr-3"><StatusBadge status={row.status} /></td>
                   <td className={cn('whitespace-nowrap py-2 pr-3', row.overdue && 'font-semibold text-rose-700')}>
                     {fmtDate(row.expected_completion)}{row.overdue ? ' · overdue' : ''}
@@ -346,7 +346,7 @@ export function ServiceMaintenance() {
               ))}
               {!loading && data.items.length === 0 && (
                 <tr>
-                  <td colSpan={COLUMNS.length + 1} className="py-10 text-center text-slate-500">
+                  <td colSpan={COLUMNS.length + 1} className="py-10 text-center text-muted-foreground">
                     {filtersActive ? 'No service requests match these filters.' : 'No service requests yet.'}
                     {!filtersActive && caps.coordinate ? ' Use “Create Service Request” to add the first one.' : ''}
                   </td>
@@ -356,7 +356,7 @@ export function ServiceMaintenance() {
           </table>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
           <span>
             {data.total === 0 ? '0 requests' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, data.total)} of ${data.total}`}
           </span>
@@ -364,9 +364,9 @@ export function ServiceMaintenance() {
             <select className={cn(INPUT_CLASS, 'h-8 w-auto text-xs')} value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} aria-label="Rows per page">
               {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n} / page</option>)}
             </select>
-            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}><ChevronLeft className="h-4 w-4" /></Button>
+            <Button aria-label="Previous" variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}><ChevronLeft className="h-4 w-4" /></Button>
             <span className="text-xs">Page {page} of {totalPages}</span>
-            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}><ChevronRight className="h-4 w-4" /></Button>
+            <Button aria-label="Next" variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}><ChevronRight className="h-4 w-4" /></Button>
           </div>
         </div>
       </Card>

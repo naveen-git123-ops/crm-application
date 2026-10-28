@@ -17,7 +17,9 @@ module.exports = {
   			sm: 'calc(var(--radius) - 4px)'
   		},
   		boxShadow: {
-  			soft: '0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06)',
+  			soft: '0 1px 2px 0 rgb(20 24 70 / 0.04), 0 6px 16px -6px rgb(20 24 70 / 0.08)',
+  			lift: '0 2px 4px 0 rgb(20 24 70 / 0.05), 0 14px 28px -10px rgb(20 24 70 / 0.16)',
+  			glow: '0 8px 24px -8px hsl(var(--primary) / 0.55)',
   			elevated: '0 16px 40px -16px rgb(16 24 40 / 0.28)',
   			panel: '0 24px 64px -20px rgb(15 23 42 / 0.28)',
   		},

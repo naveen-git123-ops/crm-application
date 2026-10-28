@@ -13,9 +13,9 @@ import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFile
 import { LEAD_ATTACHMENT_ACCEPT, LEAD_ATTACHMENT_HINT } from '@/lib/leadAttachmentAccept';
 
 const selectClass =
-  'flex h-11 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900';
+  'flex h-11 w-full rounded-lg border border-input bg-white px-4 py-2 text-sm text-foreground';
 
-const labelClass = 'text-sm font-semibold text-gray-700';
+const labelClass = 'text-sm font-semibold text-foreground';
 
 function leadToForm(lead) {
   if (!lead) return null;
@@ -156,7 +156,7 @@ export function LeadEditDialog({
             e.preventDefault();
             saveLead();
           }}
-          className="p-6 space-y-4 text-gray-900"
+          className="p-6 space-y-4 text-foreground"
         >
           <div className="space-y-2">
             <Label htmlFor="edit-lead-customer" className={labelClass}>Customer</Label>
@@ -316,7 +316,7 @@ export function LeadEditDialog({
               value={form.brief_of_enquiry || ''}
               onChange={(e) => setForm({ ...form, brief_of_enquiry: e.target.value })}
               rows={3}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm resize-none"
+              className="w-full rounded-lg border border-input px-3 py-2 text-sm resize-none"
             />
           </div>
 

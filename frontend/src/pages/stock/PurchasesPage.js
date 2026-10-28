@@ -85,7 +85,7 @@ export default function PurchasesPage() {
         </div>
         {loading ? <Spinner /> : rows.length === 0 ? <EmptyState title="No purchase orders" detail="Creating an order does not increase stock." /> : (
           <table className="min-w-full text-sm">
-            <thead className="text-left text-xs uppercase text-slate-600">
+            <thead className="text-left text-xs uppercase text-muted-foreground">
               <tr><th className="py-2">Number</th><th className="py-2">Supplier</th><th className="py-2">Status</th><th className="py-2 text-right">Total</th></tr>
             </thead>
             <tbody>
@@ -127,8 +127,8 @@ export default function PurchasesPage() {
                 <option value="">Product</option>
                 {products.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
               </select>
-              <input type="number" min="0" step="any" className={inputClass} placeholder="Qty" value={line.quantity} onChange={(e) => setLines(lines.map((item, i) => i === index ? { ...item, quantity: e.target.value } : item))} />
-              <input type="number" min="0" step="any" className={inputClass} placeholder="Cost" value={line.unit_cost} onChange={(e) => setLines(lines.map((item, i) => i === index ? { ...item, unit_cost: e.target.value } : item))} />
+              <input aria-label="Qty" type="number" min="0" step="any" className={inputClass} placeholder="Qty" value={line.quantity} onChange={(e) => setLines(lines.map((item, i) => i === index ? { ...item, quantity: e.target.value } : item))} />
+              <input aria-label="Cost" type="number" min="0" step="any" className={inputClass} placeholder="Cost" value={line.unit_cost} onChange={(e) => setLines(lines.map((item, i) => i === index ? { ...item, unit_cost: e.target.value } : item))} />
             </div>
           ))}
           <button type="button" className="text-sm text-primary" onClick={() => setLines([...lines, blankLine()])}>Add line</button>

@@ -53,7 +53,7 @@ export default function PurchaseDetailPage() {
     }
   };
 
-  if (!po) return <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />;
+  if (!po) return <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />;
 
   return (
     <div className="space-y-4">
@@ -75,7 +75,7 @@ export default function PurchaseDetailPage() {
         <p className="text-xs text-muted-foreground">Order total is the purchase commitment. It is not inventory value until a goods receipt is posted.</p>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="text-left text-xs uppercase text-slate-600">
+            <thead className="text-left text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="py-2">Product</th>
                 <th className="py-2 text-right">Ordered</th>
@@ -108,7 +108,7 @@ export default function PurchaseDetailPage() {
           {po.status === 'pending_approval' && <Button disabled={saving} onClick={() => run('approve')}>Approve</Button>}
           {['approved', 'partially_received'].includes(po.status) && (
             <>
-              <input className={inputClass + ' max-w-xs'} placeholder="Supplier delivery ref" value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} />
+              <input aria-label="Supplier delivery ref" className={inputClass + ' max-w-xs'} placeholder="Supplier delivery ref" value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} />
               <Button disabled={saving} onClick={() => run('receive')}>{saving ? 'Posting…' : 'Post goods receipt'}</Button>
             </>
           )}

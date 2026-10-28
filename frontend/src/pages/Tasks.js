@@ -38,8 +38,8 @@ const API = API_ENDPOINT;
 const authHeaders = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
 
 const STATUS_META = {
-  Pending: { label: 'To do', className: 'bg-slate-100 text-slate-700' },
-  'In Progress': { label: 'In progress', className: 'bg-blue-50 text-blue-700' },
+  Pending: { label: 'To do', className: 'bg-muted text-foreground' },
+  'In Progress': { label: 'In progress', className: 'bg-accent text-accent-foreground' },
   Overdue: { label: 'Overdue', className: 'bg-red-50 text-red-700' },
   Completed: { label: 'Done', className: 'bg-emerald-50 text-emerald-700' },
   'Approval Pending': { label: 'Waiting approval', className: 'bg-amber-50 text-amber-800' },
@@ -62,7 +62,7 @@ function statusLabel(status) {
 }
 
 function statusClass(status) {
-  return STATUS_META[status]?.className || 'bg-gray-100 text-gray-700';
+  return STATUS_META[status]?.className || 'bg-muted text-foreground';
 }
 
 function isOpenStatus(status) {
@@ -87,7 +87,7 @@ function dueLabel(dueDate, status) {
 
 function StatusPill({ status }) {
   return (
-    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium', statusClass(status))}>
+    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', statusClass(status))}>
       {statusLabel(status)}
     </span>
   );
@@ -240,15 +240,15 @@ const TaskDetailsSheet = ({ task, open, onClose, onChanged, user, employees }) =
   return (
     <Sheet open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
       <SheetContent className="w-full sm:max-w-lg bg-white overflow-y-auto p-0" side="right">
-        <div className="sticky top-0 z-10 border-b border-gray-200 bg-white px-5 py-4">
+        <div className="sticky top-0 z-10 border-b border-border bg-white px-5 py-4">
           <SheetHeader className="space-y-1 text-left">
-            <p className="text-[11px] font-mono text-gray-500">{task.task_id}</p>
-            <SheetTitle className="text-lg font-semibold text-gray-900 leading-snug pr-8">
+            <p className="text-xs font-mono text-muted-foreground">{task.task_id}</p>
+            <SheetTitle className="text-lg font-semibold text-foreground leading-snug pr-8">
               {task.title}
             </SheetTitle>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <StatusPill status={task.status} />
-              <span className={cn('text-xs', task.status !== 'Completed' && task.due_date < isoToday() ? 'text-red-600 font-medium' : 'text-gray-500')}>
+              <span className={cn('text-xs', task.status !== 'Completed' && task.due_date < isoToday() ? 'text-red-600 font-medium' : 'text-muted-foreground')}>
                 {dueLabel(task.due_date, task.status)}
               </span>
             </div>
@@ -259,7 +259,7 @@ const TaskDetailsSheet = ({ task, open, onClose, onChanged, user, employees }) =
           {canUpdateStatus && task.status !== 'Completed' ? (
             <div className="flex flex-wrap gap-2">
               {task.status !== 'In Progress' ? (
-                <Button size="sm" className="h-8 bg-blue-600 text-white hover:bg-blue-700" disabled={saving} onClick={() => updateStatus('In Progress')}>
+                <Button size="sm" className="h-8 bg-primary text-white hover:bg-primary/90" disabled={saving} onClick={() => updateStatus('In Progress')}>
                   <Play className="h-3.5 w-3.5 mr-1.5" />
                   Start
                 </Button>
@@ -272,29 +272,29 @@ const TaskDetailsSheet = ({ task, open, onClose, onChanged, user, employees }) =
           ) : null}
 
           {editMode ? (
-            <div className="space-y-3 rounded-lg border border-gray-200 bg-slate-50 p-4">
+            <div className="space-y-3 rounded-lg border border-border bg-muted p-4">
               <div>
-                <Label className="text-xs font-medium text-gray-700">Title</Label>
-                <Input className="mt-1 h-9" value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} />
+                <Label htmlFor="tasks-field-1" className="text-xs font-medium text-foreground">Title</Label>
+                <Input id="tasks-field-1" className="mt-1 h-9" value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} />
               </div>
               <div>
-                <Label className="text-xs font-medium text-gray-700">Description</Label>
-                <textarea
+                <Label htmlFor="tasks-field-2" className="text-xs font-medium text-foreground">Description</Label>
+                <textarea id="tasks-field-2"
                   rows={3}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-md border border-input px-3 py-2 text-sm"
                   value={editForm.description}
                   onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))}
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs font-medium text-gray-700">Due date</Label>
-                  <Input type="date" className="mt-1 h-9" value={editForm.due_date} onChange={(e) => setEditForm((p) => ({ ...p, due_date: e.target.value }))} />
+                  <Label htmlFor="tasks-field-3" className="text-xs font-medium text-foreground">Due date</Label>
+                  <Input id="tasks-field-3" type="date" className="mt-1 h-9" value={editForm.due_date} onChange={(e) => setEditForm((p) => ({ ...p, due_date: e.target.value }))} />
                 </div>
                 <div>
-                  <Label className="text-xs font-medium text-gray-700">Assign to</Label>
-                  <select
-                    className="mt-1 h-9 w-full rounded-md border border-gray-300 bg-white px-2 text-sm"
+                  <Label htmlFor="tasks-field-4" className="text-xs font-medium text-foreground">Assign to</Label>
+                  <select id="tasks-field-4"
+                    className="mt-1 h-9 w-full rounded-md border border-input bg-white px-2 text-sm"
                     value={editForm.assigned_to_employee_id}
                     onChange={(e) => setEditForm((p) => ({ ...p, assigned_to_employee_id: e.target.value }))}
                   >
@@ -306,31 +306,31 @@ const TaskDetailsSheet = ({ task, open, onClose, onChanged, user, employees }) =
               </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => setEditMode(false)}>Cancel</Button>
-                <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700" disabled={saving} onClick={saveEdit}>Save</Button>
+                <Button size="sm" className="bg-primary text-white hover:bg-primary/90" disabled={saving} onClick={saveEdit}>Save</Button>
               </div>
             </div>
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Assigned to</p>
-                  <p className="mt-0.5 font-medium text-gray-900">{task.assigned_to_name || '—'}</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Assigned to</p>
+                  <p className="mt-0.5 font-medium text-foreground">{task.assigned_to_name || '—'}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Assigned by</p>
-                  <p className="mt-0.5 font-medium text-gray-900">{task.created_by_name || '—'}</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Assigned by</p>
+                  <p className="mt-0.5 font-medium text-foreground">{task.created_by_name || '—'}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Estimate</p>
-                  <p className="mt-0.5 font-medium text-gray-900">{formatHours(task.estimated_time_minutes)}</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Estimate</p>
+                  <p className="mt-0.5 font-medium text-foreground">{formatHours(task.estimated_time_minutes)}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Created</p>
-                  <p className="mt-0.5 font-medium text-gray-900">{task.created_at ? formatISTDateTime(task.created_at) : '—'}</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Created</p>
+                  <p className="mt-0.5 font-medium text-foreground">{task.created_at ? formatISTDateTime(task.created_at) : '—'}</p>
                 </div>
               </div>
               {task.description ? (
-                <p className="whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-sm text-gray-700">{task.description}</p>
+                <p className="whitespace-pre-wrap rounded-lg bg-muted px-3 py-2 text-sm text-foreground">{task.description}</p>
               ) : null}
               {canManage ? (
                 <Button size="sm" variant="outline" className="h-8" onClick={() => setEditMode(true)}>Edit assignment</Button>
@@ -339,48 +339,48 @@ const TaskDetailsSheet = ({ task, open, onClose, onChanged, user, employees }) =
           )}
 
           <section>
-            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
               <MessageSquare className="h-4 w-4" /> Updates
             </h3>
             <div className="flex gap-2">
-              <Input
+              <Input aria-label="Write an update…"
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 placeholder="Write an update…"
                 className="h-9"
                 onKeyDown={(e) => e.key === 'Enter' && addComment()}
               />
-              <Button size="sm" className="h-9 bg-blue-600 text-white hover:bg-blue-700" onClick={addComment}>
+              <Button aria-label="Send" size="sm" className="h-9 bg-primary text-white hover:bg-primary/90" onClick={addComment}>
                 <Send className="h-4 w-4" />
               </Button>
             </div>
             <div className="mt-3 space-y-2">
               {comments.length === 0 ? (
-                <p className="text-xs text-gray-400">No updates yet.</p>
+                <p className="text-xs text-muted-foreground">No updates yet.</p>
               ) : comments.map((c) => (
-                <div key={c.id} className="rounded-md bg-slate-50 px-3 py-2">
-                  <div className="flex justify-between gap-2 text-[11px] text-gray-500">
-                    <span className="font-medium text-gray-800">{c.author_name}</span>
+                <div key={c.id} className="rounded-md bg-muted px-3 py-2">
+                  <div className="flex justify-between gap-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">{c.author_name}</span>
                     <span>{formatISTDateTime(c.created_at)}</span>
                   </div>
-                  <p className="mt-0.5 text-sm text-gray-700">{c.content}</p>
+                  <p className="mt-0.5 text-sm text-foreground">{c.content}</p>
                 </div>
               ))}
             </div>
           </section>
 
           <section>
-            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
               <Clock className="h-4 w-4" /> Time spent
             </h3>
             <div className="flex gap-2">
-              <Input type="number" min="1" className="h-9 w-28" placeholder="Minutes" value={timeMinutes} onChange={(e) => setTimeMinutes(e.target.value)} />
-              <Input className="h-9 flex-1" placeholder="What did you do?" value={timeNote} onChange={(e) => setTimeNote(e.target.value)} />
+              <Input aria-label="Minutes" type="number" min="1" className="h-9 w-28" placeholder="Minutes" value={timeMinutes} onChange={(e) => setTimeMinutes(e.target.value)} />
+              <Input aria-label="What did you do?" className="h-9 flex-1" placeholder="What did you do?" value={timeNote} onChange={(e) => setTimeNote(e.target.value)} />
               <Button size="sm" variant="outline" className="h-9" onClick={addTime}>Log</Button>
             </div>
             <div className="mt-2 space-y-1">
               {timeLogs.map((log) => (
-                <p key={log.id} className="text-xs text-gray-600">
+                <p key={log.id} className="text-xs text-muted-foreground">
                   {log.time_spent_minutes} min · {log.logged_by_name} · {log.log_date}
                   {log.description ? ` — ${log.description}` : ''}
                 </p>
@@ -389,18 +389,18 @@ const TaskDetailsSheet = ({ task, open, onClose, onChanged, user, employees }) =
           </section>
 
           <section>
-            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
               <Paperclip className="h-4 w-4" /> Files
             </h3>
-            <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-gray-300 px-3 py-4 text-xs text-gray-500 hover:bg-slate-50">
+            <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-input px-3 py-4 text-xs text-muted-foreground hover:bg-muted">
               Attach a file
               <input type="file" className="hidden" onChange={uploadFile} />
             </label>
             <div className="mt-2 space-y-1">
               {attachments.map((att) => (
-                <div key={att.id} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2">
-                  <span className="truncate text-sm text-gray-800">{att.file_name}</span>
-                  <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600">
+                <div key={att.id} className="flex items-center justify-between rounded-md bg-muted px-3 py-2">
+                  <span className="truncate text-sm text-foreground">{att.file_name}</span>
+                  <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="text-accent-foreground">
                     <Download className="h-4 w-4" />
                   </a>
                 </div>
@@ -554,7 +554,7 @@ export const Tasks = () => {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -572,19 +572,19 @@ export const Tasks = () => {
     <div className="space-y-5" data-testid="tasks-page">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Open</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Open</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{stats.open}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">In progress</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">In progress</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-indigo-600">{stats.progress}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Overdue</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Overdue</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-rose-600">{stats.overdue}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Done</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Done</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-emerald-700">{stats.done}</p>
         </Card>
       </div>
@@ -638,7 +638,7 @@ export const Tasks = () => {
           ) : null}
           <div className="relative min-w-[180px] flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
+            <Input aria-label="Search title, person, or ID…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search title, person, or ID…"
@@ -673,22 +673,22 @@ export const Tasks = () => {
                   return (
                     <tr
                       key={task.id}
-                      className="cursor-pointer border-b border-gray-100 hover:bg-slate-50/80"
+                      className="cursor-pointer border-b border-border hover:bg-muted/80"
                       onClick={() => setSelected(task)}
                     >
                       <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{task.title}</p>
-                        <p className="mt-0.5 font-mono text-[11px] text-gray-500">{task.task_id}</p>
+                        <p className="font-medium text-foreground">{task.title}</p>
+                        <p className="mt-0.5 font-mono text-xs text-muted-foreground">{task.task_id}</p>
                       </td>
-                      <td className="px-4 py-3 text-gray-700">
+                      <td className="px-4 py-3 text-foreground">
                         <span className="inline-flex items-center gap-1.5">
-                          <User className="h-3.5 w-3.5 text-gray-400" />
+                          <User className="h-3.5 w-3.5 text-muted-foreground" />
                           {task.assigned_to_name || '—'}
                         </span>
                       </td>
-                      <td className={cn('px-4 py-3', isOpenStatus(task.status) && task.due_date < isoToday() ? 'font-medium text-red-600' : 'text-gray-700')}>
+                      <td className={cn('px-4 py-3', isOpenStatus(task.status) && task.due_date < isoToday() ? 'font-medium text-red-600' : 'text-foreground')}>
                         <span className="inline-flex items-center gap-1.5">
-                          <CalendarIcon className="h-3.5 w-3.5 text-gray-400" />
+                          <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
                           {dueLabel(task.due_date, task.status)}
                         </span>
                       </td>
@@ -708,7 +708,7 @@ export const Tasks = () => {
                             </Button>
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-400">View</span>
+                          <span className="text-xs text-muted-foreground">View</span>
                         )}
                       </td>
                     </tr>
@@ -727,23 +727,23 @@ export const Tasks = () => {
           </DialogHeader>
           <form onSubmit={createTask} className="space-y-4">
             <div>
-              <Label className="text-sm font-medium text-gray-700">What needs to be done</Label>
-              <Input className="mt-1.5 h-10" value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} placeholder="Short title" required />
+              <Label htmlFor="tasks-field-5" className="text-sm font-medium text-foreground">What needs to be done</Label>
+              <Input id="tasks-field-5" className="mt-1.5 h-10" value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} placeholder="Short title" required />
             </div>
             <div>
-              <Label className="text-sm font-medium text-gray-700">Details</Label>
-              <textarea
+              <Label htmlFor="tasks-field-6" className="text-sm font-medium text-foreground">Details</Label>
+              <textarea id="tasks-field-6"
                 rows={3}
-                className="mt-1.5 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="mt-1.5 w-full rounded-md border border-input px-3 py-2 text-sm"
                 value={form.description}
                 onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
                 placeholder="Optional context"
               />
             </div>
             <div>
-              <Label className="text-sm font-medium text-gray-700">Assign to</Label>
-              <select
-                className="mt-1.5 h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+              <Label htmlFor="tasks-field-7" className="text-sm font-medium text-foreground">Assign to</Label>
+              <select id="tasks-field-7"
+                className="mt-1.5 h-10 w-full rounded-md border border-input bg-white px-3 text-sm"
                 value={form.assigned_to_employee_id}
                 onChange={(e) => setForm((p) => ({ ...p, assigned_to_employee_id: e.target.value }))}
                 required
@@ -756,12 +756,12 @@ export const Tasks = () => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-sm font-medium text-gray-700">Due date</Label>
-                <Input type="date" className="mt-1.5 h-10" value={form.due_date} onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))} required />
+                <Label htmlFor="tasks-field-8" className="text-sm font-medium text-foreground">Due date</Label>
+                <Input id="tasks-field-8" type="date" className="mt-1.5 h-10" value={form.due_date} onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))} required />
               </div>
               <div>
-                <Label className="text-sm font-medium text-gray-700">Estimate (hours)</Label>
-                <Input type="number" min="0.5" step="0.5" className="mt-1.5 h-10" value={form.estimated_time_hours} onChange={(e) => setForm((p) => ({ ...p, estimated_time_hours: e.target.value }))} placeholder="Optional" />
+                <Label htmlFor="tasks-field-9" className="text-sm font-medium text-foreground">Estimate (hours)</Label>
+                <Input id="tasks-field-9" type="number" min="0.5" step="0.5" className="mt-1.5 h-10" value={form.estimated_time_hours} onChange={(e) => setForm((p) => ({ ...p, estimated_time_hours: e.target.value }))} placeholder="Optional" />
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">

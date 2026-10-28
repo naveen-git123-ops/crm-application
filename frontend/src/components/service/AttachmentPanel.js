@@ -38,7 +38,7 @@ function FileIcon({ type }) {
   const ext = String(type || '').toLowerCase();
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic'].includes(ext)) return <ImageIcon className="h-4 w-4 text-sky-600" />;
   if (['mp4', 'mov', 'avi', 'mkv', 'webm', '3gp'].includes(ext)) return <Film className="h-4 w-4 text-purple-600" />;
-  return <FileText className="h-4 w-4 text-slate-500" />;
+  return <FileText className="h-4 w-4 text-muted-foreground" />;
 }
 
 const IMAGE_TYPES = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
@@ -137,15 +137,15 @@ export function AttachmentPanel({
   return (
     <div className="space-y-3" data-testid="service-attachments">
       <div className="flex items-center gap-2">
-        <Paperclip className="h-4 w-4 text-slate-500" />
-        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-        <span className="text-xs text-slate-500">({visible.length})</span>
+        <Paperclip className="h-4 w-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <span className="text-xs text-muted-foreground">({visible.length})</span>
       </div>
 
       {canEdit && (
-        <div className="grid grid-cols-1 items-end gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+        <div className="grid grid-cols-1 items-end gap-2 rounded-lg border border-dashed border-input bg-muted p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600" htmlFor={`att-cat-${vendorRepairId || visitId || 'main'}`}>Category</label>
+            <label className="text-xs font-medium text-muted-foreground" htmlFor={`att-cat-${vendorRepairId || visitId || 'main'}`}>Category</label>
             <select
               id={`att-cat-${vendorRepairId || visitId || 'main'}`}
               className={INPUT_CLASS}
@@ -157,8 +157,8 @@ export function AttachmentPanel({
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">Description (optional)</label>
-            <Input value={description} maxLength={500} onChange={(e) => setDescription(e.target.value)} disabled={busy} placeholder="What does this show?" />
+            <label htmlFor="attachmentpanel-field-1" className="text-xs font-medium text-muted-foreground">Description (optional)</label>
+            <Input id="attachmentpanel-field-1" value={description} maxLength={500} onChange={(e) => setDescription(e.target.value)} disabled={busy} placeholder="What does this show?" />
           </div>
           <div>
             <input ref={inputRef} type="file" multiple className="hidden" onChange={onPick} disabled={busy} />
@@ -168,7 +168,7 @@ export function AttachmentPanel({
             </Button>
           </div>
           {limits && (
-            <p className="text-[11px] text-slate-500 md:col-span-3">
+            <p className="text-xs text-muted-foreground md:col-span-3">
               Images up to {limits.image_mb} MB, videos up to {limits.video_mb} MB, documents up to {limits.document_mb} MB.
               Programs and scripts are not accepted.
             </p>
@@ -179,7 +179,7 @@ export function AttachmentPanel({
       {uploads.length > 0 && (
         <ul className="space-y-1 text-xs">
           {uploads.map((u) => (
-            <li key={u.key} className={u.error ? 'text-rose-700' : 'text-slate-600'}>
+            <li key={u.key} className={u.error ? 'text-rose-700' : 'text-muted-foreground'}>
               {u.file.name} — {u.error || (u.done ? 'uploaded' : `${u.progress}%`)}
             </li>
           ))}
@@ -187,9 +187,9 @@ export function AttachmentPanel({
       )}
 
       {visible.length === 0 ? (
-        <p className="text-sm text-slate-500">No files yet.</p>
+        <p className="text-sm text-muted-foreground">No files yet.</p>
       ) : (
-        <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+        <ul className="divide-y divide-border rounded-lg border border-border bg-white">
           {visible.map((a) => (
             <li key={a.id} className="flex items-center gap-3 px-3 py-2">
               {IMAGE_TYPES.includes(a.file_type) ? (
@@ -197,16 +197,16 @@ export function AttachmentPanel({
                   <img src={fileHref(a.file_url)} alt={a.file_name} className="h-10 w-10 rounded object-cover" loading="lazy" />
                 </a>
               ) : (
-                <span className="flex h-10 w-10 items-center justify-center rounded bg-slate-100"><FileIcon type={a.file_type} /></span>
+                <span className="flex h-10 w-10 items-center justify-center rounded bg-muted"><FileIcon type={a.file_type} /></span>
               )}
               <div className="min-w-0 flex-1">
                 <a href={fileHref(a.file_url)} target="_blank" rel="noreferrer" className="block truncate text-sm font-medium text-indigo-700 hover:underline">
                   {a.file_name}
                 </a>
-                <div className="truncate text-xs text-slate-500">
+                <div className="truncate text-xs text-muted-foreground">
                   {a.category} · {fmtBytes(a.file_size)} · {a.uploaded_by_name || 'Unknown'} · {fmtDateTime(a.uploaded_at)}
                 </div>
-                {a.description && <div className="truncate text-xs text-slate-600">{a.description}</div>}
+                {a.description && <div className="truncate text-xs text-muted-foreground">{a.description}</div>}
               </div>
               {canRemove && (
                 <Button variant="ghost" size="icon" onClick={() => remove(a)} aria-label={`Remove ${a.file_name}`}>

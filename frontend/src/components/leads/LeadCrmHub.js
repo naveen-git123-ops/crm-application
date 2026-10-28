@@ -16,7 +16,7 @@ function StatusBadge({ status, statusColors }) {
   const c = statusColors[status];
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold border ${c?.pill || 'bg-slate-50 text-slate-700 border-slate-200'}`}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold border ${c?.pill || 'bg-muted text-foreground border-border'}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${c?.dot || 'bg-slate-400'}`} />
       {status}
@@ -25,7 +25,7 @@ function StatusBadge({ status, statusColors }) {
 }
 
 function VendorChip({ lead, isCarryAndOrder, leadNeedsVendor }) {
-  if (!isCarryAndOrder(lead)) return <span className="text-slate-400 text-xs">—</span>;
+  if (!isCarryAndOrder(lead)) return <span className="text-muted-foreground text-xs">—</span>;
   if (lead.vendor_name) {
     return (
       <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium max-w-[140px] truncate" title={lead.vendor_name}>
@@ -36,18 +36,18 @@ function VendorChip({ lead, isCarryAndOrder, leadNeedsVendor }) {
   }
   if (leadNeedsVendor(lead)) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
         <AlertCircle className="h-3 w-3 shrink-0" />
         Vendor pending
       </span>
     );
   }
-  return <span className="text-slate-400 text-xs">—</span>;
+  return <span className="text-muted-foreground text-xs">—</span>;
 }
 
 function PendingSetupBadge() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+    <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-amber-800">
       Setup pending
     </span>
   );
@@ -107,21 +107,21 @@ export function LeadCrmHub({
   return (
     <div className="space-y-3">
       {/* Main workspace */}
-      <section className="rounded-xl border border-slate-200/80 bg-white shadow-sm overflow-hidden flex flex-col">
+      <section className="rounded-xl border border-border/80 bg-white shadow-sm overflow-hidden flex flex-col">
         {/* Toolbar + compact stage filters */}
-        <div className="px-4 py-3 border-b border-slate-100 space-y-2.5 bg-white">
+        <div className="px-4 py-3 border-b border-border space-y-2.5 bg-white">
           <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input aria-label="Search company, contact, email, vendor…"
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder="Search company, contact, email, vendor…"
-                className="pl-9 h-9 border-slate-200 bg-slate-50/50 focus:bg-white rounded-lg text-sm"
+                className="pl-9 h-9 border-border bg-muted/50 focus:bg-white rounded-lg text-sm"
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4 text-slate-400 hidden sm:block" />
+              <SlidersHorizontal className="h-4 w-4 text-muted-foreground hidden sm:block" />
               <select value={filterSource} onChange={(e) => onFilterSource(e.target.value)} className={selectClass}>
                 <option value="">All sources</option>
                 {sources.map((s) => (
@@ -146,10 +146,10 @@ export function LeadCrmHub({
             <button
               type="button"
               onClick={() => onSelectStatusFilter(filterStatus === '__pipeline__' ? '' : '__pipeline__')}
-              className={`h-7 px-2.5 rounded-md text-[11px] font-semibold transition-colors ${
+              className={`h-7 px-2.5 rounded-md text-xs font-semibold transition-colors ${
                 filterStatus === '__pipeline__'
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  : 'bg-muted text-foreground hover:bg-slate-200'
               }`}
             >
               Open deals
@@ -162,15 +162,15 @@ export function LeadCrmHub({
                   key={status}
                   type="button"
                   onClick={() => onSelectStatusFilter(active ? '' : status)}
-                  className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-[11px] font-semibold border transition-colors ${
+                  className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-semibold border transition-colors ${
                     active
                       ? 'border-indigo-300 bg-indigo-50 text-indigo-800'
-                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      : 'border-border bg-white text-muted-foreground hover:border-input'
                   }`}
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${statusColors[status]?.dot || 'bg-slate-400'}`} />
                   {status}
-                  <span className="tabular-nums text-slate-400 font-medium">{count}</span>
+                  <span className="tabular-nums text-muted-foreground font-medium">{count}</span>
                 </button>
               );
             })}
@@ -178,7 +178,7 @@ export function LeadCrmHub({
               <button
                 type="button"
                 onClick={() => onSelectStatusFilter('')}
-                className="h-7 px-2 text-[11px] font-medium text-slate-500 hover:text-slate-700"
+                className="h-7 px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
               >
                 Clear
               </button>
@@ -189,10 +189,10 @@ export function LeadCrmHub({
         <div className="flex flex-1 flex-col min-h-0">
           {/* Table */}
           <div className="flex flex-col min-h-0 w-full">
-            <div className="px-4 py-2 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between">
-              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider">
+            <div className="px-4 py-2 bg-muted/80 border-b border-border flex items-center justify-between">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Lead registry
-                <span className="ml-2 font-normal text-slate-500 normal-case">({sortedLeads.length})</span>
+                <span className="ml-2 font-normal text-muted-foreground normal-case">({sortedLeads.length})</span>
               </p>
             </div>
             <div className="overflow-auto max-h-[min(75vh,calc(100vh-12rem))]">
@@ -200,20 +200,20 @@ export function LeadCrmHub({
                 <EmptyRegistry />
               ) : (
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
+                  <thead className="sticky top-0 z-10 bg-muted border-b border-border">
                     <tr>
-                      <th className="text-left py-2.5 pl-4 pr-2 font-semibold text-slate-600 text-xs">Company</th>
-                      <th className="text-left py-2.5 px-2 font-semibold text-slate-600 text-xs hidden md:table-cell">Contact</th>
-                      <th className="text-left py-2.5 px-2 font-semibold text-slate-600 text-xs">Stage</th>
-                      <th className="text-left py-2.5 px-2 font-semibold text-slate-600 text-xs hidden lg:table-cell">Vendor</th>
-                      <th className="text-right py-2.5 px-2 font-semibold text-slate-600 text-xs">Value</th>
+                      <th className="text-left py-2.5 pl-4 pr-2 font-semibold text-muted-foreground text-xs">Company</th>
+                      <th className="text-left py-2.5 px-2 font-semibold text-muted-foreground text-xs hidden md:table-cell">Contact</th>
+                      <th className="text-left py-2.5 px-2 font-semibold text-muted-foreground text-xs">Stage</th>
+                      <th className="text-left py-2.5 px-2 font-semibold text-muted-foreground text-xs hidden lg:table-cell">Vendor</th>
+                      <th className="text-right py-2.5 px-2 font-semibold text-muted-foreground text-xs">Value</th>
                       {showActionsColumn && (
-                        <th className="w-[5.5rem] py-2.5 px-2 font-semibold text-slate-600 text-xs text-right">Actions</th>
+                        <th className="w-[5.5rem] py-2.5 px-2 font-semibold text-muted-foreground text-xs text-right">Actions</th>
                       )}
                       <th className="w-10 py-2.5 pr-3" aria-label="Open" />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-border">
                     {sortedLeads.map((lead) => {
                       const selected = selectedLead?.id === lead.id;
                       const pendingSetup = leadNeedsVendor(lead);
@@ -226,34 +226,34 @@ export function LeadCrmHub({
                               ? 'bg-indigo-50/90 hover:bg-indigo-50'
                               : pendingSetup
                                 ? 'bg-amber-50/40 hover:bg-amber-50/70 border-l-4 border-l-amber-400'
-                                : 'hover:bg-slate-50/80'
+                                : 'hover:bg-muted/80'
                           }`}
                         >
                           <td className="py-3 pl-4 pr-2">
                             <div className="flex items-center gap-3">
                               <div
                                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
-                                  selected ? 'bg-indigo-600 text-white' : pendingSetup ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+                                  selected ? 'bg-indigo-600 text-white' : pendingSetup ? 'bg-amber-100 text-amber-800' : 'bg-muted text-foreground'
                                 }`}
                               >
                                 {getLeadInitials(lead)}
                               </div>
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <p className="font-semibold text-slate-900 truncate">{lead.company || '—'}</p>
+                                  <p className="font-semibold text-foreground truncate">{lead.company || '—'}</p>
                                   {pendingSetup && <PendingSetupBadge />}
                                 </div>
-                                <p className="text-xs text-slate-500 capitalize truncate">{lead.sub_category || lead.source}</p>
+                                <p className="text-xs text-muted-foreground capitalize truncate">{lead.sub_category || lead.source}</p>
                               </div>
                             </div>
                           </td>
                           <td className="py-3 px-2 hidden md:table-cell">
-                            <p className="text-slate-800 truncate max-w-[140px]">{lead.contact_name || '—'}</p>
-                            <p className="text-xs text-slate-500 truncate max-w-[140px]">{lead.email}</p>
+                            <p className="text-foreground truncate max-w-[140px]">{lead.contact_name || '—'}</p>
+                            <p className="text-xs text-muted-foreground truncate max-w-[140px]">{lead.email}</p>
                           </td>
                           <td className="py-3 px-2">
                             {workflowStageLabel(lead.workflow_stage) ? (
-                              <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold border bg-indigo-50 text-indigo-800 border-indigo-200">
+                              <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border bg-indigo-50 text-indigo-800 border-indigo-200">
                                 {workflowStageLabel(lead.workflow_stage)}
                               </span>
                             ) : (
@@ -263,25 +263,25 @@ export function LeadCrmHub({
                           <td className="py-3 px-2 hidden lg:table-cell">
                             <VendorChip lead={lead} isCarryAndOrder={isCarryAndOrder} leadNeedsVendor={leadNeedsVendor} />
                           </td>
-                          <td className="py-3 px-2 text-right font-medium text-slate-800 tabular-nums">
+                          <td className="py-3 px-2 text-right font-medium text-foreground tabular-nums">
                             {formatLeadValue(lead.value)}
                           </td>
                           {showActionsColumn && (
                             <td className="py-3 px-2 text-right">
                               {(canManageAllLeads || canEditLead?.(lead)) ? (
                               <div className="inline-flex items-center gap-1">
-                                <button
+                                <button aria-label="Edit lead"
                                   type="button"
                                   title="Edit lead"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     onEditLead?.(lead);
                                   }}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white text-muted-foreground hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200"
                                 >
                                   <Edit2 className="h-3.5 w-3.5" />
                                 </button>
-                                <button
+                                <button aria-label="Delete lead"
                                   type="button"
                                   title="Delete lead"
                                   onClick={(e) => {
@@ -303,7 +303,7 @@ export function LeadCrmHub({
                                   ? 'bg-amber-500 text-white shadow-sm'
                                   : selected
                                     ? 'bg-indigo-600 text-white'
-                                    : 'bg-slate-100 text-slate-500'
+                                    : 'bg-muted text-muted-foreground'
                               }`}
                               title={pendingSetup ? 'Open workflow — vendor pending' : 'Open workflow'}
                             >
@@ -322,8 +322,8 @@ export function LeadCrmHub({
         </div>
 
         {sortedLeads.length > 0 && (
-          <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/60 text-center">
-            <p className="text-xs text-slate-500">
+          <div className="px-4 py-2.5 border-t border-border bg-muted/60 text-center">
+            <p className="text-xs text-muted-foreground">
               Click a row to open enquiry, costing, and next steps in a popup
             </p>
           </div>
@@ -336,11 +336,11 @@ export function LeadCrmHub({
 function EmptyRegistry() {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-      <div className="h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-        <Search className="h-7 w-7 text-slate-400" />
+      <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center mb-4">
+        <Search className="h-7 w-7 text-muted-foreground" />
       </div>
-      <p className="text-sm font-semibold text-slate-800">No leads found</p>
-      <p className="text-xs text-slate-500 mt-1 max-w-xs">Adjust your filters or create a new lead to get started.</p>
+      <p className="text-sm font-semibold text-foreground">No leads found</p>
+      <p className="text-xs text-muted-foreground mt-1 max-w-xs">Adjust your filters or create a new lead to get started.</p>
     </div>
   );
 }

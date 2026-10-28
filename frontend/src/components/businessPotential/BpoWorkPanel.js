@@ -131,95 +131,95 @@ export function BpoWorkPanel({
 
   return (
     <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
-      <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="space-y-4 rounded-xl border border-border bg-white p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {mode === 'site-visit' ? 'Site visit' : 'BPO queue'}
             </p>
-            <h3 className="mt-1 text-lg font-semibold text-slate-900">{displayValue(record.project_name)}</h3>
-            <p className="text-sm text-slate-500">{displayValue(record.village_name)} · {displayValue(record.district_name)}</p>
+            <h3 className="mt-1 text-lg font-semibold text-foreground">{displayValue(record.project_name)}</h3>
+            <p className="text-sm text-muted-foreground">{displayValue(record.village_name)} · {displayValue(record.district_name)}</p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <span className={cn('rounded-full px-2.5 py-1 text-[11px] font-medium', BPO_STATUS_TONES[record.bpo_status] || BPO_STATUS_TONES.new)}>
+            <span className={cn('rounded-full px-2.5 py-1 text-xs font-medium', BPO_STATUS_TONES[record.bpo_status] || BPO_STATUS_TONES.new)}>
               {bpoStatusLabel(record.bpo_status)}
             </span>
             <span className={cn(
-              'rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums',
+              'rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
               tone === 'red' && 'bg-red-100 text-red-700',
               tone === 'yellow' && 'bg-yellow-100 text-yellow-800',
               tone === 'sky' && 'bg-sky-100 text-sky-800',
-              !tone && 'bg-slate-100 text-slate-700',
+              !tone && 'bg-muted text-foreground',
             )}>
               {displayDaysUntilExpiry(record.validity_end)}
             </span>
             {tone === 'yellow' && (
-              <span className="rounded-full bg-yellow-50 px-2 py-0.5 text-[11px] font-medium text-yellow-800">1st · yellow</span>
+              <span className="rounded-full bg-yellow-50 px-2 py-0.5 text-xs font-medium text-yellow-800">1st · yellow</span>
             )}
             {tone === 'red' && (
-              <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700">2nd · expired</span>
+              <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">2nd · expired</span>
             )}
             {tone === 'sky' && (
-              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800">3rd · blue</span>
+              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800">3rd · blue</span>
             )}
           </div>
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
           <div>
-            <p className="text-[11px] uppercase text-slate-500">Phone</p>
+            <p className="text-xs uppercase text-muted-foreground">Phone</p>
             <a className="font-medium text-indigo-700" href={rowContact(record) ? `tel:${rowContact(record)}` : undefined}>{displayValue(rowContact(record))}</a>
           </div>
           <div>
-            <p className="text-[11px] uppercase text-slate-500">Email</p>
-            <p className="font-medium text-slate-800 break-all">{displayValue(rowEmail(record))}</p>
+            <p className="text-xs uppercase text-muted-foreground">Email</p>
+            <p className="font-medium text-foreground break-all">{displayValue(rowEmail(record))}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase text-slate-500">NOC / Application</p>
-            <p className="font-mono text-xs text-slate-800">{displayValue(record.noc_number)} · {displayValue(record.application_number)}</p>
+            <p className="text-xs uppercase text-muted-foreground">NOC / Application</p>
+            <p className="font-mono text-xs text-foreground">{displayValue(record.noc_number)} · {displayValue(record.application_number)}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase text-slate-500">Valid start</p>
-            <p className="font-medium text-slate-800">{displayDate(record.validity_start)}</p>
+            <p className="text-xs uppercase text-muted-foreground">Valid start</p>
+            <p className="font-medium text-foreground">{displayDate(record.validity_start)}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase text-slate-500">Valid end</p>
+            <p className="text-xs uppercase text-muted-foreground">Valid end</p>
             <p className={cn(
               'font-medium',
               tone === 'red' && 'text-red-700',
               tone === 'yellow' && 'text-yellow-700',
               tone === 'sky' && 'text-sky-700',
-              !tone && 'text-slate-800',
+              !tone && 'text-foreground',
             )}>{displayDate(record.validity_end)}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase text-slate-500">Days to expire</p>
+            <p className="text-xs uppercase text-muted-foreground">Days to expire</p>
             <p className={cn(
               'font-semibold tabular-nums',
               tone === 'red' && 'text-red-700',
               tone === 'yellow' && 'text-yellow-700',
               tone === 'sky' && 'text-sky-700',
-              !tone && 'text-slate-800',
+              !tone && 'text-foreground',
             )}>{displayDaysUntilExpiry(record.validity_end)}</p>
           </div>
           <div className="sm:col-span-2">
-            <p className="text-[11px] uppercase text-slate-500">Proposed address</p>
-            <p className="text-sm text-slate-800">{displayValue(record.proposed_address || record.communication_address)}</p>
+            <p className="text-xs uppercase text-muted-foreground">Proposed address</p>
+            <p className="text-sm text-foreground">{displayValue(record.proposed_address || record.communication_address)}</p>
           </div>
           {record.last_follow_up_notes ? (
-            <div className="sm:col-span-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-              <p className="text-[11px] uppercase text-slate-500">Last BPO follow-up</p>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{record.last_follow_up_notes}</p>
+            <div className="sm:col-span-2 rounded-lg border border-border bg-muted px-3 py-2">
+              <p className="text-xs uppercase text-muted-foreground">Last BPO follow-up</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{record.last_follow_up_notes}</p>
             </div>
           ) : null}
         </div>
 
-        <div className="space-y-3 border-t border-slate-100 pt-4">
-          <p className="text-sm font-semibold text-slate-800">Update status</p>
+        <div className="space-y-3 border-t border-border pt-4">
+          <p className="text-sm font-semibold text-foreground">Update status</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <Label>Status</Label>
-              <select value={outcome} onChange={(e) => setOutcome(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm">
+              <Label htmlFor="bpoworkpanel-field-1">Status</Label>
+              <select id="bpoworkpanel-field-1" value={outcome} onChange={(e) => setOutcome(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-input bg-white px-3 text-sm">
                 {outcomes.map((item) => (
                   <option key={item.key} value={item.key}>{item.label}</option>
                 ))}
@@ -227,14 +227,14 @@ export function BpoWorkPanel({
             </div>
             {selected?.needsNext && (
               <div>
-                <Label>Bring back on</Label>
-                <Input type="date" className="mt-1" value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
+                <Label htmlFor="bpoworkpanel-field-2">Bring back on</Label>
+                <Input id="bpoworkpanel-field-2" type="date" className="mt-1" value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
               </div>
             )}
             {selected?.needsReason && (
               <div className={selected?.needsNext ? '' : 'sm:col-span-2'}>
-                <Label>Reason</Label>
-                <select value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm">
+                <Label htmlFor="bpoworkpanel-field-3">Reason</Label>
+                <select id="bpoworkpanel-field-3" value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-input bg-white px-3 text-sm">
                   <option value="">Select reason</option>
                   {BPO_NOT_QUALIFIED_REASONS.map((item) => (
                     <option key={item} value={item}>{item}</option>
@@ -245,7 +245,11 @@ export function BpoWorkPanel({
           </div>
           <div>
             <Label>{selected?.needsReason ? 'Follow-up notes' : 'Notes'}</Label>
-            <textarea
+            <textarea aria-label={selected?.convert
+                  ? 'Optional notes for the ledger customer…'
+                  : selected?.needsReason
+                    ? 'Add context. Required if reason is Other.'
+                    : 'What was discussed, who you spoke to, and the next step…'}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={4}
@@ -256,7 +260,7 @@ export function BpoWorkPanel({
                     ? 'Add context. Required if reason is Other.'
                     : 'What was discussed, who you spoke to, and the next step…'
               }
-              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-lg border border-input px-3 py-2 text-sm"
             />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -291,40 +295,40 @@ export function BpoWorkPanel({
             <p className="text-xs text-emerald-800">Creates a Create Ledger customer. The potential record stays on Business Potential as Our client.</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <Label>Company name</Label>
-                <Input className="mt-1" value={convertForm.company_name} onChange={(e) => setConvertForm((f) => ({ ...f, company_name: e.target.value }))} />
+                <Label htmlFor="bpoworkpanel-field-4">Company name</Label>
+                <Input id="bpoworkpanel-field-4" className="mt-1" value={convertForm.company_name} onChange={(e) => setConvertForm((f) => ({ ...f, company_name: e.target.value }))} />
               </div>
               <div>
-                <Label>Contact person</Label>
-                <Input className="mt-1" value={convertForm.contact_person_name} onChange={(e) => setConvertForm((f) => ({ ...f, contact_person_name: e.target.value }))} />
+                <Label htmlFor="bpoworkpanel-field-5">Contact person</Label>
+                <Input id="bpoworkpanel-field-5" className="mt-1" value={convertForm.contact_person_name} onChange={(e) => setConvertForm((f) => ({ ...f, contact_person_name: e.target.value }))} />
               </div>
               <div>
-                <Label>Phone</Label>
-                <Input className="mt-1" value={convertForm.phone} onChange={(e) => setConvertForm((f) => ({ ...f, phone: e.target.value }))} />
+                <Label htmlFor="bpoworkpanel-field-6">Phone</Label>
+                <Input id="bpoworkpanel-field-6" className="mt-1" value={convertForm.phone} onChange={(e) => setConvertForm((f) => ({ ...f, phone: e.target.value }))} />
               </div>
               <div>
-                <Label>Email</Label>
-                <Input className="mt-1" value={convertForm.email} onChange={(e) => setConvertForm((f) => ({ ...f, email: e.target.value }))} />
+                <Label htmlFor="bpoworkpanel-field-7">Email</Label>
+                <Input id="bpoworkpanel-field-7" className="mt-1" value={convertForm.email} onChange={(e) => setConvertForm((f) => ({ ...f, email: e.target.value }))} />
               </div>
               <div className="sm:col-span-2">
-                <Label>Address</Label>
-                <Input className="mt-1" value={convertForm.address_line} onChange={(e) => setConvertForm((f) => ({ ...f, address_line: e.target.value }))} />
+                <Label htmlFor="bpoworkpanel-field-8">Address</Label>
+                <Input id="bpoworkpanel-field-8" className="mt-1" value={convertForm.address_line} onChange={(e) => setConvertForm((f) => ({ ...f, address_line: e.target.value }))} />
               </div>
               <div>
-                <Label>City</Label>
-                <Input className="mt-1" value={convertForm.city} onChange={(e) => setConvertForm((f) => ({ ...f, city: e.target.value }))} />
+                <Label htmlFor="bpoworkpanel-field-9">City</Label>
+                <Input id="bpoworkpanel-field-9" className="mt-1" value={convertForm.city} onChange={(e) => setConvertForm((f) => ({ ...f, city: e.target.value }))} />
               </div>
               <div>
-                <Label>State</Label>
-                <Input className="mt-1" value={convertForm.state} onChange={(e) => setConvertForm((f) => ({ ...f, state: e.target.value }))} />
+                <Label htmlFor="bpoworkpanel-field-10">State</Label>
+                <Input id="bpoworkpanel-field-10" className="mt-1" value={convertForm.state} onChange={(e) => setConvertForm((f) => ({ ...f, state: e.target.value }))} />
               </div>
               <div className="sm:col-span-2">
-                <Label>Conversion notes</Label>
-                <textarea
+                <Label htmlFor="bpoworkpanel-field-11">Conversion notes</Label>
+                <textarea id="bpoworkpanel-field-11"
                   value={convertForm.notes}
                   onChange={(e) => setConvertForm((f) => ({ ...f, notes: e.target.value }))}
                   rows={2}
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-input px-3 py-2 text-sm"
                 />
               </div>
             </div>
@@ -336,20 +340,20 @@ export function BpoWorkPanel({
         )}
       </div>
 
-      <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <p className="text-sm font-semibold text-slate-800">Follow-up history</p>
+      <div className="space-y-3 rounded-xl border border-border bg-muted p-4">
+        <p className="text-sm font-semibold text-foreground">Follow-up history</p>
         {history.length === 0 ? (
-          <p className="text-sm text-slate-500">No BPO activity yet.</p>
+          <p className="text-sm text-muted-foreground">No BPO activity yet.</p>
         ) : (
           <div className="space-y-2">
             {history.map((item) => (
-              <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3">
-                <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
-                  <span className="font-medium text-slate-800">{bpoOutcomeLabel(item.outcome)}</span>
+              <div key={item.id} className="rounded-lg border border-border bg-white p-3">
+                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">{bpoOutcomeLabel(item.outcome)}</span>
                   <span>{item.created_at ? String(item.created_at).replace('T', ' ').slice(0, 16) : ''}</span>
                 </div>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{item.notes || '—'}</p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{item.notes || '—'}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
                   {item.created_by_name || 'BPO'}
                   {item.next_follow_up_date ? ` · next ${item.next_follow_up_date}` : ''}
                 </p>

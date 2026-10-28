@@ -63,7 +63,7 @@ export default function WarehousesPage() {
         <h2 className="font-semibold">Warehouses</h2>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="text-left text-xs uppercase text-slate-600">
+            <thead className="text-left text-xs uppercase text-muted-foreground">
               <tr><th className="py-2">Name</th><th className="py-2">Contact</th><th className="py-2">Status</th><th /></tr>
             </thead>
             <tbody>
@@ -86,7 +86,7 @@ export default function WarehousesPage() {
             <h3 className="font-semibold mt-4 mb-2">{selected.name} stock</h3>
             {stock.length === 0 ? <p className="text-sm text-muted-foreground">No balances in this warehouse.</p> : (
               <table className="min-w-full text-sm">
-                <thead className="text-left text-xs uppercase text-slate-600"><tr><th className="py-2">Product</th><th className="py-2 text-right">On hand</th><th className="py-2 text-right">Available</th><th className="py-2 text-right">Value</th></tr></thead>
+                <thead className="text-left text-xs uppercase text-muted-foreground"><tr><th className="py-2">Product</th><th className="py-2 text-right">On hand</th><th className="py-2 text-right">Available</th><th className="py-2 text-right">Value</th></tr></thead>
                 <tbody>
                   {stock.map((row) => (
                     <tr key={row.id} className="border-t border-border">

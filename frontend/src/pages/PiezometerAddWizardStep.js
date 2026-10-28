@@ -83,8 +83,8 @@ function PiezometerAddWizardStep({
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold text-gray-900">Piezometer details</h3>
-        <p className="text-xs text-gray-600 mt-1">
+        <h3 className="text-sm font-semibold text-foreground">Piezometer details</h3>
+        <p className="text-xs text-muted-foreground mt-1">
           NOC specifies {countLabel}. Enter details for each piezometer below. Inventory rows are created only when you click Submit—piezometer
           data is stored as JSON on each new row; file uploads run after the records exist (by row index when possible).
         </p>
@@ -105,43 +105,43 @@ function PiezometerAddWizardStep({
             };
           };
           return (
-            <Card key={idx} className="p-4 border border-gray-200 bg-white shadow-none rounded-lg space-y-4">
-              <p className="text-sm font-semibold text-gray-800">Piezometer {idx + 1}</p>
+            <Card key={idx} className="p-4 border border-border bg-white shadow-none rounded-lg space-y-4">
+              <p className="text-sm font-semibold text-foreground">Piezometer {idx + 1}</p>
 
-              <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
-                <p className="text-sm font-semibold text-gray-800">Piezometer</p>
+              <div className="rounded-lg border border-border bg-white p-3 space-y-3">
+                <p className="text-sm font-semibold text-foreground">Piezometer</p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-700">Make</Label>
+                    <Label className="text-sm font-medium text-foreground">Make</Label>
                     <Input
                       value={row.piezometer_make}
                       onChange={(e) => patchRow({ piezometer_make: e.target.value })}
-                      className="h-11 border border-gray-300"
+                      className="h-11 border border-input"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-700">Serial number</Label>
+                    <Label className="text-sm font-medium text-foreground">Serial number</Label>
                     <Input
                       value={row.piezometer_serial}
                       onChange={(e) => patchRow({ piezometer_serial: e.target.value })}
-                      className="h-11 border border-gray-300"
+                      className="h-11 border border-input"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-700">Length of sensor cable</Label>
+                    <Label className="text-sm font-medium text-foreground">Length of sensor cable</Label>
                     <Input
                       value={row.sensor_cable_length}
                       onChange={(e) => patchRow({ sensor_cable_length: e.target.value })}
-                      className="h-11 border border-gray-300"
+                      className="h-11 border border-input"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-700">Commissioning date</Label>
+                    <Label className="text-sm font-medium text-foreground">Commissioning date</Label>
                     <Input
                       type="date"
                       value={row.commissioning_date}
                       onChange={(e) => patchRow({ commissioning_date: e.target.value })}
-                      className="h-11 border border-gray-300"
+                      className="h-11 border border-input"
                     />
                   </div>
                 </div>
@@ -151,7 +151,7 @@ function PiezometerAddWizardStep({
                   files={bundle.serviceReport}
                   onChange={(serviceReport) => patchBundle({ serviceReport })}
                   hint="Optional; uploads after save (S3)."
-                  className="border-t border-gray-200 pt-3"
+                  className="border-t border-border pt-3"
                   {...pzSaved('serviceReport')}
                 />
                 <CgwMultiFilePicker
@@ -161,13 +161,13 @@ function PiezometerAddWizardStep({
                   files={bundle.bwPhotos}
                   onChange={(bwPhotos) => patchBundle({ bwPhotos })}
                   hint="Click + to add photos. Uploads after save (S3)."
-                  className="border-t border-gray-200 pt-3"
+                  className="border-t border-border pt-3"
                   {...pzSaved('bwPhotos')}
                 />
               </div>
 
-              <div className="rounded-lg border border-gray-200 p-3 space-y-3">
-                <p className="text-sm font-semibold text-gray-800">Calibration certificate</p>
+              <div className="rounded-lg border border-border p-3 space-y-3">
+                <p className="text-sm font-semibold text-foreground">Calibration certificate</p>
                 <CgwMultiFilePicker
                   label="Certificate (file)"
                   accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
@@ -178,7 +178,7 @@ function PiezometerAddWizardStep({
                 />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-700">Valid from</Label>
+                    <Label className="text-sm font-medium text-foreground">Valid from</Label>
                     <Input
                       type="date"
                       value={row.calibration_valid_from}
@@ -187,7 +187,7 @@ function PiezometerAddWizardStep({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-700">Valid to</Label>
+                    <Label className="text-sm font-medium text-foreground">Valid to</Label>
                     <Input
                       type="date"
                       value={row.calibration_valid_to}
@@ -199,11 +199,11 @@ function PiezometerAddWizardStep({
               </div>
 
               <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700">Is applicable telemetry system?</Label>
+                <Label className="text-sm font-medium text-foreground">Is applicable telemetry system?</Label>
                 <select
                   value={row.telemetry_applicable}
                   onChange={(e) => patchRow({ telemetry_applicable: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                  className="w-full border border-input rounded-lg px-3 h-11"
                 >
                   <option value="">Select</option>
                   <option value="yes">Yes</option>
@@ -212,15 +212,15 @@ function PiezometerAddWizardStep({
               </div>
 
               {row.telemetry_applicable === 'yes' ? (
-                <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-4">
-                  <p className="text-sm font-semibold text-gray-800">Telemetry system</p>
+                <div className="rounded-lg border border-border bg-white p-3 space-y-4">
+                  <p className="text-sm font-semibold text-foreground">Telemetry system</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-700">Telemetry company</Label>
+                      <Label className="text-sm font-medium text-foreground">Telemetry company</Label>
                       <select
                         value={row.telemetry_company}
                         onChange={(e) => patchRow({ telemetry_company: e.target.value })}
-                        className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                        className="w-full border border-input rounded-lg px-3 h-11"
                       >
                         <option value="">Select</option>
                         <option value="frinso">FRINSO</option>
@@ -230,7 +230,7 @@ function PiezometerAddWizardStep({
                     </div>
                     {row.telemetry_company === 'other' ? (
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Company name (manual)</Label>
+                        <Label className="text-sm font-medium text-foreground">Company name (manual)</Label>
                         <Input
                           value={row.telemetry_company_other}
                           onChange={(e) => patchRow({ telemetry_company_other: e.target.value })}
@@ -239,11 +239,11 @@ function PiezometerAddWizardStep({
                       </div>
                     ) : null}
                     <div className="space-y-2 sm:col-span-2">
-                      <Label className="text-sm font-medium text-gray-700">Telemetry communication via</Label>
+                      <Label className="text-sm font-medium text-foreground">Telemetry communication via</Label>
                       <select
                         value={row.telemetry_communication_via}
                         onChange={(e) => patchRow({ telemetry_communication_via: e.target.value })}
-                        className="w-full border border-gray-300 rounded-lg px-3 h-11 max-w-md"
+                        className="w-full border border-input rounded-lg px-3 h-11 max-w-md"
                       >
                         <option value="">Select</option>
                         <option value="sim">SIM</option>
@@ -254,15 +254,15 @@ function PiezometerAddWizardStep({
                   </div>
 
                   {row.telemetry_communication_via === 'sim' ? (
-                    <div className="rounded-md border border-gray-200 bg-white p-3 space-y-3">
-                      <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Telemetry SIM</p>
+                    <div className="rounded-md border border-border bg-white p-3 space-y-3">
+                      <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Telemetry SIM</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">SIM provider</Label>
+                          <Label className="text-sm font-medium text-foreground">SIM provider</Label>
                           <select
                             value={row.telemetry_sim_provider}
                             onChange={(e) => patchRow({ telemetry_sim_provider: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                            className="w-full border border-input rounded-lg px-3 h-11"
                           >
                             <option value="">Select</option>
                             <option value="airtel">Airtel</option>
@@ -274,7 +274,7 @@ function PiezometerAddWizardStep({
                         </div>
                         {row.telemetry_sim_provider === 'other' ? (
                           <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-700">Provider (manual)</Label>
+                            <Label className="text-sm font-medium text-foreground">Provider (manual)</Label>
                             <Input
                               value={row.telemetry_sim_provider_other}
                               onChange={(e) => patchRow({ telemetry_sim_provider_other: e.target.value })}
@@ -283,7 +283,7 @@ function PiezometerAddWizardStep({
                           </div>
                         ) : null}
                         <div className="space-y-2 sm:col-span-2">
-                          <Label className="text-sm font-medium text-gray-700">SIM number</Label>
+                          <Label className="text-sm font-medium text-foreground">SIM number</Label>
                           <Input
                             value={row.telemetry_sim_number}
                             onChange={(e) => patchRow({ telemetry_sim_number: e.target.value })}
@@ -291,7 +291,7 @@ function PiezometerAddWizardStep({
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">SIM valid from</Label>
+                          <Label className="text-sm font-medium text-foreground">SIM valid from</Label>
                           <Input
                             type="date"
                             value={row.telemetry_sim_valid_from}
@@ -300,7 +300,7 @@ function PiezometerAddWizardStep({
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">SIM valid to</Label>
+                          <Label className="text-sm font-medium text-foreground">SIM valid to</Label>
                           <Input
                             type="date"
                             value={row.telemetry_sim_valid_to}
@@ -314,7 +314,7 @@ function PiezometerAddWizardStep({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-700">Telemetry product code</Label>
+                      <Label className="text-sm font-medium text-foreground">Telemetry product code</Label>
                       <Input
                         value={row.telemetry_product_code}
                         onChange={(e) => patchRow({ telemetry_product_code: e.target.value })}
@@ -322,7 +322,7 @@ function PiezometerAddWizardStep({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-700">Telemetry serial number</Label>
+                      <Label className="text-sm font-medium text-foreground">Telemetry serial number</Label>
                       <Input
                         value={row.telemetry_serial_number}
                         onChange={(e) => patchRow({ telemetry_serial_number: e.target.value })}
@@ -330,7 +330,7 @@ function PiezometerAddWizardStep({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-700">Commissioning date of telemetry</Label>
+                      <Label className="text-sm font-medium text-foreground">Commissioning date of telemetry</Label>
                       <Input
                         type="date"
                         value={row.telemetry_commissioning_date}
@@ -339,7 +339,7 @@ function PiezometerAddWizardStep({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-700">How many telemetry SIM changed?</Label>
+                      <Label className="text-sm font-medium text-foreground">How many telemetry SIM changed?</Label>
                       <Input
                         type="number"
                         min="0"
@@ -349,7 +349,7 @@ function PiezometerAddWizardStep({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-700">How many times recharge done?</Label>
+                      <Label className="text-sm font-medium text-foreground">How many times recharge done?</Label>
                       <Input
                         type="number"
                         min="0"
@@ -381,8 +381,8 @@ function PiezometerAddWizardStep({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-2 sm:col-span-2">
-                      <Label className="text-sm font-medium text-gray-700">Telemetry portal URL</Label>
-                      <Input
+                      <Label className="text-sm font-medium text-foreground">Telemetry portal URL</Label>
+                      <Input aria-label="https://…"
                         type="url"
                         value={row.telemetry_portal_url}
                         onChange={(e) => patchRow({ telemetry_portal_url: e.target.value })}
@@ -391,7 +391,7 @@ function PiezometerAddWizardStep({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-700">Username</Label>
+                      <Label className="text-sm font-medium text-foreground">Username</Label>
                       <Input
                         value={row.telemetry_username}
                         onChange={(e) => patchRow({ telemetry_username: e.target.value })}
@@ -400,7 +400,7 @@ function PiezometerAddWizardStep({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-700">Password</Label>
+                      <Label className="text-sm font-medium text-foreground">Password</Label>
                       <Input
                         type="password"
                         value={row.telemetry_password}
@@ -410,7 +410,7 @@ function PiezometerAddWizardStep({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-700">Telemetry valid from</Label>
+                      <Label className="text-sm font-medium text-foreground">Telemetry valid from</Label>
                       <Input
                         type="date"
                         value={row.telemetry_valid_from}
@@ -419,7 +419,7 @@ function PiezometerAddWizardStep({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-700">Telemetry valid to</Label>
+                      <Label className="text-sm font-medium text-foreground">Telemetry valid to</Label>
                       <Input
                         type="date"
                         value={row.telemetry_valid_to}
@@ -430,11 +430,11 @@ function PiezometerAddWizardStep({
                   </div>
 
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-700">Is telemetry uploaded previous year?</Label>
+                    <Label className="text-sm font-medium text-foreground">Is telemetry uploaded previous year?</Label>
                     <select
                       value={row.telemetry_uploaded_previous_year}
                       onChange={(e) => patchRow({ telemetry_uploaded_previous_year: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 h-11 max-w-md"
+                      className="w-full border border-input rounded-lg px-3 h-11 max-w-md"
                     >
                       <option value="">Select</option>
                       <option value="yes">Yes</option>
@@ -443,13 +443,13 @@ function PiezometerAddWizardStep({
                   </div>
 
                   {row.telemetry_uploaded_previous_year === 'yes' ? (
-                    <div className="rounded-md border border-gray-200 bg-white p-3 space-y-3">
+                    <div className="rounded-md border border-border bg-white p-3 space-y-3">
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Telemetry serial number</Label>
+                        <Label className="text-sm font-medium text-foreground">Telemetry serial number</Label>
                         <select
                           value={row.telemetry_previous_serial_pick}
                           onChange={(e) => patchRow({ telemetry_previous_serial_pick: e.target.value })}
-                          className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                          className="w-full border border-input rounded-lg px-3 h-11"
                         >
                           <option value="">Select serial</option>
                           {telemetrySerialOptions.map((s) => (
@@ -462,7 +462,7 @@ function PiezometerAddWizardStep({
                       </div>
                       {row.telemetry_previous_serial_pick === '__manual__' ? (
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">Serial number (manual)</Label>
+                          <Label className="text-sm font-medium text-foreground">Serial number (manual)</Label>
                           <Input
                             value={row.telemetry_previous_serial_free}
                             onChange={(e) => patchRow({ telemetry_previous_serial_free: e.target.value })}
@@ -472,11 +472,11 @@ function PiezometerAddWizardStep({
                       ) : null}
 
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">If old telemetry data is available</Label>
+                        <Label className="text-sm font-medium text-foreground">If old telemetry data is available</Label>
                         <select
                           value={row.telemetry_previous_data_available}
                           onChange={(e) => patchRow({ telemetry_previous_data_available: e.target.value })}
-                          className="w-full border border-gray-300 rounded-lg px-3 h-11 max-w-md"
+                          className="w-full border border-input rounded-lg px-3 h-11 max-w-md"
                         >
                           <option value="">Select</option>
                           <option value="yes">Yes</option>
@@ -485,10 +485,10 @@ function PiezometerAddWizardStep({
                       </div>
 
                       {row.telemetry_previous_data_available === 'yes' ? (
-                        <div className="space-y-3 pt-1 border-t border-gray-200">
+                        <div className="space-y-3 pt-1 border-t border-border">
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="space-y-2">
-                              <Label className="text-sm font-medium text-gray-700">From date</Label>
+                              <Label className="text-sm font-medium text-foreground">From date</Label>
                               <Input
                                 type="date"
                                 value={row.telemetry_previous_data_from}
@@ -497,7 +497,7 @@ function PiezometerAddWizardStep({
                               />
                             </div>
                             <div className="space-y-2">
-                              <Label className="text-sm font-medium text-gray-700">To date</Label>
+                              <Label className="text-sm font-medium text-foreground">To date</Label>
                               <Input
                                 type="date"
                                 value={row.telemetry_previous_data_to}
@@ -532,12 +532,12 @@ function PiezometerAddWizardStep({
         })}
       </div>
       {typeof onSubmit === 'function' ? (
-        <div className="flex flex-col gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-gray-600 order-2 sm:order-1">Submit creates the flow metre record(s), then uploads flow metre and piezometer attachments.</p>
+        <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-muted-foreground order-2 sm:order-1">Submit creates the flow metre record(s), then uploads flow metre and piezometer attachments.</p>
           <Button
             type="button"
             disabled={!!submitting}
-            className="order-1 w-full bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 sm:order-2 sm:w-auto min-w-[8rem]"
+            className="order-1 w-full bg-primary text-white hover:bg-primary/90 disabled:opacity-60 sm:order-2 sm:w-auto min-w-[8rem]"
             onClick={onSubmit}
           >
             {submitting ? 'Submitting…' : 'Submit'}

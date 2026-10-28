@@ -147,7 +147,7 @@ export default function ViewLead() {
     subtitle: lead ? `Enquiry · ${lead.id}` : 'Enquiry details',
     actions: lead ? (
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" className="border-slate-300" asChild>
+        <Button size="sm" variant="outline" className="border-input" asChild>
           <Link to="/leads">
             <ArrowLeft className="h-4 w-4 mr-1" />
             Back to leads
@@ -185,7 +185,7 @@ export default function ViewLead() {
         )}
         {canEdit && (
           <>
-            <Button size="sm" variant="outline" className="border-slate-300" onClick={() => setEditOpen(true)}>
+            <Button size="sm" variant="outline" className="border-input" onClick={() => setEditOpen(true)}>
               <Edit2 className="h-4 w-4 mr-1" />
               Edit
             </Button>
@@ -208,16 +208,16 @@ export default function ViewLead() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
 
   if (!lead) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-8 text-center space-y-3">
-        <p className="text-lg font-semibold text-slate-800">Enquiry not found</p>
-        <p className="text-sm text-slate-500">ID: {leadId}</p>
+      <div className="rounded-xl border border-border bg-white p-8 text-center space-y-3">
+        <p className="text-lg font-semibold text-foreground">Enquiry not found</p>
+        <p className="text-sm text-muted-foreground">ID: {leadId}</p>
         <Button asChild variant="outline">
           <Link to="/leads">Back to leads</Link>
         </Button>
@@ -227,31 +227,31 @@ export default function ViewLead() {
 
   return (
     <div className="space-y-3 pb-8" data-testid="view-lead-page">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-        <span className="font-semibold text-slate-900 truncate max-w-[min(100%,20rem)]">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-white px-3 py-2 text-sm">
+        <span className="font-semibold text-foreground truncate max-w-[min(100%,20rem)]">
           {lead.company || '—'}
         </span>
         <span className="text-slate-300 hidden sm:inline">·</span>
-        <span className="text-slate-600 truncate max-w-[16rem]">
+        <span className="text-muted-foreground truncate max-w-[16rem]">
           {lead.contact_name || 'No contact'}
           {lead.email ? ` · ${lead.email}` : ''}
         </span>
-        <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+        <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-foreground">
           {stageLabel}
         </span>
         {lead.vendor_name && (
-          <span className="inline-flex items-center gap-1 text-xs text-slate-600">
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
             <Store className="h-3.5 w-3.5" />
             {lead.vendor_name}
           </span>
         )}
         {pendingVendor && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-800">
             <AlertCircle className="h-3 w-3" />
             Vendor pending
           </span>
         )}
-        <span className="ml-auto text-[11px] font-mono text-slate-400 truncate max-w-[12rem]" title={lead.id}>
+        <span className="ml-auto text-xs font-mono text-muted-foreground truncate max-w-[12rem]" title={lead.id}>
           {lead.id}
         </span>
       </div>

@@ -118,7 +118,7 @@ export function CgwAttachmentPreviewDialog({ open, onOpenChange, attachment, sub
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex flex-col gap-0 p-0 overflow-hidden max-w-[min(960px,96vw)] w-[min(960px,96vw)] max-h-[min(88vh,820px)] h-[min(88vh,820px)] bg-white rounded-lg border border-gray-200 shadow-xl">
+      <DialogContent className="flex flex-col gap-0 p-0 overflow-hidden max-w-[min(960px,96vw)] w-[min(960px,96vw)] max-h-[min(88vh,820px)] h-[min(88vh,820px)] bg-white rounded-lg border border-border shadow-xl">
         <div className="bg-slate-800 text-white px-4 py-3 pr-12 shrink-0">
           <DialogHeader className="space-y-0 text-left">
             <DialogTitle className="text-base font-semibold text-white flex items-center gap-2 m-0">
@@ -133,15 +133,15 @@ export function CgwAttachmentPreviewDialog({ open, onOpenChange, attachment, sub
 
         <div className="relative flex-1 min-h-0 bg-neutral-900">
           {!attachment?.url ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm text-gray-600 p-6 text-center">
+            <div className="absolute inset-0 flex items-center justify-center bg-muted text-sm text-muted-foreground p-6 text-center">
               No attachment selected.
             </div>
           ) : loading ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm text-gray-600">
-              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+            <div className="absolute inset-0 flex items-center justify-center bg-muted text-sm text-muted-foreground">
+              <div role="status" aria-label="Loading" className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary/60" />
             </div>
           ) : error ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gray-100 text-sm text-gray-600 p-6 text-center">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-muted text-sm text-muted-foreground p-6 text-center">
               <p>{error}</p>
               {rawHref ? (
                 <Button type="button" variant="outline" size="sm" asChild>
@@ -155,11 +155,11 @@ export function CgwAttachmentPreviewDialog({ open, onOpenChange, attachment, sub
           ) : effectivePdf && displaySrc ? (
             <iframe title={fileName} src={displaySrc} className="absolute inset-0 h-full w-full border-0 bg-white" />
           ) : effectiveImage && displaySrc ? (
-            <div className="absolute inset-0 overflow-auto bg-gray-100 flex items-center justify-center p-3">
+            <div className="absolute inset-0 overflow-auto bg-muted flex items-center justify-center p-3">
               <img src={displaySrc} alt={fileName} className="max-h-full max-w-full object-contain" />
             </div>
           ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gray-100 text-sm text-gray-600 p-6 text-center">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-muted text-sm text-muted-foreground p-6 text-center">
               <p>Inline preview is not available for this file type.</p>
               {displaySrc ? (
                 <Button type="button" variant="outline" size="sm" asChild>
@@ -173,7 +173,7 @@ export function CgwAttachmentPreviewDialog({ open, onOpenChange, attachment, sub
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-gray-200 bg-white shrink-0">
+        <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border bg-white shrink-0">
           {displaySrc && !loading ? (
             <Button type="button" variant="outline" size="sm" className="h-8 text-xs" asChild>
               <a href={displaySrc} target="_blank" rel="noopener noreferrer">

@@ -66,7 +66,7 @@ export const LogoutConfirmDialog = ({ isOpen, onClose, onLogoutConfirmed, user }
 
         <div className="space-y-4 my-4">
           <div>
-            <Label htmlFor="work-summary" className="text-gray-900 font-medium">
+            <Label htmlFor="work-summary" className="text-foreground font-medium">
               Today's Work Summary
             </Label>
             <textarea

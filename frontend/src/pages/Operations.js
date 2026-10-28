@@ -206,7 +206,7 @@ export function Operations() {
             }}
             className={cn(
               'h-9 rounded-lg border px-3 text-sm font-medium',
-              tab === item.key ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-700',
+              tab === item.key ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-border bg-white text-foreground',
             )}
           >
             {item.label}
@@ -220,10 +220,10 @@ export function Operations() {
             key={card.key}
             type="button"
             onClick={() => applyKpi(card)}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left hover:border-indigo-200 hover:shadow-sm"
+            className="rounded-xl border border-border bg-white px-3 py-3 text-left hover:border-indigo-200 hover:shadow-sm"
           >
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{card.label}</div>
-            <div className="mt-1 text-2xl font-semibold text-slate-900">{stats[card.key] ?? 0}</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{card.label}</div>
+            <div className="mt-1 text-2xl font-semibold text-foreground">{stats[card.key] ?? 0}</div>
           </button>
         ))}
       </div>
@@ -238,8 +238,8 @@ export function Operations() {
           ].map((bucket) => (
             <Card key={bucket.key} className="p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-slate-800">{bucket.title}</h3>
-                <span className="text-sm text-slate-500">{myWork.counts?.[bucket.key] || 0}</span>
+                <h3 className="font-semibold text-foreground">{bucket.title}</h3>
+                <span className="text-sm text-muted-foreground">{myWork.counts?.[bucket.key] || 0}</span>
               </div>
               <div className="space-y-2">
                 {(myWork[bucket.key] || []).slice(0, 8).map((task) => (
@@ -254,7 +254,7 @@ export function Operations() {
                   </button>
                 ))}
                 {(myWork[bucket.key] || []).length === 0 && (
-                  <p className="text-sm text-slate-500">Nothing here.</p>
+                  <p className="text-sm text-muted-foreground">Nothing here.</p>
                 )}
               </div>
             </Card>
@@ -264,19 +264,19 @@ export function Operations() {
         <>
           {tab === 'control' && attention.length > 0 && (
             <Card className="p-4 space-y-2">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Attention required</h3>
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Attention required</h3>
               {attention.map((item) => (
                 <button
                   key={item.operation_id}
                   type="button"
                   onClick={() => navigate(`/operations/${item.operation_id}`)}
-                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 text-left hover:bg-slate-50"
+                  className="flex w-full items-center gap-3 rounded-lg border border-border px-3 py-2 text-left hover:bg-muted"
                 >
                   <span className={cn('h-2.5 w-2.5 rounded-full', HEALTH_STYLES[item.health]?.dot || 'bg-slate-400')} />
-                  <span className="font-mono text-xs text-slate-500">{item.operation_code}</span>
-                  <span className="font-medium text-slate-800">{item.customer_name}</span>
-                  <span className="text-sm text-slate-600 truncate">{item.reason}</span>
-                  <span className="ml-auto text-xs text-slate-500">{item.detail}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{item.operation_code}</span>
+                  <span className="font-medium text-foreground">{item.customer_name}</span>
+                  <span className="text-sm text-muted-foreground truncate">{item.reason}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">{item.detail}</span>
                 </button>
               ))}
             </Card>
@@ -285,20 +285,20 @@ export function Operations() {
           <Card className="p-4 space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative flex-1 min-w-[12rem]">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                <Input className="pl-8" placeholder="Search ID, customer, PO, enquiry" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input aria-label="Search ID, customer, PO, enquiry" className="pl-8" placeholder="Search ID, customer, PO, enquiry" value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
-              <select className="h-10 rounded-md border border-slate-200 px-2 text-sm" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+              <select className="h-10 rounded-md border border-border px-2 text-sm" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
                 <option value="">All types</option>
                 {(meta.operation_types || []).map((type) => <option key={type} value={type}>{type}</option>)}
               </select>
-              <select className="h-10 rounded-md border border-slate-200 px-2 text-sm" value={health} onChange={(e) => setHealth(e.target.value)}>
+              <select className="h-10 rounded-md border border-border px-2 text-sm" value={health} onChange={(e) => setHealth(e.target.value)}>
                 <option value="">All health</option>
                 <option value="green">Green</option>
                 <option value="yellow">At risk</option>
                 <option value="red">Overdue</option>
               </select>
-              <select className="h-10 rounded-md border border-slate-200 px-2 text-sm" value={view} onChange={(e) => setView(e.target.value)}>
+              <select className="h-10 rounded-md border border-border px-2 text-sm" value={view} onChange={(e) => setView(e.target.value)}>
                 <option value="active">Active</option>
                 <option value="completed">Completed</option>
                 <option value="historical">Historical</option>
@@ -309,7 +309,7 @@ export function Operations() {
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-[11px] uppercase tracking-wide text-slate-500">
+                  <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="py-2 pr-3">ID</th>
                     <th className="py-2 pr-3">Customer</th>
                     <th className="py-2 pr-3">Type</th>
@@ -322,28 +322,28 @@ export function Operations() {
                 </thead>
                 <tbody>
                   {loading && (
-                    <tr><td colSpan={8} className="py-8 text-center text-slate-500">Loading operations…</td></tr>
+                    <tr><td colSpan={8} className="py-8 text-center text-muted-foreground">Loading operations…</td></tr>
                   )}
                   {!loading && tableRows.map((row) => {
                     const healthStyle = HEALTH_STYLES[row.health_status] || HEALTH_STYLES.green;
                     return (
                       <tr
                         key={row.id}
-                        className="border-b border-slate-100 cursor-pointer hover:bg-slate-50"
+                        className="border-b border-border cursor-pointer hover:bg-muted"
                         onClick={() => openOperationTab(row.id)}
                       >
                         <td className="py-2 pr-3 font-mono text-xs">{row.operation_code}</td>
-                        <td className="py-2 pr-3 font-medium text-slate-800">{row.customer_name}</td>
-                        <td className="py-2 pr-3 text-slate-600">{row.operation_type}</td>
+                        <td className="py-2 pr-3 font-medium text-foreground">{row.customer_name}</td>
+                        <td className="py-2 pr-3 text-muted-foreground">{row.operation_type}</td>
                         <td className="py-2 pr-3">{row.responsible_name || '—'}</td>
                         <td className="py-2 pr-3">{row.current_stage || '—'}</td>
                         <td className="py-2 pr-3">
                           <div className="truncate max-w-[14rem]">{row.next_action || '—'}</div>
-                          <div className="text-[11px] text-slate-400">{row.next_action_date || ''}</div>
+                          <div className="text-xs text-muted-foreground">{row.next_action_date || ''}</div>
                         </td>
                         <td className="py-2 pr-3">{formatMoney(row.po_value)}</td>
                         <td className="py-2">
-                          <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold', healthStyle.badge)}>
+                          <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold', healthStyle.badge)}>
                             <span className={cn('h-1.5 w-1.5 rounded-full', healthStyle.dot)} />
                             {healthStyle.label}
                           </span>
@@ -352,7 +352,7 @@ export function Operations() {
                     );
                   })}
                   {!loading && tableRows.length === 0 && (
-                    <tr><td colSpan={8} className="py-10 text-center text-slate-500">No operations in this view. Create one from a won lead.</td></tr>
+                    <tr><td colSpan={8} className="py-10 text-center text-muted-foreground">No operations in this view. Create one from a won lead.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -381,7 +381,7 @@ export function Operations() {
                   }}
                   className={cn(
                     'rounded-lg border px-3 py-2 text-left text-sm font-medium',
-                    createMode === mode.key ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-700',
+                    createMode === mode.key ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-border bg-white text-foreground',
                   )}
                 >
                   {mode.label}
@@ -391,9 +391,9 @@ export function Operations() {
 
             {createMode === 'lead' ? (
               <div>
-                <Label>Won lead</Label>
-                <select
-                  className="mt-1 h-10 w-full rounded-md border border-slate-200 px-2 text-sm"
+                <Label htmlFor="operations-field-1">Won lead</Label>
+                <select id="operations-field-1"
+                  className="mt-1 h-10 w-full rounded-md border border-border px-2 text-sm"
                   value={form.lead_id}
                   onChange={(e) => {
                     const lead = wonLeads.find((item) => item.id === e.target.value);
@@ -416,9 +416,9 @@ export function Operations() {
             ) : (
               <>
                 <div>
-                  <Label>Existing customer (ledger)</Label>
-                  <select
-                    className="mt-1 h-10 w-full rounded-md border border-slate-200 px-2 text-sm"
+                  <Label htmlFor="operations-field-2">Existing customer (ledger)</Label>
+                  <select id="operations-field-2"
+                    className="mt-1 h-10 w-full rounded-md border border-border px-2 text-sm"
                     value={form.customer_id}
                     onChange={(e) => {
                       const customer = customers.find((item) => item.id === e.target.value);
@@ -438,8 +438,8 @@ export function Operations() {
                   </select>
                 </div>
                 <div>
-                  <Label>Customer name</Label>
-                  <Input
+                  <Label htmlFor="operations-field-3">Customer name</Label>
+                  <Input id="operations-field-3"
                     placeholder="Required — existing operational client"
                     value={form.customer_name}
                     onChange={(e) => setForm((p) => ({ ...p, customer_name: e.target.value }))}
@@ -447,41 +447,41 @@ export function Operations() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <Label>Old enquiry / ref (optional)</Label>
-                    <Input value={form.enquiry_id} onChange={(e) => setForm((p) => ({ ...p, enquiry_id: e.target.value }))} />
+                    <Label htmlFor="operations-field-4">Old enquiry / ref (optional)</Label>
+                    <Input id="operations-field-4" value={form.enquiry_id} onChange={(e) => setForm((p) => ({ ...p, enquiry_id: e.target.value }))} />
                   </div>
                   <div>
-                    <Label>Quotation (optional)</Label>
-                    <Input value={form.quotation_id} onChange={(e) => setForm((p) => ({ ...p, quotation_id: e.target.value }))} />
+                    <Label htmlFor="operations-field-5">Quotation (optional)</Label>
+                    <Input id="operations-field-5" value={form.quotation_id} onChange={(e) => setForm((p) => ({ ...p, quotation_id: e.target.value }))} />
                   </div>
                 </div>
               </>
             )}
 
             <div>
-              <Label>Project / requirement</Label>
-              <Input value={form.project_name} onChange={(e) => setForm((p) => ({ ...p, project_name: e.target.value }))} />
+              <Label htmlFor="operations-field-6">Project / requirement</Label>
+              <Input id="operations-field-6" value={form.project_name} onChange={(e) => setForm((p) => ({ ...p, project_name: e.target.value }))} />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>PO number</Label>
-                <Input value={form.po_number} onChange={(e) => setForm((p) => ({ ...p, po_number: e.target.value }))} />
+                <Label htmlFor="operations-field-7">PO number</Label>
+                <Input id="operations-field-7" value={form.po_number} onChange={(e) => setForm((p) => ({ ...p, po_number: e.target.value }))} />
               </div>
               <div>
-                <Label>PO value</Label>
-                <Input type="number" value={form.po_value} onChange={(e) => setForm((p) => ({ ...p, po_value: e.target.value }))} />
+                <Label htmlFor="operations-field-8">PO value</Label>
+                <Input id="operations-field-8" type="number" value={form.po_value} onChange={(e) => setForm((p) => ({ ...p, po_value: e.target.value }))} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>Type</Label>
-                <select className="mt-1 h-10 w-full rounded-md border border-slate-200 px-2 text-sm" value={form.operation_type} onChange={(e) => setForm((p) => ({ ...p, operation_type: e.target.value }))}>
+                <Label htmlFor="operations-field-9">Type</Label>
+                <select id="operations-field-9" className="mt-1 h-10 w-full rounded-md border border-border px-2 text-sm" value={form.operation_type} onChange={(e) => setForm((p) => ({ ...p, operation_type: e.target.value }))}>
                   {(meta.operation_types || ['Stock & Sell']).map((type) => <option key={type}>{type}</option>)}
                 </select>
               </div>
               <div>
-                <Label>Responsible</Label>
-                <select className="mt-1 h-10 w-full rounded-md border border-slate-200 px-2 text-sm" value={form.responsible_employee_id} onChange={(e) => setForm((p) => ({ ...p, responsible_employee_id: e.target.value }))}>
+                <Label htmlFor="operations-field-10">Responsible</Label>
+                <select id="operations-field-10" className="mt-1 h-10 w-full rounded-md border border-border px-2 text-sm" value={form.responsible_employee_id} onChange={(e) => setForm((p) => ({ ...p, responsible_employee_id: e.target.value }))}>
                   <option value="">Me</option>
                   {employees.map((emp) => (
                     <option key={emp.employee_id || emp.id} value={emp.employee_id || emp.id}>{emp.name}</option>
@@ -491,12 +491,12 @@ export function Operations() {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>Start date</Label>
-                <Input type="date" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} />
+                <Label htmlFor="operations-field-11">Start date</Label>
+                <Input id="operations-field-11" type="date" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} />
               </div>
               <div>
-                <Label>Target completion</Label>
-                <Input type="date" value={form.target_date} onChange={(e) => setForm((p) => ({ ...p, target_date: e.target.value }))} />
+                <Label htmlFor="operations-field-12">Target completion</Label>
+                <Input id="operations-field-12" type="date" value={form.target_date} onChange={(e) => setForm((p) => ({ ...p, target_date: e.target.value }))} />
               </div>
             </div>
             <Button className="w-full" disabled={creating} onClick={submitCreate}>

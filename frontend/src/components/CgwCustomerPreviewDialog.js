@@ -43,7 +43,7 @@ function CopyIconButton({ text, label }) {
     <button
       type="button"
       onClick={() => copyToClipboard(text, label)}
-      className="shrink-0 rounded-md p-1.5 text-gray-500 hover:bg-gray-200/80 hover:text-gray-900"
+      className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-gray-200/80 hover:text-foreground"
       title={`Copy ${label}`}
       aria-label={`Copy ${label}`}
     >
@@ -56,11 +56,11 @@ function PreviewField({ label, value, className = '', mono = false }) {
   const display = value != null && String(value).trim() !== '' ? String(value) : '—';
   return (
     <div className={`min-w-0 ${className}`}>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">{label}</dt>
+      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">{label}</dt>
       <dd
-        className={`text-sm text-gray-900 break-words whitespace-pre-wrap rounded-md bg-white border border-gray-100 px-2.5 py-2 ${
+        className={`text-sm text-foreground break-words whitespace-pre-wrap rounded-md bg-white border border-border px-2.5 py-2 ${
           mono ? 'font-mono text-[13px]' : ''
-        } ${display === '—' ? 'text-gray-400 italic' : ''}`}
+        } ${display === '—' ? 'text-muted-foreground italic' : ''}`}
       >
         {display}
       </dd>
@@ -74,9 +74,9 @@ function CopyablePreviewField({ label, value, className = '' }) {
 
   return (
     <div className={`min-w-0 ${className}`}>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">{label}</dt>
-      <dd className="flex items-center gap-1 rounded-md bg-white border border-gray-100 px-2.5 py-2">
-        <span className={`text-sm flex-1 min-w-0 break-all font-mono ${hasValue ? 'text-gray-900' : 'text-gray-400 italic'}`}>
+      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">{label}</dt>
+      <dd className="flex items-center gap-1 rounded-md bg-white border border-border px-2.5 py-2">
+        <span className={`text-sm flex-1 min-w-0 break-all font-mono ${hasValue ? 'text-foreground' : 'text-muted-foreground italic'}`}>
           {hasValue ? raw : '—'}
         </span>
         {hasValue ? <CopyIconButton text={raw} label={label} /> : null}
@@ -92,9 +92,9 @@ function PasswordPreviewField({ label, password, className = '' }) {
 
   return (
     <div className={`min-w-0 ${className}`}>
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">{label}</dt>
-      <dd className="flex items-center gap-1 rounded-md bg-white border border-gray-100 px-2.5 py-2">
-        <span className={`text-sm flex-1 min-w-0 break-all font-mono ${hasValue ? 'text-gray-900' : 'text-gray-400 italic'}`}>
+      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">{label}</dt>
+      <dd className="flex items-center gap-1 rounded-md bg-white border border-border px-2.5 py-2">
+        <span className={`text-sm flex-1 min-w-0 break-all font-mono ${hasValue ? 'text-foreground' : 'text-muted-foreground italic'}`}>
           {!hasValue ? '—' : visible ? raw : '••••••••'}
         </span>
         {hasValue ? (
@@ -103,7 +103,7 @@ function PasswordPreviewField({ label, password, className = '' }) {
             <button
               type="button"
               onClick={() => setVisible((v) => !v)}
-              className="shrink-0 rounded-md p-1.5 text-gray-500 hover:bg-gray-200/80 hover:text-gray-900"
+              className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-gray-200/80 hover:text-foreground"
               title={visible ? 'Hide password' : 'Show password'}
               aria-label={visible ? 'Hide password' : 'Show password'}
             >
@@ -123,11 +123,11 @@ function FieldGrid({ children, cols = 'sm:grid-cols-2 lg:grid-cols-3', className
 function SectionPanel({ step, title, accent, children, className = '' }) {
   return (
     <section
-      className={`rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden ${className}`}
+      className={`rounded-xl border border-border bg-white shadow-sm overflow-hidden ${className}`}
     >
       <div className={`px-4 py-3 border-b ${accent}`}>
-        <p className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-          <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md bg-white/80 px-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-700">
+        <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md bg-white/80 px-1.5 text-[11px] font-bold uppercase tracking-wide text-foreground">
             {step}
           </span>
           {title}
@@ -141,12 +141,12 @@ function SectionPanel({ step, title, accent, children, className = '' }) {
 function SubSection({ title, children, variant = 'default' }) {
   const styles =
     variant === 'attachments'
-      ? 'rounded-lg border-2 border-dashed border-blue-200 bg-blue-50/40 p-4'
-      : 'rounded-lg border border-gray-200 bg-slate-50/80 p-4';
+      ? 'rounded-lg border-2 border-dashed border-primary/30 bg-accent/40 p-4'
+      : 'rounded-lg border border-border bg-muted/80 p-4';
   return (
     <div className={styles}>
       {title ? (
-        <h4 className="text-xs font-bold uppercase tracking-wide text-gray-700 mb-3 pb-2 border-b border-gray-200/80">
+        <h4 className="text-xs font-bold uppercase tracking-wide text-foreground mb-3 pb-2 border-b border-border/80">
           {title}
         </h4>
       ) : null}
@@ -161,20 +161,20 @@ function AttachmentCategoryBlock({ label, attachments, onOpenPreview }) {
   if (!list.length) return null;
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-gray-50 border-b border-gray-200">
-        <p className="text-xs font-semibold text-gray-800">{label}</p>
-        <span className="text-[10px] font-medium text-gray-500 tabular-nums">{list.length} file(s)</span>
+    <div className="rounded-lg border border-border bg-white overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-muted border-b border-border">
+        <p className="text-xs font-semibold text-foreground">{label}</p>
+        <span className="text-[11px] font-medium text-muted-foreground tabular-nums">{list.length} file(s)</span>
       </div>
-      <ul className="divide-y divide-gray-100">
+      <ul className="divide-y divide-border">
         {list.map((att) => (
           <li
             key={att.id || att.file_name}
-            className="flex items-center gap-2 px-3 py-2.5 hover:bg-slate-50/80"
+            className="flex items-center gap-2 px-3 py-2.5 hover:bg-muted/80"
           >
-            <FileText className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+            <FileText className="h-4 w-4 shrink-0 text-accent-foreground" aria-hidden />
             <span
-              className="flex-1 min-w-0 text-sm text-gray-800 truncate"
+              className="flex-1 min-w-0 text-sm text-foreground truncate"
               title={att.file_name || 'File'}
             >
               {att.file_name || 'Unnamed file'}
@@ -182,7 +182,7 @@ function AttachmentCategoryBlock({ label, attachments, onOpenPreview }) {
             <Button
               type="button"
               size="sm"
-              className="h-8 shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3"
+              className="h-8 shrink-0 bg-primary hover:bg-primary/90 text-white text-xs px-3"
               onClick={() => onOpenPreview?.(att)}
             >
               <Eye className="h-3.5 w-3.5 mr-1.5" />
@@ -205,7 +205,7 @@ function AttachmentsPanel({ attachmentKeyGroups, attachments, onOpenPreview }) {
     .filter((b) => b.list.length > 0);
 
   if (!blocks.length) {
-    return <p className="text-sm text-gray-500 italic py-1">No files in this section.</p>;
+    return <p className="text-sm text-muted-foreground italic py-1">No files in this section.</p>;
   }
 
   return (
@@ -228,7 +228,7 @@ function FlowMetrePreviewCard({ line, lineLabel, onOpenAttachmentPreview }) {
   const attachments = normalizeCgwAttachments(inv?.cgw_attachments);
 
   return (
-    <Card className="border border-gray-200 bg-white shadow-sm rounded-xl overflow-hidden">
+    <Card className="border border-border bg-white shadow-sm rounded-xl overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-indigo-50/90 border-b border-indigo-100">
         <p className="text-sm font-semibold text-indigo-950">{lineLabel}</p>
         {inv?.inventory_id ? (
@@ -329,7 +329,7 @@ function PiezometerPreviewCard({ line, index, onOpenAttachmentPreview }) {
   const attachments = normalizeCgwAttachments(inv?.cgw_attachments);
 
   return (
-    <Card className="border border-gray-200 bg-white shadow-sm rounded-xl overflow-hidden">
+    <Card className="border border-border bg-white shadow-sm rounded-xl overflow-hidden">
       <div className="px-4 py-3 bg-emerald-50/90 border-b border-emerald-100">
         <p className="text-sm font-semibold text-emerald-950">
           Piezometer {index + 1}
@@ -472,19 +472,19 @@ export function CgwCustomerPreviewDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex h-[min(94vh,920px)] max-h-[min(94vh,920px)] w-[min(1400px,98vw)] max-w-[min(1400px,98vw)] flex-col overflow-hidden bg-white rounded-xl border border-gray-200 shadow-xl p-0">
-          <div className="shrink-0 border-b border-gray-200 bg-white px-4 py-2 pr-12">
+        <DialogContent className="flex h-[min(94vh,920px)] max-h-[min(94vh,920px)] w-[min(1400px,98vw)] max-w-[min(1400px,98vw)] flex-col overflow-hidden bg-white rounded-xl border border-border shadow-xl p-0">
+          <div className="shrink-0 border-b border-border bg-white px-4 py-2 pr-12">
             <DialogHeader className="space-y-0">
-              <DialogTitle className="flex min-w-0 flex-nowrap items-center gap-x-3 text-sm font-semibold text-gray-900">
+              <DialogTitle className="flex min-w-0 flex-nowrap items-center gap-x-3 text-sm font-semibold text-foreground">
                 <span className="shrink-0">Customer details</span>
-                <span className="shrink-0 font-mono text-xs font-medium text-gray-700">
+                <span className="shrink-0 font-mono text-xs font-medium text-foreground">
                   {model.inventoryIds.length ? model.inventoryIds.join(' · ') : '—'}
                 </span>
-                <span className="min-w-0 truncate font-normal text-sm text-gray-600">
+                <span className="min-w-0 truncate font-normal text-sm text-muted-foreground">
                   {previewDisplay(fd.customer_name)}
                 </span>
                 {model.inventoryIds.length ? (
-                  <span className="ml-auto shrink-0 text-xs font-normal text-gray-500">
+                  <span className="ml-auto shrink-0 text-xs font-normal text-muted-foreground">
                     {model.inventoryIds.length} inventory line{model.inventoryIds.length === 1 ? '' : 's'}
                   </span>
                 ) : null}
@@ -492,10 +492,10 @@ export function CgwCustomerPreviewDialog({
             </DialogHeader>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 bg-slate-100">
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 bg-muted">
             {loading ? (
               <div className="flex items-center justify-center py-20">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+                <div role="status" aria-label="Loading" className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary/60" />
               </div>
             ) : (
               <div className="space-y-5 max-w-[1320px] mx-auto">
@@ -503,10 +503,10 @@ export function CgwCustomerPreviewDialog({
                 <SectionPanel
                   step="Docs"
                   title="Uploaded documents"
-                  accent="bg-blue-50 border-blue-100"
+                  accent="bg-accent border-primary/20"
                 >
                   {allDocsCount === 0 ? (
-                    <p className="text-sm text-gray-500 italic">No documents uploaded for this customer yet.</p>
+                    <p className="text-sm text-muted-foreground italic">No documents uploaded for this customer yet.</p>
                   ) : (
                     <AttachmentsPanel
                       attachmentKeyGroups={attachmentKeyGroupsForMap(model.allAttachments)}
@@ -568,22 +568,22 @@ export function CgwCustomerPreviewDialog({
                                 className="flex flex-wrap items-center gap-3 rounded-lg border border-cyan-200 bg-white p-3"
                               >
                                 <div className="min-w-[180px] flex-1">
-                                  <p className="text-sm font-medium text-gray-900">
+                                  <p className="text-sm font-medium text-foreground">
                                     {previewDisplay(rec.valid_from)} → {previewDisplay(rec.valid_upto)}
                                   </p>
-                                  <p className="text-xs text-gray-500 mt-0.5 truncate">
+                                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
                                     {rec.noc_no || rec.application_no || rec.file_name || 'NOC'}
                                     {rec.noc_type ? ` · ${previewNocType(rec.noc_type)}` : ''}
                                   </p>
                                 </div>
-                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
                                   status === 'active'
                                     ? 'bg-emerald-50 text-emerald-700'
                                     : status === 'expired'
-                                      ? 'bg-gray-100 text-gray-600'
+                                      ? 'bg-muted text-muted-foreground'
                                       : status === 'upcoming'
                                         ? 'bg-sky-50 text-sky-700'
-                                        : 'bg-slate-100 text-slate-600'
+                                        : 'bg-muted text-muted-foreground'
                                 }`}>
                                   {label}
                                 </span>
@@ -612,7 +612,7 @@ export function CgwCustomerPreviewDialog({
                           })}
                         </ul>
                       ) : (
-                        <p className="text-sm text-gray-500 italic">No NOC periods on file.</p>
+                        <p className="text-sm text-muted-foreground italic">No NOC periods on file.</p>
                       )}
                       {onPreviewNoc ? (
                         <div className="mt-3">
@@ -695,7 +695,7 @@ export function CgwCustomerPreviewDialog({
                 {model.needsPiezometer ? (
                   <SectionPanel step="4" title="Piezometer" accent="bg-emerald-50 border-emerald-100">
                     {model.piezometerLines.length === 0 ? (
-                      <p className="text-sm text-gray-500">No piezometer details recorded yet.</p>
+                      <p className="text-sm text-muted-foreground">No piezometer details recorded yet.</p>
                     ) : (
                       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                         {model.piezometerLines.map((line, idx) => (
@@ -718,7 +718,7 @@ export function CgwCustomerPreviewDialog({
                   accent="bg-amber-50 border-amber-100"
                 >
                   {!hasAdditionalAttachments ? (
-                    <p className="text-sm text-gray-500">No additional attachments on file.</p>
+                    <p className="text-sm text-muted-foreground">No additional attachments on file.</p>
                   ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       {model.equipmentLines.map((line, idx) => {
@@ -754,8 +754,8 @@ export function CgwCustomerPreviewDialog({
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-white shrink-0">
-            <Button type="button" variant="outline" className="h-9 border-gray-300" onClick={() => onOpenChange(false)}>
+          <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border bg-white shrink-0">
+            <Button type="button" variant="outline" className="h-9 border-input" onClick={() => onOpenChange(false)}>
               <X className="h-4 w-4 mr-1" />
               Close
             </Button>

@@ -118,7 +118,7 @@ export default function ProductsPage() {
         {loading ? <Spinner /> : rows.length === 0 ? <EmptyState title="No products yet" detail="Add a product to start the stock ledger." /> : (
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
+              <thead className="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-3 py-3">Product</th>
                   <th className="px-3 py-3">Group</th>
@@ -131,7 +131,7 @@ export default function ProductsPage() {
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.id} className="border-t border-border hover:bg-slate-50/70">
+                  <tr key={row.id} className="border-t border-border hover:bg-muted/70">
                     <td className="px-3 py-3">
                       <Link className="font-medium text-primary hover:underline" to={`/stock-management/products/${row.id}`}>{row.name}</Link>
                       <div className="text-xs text-muted-foreground">{[row.sku, row.item_code].filter(Boolean).join(' · ') || '—'}</div>

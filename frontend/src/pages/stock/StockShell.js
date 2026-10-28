@@ -18,7 +18,7 @@ export default function StockShell() {
   return (
     <div className="space-y-4 sm:space-y-6" data-testid="stock-management-page">
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Operations</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Operations</p>
         <h1 className="text-[1.35rem] sm:text-2xl font-semibold tracking-tight text-foreground">Stock Management</h1>
         <p className="text-muted-foreground text-sm mt-1">
           On-hand stock changes only through posted receipts, transfers, and adjustments.

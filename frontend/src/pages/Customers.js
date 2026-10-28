@@ -346,20 +346,20 @@ export const Customers = () => {
   ];
 
   const renderLedgerTable = () => (
-    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+    <div className="overflow-x-auto border border-border rounded-lg">
       <table className="w-full text-sm min-w-[640px]">
         <thead>
-          <tr className="bg-gray-50 border-b border-gray-200">
-            <th className="text-left p-3 font-medium text-gray-700">{entityLabel} ID</th>
-            <th className="text-left p-3 font-medium text-gray-700">Company Name</th>
-            <th className="text-left p-3 font-medium text-gray-700">Contact Person</th>
-            <th className="text-left p-3 font-medium text-gray-700">Phone</th>
-            <th className="text-left p-3 font-medium text-gray-700">Email</th>
-            <th className="text-left p-3 font-medium text-gray-700">GST Number</th>
-            <th className="text-left p-3 font-medium text-gray-700">City</th>
-            <th className="text-left p-3 font-medium text-gray-700">Status</th>
+          <tr className="bg-muted border-b border-border">
+            <th className="text-left p-3 font-medium text-foreground">{entityLabel} ID</th>
+            <th className="text-left p-3 font-medium text-foreground">Company Name</th>
+            <th className="text-left p-3 font-medium text-foreground">Contact Person</th>
+            <th className="text-left p-3 font-medium text-foreground">Phone</th>
+            <th className="text-left p-3 font-medium text-foreground">Email</th>
+            <th className="text-left p-3 font-medium text-foreground">GST Number</th>
+            <th className="text-left p-3 font-medium text-foreground">City</th>
+            <th className="text-left p-3 font-medium text-foreground">Status</th>
             {canManageRecords && (
-              <th className="text-left p-3 font-medium text-gray-700">Actions</th>
+              <th className="text-left p-3 font-medium text-foreground">Actions</th>
             )}
           </tr>
         </thead>
@@ -367,26 +367,26 @@ export const Customers = () => {
           {filteredRecords.map((customer) => (
             <tr
               key={customer.id}
-              className="border-b border-gray-100 hover:bg-gray-50"
+              className="border-b border-border hover:bg-muted"
               data-testid={`customer-card-${customer.customer_id}`}
             >
-              <td className="p-3 font-mono text-gray-900">{customer.customer_id}</td>
-              <td className="p-3 font-medium text-gray-900">{customer.company_name}</td>
-              <td className="p-3 text-gray-700">{customer.contact_person_name}</td>
-              <td className="p-3 text-gray-700">
+              <td className="p-3 font-mono text-foreground">{customer.customer_id}</td>
+              <td className="p-3 font-medium text-foreground">{customer.company_name}</td>
+              <td className="p-3 text-foreground">{customer.contact_person_name}</td>
+              <td className="p-3 text-foreground">
                 {customerDisplayPhone(customer) ? (
                   <span className="flex items-center gap-1.5">
-                    <Phone className="h-3.5 w-3 text-gray-400 shrink-0" />
+                    <Phone className="h-3.5 w-3 text-muted-foreground shrink-0" />
                     {customerDisplayPhone(customer)}
                   </span>
                 ) : (
                   '—'
                 )}
               </td>
-              <td className="p-3 text-gray-700">
+              <td className="p-3 text-foreground">
                 {customerDisplayEmail(customer) ? (
                   <span className="flex items-center gap-1.5">
-                    <Mail className="h-3.5 w-3 text-gray-400 shrink-0" />
+                    <Mail className="h-3.5 w-3 text-muted-foreground shrink-0" />
                     <span className="truncate max-w-[160px]" title={customerDisplayEmail(customer)}>
                       {customerDisplayEmail(customer)}
                     </span>
@@ -395,12 +395,12 @@ export const Customers = () => {
                   '—'
                 )}
               </td>
-              <td className="p-3 text-gray-700 font-mono">{customer.gst_number || '—'}</td>
-              <td className="p-3 text-gray-700">{customerDisplayCity(customer) || '—'}</td>
+              <td className="p-3 text-foreground font-mono">{customer.gst_number || '—'}</td>
+              <td className="p-3 text-foreground">{customerDisplayCity(customer) || '—'}</td>
               <td className="p-3">
                 <span
                   className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                    customer.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'
+                    customer.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-muted text-muted-foreground'
                   }`}
                 >
                   {customer.status}
@@ -412,7 +412,7 @@ export const Customers = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-8 border-gray-300"
+                      className="h-8 border-input"
                       onClick={() => handleEdit(customer)}
                       data-testid={`edit-customer-${customer.customer_id}`}
                     >
@@ -422,7 +422,7 @@ export const Customers = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-8 border-gray-300 text-red-600 hover:bg-red-50"
+                      className="h-8 border-input text-red-600 hover:bg-red-50"
                       onClick={() => handleDelete(customer.id)}
                       data-testid={`delete-customer-${customer.customer_id}`}
                     >
@@ -474,26 +474,26 @@ export const Customers = () => {
 
         <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input aria-label={`Search ${panelLabelPlural} by company, contact, email, phone, or ID...`}
               data-testid="customer-search-input"
               placeholder={`Search ${panelLabelPlural} by company, contact, email, phone, or ID...`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 h-10 rounded-lg border border-gray-300 text-gray-900"
+              className="pl-10 h-10 rounded-lg border border-input text-foreground"
             />
           </div>
-          <p className="text-sm text-gray-500 sm:ml-auto tabular-nums">
+          <p className="text-sm text-muted-foreground sm:ml-auto tabular-nums">
             {loading ? 'Loading…' : `${filteredRecords.length} of ${count} shown`}
           </p>
         </div>
 
         {loading ? (
           <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent" />
+            <div role="status" aria-label="Loading" className="animate-spin rounded-full h-10 w-10 border-2 border-primary/60 border-t-transparent" />
           </div>
         ) : filteredRecords.length === 0 ? (
-          <p className="text-center py-12 text-gray-500">No {panelLabelPlural} found.</p>
+          <p className="text-center py-12 text-muted-foreground">No {panelLabelPlural} found.</p>
         ) : (
           renderLedgerTable()
         )}
@@ -504,7 +504,7 @@ export const Customers = () => {
   if (loading && records.length === 0 && !searchTerm) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -534,52 +534,52 @@ export const Customers = () => {
               <form onSubmit={handleSubmit} className="space-y-6 p-6">
                 {/* Basic Information */}
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <Building2 className="h-5 w-5 text-blue-600" />
+                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                    <Building2 className="h-5 w-5 text-accent-foreground" />
                     Basic Information
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="company_name" className="text-sm font-medium text-gray-700">Company Name *</Label>
+                      <Label htmlFor="company_name" className="text-sm font-medium text-foreground">Company Name *</Label>
                       <Input
                         id="company_name"
                         data-testid="customer-company-input"
                         value={formData.company_name}
                         onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
                         required
-                        className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                        className="border border-input h-11 focus:border-primary/60 focus:ring-2 focus:ring-ring/30"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="gst_number" className="text-sm font-medium text-gray-700">GST Number</Label>
+                      <Label htmlFor="gst_number" className="text-sm font-medium text-foreground">GST Number</Label>
                       <Input
                         id="gst_number"
                         data-testid="customer-gst-input"
                         value={formData.gst_number}
                         onChange={(e) => setFormData({ ...formData, gst_number: e.target.value })}
                         placeholder="e.g., 29AAPFX0000A1Z5"
-                        className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                        className="border border-input h-11 focus:border-primary/60 focus:ring-2 focus:ring-ring/30"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="contact_person_name" className="text-sm font-medium text-gray-700">Contact Person Name *</Label>
+                      <Label htmlFor="contact_person_name" className="text-sm font-medium text-foreground">Contact Person Name *</Label>
                       <Input
                         id="contact_person_name"
                         data-testid="customer-contact-person-input"
                         value={formData.contact_person_name}
                         onChange={(e) => setFormData({ ...formData, contact_person_name: e.target.value })}
                         required
-                        className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                        className="border border-input h-11 focus:border-primary/60 focus:ring-2 focus:ring-ring/30"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="status" className="text-sm font-medium text-gray-700">Status</Label>
+                      <Label htmlFor="status" className="text-sm font-medium text-foreground">Status</Label>
                       <select
                         id="status"
                         data-testid="customer-status-input"
                         value={formData.status}
                         onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                        className="border border-gray-300 h-11 rounded-md text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 px-3"
+                        className="border border-input h-11 rounded-md text-foreground focus:border-primary/60 focus:ring-2 focus:ring-ring/30 px-3"
                       >
                         <option value="Active">Active</option>
                         <option value="Inactive">Inactive</option>
@@ -591,14 +591,14 @@ export const Customers = () => {
                 {/* Contact Information */}
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                      <Phone className="h-5 w-5 text-blue-600" />
+                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                      <Phone className="h-5 w-5 text-accent-foreground" />
                       Contact Information
                     </h3>
                     <Button
                       type="button"
                       size="sm"
-                      className="bg-blue-600 text-white hover:bg-blue-700"
+                      className="bg-primary text-white hover:bg-primary/90"
                       onClick={addContact}
                     >
                       <Plus className="h-4 w-4 mr-1" />
@@ -607,11 +607,11 @@ export const Customers = () => {
                   </div>
                   <div className="space-y-4">
                     {formData.contacts && formData.contacts.map((contact, idx) => (
-                      <div key={idx} className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                      <div key={idx} className="border border-input rounded-lg p-4 bg-muted">
                         <div className="flex justify-between items-center mb-4">
-                          <span className="text-sm font-medium text-gray-700">Contact #{idx + 1}</span>
+                          <span className="text-sm font-medium text-foreground">Contact #{idx + 1}</span>
                           {formData.contacts.length > 1 && (
-                            <Button
+                            <Button aria-label="Close"
                               type="button"
                               size="sm"
                               variant="outline"
@@ -624,42 +624,42 @@ export const Customers = () => {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <Label htmlFor={`contact_name_${idx}`} className="text-sm font-medium text-gray-700">Contact Person Name</Label>
+                            <Label htmlFor={`contact_name_${idx}`} className="text-sm font-medium text-foreground">Contact Person Name</Label>
                             <Input
                               id={`contact_name_${idx}`}
                               value={contact.contact_person_name}
                               onChange={(e) => updateContact(idx, 'contact_person_name', e.target.value)}
-                              className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                              className="border border-input h-11 focus:border-primary/60 focus:ring-2 focus:ring-ring/30"
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor={`designation_${idx}`} className="text-sm font-medium text-gray-700">Designation</Label>
+                            <Label htmlFor={`designation_${idx}`} className="text-sm font-medium text-foreground">Designation</Label>
                             <Input
                               id={`designation_${idx}`}
                               value={contact.designation}
                               onChange={(e) => updateContact(idx, 'designation', e.target.value)}
                               placeholder="e.g., Manager, Director"
-                              className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                              className="border border-input h-11 focus:border-primary/60 focus:ring-2 focus:ring-ring/30"
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor={`contact_phone_${idx}`} className="text-sm font-medium text-gray-700">Phone</Label>
+                            <Label htmlFor={`contact_phone_${idx}`} className="text-sm font-medium text-foreground">Phone</Label>
                             <Input
                               id={`contact_phone_${idx}`}
                               value={contact.phone}
                               onChange={(e) => updateContact(idx, 'phone', e.target.value)}
                               placeholder="e.g., +91 9876543210"
-                              className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                              className="border border-input h-11 focus:border-primary/60 focus:ring-2 focus:ring-ring/30"
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor={`contact_email_${idx}`} className="text-sm font-medium text-gray-700">Email</Label>
+                            <Label htmlFor={`contact_email_${idx}`} className="text-sm font-medium text-foreground">Email</Label>
                             <Input
                               id={`contact_email_${idx}`}
                               type="email"
                               value={contact.email}
                               onChange={(e) => updateContact(idx, 'email', e.target.value)}
-                              className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                              className="border border-input h-11 focus:border-primary/60 focus:ring-2 focus:ring-ring/30"
                             />
                           </div>
                         </div>
@@ -671,14 +671,14 @@ export const Customers = () => {
                 {/* Address Information */}
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                      <MapPin className="h-5 w-5 text-blue-600" />
+                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                      <MapPin className="h-5 w-5 text-accent-foreground" />
                       Address
                     </h3>
                     <Button
                       type="button"
                       size="sm"
-                      className="bg-blue-600 text-white hover:bg-blue-700"
+                      className="bg-primary text-white hover:bg-primary/90"
                       onClick={addAddress}
                     >
                       <Plus className="h-4 w-4 mr-1" />
@@ -687,11 +687,11 @@ export const Customers = () => {
                   </div>
                   <div className="space-y-4">
                     {formData.addresses && formData.addresses.map((address, idx) => (
-                      <div key={idx} className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                      <div key={idx} className="border border-input rounded-lg p-4 bg-muted">
                         <div className="flex justify-between items-center mb-4">
-                          <span className="text-sm font-medium text-gray-700">Address #{idx + 1}</span>
+                          <span className="text-sm font-medium text-foreground">Address #{idx + 1}</span>
                           {formData.addresses.length > 1 && (
-                            <Button
+                            <Button aria-label="Close"
                               type="button"
                               size="sm"
                               variant="outline"
@@ -704,44 +704,44 @@ export const Customers = () => {
                         </div>
                         <div className="grid grid-cols-1 gap-4">
                           <div className="space-y-2">
-                            <Label htmlFor={`address_line_${idx}`} className="text-sm font-medium text-gray-700">Address Line</Label>
+                            <Label htmlFor={`address_line_${idx}`} className="text-sm font-medium text-foreground">Address Line</Label>
                             <Input
                               id={`address_line_${idx}`}
                               value={address.address_line}
                               onChange={(e) => updateAddress(idx, 'address_line', e.target.value)}
                               placeholder="e.g., Plot 123, Industrial Area"
-                              className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                              className="border border-input h-11 focus:border-primary/60 focus:ring-2 focus:ring-ring/30"
                             />
                           </div>
                           <div className="grid grid-cols-3 gap-4">
                             <div className="space-y-2">
-                              <Label htmlFor={`city_${idx}`} className="text-sm font-medium text-gray-700">City</Label>
+                              <Label htmlFor={`city_${idx}`} className="text-sm font-medium text-foreground">City</Label>
                               <Input
                                 id={`city_${idx}`}
                                 value={address.city}
                                 onChange={(e) => updateAddress(idx, 'city', e.target.value)}
                                 placeholder="e.g., Mumbai"
-                                className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                className="border border-input h-11 focus:border-primary/60 focus:ring-2 focus:ring-ring/30"
                               />
                             </div>
                             <div className="space-y-2">
-                              <Label htmlFor={`state_${idx}`} className="text-sm font-medium text-gray-700">State</Label>
+                              <Label htmlFor={`state_${idx}`} className="text-sm font-medium text-foreground">State</Label>
                               <Input
                                 id={`state_${idx}`}
                                 value={address.state}
                                 onChange={(e) => updateAddress(idx, 'state', e.target.value)}
                                 placeholder="e.g., Maharashtra"
-                                className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                className="border border-input h-11 focus:border-primary/60 focus:ring-2 focus:ring-ring/30"
                               />
                             </div>
                             <div className="space-y-2">
-                              <Label htmlFor={`pincode_${idx}`} className="text-sm font-medium text-gray-700">Pincode</Label>
+                              <Label htmlFor={`pincode_${idx}`} className="text-sm font-medium text-foreground">Pincode</Label>
                               <Input
                                 id={`pincode_${idx}`}
                                 value={address.pincode}
                                 onChange={(e) => updateAddress(idx, 'pincode', e.target.value)}
                                 placeholder="e.g., 400001"
-                                className="border border-gray-300 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                className="border border-input h-11 focus:border-primary/60 focus:ring-2 focus:ring-ring/30"
                               />
                             </div>
                           </div>
@@ -752,7 +752,7 @@ export const Customers = () => {
                 </div>
 
                 <div className="flex justify-end gap-3 pt-2">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-gray-300 text-gray-700 hover:bg-gray-50">
+                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-input text-foreground hover:bg-muted">
                     Cancel
                   </Button>
                   <Button type="submit" data-testid="save-customer-button">

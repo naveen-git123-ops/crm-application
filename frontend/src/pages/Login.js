@@ -90,12 +90,12 @@ export const Login = () => {
   };
 
   const fieldClass =
-    'pl-11 h-11 rounded-lg border-input bg-card text-foreground placeholder:text-muted-foreground';
+    'pl-11 h-12 rounded-xl border-input bg-card text-foreground placeholder:text-muted-foreground';
 
   return (
     <div className="min-h-screen min-h-[100dvh] w-full bg-background pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <div className="grid min-h-screen min-h-[100dvh] lg:grid-cols-2">
-        <div className="hidden lg:flex flex-col justify-between p-12 bg-[#0B1220] text-white relative overflow-hidden">
+        <div className="hidden lg:flex flex-col justify-between p-12 bg-gradient-to-br from-[#0a0f24] via-[#131a4d] to-[#2b1d70] text-white relative overflow-hidden">
           <div className="absolute inset-0">
             <div className="absolute -top-24 -right-16 h-80 w-80 rounded-full bg-indigo-500/20 blur-3xl" />
             <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-violet-500/10 blur-3xl" />
@@ -109,41 +109,41 @@ export const Login = () => {
                 className="h-10 object-contain"
               />
             </div>
-            <p className="mt-10 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-300">
+            <p className="mt-20 text-xs font-bold uppercase tracking-[0.2em] text-indigo-300">
               Resoline workspace
             </p>
-            <h1 className="mt-3 text-4xl font-semibold leading-tight tracking-tight">
+            <h1 className="mt-4 text-5xl font-extrabold leading-[1.1] tracking-tight">
               One operating system
-              <span className="block text-slate-300">for people, sales, and ops.</span>
+              <span className="block bg-gradient-to-r from-indigo-200 to-violet-300 bg-clip-text text-transparent">for people, sales, and ops.</span>
             </h1>
-            <p className="mt-4 text-sm text-slate-400 max-w-md leading-relaxed">
+            <p className="mt-5 text-base text-slate-300 max-w-md leading-relaxed">
               Manage leads, attendance, payroll, and field operations from a single professional workspace.
             </p>
-            <div className="mt-10 grid gap-4">
+            <div className="mt-12 grid gap-3 max-w-md">
               {[
                 { icon: ShieldCheck, label: 'Role-based access', copy: 'Every team sees only what they need.' },
                 { icon: Users, label: 'Unified CRM + HR', copy: 'Leads, people, and operations in one place.' },
                 { icon: Zap, label: 'Built for daily work', copy: 'Fast, mobile-ready, and consistent.' },
               ].map((item) => (
-                <div key={item.label} className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-white/10">
-                    <item.icon className="h-4 w-4 text-indigo-300" />
+                <div key={item.label} className="flex items-start gap-4 rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-sm transition-colors hover:bg-white/10">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-400/30 to-violet-400/30 ring-1 ring-white/15">
+                    <item.icon className="h-5 w-5 text-indigo-200" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-white">{item.label}</p>
-                    <p className="text-xs text-slate-400">{item.copy}</p>
+                    <p className="text-[15px] font-semibold text-white">{item.label}</p>
+                    <p className="mt-0.5 text-sm text-slate-400">{item.copy}</p>
                   </div>
                 </div>
               ))}
             </div>
           </div>
-          <div className="relative z-10 text-xs text-slate-500">
+          <div className="relative z-10 text-sm text-slate-400">
             Secure access · Encrypted sessions · Internal use only
           </div>
         </div>
 
         <div className="flex items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
-          <div className="w-full max-w-[420px]">
+          <div className="w-full max-w-[460px]">
             <div className="mb-8 text-center lg:hidden">
               <img
                 src={`${process.env.PUBLIC_URL}/logo1.png`}
@@ -152,9 +152,9 @@ export const Login = () => {
               />
             </div>
 
-            <div className="rounded-2xl border border-border bg-card p-5 sm:p-8 shadow-soft">
+            <div className="rounded-3xl border border-border/70 bg-card p-6 sm:p-10 shadow-lift">
               <div className="mb-6">
-                <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground">
+                <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
                   {mode === 'forgot' || mode === 'reset'
                     ? 'Reset your password'
                     : isLogin ? 'Welcome back' : 'Create your account'}
@@ -285,7 +285,7 @@ export const Login = () => {
                   <>
                     <div className="relative">
                       <Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
+                      <Input aria-label="New password"
                         type={showPassword ? 'text' : 'password'}
                         value={formData.newPassword}
                         onChange={(e) => setFormData({ ...formData, newPassword: e.target.value })}
@@ -305,7 +305,7 @@ export const Login = () => {
                     </div>
                     <div className="relative">
                       <Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
+                      <Input aria-label="Confirm new password"
                         type={showPassword ? 'text' : 'password'}
                         value={formData.confirmPassword}
                         onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
@@ -333,7 +333,7 @@ export const Login = () => {
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full h-11"
+                  className="w-full h-12 rounded-xl text-base"
                   data-testid="submit-button"
                 >
                   {loading

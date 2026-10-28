@@ -117,13 +117,13 @@ import { getApiErrorMessage } from '@/lib/apiErrors';
 import { useAuth } from '@/contexts/AuthContext';
 import { CgwMultiFilePicker, normalizeFileList } from '@/components/CgwMultiFilePicker';
 import { LEAD_ATTACHMENT_ACCEPT, LEAD_ATTACHMENT_HINT } from '@/lib/leadAttachmentAccept';
-const inputClass = 'h-9 rounded-lg border-slate-200 bg-white text-sm text-slate-900';
+const inputClass = 'h-9 rounded-lg border-border bg-white text-sm text-foreground';
 const selectClass =
-  'h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900';
-const labelClass = 'text-xs font-semibold text-slate-800 uppercase tracking-wide';
-const readOnlyValueClass = 'text-sm font-medium mt-1 text-slate-900';
+  'h-9 w-full rounded-lg border border-border bg-white px-3 text-sm text-foreground';
+const labelClass = 'text-xs font-semibold text-foreground uppercase tracking-wide';
+const readOnlyValueClass = 'text-sm font-medium mt-1 text-foreground';
 const textareaClass =
-  'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 resize-none';
+  'w-full rounded-lg border border-border px-3 py-2 text-sm text-foreground resize-none';
 
 export function CarryOrderWorkspace({
   lead,
@@ -555,7 +555,7 @@ export function CarryOrderWorkspace({
   return (
     <div
       className={`flex flex-col h-full bg-white overflow-hidden ${
-        embedded ? 'min-h-0 rounded-lg border border-slate-200' : 'min-h-[480px] rounded-xl border border-slate-200 shadow-sm'
+        embedded ? 'min-h-0 rounded-lg border border-border' : 'min-h-[480px] rounded-xl border border-border shadow-sm'
       }`}
     >
       {vendorPending && (
@@ -580,8 +580,8 @@ export function CarryOrderWorkspace({
         </div>
       )}
       {!embedded && (
-        <div className="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-300">
+        <div className="px-5 py-4 border-b border-border bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-indigo-300">
             Inquiry & costing workflow
             {lead.sub_category ? ` · ${lead.sub_category}` : ''}
           </p>
@@ -607,7 +607,7 @@ export function CarryOrderWorkspace({
                 )
               )
             )}
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-muted-foreground">
               Stage: <strong className="text-white">{CARRY_ORDER_STAGES.find((s) => s.id === stage)?.label}</strong>
             </span>
             {onOpenProfile && (
@@ -636,7 +636,7 @@ export function CarryOrderWorkspace({
       )}
 
       {/* Module content */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-5 text-slate-900">
+      <div className="flex-1 overflow-y-auto p-5 space-y-5 text-foreground">
         {canOpenStage(activeTab) && activeTab === 'enquiry_logged' && (
           <ModuleEnquiry lead={lead} attachments={attachments} payload={payload} setPayload={setPayload} canEdit={editActive} />
         )}
@@ -734,8 +734,8 @@ export function CarryOrderWorkspace({
 
       {/* Actions */}
       {canEdit && !isClosed && WORKFLOW_PIPELINE_IDS.includes(activeTab) && (
-        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center gap-3">
-          <p className="text-xs text-slate-600 flex-1">
+        <div className="px-5 py-4 border-t border-border bg-muted flex flex-col sm:flex-row sm:items-center gap-3">
+          <p className="text-xs text-muted-foreground flex-1">
             {onCurrentStep
               ? stepComplete
                 ? 'Step requirements met — continue when ready.'
@@ -777,7 +777,7 @@ export function CarryOrderWorkspace({
         </div>
       )}
       {canEdit && !terminalLocked && ['closed_won', 'closed_lost'].includes(activeTab) && canOpenStage(activeTab) && (
-        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50">
+        <div className="px-5 py-4 border-t border-border bg-muted">
           <Button
             size="sm"
             className={activeTab === 'closed_won' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}
@@ -803,7 +803,7 @@ function ModuleEnquiry({ lead, attachments, payload, setPayload, canEdit }) {
   return (
     <section className="space-y-4">
       <SectionTitle title="Module 1 — Enquiry details" subtitle="Client parameters captured at lead creation" />
-      <div className="rounded-xl border border-slate-200 p-4 bg-white space-y-3 text-slate-900">
+      <div className="rounded-xl border border-border p-4 bg-white space-y-3 text-foreground">
         <div>
           <Label className={labelClass}>Brief Of Enquiry</Label>
           <p className={`${readOnlyValueClass} whitespace-pre-wrap`}>
@@ -813,7 +813,7 @@ function ModuleEnquiry({ lead, attachments, payload, setPayload, canEdit }) {
         <div>
           <Label className={labelClass}>Customer enquiry attachments</Label>
           {attachments.length === 0 ? (
-            <p className="text-sm text-slate-600 mt-1">No files — attach when creating the lead</p>
+            <p className="text-sm text-muted-foreground mt-1">No files — attach when creating the lead</p>
           ) : (
             <ul className="mt-2 space-y-1">
               {attachments.map((a) => (
@@ -837,10 +837,10 @@ function ModuleEnquiry({ lead, attachments, payload, setPayload, canEdit }) {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <Label className={labelClass}>
-              Enquiry Validity From <span className="font-normal normal-case text-slate-500">(optional)</span>
+            <Label htmlFor="carryorderworkspace-field-1" className={labelClass}>
+              Enquiry Validity From <span className="font-normal normal-case text-muted-foreground">(optional)</span>
             </Label>
-            <Input
+            <Input id="carryorderworkspace-field-1"
               type="date"
               className={inputClass}
               disabled={!canEdit}
@@ -849,10 +849,10 @@ function ModuleEnquiry({ lead, attachments, payload, setPayload, canEdit }) {
             />
           </div>
           <div>
-            <Label className={labelClass}>
-              Enquiry Validity To <span className="font-normal normal-case text-slate-500">(optional)</span>
+            <Label htmlFor="carryorderworkspace-field-2" className={labelClass}>
+              Enquiry Validity To <span className="font-normal normal-case text-muted-foreground">(optional)</span>
             </Label>
-            <Input
+            <Input id="carryorderworkspace-field-2"
               type="date"
               className={inputClass}
               disabled={!canEdit}
@@ -871,8 +871,8 @@ function OaAttachmentRow({ item, canEdit, busy, onRemove }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const name = item?.file_name || item?.name || 'File';
   return (
-    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-      <button
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm">
+      <button aria-label={`Preview: ${name}`}
         type="button"
         className="flex-1 flex items-center gap-2 truncate text-left text-indigo-700 hover:underline"
         onClick={() => setPreviewOpen(true)}
@@ -919,7 +919,7 @@ function OaSingleFileField({ label, value, canEdit, busy, addLabel, onPick, onRe
       {value ? (
         <OaAttachmentRow item={value} canEdit={canEdit} busy={busy} onRemove={onRemove} />
       ) : (
-        <p className="text-sm text-slate-500">Not attached</p>
+        <p className="text-sm text-muted-foreground">Not attached</p>
       )}
       {canEdit && !value && (
         <CgwMultiFilePicker
@@ -942,7 +942,7 @@ function OaMultiFileField({ label, items, canEdit, busy, addLabel, onPick, onRem
     <div className="space-y-2">
       <Label className={labelClass}>{label}</Label>
       {list.length === 0 ? (
-        <p className="text-sm text-slate-500">No files attached</p>
+        <p className="text-sm text-muted-foreground">No files attached</p>
       ) : (
         <div className="space-y-1.5">
           {list.map((item) => (
@@ -1065,23 +1065,23 @@ function ExcelGrid({
 
   return (
     <div className="space-y-2" ref={gridRef}>
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-slate-100">
-              <th className="w-14 border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+            <tr className="bg-muted">
+              <th className="w-14 border-b border-r border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Sl no
               </th>
               {columns.map((col) => (
                 <th
                   key={col.key}
                   style={col.width ? { width: col.width } : undefined}
-                  className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600"
+                  className="border-b border-r border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                 >
                   {col.label}
                 </th>
               ))}
-              {showRowControls && <th className="w-20 border-b border-slate-200 px-2 py-2" />}
+              {showRowControls && <th className="w-20 border-b border-border px-2 py-2" />}
             </tr>
           </thead>
           <tbody>
@@ -1089,28 +1089,28 @@ function ExcelGrid({
               <tr>
                 <td
                   colSpan={columns.length + (showRowControls ? 2 : 1)}
-                  className="px-3 py-4 text-center text-sm text-slate-500"
+                  className="px-3 py-4 text-center text-sm text-muted-foreground"
                 >
                   {emptyLabel}
                 </td>
               </tr>
             ) : (
               list.map((row, rowIdx) => (
-                <tr key={row.id} className="odd:bg-white even:bg-slate-50/60">
-                  <td className="border-b border-r border-slate-200 px-2 py-1 text-slate-600">
+                <tr key={row.id} className="odd:bg-white even:bg-muted/60">
+                  <td className="border-b border-r border-border px-2 py-1 text-muted-foreground">
                     {rowIdx + 1}
                   </td>
                   {columns.map((col, colIdx) => {
                     const cellReadOnly = !canEdit || col.readOnly || Boolean(col.isReadOnly?.(row));
                     const alignClass = col.align === 'right' ? 'text-right tabular-nums' : '';
                     return (
-                    <td key={col.key} className="border-b border-r border-slate-200 p-0">
+                    <td key={col.key} className="border-b border-r border-border p-0">
                       {col.type === 'display' ? (
-                        <div className={`px-2 py-1.5 text-sm text-slate-800 ${alignClass}`}>
+                        <div className={`px-2 py-1.5 text-sm text-foreground ${alignClass}`}>
                           {col.displayValue ? col.displayValue(row) : (row[col.key] ?? '')}
                         </div>
                       ) : col.type === 'textarea' ? (
-                        <textarea
+                        <textarea aria-label={col.placeholder}
                           data-cell={cellRef(rowIdx, colIdx)}
                           disabled={cellReadOnly}
                           rows={2}
@@ -1127,7 +1127,7 @@ function ExcelGrid({
                             if (col.onCellBlur) applyHandler(col.onCellBlur, row, e.target.value);
                           }}
                           onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
-                          className={`min-h-[44px] w-full resize-y border-0 bg-transparent px-2 py-1.5 text-sm leading-snug text-slate-900 outline-none focus:bg-indigo-50/70 focus:ring-1 focus:ring-inset focus:ring-indigo-400 disabled:text-slate-500 ${alignClass}`}
+                          className={`min-h-[44px] w-full resize-y border-0 bg-transparent px-2 py-1.5 text-sm leading-snug text-foreground outline-none focus:bg-indigo-50/70 focus:ring-1 focus:ring-inset focus:ring-indigo-400 disabled:text-muted-foreground ${alignClass}`}
                         />
                       ) : col.type === 'select' ? (
                         <select
@@ -1142,7 +1142,7 @@ function ExcelGrid({
                             updateCell(row.id, col.key, e.target.value);
                           }}
                           onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
-                          className="w-full border-0 bg-transparent px-2 py-1.5 text-sm text-slate-900 outline-none focus:bg-indigo-50/70 focus:ring-1 focus:ring-inset focus:ring-indigo-400 disabled:text-slate-500"
+                          className="w-full border-0 bg-transparent px-2 py-1.5 text-sm text-foreground outline-none focus:bg-indigo-50/70 focus:ring-1 focus:ring-inset focus:ring-indigo-400 disabled:text-muted-foreground"
                         >
                           <option value="">{col.placeholder || 'Select'}</option>
                           {(col.selectOptions || []).map((opt) => (
@@ -1150,7 +1150,7 @@ function ExcelGrid({
                           ))}
                         </select>
                       ) : (
-                        <input
+                        <input aria-label={col.placeholder}
                           data-cell={cellRef(rowIdx, colIdx)}
                           type={col.type === 'number' ? 'number' : 'text'}
                           min={col.type === 'number' ? (col.min ?? '0') : undefined}
@@ -1172,21 +1172,21 @@ function ExcelGrid({
                           }}
                           onKeyDown={(e) => handleKeyDown(e, rowIdx, colIdx)}
                           onPaste={(e) => handlePaste(e, rowIdx, colIdx)}
-                          className={`w-full border-0 bg-transparent px-2 py-1.5 text-sm text-slate-900 outline-none focus:bg-indigo-50/70 focus:ring-1 focus:ring-inset focus:ring-indigo-400 disabled:text-slate-500 ${alignClass}`}
+                          className={`w-full border-0 bg-transparent px-2 py-1.5 text-sm text-foreground outline-none focus:bg-indigo-50/70 focus:ring-1 focus:ring-inset focus:ring-indigo-400 disabled:text-muted-foreground ${alignClass}`}
                         />
                       )}
                     </td>
                     );
                   })}
                   {showRowControls && (
-                    <td className="border-b border-slate-200 px-1 py-1">
+                    <td className="border-b border-border px-1 py-1">
                       <div className="flex items-center justify-end gap-1">
                         {rowActions?.(row)}
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-7 w-7 p-0 text-slate-500 hover:text-rose-600"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-rose-600"
                           aria-label="Remove row"
                           onClick={() => removeRow(row.id)}
                         >
@@ -1214,7 +1214,7 @@ function ExcelGrid({
             <Plus className="h-3.5 w-3.5 mr-1" />
             Add row
           </Button>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             Press Enter for a new row, or paste a block of cells straight from Excel
           </p>
         </div>
@@ -1242,7 +1242,7 @@ function FollowUpLogSection({
       <div className="flex items-center justify-between gap-2">
         <div>
           <Label className={labelClass}>Follow-ups</Label>
-          <p className="text-xs text-slate-500 normal-case font-normal">{description}</p>
+          <p className="text-xs text-muted-foreground normal-case font-normal">{description}</p>
         </div>
         {canEdit && (
           <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={onAdd}>
@@ -1252,12 +1252,12 @@ function FollowUpLogSection({
         )}
       </div>
       {list.length === 0 ? (
-        <p className="text-sm text-slate-500">No follow-ups logged yet</p>
+        <p className="text-sm text-muted-foreground">No follow-ups logged yet</p>
       ) : (
         list.map((row, index) => (
-          <div key={row.id} className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+          <div key={row.id} className="rounded-lg border border-border bg-white p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground">
                 Follow-up {index + 1}
               </p>
               {canEdit && (
@@ -1299,7 +1299,7 @@ function FollowUpLogSection({
               </div>
               <div className="space-y-2">
                 <Label className={labelClass}>Contact person</Label>
-                <Input
+                <Input aria-label="Who did you speak to"
                   className={inputClass}
                   disabled={!canEdit}
                   value={row.contact_person || ''}
@@ -1320,7 +1320,7 @@ function FollowUpLogSection({
             </div>
             <div className="space-y-2">
               <Label className={labelClass}>Discussion notes</Label>
-              <textarea
+              <textarea aria-label="What was discussed and agreed"
                 disabled={!canEdit}
                 value={row.notes || ''}
                 onChange={(e) => onUpdate(row.id, { notes: e.target.value })}
@@ -1538,10 +1538,10 @@ function ModuleOpportunityAssessment({
         title="Module 2 — Requirement Analysis"
         subtitle="Capture the customer requirement, site visit findings and follow-ups before vendor and costing steps"
       />
-      <div className="rounded-xl border border-slate-200 p-4 bg-white space-y-4 text-slate-900">
+      <div className="rounded-xl border border-border p-4 bg-white space-y-4 text-foreground">
         <div className="space-y-2">
-          <Label className={labelClass}>Business category</Label>
-          <select
+          <Label htmlFor="carryorderworkspace-field-3" className={labelClass}>Business category</Label>
+          <select id="carryorderworkspace-field-3"
             className={selectClass}
             disabled={!canEdit}
             value={oa.business_category || ''}
@@ -1572,8 +1572,8 @@ function ModuleOpportunityAssessment({
 
         {isConsultancy ? (
           <div className="space-y-2">
-            <Label className={labelClass}>Consultancy category</Label>
-            <select
+            <Label htmlFor="carryorderworkspace-field-4" className={labelClass}>Consultancy category</Label>
+            <select id="carryorderworkspace-field-4"
               className={selectClass}
               disabled={!canEdit}
               value={oa.consultancy_category || ''}
@@ -1597,8 +1597,8 @@ function ModuleOpportunityAssessment({
             </select>
             {consultancyOtherSelected && (
               <div className="space-y-2 pt-1">
-                <Label className={labelClass}>Specify other consultancy category</Label>
-                <Input
+                <Label htmlFor="carryorderworkspace-field-5" className={labelClass}>Specify other consultancy category</Label>
+                <Input id="carryorderworkspace-field-5"
                   className={inputClass}
                   disabled={!canEdit}
                   value={oa.consultancy_category_other || ''}
@@ -1610,7 +1610,7 @@ function ModuleOpportunityAssessment({
             {renewalCgwbSelected && (
               <div className="space-y-2 pt-2">
                 <Label className={labelClass}>Existing CGWA NOC *</Label>
-                <p className="text-xs text-slate-500 normal-case font-normal">
+                <p className="text-xs text-muted-foreground normal-case font-normal">
                   NOCs from the CGWA screen for {lead?.company || 'this customer'}
                 </p>
                 <select
@@ -1658,13 +1658,13 @@ function ModuleOpportunityAssessment({
         ) : (
           <div className="space-y-2">
             <Label className={labelClass}>Product category</Label>
-            <p className="text-xs text-slate-500 normal-case font-normal">Select one or more</p>
-            <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 max-h-48 overflow-y-auto space-y-2">
+            <p className="text-xs text-muted-foreground normal-case font-normal">Select one or more</p>
+            <div className="rounded-lg border border-border bg-muted/60 p-3 max-h-48 overflow-y-auto space-y-2">
               {options.map((name) => (
-                <label key={name} className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
+                <label key={name} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300"
+                    className="h-4 w-4 rounded border-input"
                     disabled={!canEdit}
                     checked={selected.includes(name)}
                     onChange={() => toggleProduct(name)}
@@ -1674,12 +1674,12 @@ function ModuleOpportunityAssessment({
               ))}
             </div>
             {selected.length > 0 && (
-              <p className="text-xs text-slate-600">Selected: {selected.join(', ')}</p>
+              <p className="text-xs text-muted-foreground">Selected: {selected.join(', ')}</p>
             )}
             {otherCategorySelected && (
               <div className="space-y-2 pt-1">
-                <Label className={labelClass}>Specify other category</Label>
-                <Input
+                <Label htmlFor="carryorderworkspace-field-6" className={labelClass}>Specify other category</Label>
+                <Input id="carryorderworkspace-field-6"
                   className={inputClass}
                   disabled={!canEdit}
                   value={oa.product_category_other || ''}
@@ -1692,18 +1692,18 @@ function ModuleOpportunityAssessment({
         )}
 
         {cgwbNocPath && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-4">
+          <div className="rounded-lg border border-border bg-muted/70 p-4 space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-sm font-semibold text-slate-900">Required data</p>
-                <p className="text-xs text-slate-500 normal-case font-normal">
+                <p className="text-sm font-semibold text-foreground">Required data</p>
+                <p className="text-xs text-muted-foreground normal-case font-normal">
                   Company details for this CGWB NOC. Skip if you do not have them yet.
                 </p>
               </div>
-              <label className="flex items-center gap-2 text-sm text-slate-800 shrink-0">
+              <label className="flex items-center gap-2 text-sm text-foreground shrink-0">
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300"
+                  className="h-4 w-4 rounded border-input"
                   disabled={!canEdit}
                   checked={requiredData.skipped === true}
                   onChange={(e) => setRequiredData({ skipped: e.target.checked })}
@@ -1712,14 +1712,14 @@ function ModuleOpportunityAssessment({
               </label>
             </div>
             {requiredData.skipped ? (
-              <p className="text-sm text-slate-600">Required data skipped. Uncheck Skip to enter company details.</p>
+              <p className="text-sm text-muted-foreground">Required data skipped. Uncheck Skip to enter company details.</p>
             ) : (
               <div className="space-y-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Company details</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-foreground">Company details</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label className={labelClass}>PAN *</Label>
-                    <Input
+                    <Label htmlFor="carryorderworkspace-field-7" className={labelClass}>PAN *</Label>
+                    <Input id="carryorderworkspace-field-7"
                       className={inputClass}
                       disabled={!canEdit}
                       value={requiredData.pan || ''}
@@ -1728,8 +1728,8 @@ function ModuleOpportunityAssessment({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className={labelClass}>GST *</Label>
-                    <Input
+                    <Label htmlFor="carryorderworkspace-field-8" className={labelClass}>GST *</Label>
+                    <Input id="carryorderworkspace-field-8"
                       className={inputClass}
                       disabled={!canEdit}
                       value={requiredData.gst || ''}
@@ -1742,7 +1742,7 @@ function ModuleOpportunityAssessment({
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <Label className={labelClass}>Attachments</Label>
-                      <p className="text-xs text-slate-500 normal-case font-normal">
+                      <p className="text-xs text-muted-foreground normal-case font-normal">
                         Add a name and a file for each attachment. You can add more than one.
                       </p>
                     </div>
@@ -1762,13 +1762,13 @@ function ModuleOpportunityAssessment({
                     )}
                   </div>
                   {requiredData.attachments.length === 0 ? (
-                    <p className="text-sm text-slate-500">No attachments yet</p>
+                    <p className="text-sm text-muted-foreground">No attachments yet</p>
                   ) : requiredData.attachments.map((row) => (
-                    <div key={row.id} className="rounded-lg border border-slate-200 bg-white p-3 space-y-3">
+                    <div key={row.id} className="rounded-lg border border-border bg-white p-3 space-y-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 space-y-2">
                           <Label className={labelClass}>Attachment name</Label>
-                          <Input
+                          <Input aria-label="Name this attachment"
                             className={inputClass}
                             disabled={!canEdit}
                             value={row.attachment_name || ''}
@@ -1781,7 +1781,7 @@ function ModuleOpportunityAssessment({
                           />
                         </div>
                         {canEdit && (
-                          <Button
+                          <Button aria-label="Delete"
                             type="button"
                             variant="ghost"
                             size="sm"
@@ -1795,9 +1795,9 @@ function ModuleOpportunityAssessment({
                         )}
                       </div>
                       {row.file_url || row.file_name ? (
-                        <p className="text-sm text-slate-700">{row.file_name || 'File attached'}</p>
+                        <p className="text-sm text-foreground">{row.file_name || 'File attached'}</p>
                       ) : (
-                        <p className="text-sm text-slate-500">No file attached</p>
+                        <p className="text-sm text-muted-foreground">No file attached</p>
                       )}
                       {canEdit && (
                         <CgwMultiFilePicker
@@ -1839,8 +1839,8 @@ function ModuleOpportunityAssessment({
         <>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label className={labelClass}>Technical datas required</Label>
-            <select
+            <Label htmlFor="carryorderworkspace-field-9" className={labelClass}>Technical datas required</Label>
+            <select id="carryorderworkspace-field-9"
               className={selectClass}
               disabled={!canEdit}
               value={oa.technical_datas_required === true ? 'yes' : oa.technical_datas_required === false ? 'no' : ''}
@@ -1857,8 +1857,8 @@ function ModuleOpportunityAssessment({
             </select>
           </div>
           <div className="space-y-2">
-            <Label className={labelClass}>Site visit required</Label>
-            <select
+            <Label htmlFor="carryorderworkspace-field-10" className={labelClass}>Site visit required</Label>
+            <select id="carryorderworkspace-field-10"
               className={selectClass}
               disabled={!canEdit}
               value={oa.site_visit_required === true ? 'yes' : oa.site_visit_required === false ? 'no' : ''}
@@ -1893,8 +1893,8 @@ function ModuleOpportunityAssessment({
           <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-4 space-y-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Site visit</p>
             <div className="space-y-2 max-w-xs">
-              <Label className={labelClass}>Site visit date</Label>
-              <Input
+              <Label htmlFor="carryorderworkspace-field-11" className={labelClass}>Site visit date</Label>
+              <Input id="carryorderworkspace-field-11"
                 type="date"
                 className={inputClass}
                 disabled={!canEdit}
@@ -1905,20 +1905,20 @@ function ModuleOpportunityAssessment({
 
             <div className="space-y-2">
               <Label className={labelClass}>Assign persons for site visit</Label>
-              <p className="text-xs text-slate-500 normal-case font-normal">
+              <p className="text-xs text-muted-foreground normal-case font-normal">
                 Select one or more employees — each gets a site visit task
               </p>
-              <div className="rounded-lg border border-slate-200 bg-white p-3 max-h-44 overflow-y-auto space-y-2">
+              <div className="rounded-lg border border-border bg-white p-3 max-h-44 overflow-y-auto space-y-2">
                 {employees.length === 0 ? (
-                  <p className="text-sm text-slate-500">No employees available</p>
+                  <p className="text-sm text-muted-foreground">No employees available</p>
                 ) : (
                   employees.map((emp) => {
                     const id = String(emp.employee_id || emp.id);
                     return (
-                      <label key={id} className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
+                      <label key={id} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                         <input
                           type="checkbox"
-                          className="h-4 w-4 rounded border-slate-300"
+                          className="h-4 w-4 rounded border-input"
                           disabled={!canEdit}
                           checked={assignees.some((a) => String(a.employee_id) === id)}
                           onChange={() => toggleAssignee(emp)}
@@ -1930,7 +1930,7 @@ function ModuleOpportunityAssessment({
                 )}
               </div>
               {assignees.length > 0 && (
-                <p className="text-xs text-slate-600">
+                <p className="text-xs text-muted-foreground">
                   Assigned: {assignees.map((a) => a.name || a.employee_id).join(', ')}
                 </p>
               )}
@@ -1940,7 +1940,7 @@ function ModuleOpportunityAssessment({
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <Label className={labelClass}>Other persons joining</Label>
-                  <p className="text-xs text-slate-500 normal-case font-normal">
+                  <p className="text-xs text-muted-foreground normal-case font-normal">
                     External engineers or customer-side people who are not employees
                   </p>
                 </div>
@@ -1952,9 +1952,9 @@ function ModuleOpportunityAssessment({
                 )}
               </div>
               {otherPeople.map((person, index) => (
-                <div key={person.id} className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+                <div key={person.id} className="rounded-lg border border-border bg-white p-4 space-y-3">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-foreground">
                       Other person {index + 1}
                     </p>
                     {canEdit && (
@@ -1973,7 +1973,7 @@ function ModuleOpportunityAssessment({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <Label className={labelClass}>Name</Label>
-                      <Input
+                      <Input aria-label="Full name"
                         className={inputClass}
                         disabled={!canEdit}
                         value={person.name || ''}
@@ -1983,7 +1983,7 @@ function ModuleOpportunityAssessment({
                     </div>
                     <div className="space-y-2">
                       <Label className={labelClass}>Mobile number</Label>
-                      <Input
+                      <Input aria-label="Mobile number"
                         className={inputClass}
                         disabled={!canEdit}
                         value={person.mobile || ''}
@@ -1993,7 +1993,7 @@ function ModuleOpportunityAssessment({
                     </div>
                     <div className="space-y-2">
                       <Label className={labelClass}>Email</Label>
-                      <Input
+                      <Input aria-label="Email"
                         type="email"
                         className={inputClass}
                         disabled={!canEdit}
@@ -2004,7 +2004,7 @@ function ModuleOpportunityAssessment({
                     </div>
                     <div className="space-y-2 sm:col-span-2">
                       <Label className={labelClass}>Address</Label>
-                      <textarea
+                      <textarea aria-label="Address"
                         disabled={!canEdit}
                         value={person.address || ''}
                         onChange={(e) => updateOtherPerson(person.id, { address: e.target.value })}
@@ -2031,13 +2031,13 @@ function ModuleOpportunityAssessment({
                 </div>
               ))}
               {otherPeople.length === 0 && (
-                <p className="text-sm text-slate-500">No other persons added</p>
+                <p className="text-sm text-muted-foreground">No other persons added</p>
               )}
             </div>
 
             <div className="space-y-2 max-w-xs">
-              <Label className={labelClass}>Site visit status</Label>
-              <select
+              <Label htmlFor="carryorderworkspace-field-12" className={labelClass}>Site visit status</Label>
+              <select id="carryorderworkspace-field-12"
                 className={selectClass}
                 disabled={!canEdit}
                 value={siteVisitStatus}
@@ -2048,7 +2048,7 @@ function ModuleOpportunityAssessment({
                   <option key={s.id} value={s.id}>{s.label}</option>
                 ))}
               </select>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Mark Done to record the site visit report below (optional)
               </p>
             </div>
@@ -2057,9 +2057,9 @@ function ModuleOpportunityAssessment({
               <div className="rounded-lg border border-emerald-200 bg-white p-4 space-y-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
-                    Site visit report <span className="font-normal normal-case text-slate-500">(optional)</span>
+                    Site visit report <span className="font-normal normal-case text-muted-foreground">(optional)</span>
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Capture everything gathered on site — you can fill this later and still continue
                   </p>
                 </div>
@@ -2083,8 +2083,8 @@ function ModuleOpportunityAssessment({
                 />
 
                 <div className="space-y-2">
-                  <Label className={labelClass}>Technical discussions</Label>
-                  <textarea
+                  <Label htmlFor="carryorderworkspace-field-13" className={labelClass}>Technical discussions</Label>
+                  <textarea id="carryorderworkspace-field-13"
                     disabled={!canEdit}
                     value={oa.technical_discussions || ''}
                     onChange={(e) => updateOa({ technical_discussions: e.target.value })}
@@ -2113,8 +2113,8 @@ function ModuleOpportunityAssessment({
                 />
 
                 <div className="space-y-2">
-                  <Label className={labelClass}>Existing equipment details</Label>
-                  <textarea
+                  <Label htmlFor="carryorderworkspace-field-14" className={labelClass}>Existing equipment details</Label>
+                  <textarea id="carryorderworkspace-field-14"
                     disabled={!canEdit}
                     value={oa.existing_equipment_details || ''}
                     onChange={(e) => updateOa({ existing_equipment_details: e.target.value })}
@@ -2125,8 +2125,8 @@ function ModuleOpportunityAssessment({
                 </div>
 
                 <div className="space-y-2">
-                  <Label className={labelClass}>Process parameters</Label>
-                  <textarea
+                  <Label htmlFor="carryorderworkspace-field-15" className={labelClass}>Process parameters</Label>
+                  <textarea id="carryorderworkspace-field-15"
                     disabled={!canEdit}
                     value={oa.process_parameters || ''}
                     onChange={(e) => updateOa({ process_parameters: e.target.value })}
@@ -2137,8 +2137,8 @@ function ModuleOpportunityAssessment({
                 </div>
 
                 <div className="space-y-2">
-                  <Label className={labelClass}>Minutes of the meeting</Label>
-                  <textarea
+                  <Label htmlFor="carryorderworkspace-field-16" className={labelClass}>Minutes of the meeting</Label>
+                  <textarea id="carryorderworkspace-field-16"
                     disabled={!canEdit}
                     value={oa.minutes_of_meeting || ''}
                     onChange={(e) => updateOa({ minutes_of_meeting: e.target.value })}
@@ -2203,8 +2203,8 @@ function ModuleOpportunityAssessment({
         )}
 
         <div className="space-y-2 max-w-sm">
-          <Label className={labelClass}>Expected Enquiry closing date</Label>
-          <Input
+          <Label htmlFor="carryorderworkspace-field-17" className={labelClass}>Expected Enquiry closing date</Label>
+          <Input id="carryorderworkspace-field-17"
             type="date"
             className={inputClass}
             disabled={!canEdit}
@@ -2283,12 +2283,12 @@ function ModuleTechnicalAssessment({ payload, setPayload, canEdit, saving, uploa
         title="Module 3 — Technical assessment"
         subtitle="Build your own technical checklist — add any question and record the answer"
       />
-      <div className="rounded-xl border border-slate-200 p-4 bg-white space-y-5 text-slate-900">
+      <div className="rounded-xl border border-border p-4 bg-white space-y-5 text-foreground">
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div>
               <Label className={labelClass}>Technical questions</Label>
-              <p className="text-xs text-slate-500 normal-case font-normal">
+              <p className="text-xs text-muted-foreground normal-case font-normal">
                 Type the question, then the answer — add as many as you need
               </p>
             </div>
@@ -2300,14 +2300,14 @@ function ModuleTechnicalAssessment({ payload, setPayload, canEdit, saving, uploa
             )}
           </div>
           {items.length === 0 ? (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               No questions added yet — click Add question to start the assessment
             </p>
           ) : (
             items.map((row, index) => (
-              <div key={row.id} className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+              <div key={row.id} className="rounded-lg border border-border bg-muted/60 p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-foreground">
                     Question {index + 1}
                   </p>
                   {canEdit && (
@@ -2325,7 +2325,7 @@ function ModuleTechnicalAssessment({ payload, setPayload, canEdit, saving, uploa
                 </div>
                 <div className="space-y-2">
                   <Label className={labelClass}>Question</Label>
-                  <Input
+                  <Input aria-label="e.g. Required flow rate at duty point"
                     className={inputClass}
                     disabled={!canEdit}
                     value={row.question || ''}
@@ -2335,7 +2335,7 @@ function ModuleTechnicalAssessment({ payload, setPayload, canEdit, saving, uploa
                 </div>
                 <div className="space-y-2">
                   <Label className={labelClass}>Answer</Label>
-                  <textarea
+                  <textarea aria-label="Answer from the customer or site"
                     disabled={!canEdit}
                     value={row.answer || ''}
                     onChange={(e) => updateItem(row.id, { answer: e.target.value })}
@@ -2626,18 +2626,18 @@ function ModuleMaterialProduct({
         subtitle="List every item needed — what we hold in stock and what has to be bought from a vendor"
       />
 
-      <div className="rounded-xl border border-slate-200 p-4 bg-white space-y-3 text-slate-900">
+      <div className="rounded-xl border border-border p-4 bg-white space-y-3 text-foreground">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <p className="text-sm font-semibold text-slate-800">
+            <p className="text-sm font-semibold text-foreground">
               Available in our stock
               {!stockLoading && stockItems.length > 0 && (
-                <span className="ml-2 text-xs font-normal text-slate-500">
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
                   {stockItems.length} item(s) loaded
                 </span>
               )}
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Pick an item from Stock Management — UOM and available count fill in automatically. Ask for more
               than we hold and the extra quantity drops into the purchase list below.
             </p>
@@ -2662,7 +2662,7 @@ function ModuleMaterialProduct({
           emptyLabel="No stock items added — click Add row to start"
           rowActions={(row) => (
             row.stock_item_id ? (
-              <Button
+              <Button aria-label="Buy this item from a vendor instead"
                 type="button"
                 variant="ghost"
                 size="sm"
@@ -2684,10 +2684,10 @@ function ModuleMaterialProduct({
         ))}
       </div>
 
-      <div className="rounded-xl border border-indigo-200 p-4 bg-indigo-50/30 space-y-3 text-slate-900">
+      <div className="rounded-xl border border-indigo-200 p-4 bg-indigo-50/30 space-y-3 text-foreground">
         <div>
-          <p className="text-sm font-semibold text-slate-800">To be purchased from vendor</p>
-          <p className="text-xs text-slate-500">
+          <p className="text-sm font-semibold text-foreground">To be purchased from vendor</p>
+          <p className="text-xs text-muted-foreground">
             This list is carried into Vendor management, where you assign each item to a vendor
           </p>
         </div>
@@ -2700,7 +2700,7 @@ function ModuleMaterialProduct({
           emptyLabel="No purchase items — add rows or ask for more than we hold in the grid above"
           rowActions={(row) => (
             !row.split_from_row_id && findStockItem(row.item_name) ? (
-              <Button
+              <Button aria-label="This item exists in stock — move it to the stock list"
                 type="button"
                 variant="ghost"
                 size="sm"
@@ -2715,7 +2715,7 @@ function ModuleMaterialProduct({
         />
       </div>
 
-      <div className="rounded-xl border border-slate-200 p-4 bg-white space-y-3 text-slate-900">
+      <div className="rounded-xl border border-border p-4 bg-white space-y-3 text-foreground">
         <FollowUpLogSection
           rows={followUps}
           canEdit={canEdit}
@@ -3043,10 +3043,10 @@ function ModuleVendorSelection({
       />
       <div className="rounded-xl border border-indigo-200 bg-white p-4 space-y-3">
         <div>
-          <p className="text-sm font-semibold text-slate-800">
+          <p className="text-sm font-semibold text-foreground">
             Items to purchase ({purchaseItems.length})
           </p>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             Pick a vendor for each line. Inquiry packs below are grouped by vendor — sending the email
             from the application comes next.
           </p>
@@ -3083,28 +3083,28 @@ function ModuleVendorSelection({
         const email = inquiry.vendor_email || vendorMasterEmail(master);
         const status = inquiry.inquiry_status || 'draft';
         return (
-          <div key={group.key} className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
+          <div key={group.key} className="rounded-xl border border-border bg-white p-4 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <p className="text-sm font-semibold text-slate-900">{group.vendor_name || 'Vendor'}</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-sm font-semibold text-foreground">{group.vendor_name || 'Vendor'}</p>
+                <p className="text-xs text-muted-foreground">
                   {email || 'No email on the vendor record'} · {group.items.length} item(s)
                 </p>
               </div>
-              <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                 status === 'quoted'
                   ? 'bg-emerald-50 text-emerald-800'
                   : status === 'sent'
                     ? 'bg-indigo-50 text-indigo-800'
-                    : 'bg-slate-100 text-slate-700'
+                    : 'bg-muted text-foreground'
               }`}
               >
                 {inquiryStatusLabel(status)}
               </span>
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+            <div className="rounded-lg border border-border bg-muted p-3 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Inquiry to vendor
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3120,7 +3120,7 @@ function ModuleVendorSelection({
                 </div>
                 <div className="space-y-1">
                   <Label className={labelClass}>Vendor email</Label>
-                  <Input
+                  <Input aria-label="vendor@example.com"
                     type="email"
                     className={inputClass}
                     disabled={!canEdit}
@@ -3131,7 +3131,7 @@ function ModuleVendorSelection({
                 </div>
                 <div className="sm:col-span-2 space-y-1">
                   <Label className={labelClass}>Remarks / covering note</Label>
-                  <textarea
+                  <textarea aria-label="Scope, drawings, due date for quote, etc."
                     disabled={!canEdit}
                     rows={2}
                     className={textareaClass}
@@ -3141,7 +3141,7 @@ function ModuleVendorSelection({
                   />
                 </div>
               </div>
-              <ul className="text-xs text-slate-700 space-y-0.5">
+              <ul className="text-xs text-foreground space-y-0.5">
                 {group.items.map((item) => (
                   <li key={item.id}>
                     • {item.item_name}
@@ -3176,7 +3176,7 @@ function ModuleVendorSelection({
             </div>
 
             <div className="space-y-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Vendor quote — price, technical data, warranty &amp; delivery
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3196,7 +3196,7 @@ function ModuleVendorSelection({
               </div>
               <div className="space-y-1">
                 <Label className={labelClass}>Technical data / discussion</Label>
-                <textarea
+                <textarea aria-label="Datasheet summary, deviations, model offered, etc."
                   disabled={!canEdit}
                   rows={3}
                   className={textareaClass}
@@ -3227,32 +3227,32 @@ function ModuleVendorSelection({
                 })}
                 onPick={(files) => uploadProofOfPriceFiles(group, files)}
               />
-              <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full border-collapse text-sm">
                   <thead>
-                    <tr className="bg-slate-100">
-                      <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Item</th>
-                      <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Qty</th>
-                      <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Price (₹)</th>
-                      <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Warranty</th>
-                      <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Delivery period</th>
-                      <th className="border-b border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Delivery date</th>
+                    <tr className="bg-muted">
+                      <th className="border-b border-r border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Item</th>
+                      <th className="border-b border-r border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Qty</th>
+                      <th className="border-b border-r border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Price (₹)</th>
+                      <th className="border-b border-r border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Warranty</th>
+                      <th className="border-b border-r border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Delivery period</th>
+                      <th className="border-b border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Delivery date</th>
                     </tr>
                   </thead>
                   <tbody>
                     {group.items.map((item) => (
-                      <tr key={item.id} className="odd:bg-white even:bg-slate-50/60">
-                        <td className="border-b border-r border-slate-200 px-2 py-1.5 text-slate-800">
+                      <tr key={item.id} className="odd:bg-white even:bg-muted/60">
+                        <td className="border-b border-r border-border px-2 py-1.5 text-foreground">
                           <p className="font-medium">{item.item_name}</p>
                           {item.specification ? (
-                            <p className="text-xs text-slate-500">{item.specification}</p>
+                            <p className="text-xs text-muted-foreground">{item.specification}</p>
                           ) : null}
                         </td>
-                        <td className="border-b border-r border-slate-200 px-2 py-1.5 text-slate-700 whitespace-nowrap">
+                        <td className="border-b border-r border-border px-2 py-1.5 text-foreground whitespace-nowrap">
                           {item.quantity} {item.uom || ''}
                         </td>
-                        <td className="border-b border-r border-slate-200 p-1">
-                          <Input
+                        <td className="border-b border-r border-border p-1">
+                          <Input aria-label="0.00"
                             type="number"
                             min="0"
                             step="0.01"
@@ -3263,8 +3263,8 @@ function ModuleVendorSelection({
                             placeholder="0.00"
                           />
                         </td>
-                        <td className="border-b border-r border-slate-200 p-1">
-                          <Input
+                        <td className="border-b border-r border-border p-1">
+                          <Input aria-label="e.g. 18 months"
                             className="h-8 border-0 bg-transparent shadow-none"
                             disabled={!canEdit}
                             value={item.warranty || ''}
@@ -3272,8 +3272,8 @@ function ModuleVendorSelection({
                             placeholder="e.g. 18 months"
                           />
                         </td>
-                        <td className="border-b border-r border-slate-200 p-1">
-                          <Input
+                        <td className="border-b border-r border-border p-1">
+                          <Input aria-label="e.g. 4 weeks"
                             className="h-8 border-0 bg-transparent shadow-none"
                             disabled={!canEdit}
                             value={item.delivery_period || ''}
@@ -3281,7 +3281,7 @@ function ModuleVendorSelection({
                             placeholder="e.g. 4 weeks"
                           />
                         </td>
-                        <td className="border-b border-slate-200 p-1">
+                        <td className="border-b border-border p-1">
                           <Input
                             type="date"
                             className="h-8 border-0 bg-transparent shadow-none"
@@ -3304,15 +3304,15 @@ function ModuleVendorSelection({
           <DialogHeader>
             <DialogTitle>Send inquiry to {inquiryDialog?.vendor_name || 'vendor'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 text-slate-900">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              From: <span className="font-medium text-slate-800">{user?.name || 'You'}</span>
+          <div className="space-y-3 text-foreground">
+            <div className="rounded-lg border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+              From: <span className="font-medium text-foreground">{user?.name || 'You'}</span>
               {user?.email ? ` · ${user.email}` : ''} — the vendor’s reply will come to this mailbox
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className={labelClass}>Vendor email</Label>
-                <Input
+                <Label htmlFor="carryorderworkspace-field-18" className={labelClass}>Vendor email</Label>
+                <Input id="carryorderworkspace-field-18"
                   type="email"
                   className={inputClass}
                   value={draftTo}
@@ -3322,8 +3322,8 @@ function ModuleVendorSelection({
                 />
               </div>
               <div className="space-y-1 sm:col-span-2">
-                <Label className={labelClass}>Subject</Label>
-                <Input
+                <Label htmlFor="carryorderworkspace-field-19" className={labelClass}>Subject</Label>
+                <Input id="carryorderworkspace-field-19"
                   className={inputClass}
                   value={draftSubject}
                   onChange={(e) => setDraftSubject(e.target.value)}
@@ -3331,8 +3331,8 @@ function ModuleVendorSelection({
                 />
               </div>
               <div className="space-y-1 sm:col-span-2">
-                <Label className={labelClass}>Message</Label>
-                <textarea
+                <Label htmlFor="carryorderworkspace-field-20" className={labelClass}>Message</Label>
+                <textarea id="carryorderworkspace-field-20"
                   rows={3}
                   className={textareaClass}
                   value={draftRemarks}
@@ -3342,25 +3342,25 @@ function ModuleVendorSelection({
                 />
               </div>
             </div>
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full border-collapse text-sm">
                 <thead>
-                  <tr className="bg-slate-100">
-                    <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Sl</th>
-                    <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Item name</th>
-                    <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Specification</th>
-                    <th className="border-b border-r border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Qty</th>
-                    <th className="border-b border-slate-200 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">UOM</th>
+                  <tr className="bg-muted">
+                    <th className="border-b border-r border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sl</th>
+                    <th className="border-b border-r border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Item name</th>
+                    <th className="border-b border-r border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Specification</th>
+                    <th className="border-b border-r border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Qty</th>
+                    <th className="border-b border-border px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">UOM</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(inquiryDialog?.items || []).map((item, idx) => (
-                    <tr key={item.id || idx} className="odd:bg-white even:bg-slate-50/60">
-                      <td className="border-b border-r border-slate-200 px-2 py-1.5 text-slate-600">{idx + 1}</td>
-                      <td className="border-b border-r border-slate-200 px-2 py-1.5 font-medium">{item.item_name}</td>
-                      <td className="border-b border-r border-slate-200 px-2 py-1.5 text-slate-600">{item.specification || '—'}</td>
-                      <td className="border-b border-r border-slate-200 px-2 py-1.5">{item.quantity || '—'}</td>
-                      <td className="border-b border-slate-200 px-2 py-1.5">{item.uom || '—'}</td>
+                    <tr key={item.id || idx} className="odd:bg-white even:bg-muted/60">
+                      <td className="border-b border-r border-border px-2 py-1.5 text-muted-foreground">{idx + 1}</td>
+                      <td className="border-b border-r border-border px-2 py-1.5 font-medium">{item.item_name}</td>
+                      <td className="border-b border-r border-border px-2 py-1.5 text-muted-foreground">{item.specification || '—'}</td>
+                      <td className="border-b border-r border-border px-2 py-1.5">{item.quantity || '—'}</td>
+                      <td className="border-b border-border px-2 py-1.5">{item.uom || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -3399,19 +3399,19 @@ function LeadAttachmentPreviewDialog({ attachment, open, onOpenChange }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[min(90vh,860px)] w-[min(960px,96vw)] max-w-[min(960px,96vw)] flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="shrink-0 border-b border-slate-200 px-5 py-3 pr-12 text-left">
+        <DialogHeader className="shrink-0 border-b border-border px-5 py-3 pr-12 text-left">
           <DialogTitle className="truncate text-base" title={fileName}>
             Preview · {fileName}
           </DialogTitle>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-auto bg-slate-50">
+        <div className="min-h-0 flex-1 overflow-auto bg-muted">
           {fileUrl ? (
             <FilePreviewSimple fileUrl={fileUrl} fileName={fileName} />
           ) : (
-            <p className="p-6 text-sm text-slate-500">No file URL is available for this attachment.</p>
+            <p className="p-6 text-sm text-muted-foreground">No file URL is available for this attachment.</p>
           )}
         </div>
-        <DialogFooter className="shrink-0 border-t border-slate-200 px-4 py-3">
+        <DialogFooter className="shrink-0 border-t border-border px-4 py-3">
           {fileUrl ? (
             <Button type="button" variant="outline" size="sm" asChild>
               <a href={fileUrl} target="_blank" rel="noopener noreferrer">
@@ -3500,23 +3500,23 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
           title="Module 6 — BOM & costing"
           subtitle="Enter each liaisoning charge. The next step is Offer & revision."
         />
-        <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <div className="overflow-x-auto rounded-xl border border-border">
           <table className="w-full text-sm min-w-[640px]">
-            <thead className="bg-slate-100 border-b border-slate-200">
+            <thead className="bg-muted border-b border-border">
               <tr>
-                <th className="text-left p-2 font-semibold text-slate-700 w-16">S.No</th>
-                <th className="text-left p-2 font-semibold text-slate-700">Liaisoning name</th>
-                <th className="text-left p-2 font-semibold text-slate-700">Government bodies</th>
-                <th className="text-right p-2 font-semibold text-slate-700 w-36">Amount (₹)</th>
+                <th className="text-left p-2 font-semibold text-foreground w-16">S.No</th>
+                <th className="text-left p-2 font-semibold text-foreground">Liaisoning name</th>
+                <th className="text-left p-2 font-semibold text-foreground">Government bodies</th>
+                <th className="text-right p-2 font-semibold text-foreground w-36">Amount (₹)</th>
                 <th className="w-10" />
               </tr>
             </thead>
             <tbody>
               {liaisonLines.map((row, index) => (
-                <tr key={row.id} className="border-b border-slate-100">
-                  <td className="p-2 text-slate-600 tabular-nums">{index + 1}</td>
+                <tr key={row.id} className="border-b border-border">
+                  <td className="p-2 text-muted-foreground tabular-nums">{index + 1}</td>
                   <td className="p-2">
-                    <Input
+                    <Input aria-label="Liaisoning name"
                       className={inputClass}
                       disabled={!canEdit}
                       value={row.liaison_name || ''}
@@ -3538,7 +3538,7 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
                     </select>
                   </td>
                   <td className="p-2">
-                    <Input
+                    <Input aria-label="0.00"
                       type="number"
                       min="0"
                       step="0.01"
@@ -3551,7 +3551,7 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
                   </td>
                   <td className="p-2">
                     {canEdit && (
-                      <button
+                      <button aria-label="Delete"
                         type="button"
                         className="text-rose-500 hover:bg-rose-50 p-1 rounded"
                         onClick={() => setPayload({
@@ -3591,7 +3591,7 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
           </p>
         )}
         <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <p className="text-sm font-semibold text-slate-800">Total amount</p>
+          <p className="text-sm font-semibold text-foreground">Total amount</p>
           <p className="text-xl font-bold tabular-nums text-indigo-900">{formatInr(bomTotals.consignmentTotal)}</p>
         </div>
       </section>
@@ -3688,10 +3688,10 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
       {useWorkflowLines ? (
         <div className="rounded-xl border border-indigo-200 bg-white p-4 space-y-3">
           <div>
-            <p className="text-sm font-semibold text-slate-800">
+            <p className="text-sm font-semibold text-foreground">
               Supply to customer ({lines.length})
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Stock lines need a unit price here. Vendor lines use the quoted unit price from Vendor management
               (qty × unit price). Set Profit % on each row — After profit is amount ÷ (1 − profit %).
             </p>
@@ -3712,20 +3712,20 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <div className="overflow-x-auto rounded-xl border border-border">
           <table className="w-full text-sm">
-            <thead className="bg-slate-100 border-b border-slate-200">
+            <thead className="bg-muted border-b border-border">
               <tr>
-                <th className="text-left p-2 font-semibold text-slate-700">Material / Services</th>
-                <th className="text-right p-2 font-semibold text-slate-700">Base cost (₹)</th>
+                <th className="text-left p-2 font-semibold text-foreground">Material / Services</th>
+                <th className="text-right p-2 font-semibold text-foreground">Base cost (₹)</th>
                 <th className="w-10" />
               </tr>
             </thead>
             <tbody>
               {(bom.materials || []).map((row, idx) => (
-                <tr key={row.id} className="border-b border-slate-100">
+                <tr key={row.id} className="border-b border-border">
                   <td className="p-2">
-                    <Input
+                    <Input aria-label="Material name"
                       disabled={!canEdit}
                       value={row.material_name}
                       onChange={(e) => {
@@ -3754,7 +3754,7 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
                   </td>
                   <td className="p-2">
                     {canEdit && (
-                      <button
+                      <button aria-label="Delete"
                         type="button"
                         onClick={() => setBom({ materials: bom.materials.filter((_, i) => i !== idx) })}
                         className="text-rose-500 hover:bg-rose-50 p-1 rounded"
@@ -3781,8 +3781,8 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
         </div>
       )}
       <div>
-        <p className="text-sm font-semibold text-slate-800 mb-2">Additional charges</p>
-        <p className="text-xs text-slate-500 mb-3">
+        <p className="text-sm font-semibold text-foreground mb-2">Additional charges</p>
+        <p className="text-xs text-muted-foreground mb-3">
           These sit on top of the material total. Profit % is set on each product row above, not here.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3807,22 +3807,22 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
         <NumField label="TPC  Cost (₹)" value={bom.margin_amount} onChange={(v) => setBom({ margin_amount: v })} canEdit={canEdit} />
         </div>
       </div>
-      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-        <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600 bg-slate-50 border-b border-slate-200">
+      <div className="rounded-xl border border-border bg-white overflow-hidden">
+        <p className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted border-b border-border">
           Cost roll-up (before quotation)
         </p>
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-border">
           {rollup.map((row) => (
             <div key={row.label} className="px-4 py-2 flex items-center justify-between gap-3 text-sm">
-              <span className="text-slate-600">{row.label}</span>
-              <span className="font-medium tabular-nums text-slate-900">{formatInr(row.value || 0)}</span>
+              <span className="text-muted-foreground">{row.label}</span>
+              <span className="font-medium tabular-nums text-foreground">{formatInr(row.value || 0)}</span>
             </div>
           ))}
         </div>
       </div>
       <div className="space-y-2">
         <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <p className="text-sm font-semibold text-slate-800">Total cost for consignment</p>
+          <p className="text-sm font-semibold text-foreground">Total cost for consignment</p>
           <p className="text-xl font-bold tabular-nums text-indigo-900">
             {formatInr(bomTotals.consignmentTotal)}
           </p>
@@ -3831,8 +3831,8 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
           <>
             <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
-                <p className="text-sm font-semibold text-slate-800">Total cost for consignment after adding profit</p>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-sm font-semibold text-foreground">Total cost for consignment after adding profit</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {bomTotals.lineMarginApplied
                     ? 'Each product uses its own profit % · additional charges stay as entered'
                     : `${formatInr(bomTotals.consignmentTotal)} ÷ (1 − ${bomTotals.profitMarginPct}%)`}
@@ -3842,24 +3842,24 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
                 {formatInr(bomTotals.profitValue)}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm">
-              <span className="text-slate-600">Profit amount (₹)</span>
-              <span className="font-semibold tabular-nums text-slate-900">
+            <div className="rounded-xl border border-border bg-white px-4 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">Profit amount (₹)</span>
+              <span className="font-semibold tabular-nums text-foreground">
                 {formatInr(bomTotals.profitAmount)}
               </span>
             </div>
           </>
         )}
       </div>
-      <div className="pt-2 border-t border-slate-200 space-y-3">
+      <div className="pt-2 border-t border-border space-y-3">
         {bomAttachments.length > 0 && (
           <ul className="space-y-1">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mb-1">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-1">
               BOM & costing documents
             </p>
             {bomAttachments.map((att) => (
               <li key={att.id} className="flex items-center gap-2 text-sm">
-                <button
+                <button aria-label={`Preview: ${att.file_name || 'File'}`}
                   type="button"
                   className="flex-1 flex items-center gap-2 truncate text-left text-indigo-700 hover:underline"
                   onClick={() => setPreviewAttachment(att)}
@@ -3879,7 +3879,7 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
                   Preview
                 </Button>
                 {canEdit && (
-                  <Button
+                  <Button aria-label="Delete"
                     type="button"
                     variant="ghost"
                     size="sm"
@@ -3919,13 +3919,13 @@ function ModuleBom({ payload, setPayload, bomTotals, canEdit, saving, onUploadBo
 function WorkflowAttachmentPreview({ attachments }) {
   const files = Array.isArray(attachments) ? attachments : [];
   if (!files.length) {
-    return <span className="text-slate-400 text-xs">—</span>;
+    return <span className="text-muted-foreground text-xs">—</span>;
   }
   return (
     <ul className="space-y-1 min-w-[100px]">
       {files.map((att) => (
         <li key={att.id || att.file_url}>
-          <button
+          <button aria-label={`Preview: ${att.file_name || 'File'}`}
             type="button"
             onClick={() => {
               if (att.file_url) window.open(att.file_url, '_blank', 'noopener,noreferrer');
@@ -4244,28 +4244,28 @@ function ModuleOfferFollowUp({
   };
 
   const followUpLogTable = followUps.length === 0 ? (
-    <p className="text-sm text-slate-500 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center">
+    <p className="text-sm text-muted-foreground rounded-lg border border-dashed border-border px-4 py-6 text-center">
       {isOfferStep
         ? 'No follow-ups yet — they appear here after you log them on the Follow-up step.'
         : 'No follow-ups yet — add an entry below.'}
     </p>
   ) : (
-    <div className="overflow-x-auto rounded-xl border border-slate-200">
+    <div className="overflow-x-auto rounded-xl border border-border">
       <table className="w-full text-sm">
-        <thead className="bg-slate-100 border-b border-slate-200">
+        <thead className="bg-muted border-b border-border">
           <tr>
-            <th className="p-2 text-left font-semibold text-slate-700">#</th>
-            <th className="p-2 text-left font-semibold text-slate-700">Date</th>
-            <th className="p-2 text-left font-semibold text-slate-700">Follow-up through</th>
-            <th className="p-2 text-left font-semibold text-slate-700">Comment</th>
-            <th className="p-2 text-left font-semibold text-slate-700">Proof of follow-up attachment</th>
+            <th className="p-2 text-left font-semibold text-foreground">#</th>
+            <th className="p-2 text-left font-semibold text-foreground">Date</th>
+            <th className="p-2 text-left font-semibold text-foreground">Follow-up through</th>
+            <th className="p-2 text-left font-semibold text-foreground">Comment</th>
+            <th className="p-2 text-left font-semibold text-foreground">Proof of follow-up attachment</th>
             {canEditFollowUp && <th className="w-8" />}
           </tr>
         </thead>
-        <tbody className="text-slate-800">
+        <tbody className="text-foreground">
           {followUps.map((fu, idx) => (
-            <tr key={fu.id} className="border-t border-slate-100">
-              <td className="p-2 text-slate-500">F{idx + 1}</td>
+            <tr key={fu.id} className="border-t border-border">
+              <td className="p-2 text-muted-foreground">F{idx + 1}</td>
               <td className="p-2 whitespace-nowrap">
                 {canEditFollowUp ? (
                   <Input
@@ -4279,7 +4279,7 @@ function ModuleOfferFollowUp({
                     }}
                   />
                 ) : (
-                  <span className="text-slate-600">{fu.follow_up_date || '—'}</span>
+                  <span className="text-muted-foreground">{fu.follow_up_date || '—'}</span>
                 )}
               </td>
               <td className="p-2 min-w-[130px]">
@@ -4300,12 +4300,12 @@ function ModuleOfferFollowUp({
                     ))}
                   </select>
                 ) : (
-                  <span className="text-slate-700">{followUpChannelLabel(fu.follow_up_channel)}</span>
+                  <span className="text-foreground">{followUpChannelLabel(fu.follow_up_channel)}</span>
                 )}
               </td>
               <td className="p-2 max-w-[200px]">
                 {canEditFollowUp ? (
-                  <Input
+                  <Input aria-label="Comment"
                     value={fu.notes || ''}
                     className={inputClass}
                     placeholder="Comment"
@@ -4316,7 +4316,7 @@ function ModuleOfferFollowUp({
                     }}
                   />
                 ) : (
-                  <span className="text-slate-600">{fu.notes || '—'}</span>
+                  <span className="text-muted-foreground">{fu.notes || '—'}</span>
                 )}
               </td>
               <td className="p-2 align-top">
@@ -4351,7 +4351,7 @@ function ModuleOfferFollowUp({
               </td>
               {canEditFollowUp && (
                 <td className="p-2">
-                  <button
+                  <button aria-label="Delete"
                     type="button"
                     onClick={() =>
                       setPayload({ ...payload, follow_ups: followUps.filter((_, i) => i !== idx) })
@@ -4370,43 +4370,43 @@ function ModuleOfferFollowUp({
   );
 
   const revisionLogTable = revisions.length === 0 ? (
-    <p className="text-sm text-slate-500 rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center">
+    <p className="text-sm text-muted-foreground rounded-lg border border-dashed border-border px-4 py-6 text-center">
       {isFollowUp
         ? 'No offers recorded yet — add offers in the Offer & revision step (R0, R1, …).'
         : 'No offers yet — record the 1st offer from the current BOM. After negotiation, revise BOM costing and record the next offer here.'}
     </p>
   ) : (
-    <div className="overflow-x-auto rounded-xl border border-slate-200">
+    <div className="overflow-x-auto rounded-xl border border-border">
       <table className="w-full text-sm">
-        <thead className="bg-slate-100 border-b border-slate-200">
+        <thead className="bg-muted border-b border-border">
           <tr>
-            <th className="p-2 text-left font-semibold text-slate-700">Rev</th>
-            <th className="p-2 text-left font-semibold text-slate-700">Offer</th>
-            <th className="p-2 text-left font-semibold text-slate-700">Offer #</th>
-            <th className="p-2 text-left font-semibold text-slate-700">Date</th>
-            <th className="p-2 text-right font-semibold text-slate-700">Cost (₹)</th>
-            <th className="p-2 text-right font-semibold text-slate-700">Offered value</th>
-            <th className="p-2 text-right font-semibold text-slate-700">Profit</th>
-            <th className="p-2 text-left font-semibold text-slate-700">Comment</th>
-            <th className="p-2 text-left font-semibold text-slate-700">BOM at this offer</th>
-            <th className="p-2 text-left font-semibold text-slate-700">Offer attachment</th>
-            <th className="p-2 text-left font-semibold text-slate-700">Proof of offer attachment</th>
+            <th className="p-2 text-left font-semibold text-foreground">Rev</th>
+            <th className="p-2 text-left font-semibold text-foreground">Offer</th>
+            <th className="p-2 text-left font-semibold text-foreground">Offer #</th>
+            <th className="p-2 text-left font-semibold text-foreground">Date</th>
+            <th className="p-2 text-right font-semibold text-foreground">Cost (₹)</th>
+            <th className="p-2 text-right font-semibold text-foreground">Offered value</th>
+            <th className="p-2 text-right font-semibold text-foreground">Profit</th>
+            <th className="p-2 text-left font-semibold text-foreground">Comment</th>
+            <th className="p-2 text-left font-semibold text-foreground">BOM at this offer</th>
+            <th className="p-2 text-left font-semibold text-foreground">Offer attachment</th>
+            <th className="p-2 text-left font-semibold text-foreground">Proof of offer attachment</th>
             {canEdit && isOfferStep && <th className="w-8" />}
           </tr>
         </thead>
-        <tbody className="text-slate-800">
+        <tbody className="text-foreground">
           {revisions.map((rev) => (
             <React.Fragment key={rev.id}>
             <tr
-              className={`border-t border-slate-100 ${rev.client_agreed ? 'bg-emerald-50/60' : ''}`}
+              className={`border-t border-border ${rev.client_agreed ? 'bg-emerald-50/60' : ''}`}
             >
-              <td className="p-2 font-medium text-slate-800">{offerRevisionLabel(rev.revision_index)}</td>
-              <td className="p-2 text-slate-800 whitespace-nowrap">
+              <td className="p-2 font-medium text-foreground">{offerRevisionLabel(rev.revision_index)}</td>
+              <td className="p-2 text-foreground whitespace-nowrap">
                 {offerRoundLabel(rev.revision_index)}
               </td>
               <td className="p-2 min-w-[180px]">
                 {canEdit && isOfferStep ? (
-                  <Input
+                  <Input aria-label="Offer number"
                     value={rev.offer_no || ''}
                     className={`${inputClass} font-mono text-xs font-semibold text-indigo-800`}
                     placeholder="Offer number"
@@ -4418,8 +4418,8 @@ function ModuleOfferFollowUp({
                   </span>
                 )}
               </td>
-              <td className="p-2 text-slate-600 whitespace-nowrap">{rev.recorded_at || '—'}</td>
-              <td className="p-2 text-right tabular-nums text-slate-800">
+              <td className="p-2 text-muted-foreground whitespace-nowrap">{rev.recorded_at || '—'}</td>
+              <td className="p-2 text-right tabular-nums text-foreground">
                 {formatInr(rev.consignment_total || rev.bom_snapshot?.consignment_total)}
               </td>
               <td className="p-2 text-right tabular-nums font-semibold text-indigo-800">
@@ -4428,9 +4428,9 @@ function ModuleOfferFollowUp({
               <td className="p-2 text-right tabular-nums font-semibold text-emerald-800">
                 {formatInr(revisionTotalProfit(rev, payload.bom))}
               </td>
-              <td className="p-2 text-slate-600 max-w-[180px]">{rev.notes || '—'}</td>
+              <td className="p-2 text-muted-foreground max-w-[180px]">{rev.notes || '—'}</td>
               <td className="p-2 text-xs max-w-[220px]">
-                <p className="text-slate-500">
+                <p className="text-muted-foreground">
                   {rev.calculation_comment
                     || (rev.offer_profit_margin_pct > 0 && rev.base_after_bom_profit
                       ? `${formatInr(rev.base_after_bom_profit)} ÷ (1 − ${rev.offer_profit_margin_pct}%) = ${formatInr(rev.offer_value)}`
@@ -4530,29 +4530,29 @@ function ModuleOfferFollowUp({
               )}
             </tr>
             {expandedOfferId === rev.id && rev.bom_snapshot?.lines?.length ? (
-              <tr className="border-t border-slate-100 bg-slate-50/80">
+              <tr className="border-t border-border bg-muted/80">
                 <td colSpan={canEdit && isOfferStep ? 12 : 11} className="p-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 mb-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                     Costing frozen with {offerRoundLabel(rev.revision_index)}
                   </p>
-                  <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                  <div className="overflow-x-auto rounded-lg border border-border bg-white">
                     <table className="w-full text-xs">
-                      <thead className="bg-slate-100">
+                      <thead className="bg-muted">
                         <tr>
-                          <th className="px-2 py-1.5 text-left font-semibold text-slate-600">Item</th>
-                          <th className="px-2 py-1.5 text-right font-semibold text-slate-600">Amount</th>
-                          <th className="px-2 py-1.5 text-right font-semibold text-slate-600">Profit %</th>
-                          <th className="px-2 py-1.5 text-right font-semibold text-slate-600">Profit</th>
-                          <th className="px-2 py-1.5 text-right font-semibold text-slate-600">After profit</th>
+                          <th className="px-2 py-1.5 text-left font-semibold text-muted-foreground">Item</th>
+                          <th className="px-2 py-1.5 text-right font-semibold text-muted-foreground">Amount</th>
+                          <th className="px-2 py-1.5 text-right font-semibold text-muted-foreground">Profit %</th>
+                          <th className="px-2 py-1.5 text-right font-semibold text-muted-foreground">Profit</th>
+                          <th className="px-2 py-1.5 text-right font-semibold text-muted-foreground">After profit</th>
                         </tr>
                       </thead>
                       <tbody>
                         {rev.bom_snapshot.lines.map((line, idx) => (
-                          <tr key={`${rev.id}-line-${idx}`} className="border-t border-slate-100">
-                            <td className="px-2 py-1.5 text-slate-800">
+                          <tr key={`${rev.id}-line-${idx}`} className="border-t border-border">
+                            <td className="px-2 py-1.5 text-foreground">
                               {line.item_name || '—'}
                               {line.source_label ? (
-                                <span className="ml-1 text-slate-400">({line.source_label})</span>
+                                <span className="ml-1 text-muted-foreground">({line.source_label})</span>
                               ) : null}
                             </td>
                             <td className="px-2 py-1.5 text-right tabular-nums">{formatInr(line.amount)}</td>
@@ -4564,7 +4564,7 @@ function ModuleOfferFollowUp({
                       </tbody>
                     </table>
                   </div>
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs text-muted-foreground">
                     Additional charges {formatInr(rev.bom_snapshot.additional_charges || 0)} ·
                     Cost {formatInr(rev.bom_snapshot.consignment_total)} ·
                     Offered {formatInr(rev.bom_snapshot.offered_value)}
@@ -4591,21 +4591,21 @@ function ModuleOfferFollowUp({
           }
         />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase text-slate-500">
+          <div className="rounded-lg border border-border bg-muted/80 px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase text-muted-foreground">
               Current BOM after profit (not yet recorded)
             </p>
-            <p className="text-sm font-semibold tabular-nums text-slate-900 mt-1">
+            <p className="text-sm font-semibold tabular-nums text-foreground mt-1">
               {formatInr(offerTotals.offerValue)}
             </p>
-            <p className="text-[10px] text-slate-500 mt-0.5">
+            <p className="text-[11px] text-muted-foreground mt-0.5">
               Cost {formatInr(offerTotals.consignmentTotal)} · profit {formatInr(offerTotals.totalProfit)}
             </p>
           </div>
           <div className="rounded-lg border border-indigo-200 bg-indigo-50/80 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase text-indigo-700">Enquiry offer number</p>
+            <p className="text-[11px] font-semibold uppercase text-indigo-700">Enquiry offer number</p>
             {canEdit && isOfferStep ? (
-              <Input
+              <Input aria-label="e.g. RTB/OFFER/1001"
                 value={leadOfferBase}
                 className={`${inputClass} mt-1 font-mono text-sm font-semibold text-indigo-900`}
                 placeholder="e.g. RTB/OFFER/1001"
@@ -4616,7 +4616,7 @@ function ModuleOfferFollowUp({
                 {leadOfferBase || 'Assigned on first offer (R0)'}
               </p>
             )}
-            <p className="text-[10px] text-indigo-600/80 mt-0.5">
+            <p className="text-[11px] text-indigo-600/80 mt-0.5">
               You can edit this number. Auto-generated revision numbers follow it unless a row has a custom offer number.
             </p>
           </div>
@@ -4627,15 +4627,15 @@ function ModuleOfferFollowUp({
             <p className="text-xs font-bold uppercase tracking-wide text-indigo-700">
               {offerRevisionLabel(nextRevIndex)} — {offerRoundLabel(nextRevIndex)}
             </p>
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-muted-foreground">
               {nextRevIndex === 0
                 ? 'This records the 1st offered value from the current BOM costing (profit % is set on each product there).'
                 : 'After negotiation, revise profit or costs on BOM & costing, then record the new offered value here. The previous offer stays in this log.'}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className={labelClass}>Offer date *</Label>
-                <Input
+                <Label htmlFor="carryorderworkspace-field-21" className={labelClass}>Offer date *</Label>
+                <Input id="carryorderworkspace-field-21"
                   type="date"
                   value={offerDraft.date}
                   onChange={(e) => setOfferDraft({ ...offerDraft, date: e.target.value })}
@@ -4643,10 +4643,10 @@ function ModuleOfferFollowUp({
                 />
               </div>
               <div>
-                <Label className={labelClass}>
-                  Offer number <span className="font-normal normal-case text-slate-500">(optional)</span>
+                <Label htmlFor="carryorderworkspace-field-22" className={labelClass}>
+                  Offer number <span className="font-normal normal-case text-muted-foreground">(optional)</span>
                 </Label>
-                <Input
+                <Input id="carryorderworkspace-field-22"
                   value={offerDraft.offer_no}
                   onChange={(e) => setOfferDraft({ ...offerDraft, offer_no: e.target.value })}
                   className={`${inputClass} mt-1 font-mono`}
@@ -4659,7 +4659,7 @@ function ModuleOfferFollowUp({
               </div>
             </div>
             <div className="rounded-lg border border-white bg-white px-3 py-2">
-              <p className="text-[10px] font-semibold uppercase text-slate-500">Offered value (from BOM)</p>
+              <p className="text-[11px] font-semibold uppercase text-muted-foreground">Offered value (from BOM)</p>
               <p className="text-lg font-bold tabular-nums text-indigo-900 mt-1">
                 {formatInr(draftTotals.offerValue)}
               </p>
@@ -4668,18 +4668,18 @@ function ModuleOfferFollowUp({
               </p>
             </div>
             <div>
-              <Label className={labelClass}>
-                Comment <span className="font-normal normal-case text-slate-500">(optional)</span>
+              <Label htmlFor="carryorderworkspace-field-23" className={labelClass}>
+                Comment <span className="font-normal normal-case text-muted-foreground">(optional)</span>
               </Label>
-              <textarea
+              <textarea id="carryorderworkspace-field-23"
                 rows={2}
                 value={offerDraft.comment}
                 onChange={(e) => setOfferDraft({ ...offerDraft, comment: e.target.value })}
-                className="w-full mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                className="w-full mt-1 rounded-lg border border-border bg-white px-3 py-2 text-sm"
                 placeholder="e.g. Initial offer sent to client"
               />
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               {leadOfferBase
                 ? `Next revision: ${formatOfferRevisionNumber(leadOfferBase, nextRevIndex)}`
                 : `First offer assigns ${RTB_OFFER_PREFIX}#### (from ${RTB_OFFER_SEQUENCE_START}); revisions R0, R1, R2…`}
@@ -4737,8 +4737,8 @@ function ModuleOfferFollowUp({
               <p className="text-xs font-bold uppercase tracking-wide text-amber-800">New follow-up</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <Label className={labelClass}>Date *</Label>
-                  <Input
+                  <Label htmlFor="carryorderworkspace-field-24" className={labelClass}>Date *</Label>
+                  <Input id="carryorderworkspace-field-24"
                     type="date"
                     value={followUpDraft.date}
                     onChange={(e) => setFollowUpDraft({ ...followUpDraft, date: e.target.value })}
@@ -4746,8 +4746,8 @@ function ModuleOfferFollowUp({
                   />
                 </div>
                 <div>
-                  <Label className={labelClass}>Follow-up through *</Label>
-                  <select
+                  <Label htmlFor="carryorderworkspace-field-25" className={labelClass}>Follow-up through *</Label>
+                  <select id="carryorderworkspace-field-25"
                     className={`${selectClass} mt-1`}
                     value={followUpDraft.channel}
                     onChange={(e) => setFollowUpDraft({ ...followUpDraft, channel: e.target.value })}
@@ -4761,12 +4761,12 @@ function ModuleOfferFollowUp({
                 </div>
               </div>
               <div>
-                <Label className={labelClass}>Comment</Label>
-                <textarea
+                <Label htmlFor="carryorderworkspace-field-26" className={labelClass}>Comment</Label>
+                <textarea id="carryorderworkspace-field-26"
                   rows={2}
                   value={followUpDraft.comment}
                   onChange={(e) => setFollowUpDraft({ ...followUpDraft, comment: e.target.value })}
-                  className="w-full mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                  className="w-full mt-1 rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground"
                   placeholder="Follow-up comment"
                 />
               </div>
@@ -4799,15 +4799,15 @@ function ModuleOfferFollowUp({
 
       {isFollowUp && (
         <section className="space-y-4">
-          <section className="rounded-xl border-2 border-slate-200 bg-slate-50/50 p-4 space-y-4">
+          <section className="rounded-xl border-2 border-border bg-muted/50 p-4 space-y-4">
             <SectionTitle
               title="Client decision"
               subtitle="If the client agreed, you are taken to Won; otherwise to Lost"
             />
             {revisions.length > 1 && canEdit && (
               <div>
-                <Label className={labelClass}>Offer client agreed to</Label>
-                <select
+                <Label htmlFor="carryorderworkspace-field-27" className={labelClass}>Offer client agreed to</Label>
+                <select id="carryorderworkspace-field-27"
                   className={`${selectClass} mt-1`}
                   disabled={parentSaving}
                   value={payload.agreed_revision_id || revisions[revisions.length - 1]?.id || ''}
@@ -4822,16 +4822,16 @@ function ModuleOfferFollowUp({
               </div>
             )}
             {revisions.length === 1 && (
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-muted-foreground">
                 Agreed offer:{' '}
-                <strong className="text-slate-900">
+                <strong className="text-foreground">
                   {revisions[0].offer_no || offerRevisionLabel(revisions[0].revision_index)} (
                   {formatInr(revisions[0].offer_value)})
                 </strong>
               </p>
             )}
             {payload.client_outcome && (
-              <p className="text-sm font-medium text-slate-700">
+              <p className="text-sm font-medium text-foreground">
                 Decision recorded:{' '}
                 <span className={payload.client_outcome === 'won' ? 'text-emerald-700' : 'text-rose-700'}>
                   {payload.client_outcome === 'won' ? 'Client agreed (Won)' : 'Client did not agree (Lost)'}
@@ -4930,8 +4930,8 @@ function ModuleClosedWon({
       ) : null}
       <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/30 p-5 space-y-4">
         <div>
-          <Label className={labelClass}>Order win confirmation *</Label>
-          <select
+          <Label htmlFor="carryorderworkspace-field-28" className={labelClass}>Order win confirmation *</Label>
+          <select id="carryorderworkspace-field-28"
             disabled={!canEdit}
             className={`${selectClass} mt-1`}
             value={confirmation}
@@ -4979,7 +4979,7 @@ function ModuleClosedWon({
               Complete &amp; save
             </Button>
             {!canComplete ? (
-              <p className="text-xs text-slate-500 mt-2">{closedWonIncompleteMessage(payload)}</p>
+              <p className="text-xs text-muted-foreground mt-2">{closedWonIncompleteMessage(payload)}</p>
             ) : null}
           </div>
         ) : null}
@@ -5009,7 +5009,7 @@ function ModuleClosedLost({ payload, setPayload, canEdit }) {
               onChange={() => toggleReason(r.id)}
               className="mt-1"
             />
-            <span className="text-sm text-slate-800">{r.label}</span>
+            <span className="text-sm text-foreground">{r.label}</span>
           </label>
         ))}
         <div>
@@ -5019,7 +5019,7 @@ function ModuleClosedLost({ payload, setPayload, canEdit }) {
             disabled={!canEdit}
             value={cl.notes || ''}
             onChange={(e) => setPayload({ ...payload, closed_lost: { ...cl, notes: e.target.value } })}
-            className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            className="w-full mt-1 rounded-lg border border-border px-3 py-2 text-sm"
           />
         </div>
       </div>
@@ -5042,10 +5042,10 @@ function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage, maxIdx, hid
     const isActive = activeTab === stepId;
     const isDone = idx >= 0 && idx < maxIdx;
     const isCurrent = stage === stepId;
-    const base = 'flex items-center gap-1.5 rounded-lg text-xs font-semibold text-slate-900';
+    const base = 'flex items-center gap-1.5 rounded-lg text-xs font-semibold text-foreground';
 
     if (!unlocked) {
-      return `${base} px-2.5 py-2 bg-slate-100 text-slate-600 border border-slate-200 cursor-not-allowed`;
+      return `${base} px-2.5 py-2 bg-muted text-muted-foreground border border-border cursor-not-allowed`;
     }
     if (variant === 'won' && isActive) {
       return `${base} px-3 py-2 bg-emerald-100 text-emerald-950 border-2 border-emerald-600 shadow-sm`;
@@ -5054,7 +5054,7 @@ function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage, maxIdx, hid
       return `${base} px-3 py-2 bg-rose-100 text-rose-950 border-2 border-rose-600 shadow-sm`;
     }
     if (isActive) {
-      return `${base} px-2.5 py-2 bg-indigo-100 text-slate-900 border-2 border-indigo-600 shadow-sm ring-2 ring-indigo-100`;
+      return `${base} px-2.5 py-2 bg-indigo-100 text-foreground border-2 border-indigo-600 shadow-sm ring-2 ring-indigo-100`;
     }
     if (isDone) {
       return `${base} px-2.5 py-2 bg-emerald-50 text-emerald-950 border border-emerald-300 hover:bg-emerald-100`;
@@ -5062,12 +5062,12 @@ function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage, maxIdx, hid
     if (isCurrent) {
       return `${base} px-2.5 py-2 bg-indigo-50 text-indigo-950 border border-indigo-400`;
     }
-    return `${base} px-2.5 py-2 bg-white text-slate-900 border border-slate-300 hover:border-indigo-300 hover:bg-slate-50`;
+    return `${base} px-2.5 py-2 bg-white text-foreground border border-input hover:border-indigo-300 hover:bg-muted`;
   };
 
   return (
-    <div className="px-4 py-4 border-b border-slate-100 bg-white overflow-x-auto text-slate-900">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-700 mb-3">
+    <div className="px-4 py-4 border-b border-border bg-white overflow-x-auto text-foreground">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-foreground mb-3">
         Workflow steps — complete in order
       </p>
       <div className="flex items-center gap-1 min-w-max">
@@ -5077,24 +5077,24 @@ function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage, maxIdx, hid
             <React.Fragment key={s.id}>
               {i > 0 && (
                 <ChevronRight
-                  className={`h-4 w-4 shrink-0 ${unlocked ? 'text-slate-400' : 'text-slate-200'}`}
+                  className={`h-4 w-4 shrink-0 ${unlocked ? 'text-muted-foreground' : 'text-slate-200'}`}
                   aria-hidden
                 />
               )}
               <button type="button" onClick={() => onSelect(s.id)} className={stepButtonClass(s.id)}>
                 {!unlocked ? (
-                  <Lock className="h-3.5 w-3.5 shrink-0 text-slate-600" />
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 ) : pipelineStageIndex(s.id) < maxIdx ? (
                   <Check className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
                 ) : (
-                  <span className="text-[10px] font-bold text-slate-800">{s.short}</span>
+                  <span className="text-[11px] font-bold text-foreground">{s.short}</span>
                 )}
-                <span className="whitespace-nowrap text-slate-900">{s.label}</span>
+                <span className="whitespace-nowrap text-foreground">{s.label}</span>
               </button>
             </React.Fragment>
           );
         })}
-        <ChevronRight className={`h-4 w-4 shrink-0 mx-1 ${terminalUnlocked ? 'text-slate-400' : 'text-slate-200'}`} />
+        <ChevronRight className={`h-4 w-4 shrink-0 mx-1 ${terminalUnlocked ? 'text-muted-foreground' : 'text-slate-200'}`} />
         {terminalSteps.map((s) => {
           const unlocked = canOpenStage(s.id);
           const variant = s.id === 'closed_won' ? 'won' : 'lost';
@@ -5105,8 +5105,8 @@ function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage, maxIdx, hid
               onClick={() => onSelect(s.id)}
               className={`${stepButtonClass(s.id, variant)} ml-1`}
             >
-              {!unlocked && <Lock className="h-3.5 w-3.5 shrink-0 text-slate-600" />}
-              <span className="text-slate-900">{s.label}</span>
+              {!unlocked && <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+              <span className="text-foreground">{s.label}</span>
             </button>
           );
         })}
@@ -5118,8 +5118,8 @@ function WorkflowStepper({ stage, activeTab, onSelect, canOpenStage, maxIdx, hid
 function SectionTitle({ title, subtitle }) {
   return (
     <div>
-      <h3 className="text-base font-bold text-slate-900">{title}</h3>
-      {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+      <h3 className="text-base font-bold text-foreground">{title}</h3>
+      {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
     </div>
   );
 }
@@ -5150,7 +5150,7 @@ function TextField({ label, value, onChange, canEdit, rows = 3 }) {
         disabled={!canEdit}
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+        className="w-full mt-1 rounded-lg border border-border px-3 py-2 text-sm"
       />
     </div>
   );

@@ -76,7 +76,7 @@ export default function ReportsPage() {
         </div>
       </div>
       {report && (
-        <div className="rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm">
+        <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm">
           <p>{report.definition}</p>
           <p className="text-muted-foreground mt-1">Period: {report.period?.from || 'any'} to {report.period?.to || 'any'}</p>
         </div>
@@ -84,7 +84,7 @@ export default function ReportsPage() {
       {loading || !report ? <Spinner /> : report.rows.length === 0 ? <EmptyState title="No rows for this report" /> : (
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="text-left text-xs uppercase text-slate-600">
+            <thead className="text-left text-xs uppercase text-muted-foreground">
               <tr>{report.columns.map((col) => <th key={col.key} className="px-2 py-2">{col.label}</th>)}</tr>
             </thead>
             <tbody>

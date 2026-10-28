@@ -78,7 +78,7 @@ function DayRouteMap({ trackPath, punchEvents, currentLocation, selectedPoint, o
     <MapContainer
       center={center}
       zoom={14}
-      className="h-full min-h-[420px] w-full rounded-xl z-0 [&_.leaflet-control-attribution]:text-[10px]"
+      className="h-full min-h-[420px] w-full rounded-xl z-0 [&_.leaflet-control-attribution]:text-[11px]"
       scrollWheelZoom
     >
       <TileLayer attribution={OSM_ATTRIBUTION} url={OSM_TILE_URL} />
@@ -103,9 +103,9 @@ function DayRouteMap({ trackPath, punchEvents, currentLocation, selectedPoint, o
           >
             <Popup>
               <div className="text-sm min-w-[180px]">
-                <p className="font-semibold text-gray-900">{isIn ? 'Punch in' : 'Punch out'}</p>
-                <p className="text-gray-600 mt-1">{formatTimeShort(p.time)}</p>
-                <p className="text-xs text-gray-500 mt-1 font-mono">{formatCoord(p.latitude, p.longitude)}</p>
+                <p className="font-semibold text-foreground">{isIn ? 'Punch in' : 'Punch out'}</p>
+                <p className="text-muted-foreground mt-1">{formatTimeShort(p.time)}</p>
+                <p className="text-xs text-muted-foreground mt-1 font-mono">{formatCoord(p.latitude, p.longitude)}</p>
               </div>
             </Popup>
           </CircleMarker>
@@ -125,9 +125,9 @@ function DayRouteMap({ trackPath, punchEvents, currentLocation, selectedPoint, o
         >
           <Popup>
             <div className="text-sm min-w-[180px]">
-              <p className="font-semibold text-blue-800">{currentLocation.label || 'Current location'}</p>
-              <p className="text-gray-600 mt-1">{formatTimeShort(currentLocation.time)}</p>
-              <p className="text-xs text-gray-500 mt-1 font-mono">
+              <p className="font-semibold text-accent-foreground">{currentLocation.label || 'Current location'}</p>
+              <p className="text-muted-foreground mt-1">{formatTimeShort(currentLocation.time)}</p>
+              <p className="text-xs text-muted-foreground mt-1 font-mono">
                 {formatCoord(currentLocation.latitude, currentLocation.longitude)}
               </p>
             </div>
@@ -144,7 +144,7 @@ function TimelineItem({ item, isSelected, isCurrent, onClick }) {
   const isOut = item.kind === 'punch_out';
   const isTrack = item.kind === 'track';
 
-  let dotClass = 'bg-blue-500 ring-blue-100';
+  let dotClass = 'bg-primary ring-ring/30';
   let Icon = Navigation;
   if (isIn) {
     dotClass = 'bg-emerald-500 ring-emerald-100';
@@ -160,8 +160,8 @@ function TimelineItem({ item, isSelected, isCurrent, onClick }) {
       onClick={onClick}
       className={`w-full text-left rounded-xl border px-3 py-3 transition-all ${
         isSelected
-          ? 'border-blue-400 bg-blue-50 shadow-sm ring-2 ring-blue-100'
-          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+          ? 'border-primary/60 bg-accent shadow-sm ring-2 ring-ring/30'
+          : 'border-border bg-white hover:border-input hover:bg-muted'
       }`}
     >
       <div className="flex gap-3">
@@ -172,20 +172,20 @@ function TimelineItem({ item, isSelected, isCurrent, onClick }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <p className="font-semibold text-sm text-slate-900">{item.title}</p>
-            <span className="shrink-0 text-xs font-mono font-medium text-slate-600 tabular-nums">
+            <p className="font-semibold text-sm text-foreground">{item.title}</p>
+            <span className="shrink-0 text-xs font-mono font-medium text-muted-foreground tabular-nums">
               {formatTimeShort(item.time)}
             </span>
           </div>
-          <p className="mt-0.5 text-xs font-mono text-slate-500 truncate">{item.subtitle}</p>
+          <p className="mt-0.5 text-xs font-mono text-muted-foreground truncate">{item.subtitle}</p>
           {isCurrent && (
-            <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-800">
-              <span className="h-1.5 w-1.5 rounded-full bg-blue-600 animate-pulse" />
+            <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-accent-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
               Current
             </span>
           )}
           {isTrack && item.accuracy != null && (
-            <p className="mt-1 text-[10px] text-slate-400">GPS accuracy ~{Math.round(item.accuracy)} m</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">GPS accuracy ~{Math.round(item.accuracy)} m</p>
           )}
         </div>
       </div>
@@ -317,15 +317,15 @@ const LocationTracker = () => {
         )}
       </div>
 
-      <Card className="p-4 sm:p-5 rounded-xl border border-gray-200 bg-white shadow-sm">
+      <Card className="p-4 sm:p-5 rounded-xl border border-border bg-white shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
-            <Label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <Label className="flex items-center gap-2 text-sm font-medium text-foreground">
               <User className="w-4 h-4" />
               Employee
             </Label>
             <Select value={selectedEmployee || undefined} onValueChange={setSelectedEmployee}>
-              <SelectTrigger className="h-11 border-gray-300">
+              <SelectTrigger className="h-11 border-input">
                 <SelectValue placeholder="Select employee" />
               </SelectTrigger>
               <SelectContent>
@@ -338,7 +338,7 @@ const LocationTracker = () => {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <Label className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Calendar className="w-4 h-4" />
               Date
             </Label>
@@ -347,7 +347,7 @@ const LocationTracker = () => {
               value={date}
               onChange={(e) => setDate(e.target.value)}
               max={todayStr}
-              className="h-11 border-gray-300"
+              className="h-11 border-input"
             />
           </div>
           <div className="flex items-end">
@@ -362,15 +362,15 @@ const LocationTracker = () => {
       {loading && !report ? (
         <Card className="p-16 flex justify-center">
           <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent" />
-            <p className="mt-4 text-gray-600 text-sm">Loading location data…</p>
+            <div role="status" aria-label="Loading" className="inline-block animate-spin rounded-full h-10 w-10 border-2 border-primary/60 border-t-transparent" />
+            <p className="mt-4 text-muted-foreground text-sm">Loading location data…</p>
           </div>
         </Card>
       ) : !hasData ? (
-        <Card className="p-12 text-center border border-dashed border-gray-300 bg-gray-50/80">
+        <Card className="p-12 text-center border border-dashed border-input bg-muted/80">
           <MapPin className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-          <p className="font-medium text-gray-800">No location data for this day</p>
-          <p className="text-sm text-gray-500 mt-2 max-w-md mx-auto">
+          <p className="font-medium text-foreground">No location data for this day</p>
+          <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
             The employee must punch in with location enabled and keep the CRM browser tab open for GPS tracking during
             work hours.
           </p>
@@ -378,20 +378,20 @@ const LocationTracker = () => {
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <Card className="p-4 border border-blue-200 bg-gradient-to-br from-blue-50 to-white">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">
+            <Card className="p-4 border border-primary/30 bg-gradient-to-br from-blue-50 to-white">
+              <p className="text-xs font-semibold uppercase tracking-wide text-accent-foreground">
                 {isLive ? 'Current location' : 'Last known location'}
               </p>
               {currentLocation ? (
                 <>
-                  <p className="mt-2 font-mono text-sm font-semibold text-gray-900">
+                  <p className="mt-2 font-mono text-sm font-semibold text-foreground">
                     {formatCoord(currentLocation.latitude, currentLocation.longitude)}
                   </p>
-                  <p className="mt-1 flex items-center gap-1.5 text-xs text-gray-600">
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Clock className="h-3.5 w-3.5" />
                     {formatTimeShort(currentLocation.time)}
                     {isLive && (
-                      <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                      <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[11px] font-bold text-emerald-800">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         LIVE
                       </span>
@@ -399,27 +399,27 @@ const LocationTracker = () => {
                   </p>
                 </>
               ) : (
-                <p className="mt-2 text-sm text-gray-500">—</p>
+                <p className="mt-2 text-sm text-muted-foreground">—</p>
               )}
             </Card>
             <Card className="p-4 border border-emerald-200 bg-emerald-50/50">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800">Day start</p>
-              <p className="mt-2 text-lg font-bold text-gray-900 tabular-nums">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Day start</p>
+              <p className="mt-2 text-lg font-bold text-foreground tabular-nums">
                 {summary.punch_in_time ? formatTimeShort(summary.punch_in_time) : '—'}
               </p>
-              <p className="text-xs text-gray-500 mt-1">First punch in</p>
+              <p className="text-xs text-muted-foreground mt-1">First punch in</p>
             </Card>
             <Card className="p-4 border border-rose-200 bg-rose-50/50">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-800">Day end</p>
-              <p className="mt-2 text-lg font-bold text-gray-900 tabular-nums">
+              <p className="text-xs font-semibold uppercase tracking-wide text-rose-800">Day end</p>
+              <p className="mt-2 text-lg font-bold text-foreground tabular-nums">
                 {summary.punch_out_time ? formatTimeShort(summary.punch_out_time) : isLive ? 'Still in' : '—'}
               </p>
-              <p className="text-xs text-gray-500 mt-1">Last punch out</p>
+              <p className="text-xs text-muted-foreground mt-1">Last punch out</p>
             </Card>
-            <Card className="p-4 border border-slate-200 bg-slate-50/80">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">GPS updates</p>
-              <p className="mt-2 text-lg font-bold text-gray-900 tabular-nums">{totalTrackPoints}</p>
-              <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+            <Card className="p-4 border border-border bg-muted/80">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">GPS updates</p>
+              <p className="mt-2 text-lg font-bold text-foreground tabular-nums">{totalTrackPoints}</p>
+              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                 <Route className="h-3 w-3" />
                 {punchEvents.length} punch{punchEvents.length !== 1 ? 'es' : ''}
               </p>
@@ -427,19 +427,19 @@ const LocationTracker = () => {
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(300px,380px)_1fr] gap-4 min-h-[520px]">
-            <Card className="flex flex-col overflow-hidden border border-gray-200 shadow-sm">
-              <div className="border-b border-gray-100 bg-gray-50 px-4 py-3">
-                <h2 className="font-semibold text-gray-900">Day timeline</h2>
-                <p className="text-xs text-gray-500 mt-0.5">
+            <Card className="flex flex-col overflow-hidden border border-border shadow-sm">
+              <div className="border-b border-border bg-muted px-4 py-3">
+                <h2 className="font-semibold text-foreground">Day timeline</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {selectedEmployeeName} · {report?.date || date}
                 </p>
                 {trackSampleNote && (
-                  <p className="text-[10px] text-amber-700 mt-1">{trackSampleNote}</p>
+                  <p className="text-[11px] text-amber-700 mt-1">{trackSampleNote}</p>
                 )}
               </div>
               <div className="flex-1 overflow-y-auto p-3 space-y-2 max-h-[560px] xl:max-h-none">
                 {timelineItems.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-8">No events for this day.</p>
+                  <p className="text-sm text-muted-foreground text-center py-8">No events for this day.</p>
                 ) : (
                   timelineItems.map((item) => {
                     const loc = punchEvents.find((p) => p.id === item.id) ||
@@ -468,7 +468,7 @@ const LocationTracker = () => {
                   })
                 )}
               </div>
-              <div className="border-t border-gray-100 px-4 py-2.5 flex flex-wrap gap-3 text-[11px] text-gray-500">
+              <div className="border-t border-border px-4 py-2.5 flex flex-wrap gap-3 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Punch in
                 </span>
@@ -476,16 +476,16 @@ const LocationTracker = () => {
                   <span className="h-2.5 w-2.5 rounded-full bg-rose-500" /> Punch out
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-blue-500" /> GPS update
+                  <span className="h-2.5 w-2.5 rounded-full bg-primary" /> GPS update
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="h-3 w-3 rounded-full bg-blue-600 ring-2 ring-blue-200" /> Current
+                  <span className="h-3 w-3 rounded-full bg-primary ring-2 ring-ring/30" /> Current
                 </span>
               </div>
             </Card>
 
-            <Card className="overflow-hidden border border-gray-200 shadow-sm p-1 sm:p-2">
-              <div className="h-full min-h-[420px] rounded-lg overflow-hidden border border-gray-100">
+            <Card className="overflow-hidden border border-border shadow-sm p-1 sm:p-2">
+              <div className="h-full min-h-[420px] rounded-lg overflow-hidden border border-border">
                 <DayRouteMap
                   trackPath={trackRecords}
                   punchEvents={punchEvents}
@@ -495,8 +495,8 @@ const LocationTracker = () => {
                 />
               </div>
               {selectedPoint && (
-                <div className="mx-2 mb-2 mt-2 rounded-lg border border-blue-100 bg-blue-50/80 px-3 py-2 text-xs text-gray-700">
-                  <span className="font-semibold text-gray-900">Selected: </span>
+                <div className="mx-2 mb-2 mt-2 rounded-lg border border-primary/20 bg-accent/80 px-3 py-2 text-xs text-foreground">
+                  <span className="font-semibold text-foreground">Selected: </span>
                   {selectedPoint.type === 'punch_in'
                     ? 'Punch in'
                     : selectedPoint.type === 'punch_out'
@@ -506,7 +506,7 @@ const LocationTracker = () => {
                         : 'GPS update'}{' '}
                   at {formatTimeShort(selectedPoint.time)} · {formatCoord(selectedPoint.latitude, selectedPoint.longitude)}
                   {selectedPoint.timestamp && (
-                    <span className="text-gray-500"> · {formatRecordedAt(selectedPoint)}</span>
+                    <span className="text-muted-foreground"> · {formatRecordedAt(selectedPoint)}</span>
                   )}
                 </div>
               )}

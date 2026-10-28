@@ -21,7 +21,7 @@ export function ChecklistEditor({ rows = [], onChange, disabled, title = 'Checkl
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h4>
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h4>
         <span className={pending ? 'text-xs text-amber-700' : 'text-xs text-emerald-700'}>
           {rows.length === 0 ? 'No items' : pending ? `${pending} pending` : 'All done'}
         </span>
@@ -35,8 +35,8 @@ export function ChecklistEditor({ rows = [], onChange, disabled, title = 'Checkl
               onCheckedChange={(checked) => update(row.id, { done: checked === true })}
               aria-label={row.label}
             />
-            <span className={row.done ? 'text-sm text-slate-500 line-through' : 'text-sm text-slate-800'}>{row.label}</span>
-            <Input
+            <span className={row.done ? 'text-sm text-muted-foreground line-through' : 'text-sm text-foreground'}>{row.label}</span>
+            <Input aria-label="Remark"
               className="h-8 text-xs"
               placeholder="Remark"
               value={row.remark || ''}
@@ -45,7 +45,7 @@ export function ChecklistEditor({ rows = [], onChange, disabled, title = 'Checkl
             />
             {!disabled ? (
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onChange(rows.filter((r) => r.id !== row.id))} aria-label={`Remove ${row.label}`}>
-                <Trash2 className="h-3.5 w-3.5 text-slate-400" />
+                <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
               </Button>
             ) : <span />}
           </li>
@@ -53,7 +53,7 @@ export function ChecklistEditor({ rows = [], onChange, disabled, title = 'Checkl
       </ul>
       {!disabled && (
         <div className="flex gap-2">
-          <Input
+          <Input aria-label="Add a checklist item"
             className="h-8 text-xs"
             placeholder="Add a checklist item"
             value={newLabel}
@@ -127,7 +127,7 @@ export function SectionForm({
         ))}
       </FieldGrid>
       {withChecklist && (
-        <div className="mt-4 border-t border-slate-100 pt-3">
+        <div className="mt-4 border-t border-border pt-3">
           <ChecklistEditor rows={draft.checklist || []} disabled={disabled} onChange={(rows) => change({ ...draft, checklist: rows })} />
         </div>
       )}
@@ -181,12 +181,12 @@ export function TroubleshootingForm({
         </div>
       )}
     >
-      {draft.length === 0 && <p className="text-sm text-slate-500">No troubleshooting entries yet.</p>}
+      {draft.length === 0 && <p className="text-sm text-muted-foreground">No troubleshooting entries yet.</p>}
       <div className="space-y-4">
         {draft.map((entry, index) => (
-          <div key={entry.id || index} className="rounded-lg border border-slate-200 p-3">
+          <div key={entry.id || index} className="rounded-lg border border-border p-3">
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Entry {index + 1}</span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Entry {index + 1}</span>
               {!disabled && (
                 <Button variant="ghost" size="sm" onClick={() => removeEntry(entry.id)}>
                   <Trash2 className="mr-1 h-3.5 w-3.5 text-rose-600" />Remove
@@ -205,7 +205,7 @@ export function TroubleshootingForm({
                 />
               ))}
             </FieldGrid>
-            <div className="mt-3 border-t border-slate-100 pt-3">
+            <div className="mt-3 border-t border-border pt-3">
               <ChecklistEditor
                 title="Inspection checklist"
                 rows={entry.checklist || []}

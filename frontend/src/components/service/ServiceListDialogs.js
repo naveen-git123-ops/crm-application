@@ -59,19 +59,19 @@ export function ServiceHistoryDialog({ open, onClose, onOpenService }) {
         {!customer ? (
           <div className="space-y-2">
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-              <Input className="pl-8" placeholder="Search customer" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input aria-label="Search customer" className="pl-8" placeholder="Search customer" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
             </div>
             <ul className="max-h-64 divide-y overflow-y-auto rounded-lg border">
               {customers.map((c) => (
                 <li key={c.id}>
-                  <button type="button" className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => choose(c)}>
+                  <button type="button" className="block w-full px-3 py-2 text-left text-sm hover:bg-muted" onClick={() => choose(c)}>
                     <span className="font-medium">{c.company_name}</span>
-                    <span className="ml-2 text-xs text-slate-500">{[c.customer_id, c.city].filter(Boolean).join(' · ')}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">{[c.customer_id, c.city].filter(Boolean).join(' · ')}</span>
                   </button>
                 </li>
               ))}
-              {customers.length === 0 && <li className="px-3 py-4 text-sm text-slate-500">No customers found.</li>}
+              {customers.length === 0 && <li className="px-3 py-4 text-sm text-muted-foreground">No customers found.</li>}
             </ul>
           </div>
         ) : (
@@ -83,14 +83,14 @@ export function ServiceHistoryDialog({ open, onClose, onOpenService }) {
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left text-[11px] uppercase tracking-wide text-slate-500">
+                  <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                     {['Service ID', 'Date', 'Type', 'Product', 'Lead', 'Technician', 'Visits', 'Vendor', 'Report', 'Status'].map((h) => <th key={h} className="py-2 pr-3">{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
-                  {loading && <tr><td colSpan={10} className="py-6 text-center text-slate-500">Loading…</td></tr>}
+                  {loading && <tr><td colSpan={10} className="py-6 text-center text-muted-foreground">Loading…</td></tr>}
                   {!loading && rows.map((r) => (
-                    <tr key={r.id} className="cursor-pointer border-b border-slate-100 hover:bg-slate-50" onClick={() => { onOpenService(r.id); onClose(); }}>
+                    <tr key={r.id} className="cursor-pointer border-b border-border hover:bg-muted" onClick={() => { onOpenService(r.id); onClose(); }}>
                       <td className="py-2 pr-3 font-mono text-xs">{r.service_code}</td>
                       <td className="py-2 pr-3">{fmtDate(r.request_date)}</td>
                       <td className="py-2 pr-3">{r.service_type || '—'}</td>
@@ -103,7 +103,7 @@ export function ServiceHistoryDialog({ open, onClose, onOpenService }) {
                       <td className="py-2 pr-3"><StatusBadge status={r.status} /></td>
                     </tr>
                   ))}
-                  {!loading && rows.length === 0 && <tr><td colSpan={10} className="py-6 text-center text-slate-500">No service history for this customer.</td></tr>}
+                  {!loading && rows.length === 0 && <tr><td colSpan={10} className="py-6 text-center text-muted-foreground">No service history for this customer.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -150,21 +150,21 @@ export function ServiceReportsDialog({ open, onClose, onOpenService }) {
         </DialogHeader>
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-[11px] uppercase tracking-wide text-slate-500">
+            <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
               {['Report', 'Service', 'Customer', 'Type', 'Submitted', ''].map((h) => <th key={h} className="py-2 pr-3">{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} className="py-6 text-center text-slate-500">Loading…</td></tr>}
+            {loading && <tr><td colSpan={6} className="py-6 text-center text-muted-foreground">Loading…</td></tr>}
             {!loading && rows.map((r) => (
-              <tr key={`${r.service_id}-${r.revision}`} className="border-b border-slate-100">
+              <tr key={`${r.service_id}-${r.revision}`} className="border-b border-border">
                 <td className="py-2 pr-3 font-mono text-xs">{r.report_no}</td>
                 <td className="py-2 pr-3">
                   <button type="button" className="text-indigo-700 hover:underline" onClick={() => { onOpenService(r.service_id); onClose(); }}>{r.service_code}</button>
                 </td>
                 <td className="py-2 pr-3">{r.customer_name}</td>
                 <td className="py-2 pr-3">{r.service_type}</td>
-                <td className="py-2 pr-3">{fmtDateTime(r.submitted_at)}<div className="text-[11px] text-slate-500">{r.submitted_by}</div></td>
+                <td className="py-2 pr-3">{fmtDateTime(r.submitted_at)}<div className="text-xs text-muted-foreground">{r.submitted_by}</div></td>
                 <td className="py-2 text-right">
                   <Button variant="outline" size="sm" onClick={() => download(r)} disabled={downloading === r.service_id}>
                     <Download className="mr-1 h-3.5 w-3.5" />PDF
@@ -172,7 +172,7 @@ export function ServiceReportsDialog({ open, onClose, onOpenService }) {
                 </td>
               </tr>
             ))}
-            {!loading && rows.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-slate-500">No reports have been submitted yet.</td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-muted-foreground">No reports have been submitted yet.</td></tr>}
           </tbody>
         </table>
       </DialogContent>

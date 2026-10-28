@@ -19,7 +19,7 @@ const SHELL_CLASS =
   'flex min-h-0 flex-col gap-0 overflow-hidden rounded-2xl border border-border bg-card p-0 shadow-panel';
 
 export const standardFormLabelClass =
-  'text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground';
+  'text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground';
 
 export const standardTextInputClass =
   'h-11 rounded-lg border-input bg-card px-3.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:border-primary/30 focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-ring/20';

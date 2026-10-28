@@ -31,7 +31,7 @@ export function EvidenceChecklist({ detail }) {
         {required.map((category) => (
           <li key={category} className="flex items-center gap-2">
             {present.has(category) ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Circle className="h-4 w-4 text-amber-500" />}
-            <span className={present.has(category) ? 'text-slate-700' : 'text-amber-800'}>{category}</span>
+            <span className={present.has(category) ? 'text-foreground' : 'text-amber-800'}>{category}</span>
           </li>
         ))}
       </ul>
@@ -163,14 +163,14 @@ function AssignmentCard({ ctx }) {
     <SectionCard title="Technician and schedule" description={s.assigned_name ? `Currently assigned to ${s.assigned_name}` : 'No technician assigned yet'}>
       <FieldGrid>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-slate-600" htmlFor="svc-assign-tech">Technician</label>
+          <label className="text-xs font-medium text-muted-foreground" htmlFor="svc-assign-tech">Technician</label>
           <select id="svc-assign-tech" className={INPUT_CLASS} value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
             <option value="">Select technician…</option>
             {lookups.employees.map((e) => <option key={e.employee_id} value={e.employee_id}>{e.name}{e.job_role ? ` — ${e.job_role}` : ''}</option>)}
           </select>
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-slate-600" htmlFor="svc-assign-eng">Engineer (optional)</label>
+          <label className="text-xs font-medium text-muted-foreground" htmlFor="svc-assign-eng">Engineer (optional)</label>
           <select id="svc-assign-eng" className={INPUT_CLASS} value={engineerId} onChange={(e) => setEngineerId(e.target.value)}>
             <option value="">None</option>
             {lookups.employees.map((e) => <option key={e.employee_id} value={e.employee_id}>{e.name}</option>)}
@@ -231,11 +231,11 @@ export function OverviewTab({ ctx }) {
         description={detail.locked ? 'This request is locked. Only a service manager can change it, and every change needs a reason.' : undefined}
       >
         {detail.next_statuses.length === 0 ? (
-          <p className="text-sm text-slate-500">No status changes are available to you right now.</p>
+          <p className="text-sm text-muted-foreground">No status changes are available to you right now.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {detail.next_statuses.map((option) => (
-              <Button
+              <Button aria-label={option.blockers.length > 0 ? 'Not ready — click to see why' : undefined}
                 key={option.status}
                 variant={option.blockers.length > 0 ? 'outline' : 'default'}
                 size="sm"
@@ -356,13 +356,13 @@ export function CustomerTab({ ctx }) {
 
       {s.product_id && (
         <SectionCard title="Service history of this product">
-          {history.length === 0 ? <p className="text-sm text-slate-500">No other service history.</p> : (
-            <ul className="divide-y divide-slate-100 text-sm">
+          {history.length === 0 ? <p className="text-sm text-muted-foreground">No other service history.</p> : (
+            <ul className="divide-y divide-border text-sm">
               {history.map((h) => (
                 <li key={h.id} className="flex items-center justify-between gap-2 py-2">
                   <Link className="font-mono text-xs text-indigo-700 hover:underline" to={`/service-maintenance/${h.id}`}>{h.service_code}</Link>
                   <span className="flex-1 truncate">{h.service_type}{h.problem_category ? ` — ${h.problem_category}` : ''}</span>
-                  <span className="text-xs text-slate-500">{fmtDate(h.request_date)}</span>
+                  <span className="text-xs text-muted-foreground">{fmtDate(h.request_date)}</span>
                   <StatusBadge status={h.status} />
                 </li>
               ))}
@@ -455,7 +455,7 @@ export function WorkLogTab({ ctx }) {
       )}
       {sections.map((section) => sectionBlock(ctx, section))}
       {sections.length === 0 && (
-        <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
+        <p className="rounded-lg border border-border bg-white p-4 text-sm text-muted-foreground">
           The AMC visit details are recorded on the Inspection tab. Visit-by-visit notes appear below and on the Visits tab.
         </p>
       )}
@@ -463,11 +463,11 @@ export function WorkLogTab({ ctx }) {
         <SectionCard title="Work recorded on visits">
           <ul className="space-y-3 text-sm">
             {visitsWithLog.map((v) => (
-              <li key={v.id} className="rounded-lg border border-slate-100 p-3">
+              <li key={v.id} className="rounded-lg border border-border p-3">
                 <div className="mb-1 font-medium">Visit {v.visit_no} · {fmtDate(v.actual_date || v.planned_date)} · {v.technician_name || 'Unassigned'}</div>
-                {v.work_log && <p className="whitespace-pre-wrap text-slate-700">{v.work_log}</p>}
-                {v.parts_used && <p className="text-xs text-slate-600">Parts: {v.parts_used}</p>}
-                {v.test_results && <p className="text-xs text-slate-600">Tests: {v.test_results}</p>}
+                {v.work_log && <p className="whitespace-pre-wrap text-foreground">{v.work_log}</p>}
+                {v.parts_used && <p className="text-xs text-muted-foreground">Parts: {v.parts_used}</p>}
+                {v.test_results && <p className="text-xs text-muted-foreground">Tests: {v.test_results}</p>}
               </li>
             ))}
           </ul>
@@ -543,7 +543,7 @@ function VisitDialog({ ctx, visit, open, onClose }) {
         {error && <p className="rounded bg-rose-50 p-2 text-sm text-rose-800" role="alert">{error}</p>}
         <FieldGrid>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600" htmlFor="svc-visit-tech">Technician</label>
+            <label className="text-xs font-medium text-muted-foreground" htmlFor="svc-visit-tech">Technician</label>
             <select id="svc-visit-tech" className={INPUT_CLASS} value={form.technician_id || ''} disabled={!isCoordinator} onChange={(e) => setTechnician(e.target.value)}>
               <option value="">Select…</option>
               {lookups.employees.map((e) => <option key={e.employee_id} value={e.employee_id}>{e.name}</option>)}
@@ -587,17 +587,17 @@ export function VisitsTab({ ctx }) {
       description="Every visit to the site or workshop, including revisits after a failed test."
       actions={canWork && <Button size="sm" onClick={() => setDialog({ open: true, visit: null })}><Plus className="mr-1 h-4 w-4" />Add visit</Button>}
     >
-      {detail.visits.length === 0 ? <p className="text-sm text-slate-500">No visits recorded.</p> : (
+      {detail.visits.length === 0 ? <p className="text-sm text-muted-foreground">No visits recorded.</p> : (
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="border-b text-left text-[11px] uppercase tracking-wide text-slate-500">
+              <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                 {['#', 'Technician', 'Planned', 'Actual', 'Status', 'Outcome', 'Next visit', ''].map((h) => <th key={h} className="py-2 pr-3">{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {detail.visits.map((v) => (
-                <tr key={v.id} className="border-b border-slate-100">
+                <tr key={v.id} className="border-b border-border">
                   <td className="py-2 pr-3">{v.visit_no}</td>
                   <td className="py-2 pr-3">{v.technician_name || '—'}</td>
                   <td className="py-2 pr-3">{fmtDate(v.planned_date)}</td>
@@ -630,7 +630,7 @@ export function FilesTab({ ctx }) {
   return (
     <SectionCard>
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <label className="text-xs font-medium text-slate-600" htmlFor="svc-file-filter">Show</label>
+        <label className="text-xs font-medium text-muted-foreground" htmlFor="svc-file-filter">Show</label>
         <select id="svc-file-filter" className={`${INPUT_CLASS} w-auto`} value={filter} onChange={(e) => setFilter(e.target.value)}>
           <option value="">All categories ({detail.attachments.length})</option>
           {meta.attachment_categories.filter((c) => counts[c]).map((c) => <option key={c} value={c}>{c} ({counts[c]})</option>)}
@@ -678,21 +678,21 @@ export function HistoryTab({ ctx }) {
     >
       <ol className="space-y-3">
         {rows.map((h) => (
-          <li key={h.id} className="border-l-2 border-slate-200 pl-3 text-sm">
+          <li key={h.id} className="border-l-2 border-border pl-3 text-sm">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium text-slate-900">{EVENT_LABELS[h.event_type] || h.event_type}</span>
+              <span className="font-medium text-foreground">{EVENT_LABELS[h.event_type] || h.event_type}</span>
               {h.to_status && (
-                <span className="text-xs text-slate-600">
+                <span className="text-xs text-muted-foreground">
                   {h.from_status ? `${h.from_status} → ` : ''}<StatusBadge status={h.to_status} />
                 </span>
               )}
-              <span className="ml-auto text-xs text-slate-500">{fmtDateTime(h.created_at)} · {h.user_name || 'System'}</span>
+              <span className="ml-auto text-xs text-muted-foreground">{fmtDateTime(h.created_at)} · {h.user_name || 'System'}</span>
             </div>
-            {h.detail && <div className="text-xs text-slate-600">{h.detail}</div>}
-            {h.reason && <div className="text-xs italic text-slate-600">Reason: {h.reason}</div>}
+            {h.detail && <div className="text-xs text-muted-foreground">{h.detail}</div>}
+            {h.reason && <div className="text-xs italic text-muted-foreground">Reason: {h.reason}</div>}
           </li>
         ))}
-        {rows.length === 0 && <li className="text-sm text-slate-500">No history.</li>}
+        {rows.length === 0 && <li className="text-sm text-muted-foreground">No history.</li>}
       </ol>
     </SectionCard>
   );

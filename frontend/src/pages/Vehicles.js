@@ -672,9 +672,9 @@ const Vehicles = () => {
       'Pending': 'bg-yellow-100 text-yellow-800',
       'Approved': 'bg-green-100 text-green-800',
       'Rejected': 'bg-red-100 text-red-800',
-      'Partially-Approved': 'bg-blue-100 text-blue-800'
+      'Partially-Approved': 'bg-accent text-accent-foreground'
     };
-    return styles[status] || 'bg-gray-100 text-gray-800';
+    return styles[status] || 'bg-muted text-foreground';
   };
 
   // RENDER
@@ -766,7 +766,7 @@ const Vehicles = () => {
               </Card>
             ))}
           </div>
-          {vehicles.length === 0 && <p className="text-center text-gray-500 py-8">No vehicles found</p>}
+          {vehicles.length === 0 && <p className="text-center text-muted-foreground py-8">No vehicles found</p>}
         </div>
       )}
 
@@ -790,7 +790,7 @@ const Vehicles = () => {
                 <div className="p-6 space-y-6">
                   {/* Vehicle Selection - Toggle between Company and Own Vehicle */}
                   <div className="space-y-3">
-                    <Label className="text-sm font-semibold text-gray-700">Vehicle Type *</Label>
+                    <Label className="text-sm font-semibold text-foreground">Vehicle Type *</Label>
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
@@ -822,11 +822,11 @@ const Vehicles = () => {
                   {/* Company Vehicle Selection */}
                   {!startUsageData.own_vehicle_type && (
                     <div className="space-y-3">
-                      <Label className="text-sm font-semibold text-gray-700">Select Company Vehicle *</Label>
-                      <select
+                      <Label htmlFor="vehicles-field-1" className="text-sm font-semibold text-foreground">Select Company Vehicle *</Label>
+                      <select id="vehicles-field-1"
                         value={startUsageData.vehicle_id}
                         onChange={e => handleVehicleSelection(e.target.value)}
-                        className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                        className="h-11 w-full rounded-lg border border-input bg-white px-3 py-2 text-sm text-foreground"
                       >
                         <option value="">Choose vehicle</option>
                         {vehicles.map(v => <option key={v.id} value={v.id}>{v.vehicle_name}</option>)}
@@ -838,11 +838,11 @@ const Vehicles = () => {
                   {startUsageData.own_vehicle_type && (
                     <>
                       <div className="space-y-3">
-                        <Label className="text-sm font-semibold text-gray-700">Vehicle Type *</Label>
-                        <select
+                        <Label htmlFor="vehicles-field-2" className="text-sm font-semibold text-foreground">Vehicle Type *</Label>
+                        <select id="vehicles-field-2"
                           value={startUsageData.own_vehicle_type}
                           onChange={e => setStartUsageData({ ...startUsageData, own_vehicle_type: e.target.value })}
-                          className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                          className="h-11 w-full rounded-lg border border-input bg-white px-3 py-2 text-sm text-foreground"
                         >
                           <option value="Car">Car</option>
                           <option value="Bike">Bike/Motorcycle</option>
@@ -853,8 +853,8 @@ const Vehicles = () => {
                         </select>
                       </div>
                       <div className="space-y-3">
-                        <Label className="text-sm font-semibold text-gray-700">Mileage (km/L) *</Label>
-                        <Input
+                        <Label htmlFor="vehicles-field-3" className="text-sm font-semibold text-foreground">Mileage (km/L) *</Label>
+                        <Input id="vehicles-field-3"
                           type="number"
                           step="0.1"
                           min="0.1"
@@ -862,29 +862,29 @@ const Vehicles = () => {
                           value={startUsageData.own_vehicle_milage}
                           onChange={e => setStartUsageData({ ...startUsageData, own_vehicle_milage: e.target.value })}
                           placeholder="e.g., 12.5"
-                          className="h-11 border border-gray-300 rounded-lg px-4 text-gray-900"
+                          className="h-11 border border-input rounded-lg px-4 text-foreground"
                         />
-                        <p className="text-xs text-gray-500">How many kilometers per liter does your vehicle run?</p>
+                        <p className="text-xs text-muted-foreground">How many kilometers per liter does your vehicle run?</p>
                       </div>
                     </>
                   )}
 
                   {/* Meter Reading */}
                   <div className="space-y-3">
-                    <Label className="text-sm font-semibold text-gray-700">Start Meter Reading (km) *</Label>
-                    <Input
+                    <Label htmlFor="vehicles-field-4" className="text-sm font-semibold text-foreground">Start Meter Reading (km) *</Label>
+                    <Input id="vehicles-field-4"
                       type="number"
                       value={startUsageData.start_meter_reading}
                       onChange={e => setStartUsageData({ ...startUsageData, start_meter_reading: e.target.value })}
                       placeholder="e.g., 45000"
-                      className="h-11 border border-gray-300 rounded-lg px-4 text-gray-900"
+                      className="h-11 border border-input rounded-lg px-4 text-foreground"
                     />
                   </div>
 
                   {/* Photo Capture Section */}
-                  <div className="border-t border-gray-200 pt-6">
+                  <div className="border-t border-border pt-6">
                     <div className="space-y-3 mb-4">
-                      <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <Label className="text-sm font-semibold text-foreground flex items-center gap-2">
                         <Camera className="h-4 w-4" />
                         Meter Reading Photo * (Required for verification)
                       </Label>
@@ -910,10 +910,10 @@ const Vehicles = () => {
                     {/* Photo Preview */}
                     {startPhotoPreview && (
                       <div className="space-y-3">
-                        <p className="text-sm font-semibold text-gray-700">Photo Preview</p>
-                        <div className="relative rounded-lg overflow-hidden border border-gray-200">
+                        <p className="text-sm font-semibold text-foreground">Photo Preview</p>
+                        <div className="relative rounded-lg overflow-hidden border border-border">
                           <img src={startPhotoPreview} alt="Meter reading preview" className="w-full h-64 object-cover" />
-                          <button
+                          <button aria-label="Close"
                             onClick={() => {
                               setStartPhotoFile(null);
                               setStartPhotoPreview(null);
@@ -929,18 +929,18 @@ const Vehicles = () => {
 
                   {/* Notes */}
                   <div className="space-y-3">
-                    <Label className="text-sm font-semibold text-gray-700">Notes</Label>
-                    <textarea
+                    <Label htmlFor="vehicles-field-5" className="text-sm font-semibold text-foreground">Notes</Label>
+                    <textarea id="vehicles-field-5"
                       value={startUsageData.notes}
                       onChange={e => setStartUsageData({ ...startUsageData, notes: e.target.value })}
                       placeholder="Trip details..."
                       rows={2}
-                      className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm resize-none"
+                      className="w-full rounded-lg border border-input px-4 py-2 text-sm resize-none"
                     />
                   </div>
 
                   {/* Buttons */}
-                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                  <div className="flex justify-end gap-3 pt-4 border-t border-border">
                     <Button variant="outline" onClick={() => {
                       setStartUsageDialogOpen(false);
                       setStartPhotoFile(null);
@@ -985,27 +985,27 @@ const Vehicles = () => {
                 </div>
                 {previousVehicleUsage && (
                   <div className="space-y-6 p-6">
-                    <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+                    <div className="bg-white border border-border rounded-lg p-4 space-y-3">
                       <div>
-                        <p className="text-sm text-gray-600">Last User</p>
-                        <p className="font-semibold text-gray-900">{previousVehicleUsage.employee_name} ({previousVehicleUsage.employee_id})</p>
+                        <p className="text-sm text-muted-foreground">Last User</p>
+                        <p className="font-semibold text-foreground">{previousVehicleUsage.employee_name} ({previousVehicleUsage.employee_id})</p>
                       </div>
                       <div>
-                        <p className="text-sm text-gray-600">Last Journey Status</p>
+                        <p className="text-sm text-muted-foreground">Last Journey Status</p>
                         <p className={`font-semibold ${previousVehicleUsage.status === 'Completed' ? 'text-green-600' : 'text-red-600'}`}>
                           {previousVehicleUsage.status}
                         </p>
                       </div>
                       {previousVehicleUsage.end_meter_reading && (
                         <div>
-                          <p className="text-sm text-gray-600">Last End Meter Reading</p>
-                          <p className="text-lg font-semibold text-blue-600">{previousVehicleUsage.end_meter_reading} km</p>
+                          <p className="text-sm text-muted-foreground">Last End Meter Reading</p>
+                          <p className="text-lg font-semibold text-accent-foreground">{previousVehicleUsage.end_meter_reading} km</p>
                         </div>
                       )}
                       {previousVehicleUsage.end_date && (
                         <div>
-                          <p className="text-sm text-gray-600">Journey Ended</p>
-                          <p className="font-medium text-gray-700">{new Date(previousVehicleUsage.end_date).toLocaleString('en-IN')}</p>
+                          <p className="text-sm text-muted-foreground">Journey Ended</p>
+                          <p className="font-medium text-foreground">{new Date(previousVehicleUsage.end_date).toLocaleString('en-IN')}</p>
                         </div>
                       )}
                       {!previousVehicleUsage.end_meter_reading && (
@@ -1017,7 +1017,7 @@ const Vehicles = () => {
                     </div>
 
                     <div className="space-y-3">
-                      <p className="text-sm text-gray-700 font-semibold">Do you confirm that you are taking this vehicle now?</p>
+                      <p className="text-sm text-foreground font-semibold">Do you confirm that you are taking this vehicle now?</p>
                       <div className="flex gap-3">
                         <Button 
                           variant="outline" 
@@ -1036,7 +1036,7 @@ const Vehicles = () => {
                             setShowPreviousUsageDialog(false);
                             toast.success('Ready to start journey. Please enter meter reading and photo.');
                           }}
-                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                          className="flex-1 bg-primary hover:bg-primary/90 text-white"
                         >
                           Yes, I Confirm
                         </Button>
@@ -1065,7 +1065,7 @@ const Vehicles = () => {
                 }}>
                   Complete Journey
                 </Button>
-                <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl p-0">
+                <DialogContent className="max-w-lg bg-white rounded-lg border border-border shadow-xl p-0">
                   <div className="bg-orange-600 text-white p-6 rounded-t-lg">
                     <DialogHeader>
                       <DialogTitle className="text-xl font-bold text-white">Complete Journey</DialogTitle>
@@ -1074,13 +1074,13 @@ const Vehicles = () => {
                   </div>
                   <div className="space-y-6 p-6">
                     <div className="space-y-3">
-                      <Label className="text-sm font-semibold text-gray-700">End Meter Reading (km) *</Label>
-                      <Input
+                      <Label htmlFor="vehicles-field-6" className="text-sm font-semibold text-foreground">End Meter Reading (km) *</Label>
+                      <Input id="vehicles-field-6"
                         type="number"
                         value={completeUsageData.end_meter_reading}
                         onChange={e => setCompleteUsageData({ ...completeUsageData, end_meter_reading: e.target.value })}
                         placeholder="e.g., 45050"
-                        className="h-11 border border-gray-300 rounded-lg px-4"
+                        className="h-11 border border-input rounded-lg px-4"
                       />
                     {activeUsage?.start_meter_reading && completeUsageData.end_meter_reading && (
                       <p className={`text-xs ${Number(completeUsageData.end_meter_reading) >= Number(activeUsage.start_meter_reading) ? 'text-green-700' : 'text-red-700'}`}>
@@ -1090,28 +1090,28 @@ const Vehicles = () => {
                     )}
                     </div>
                     <div className="space-y-3">
-                      <Label className="text-sm font-semibold text-gray-700">Notes</Label>
-                      <textarea
+                      <Label htmlFor="vehicles-field-7" className="text-sm font-semibold text-foreground">Notes</Label>
+                      <textarea id="vehicles-field-7"
                         value={completeUsageData.notes}
                         onChange={e => setCompleteUsageData({ ...completeUsageData, notes: e.target.value })}
                         placeholder="Trip summary..."
                         rows={2}
-                        className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm resize-none"
+                        className="w-full rounded-lg border border-input px-4 py-2 text-sm resize-none"
                       />
                     </div>
 
                     {/* Photo Capture Section */}
-                    <div className="border-t border-gray-200 pt-6">
+                    <div className="border-t border-border pt-6">
                       <div className="space-y-3 mb-4">
-                        <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <Label className="text-sm font-semibold text-foreground flex items-center gap-2">
                           <Camera className="h-4 w-4" />
                           Meter Reading Photo * (Required for verification)
                         </Label>
                         <label className="flex items-center justify-center w-full px-4 py-6 border-2 border-dashed border-orange-300 rounded-lg cursor-pointer hover:border-orange-500 bg-orange-50 transition">
                           <div className="text-center">
                             <Camera className="h-8 w-8 text-orange-600 mx-auto mb-2" />
-                            <p className="text-sm font-medium text-gray-700">Click to capture or upload photo</p>
-                            <p className="text-xs text-gray-500 mt-1">Take a clear photo of the meter reading</p>
+                            <p className="text-sm font-medium text-foreground">Click to capture or upload photo</p>
+                            <p className="text-xs text-muted-foreground mt-1">Take a clear photo of the meter reading</p>
                           </div>
                           <input
                             type="file"
@@ -1129,10 +1129,10 @@ const Vehicles = () => {
                       {/* Photo Preview */}
                       {endPhotoPreview && (
                         <div className="space-y-3">
-                          <p className="text-sm font-semibold text-gray-700">Photo Preview</p>
-                          <div className="relative rounded-lg overflow-hidden border border-gray-200">
+                          <p className="text-sm font-semibold text-foreground">Photo Preview</p>
+                          <div className="relative rounded-lg overflow-hidden border border-border">
                             <img src={endPhotoPreview} alt="Meter reading preview" className="w-full h-64 object-cover" />
-                            <button
+                            <button aria-label="Close"
                               onClick={() => {
                                 setEndPhotoFile(null);
                                 setEndPhotoPreview(null);
@@ -1146,7 +1146,7 @@ const Vehicles = () => {
                       )}
                     </div>
 
-                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                    <div className="flex justify-end gap-3 pt-4 border-t border-border">
                       <Button variant="outline" onClick={() => {
                         setCompleteUsageDialogOpen(false);
                         setEndPhotoFile(null);
@@ -1166,12 +1166,12 @@ const Vehicles = () => {
           )}
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Journey History</h3>
-            <Card className="p-4 border border-gray-200 bg-white">
+            <h3 className="text-lg font-semibold text-foreground">Journey History</h3>
+            <Card className="p-4 border border-border bg-white">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div className="relative md:col-span-2">
-                  <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <Input
+                  <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input aria-label="Search by vehicle, employee, status, reading..."
                     value={usageSearch}
                     onChange={(e) => setUsageSearch(e.target.value)}
                     placeholder="Search by vehicle, employee, status, reading..."
@@ -1181,7 +1181,7 @@ const Vehicles = () => {
                 <select
                   value={usageStatusFilter}
                   onChange={(e) => setUsageStatusFilter(e.target.value)}
-                  className="h-10 rounded-md border border-gray-300 px-3 text-sm bg-white text-gray-900"
+                  className="h-10 rounded-md border border-input px-3 text-sm bg-white text-foreground"
                 >
                   <option value="All">All status</option>
                   <option value="Active">Active</option>
@@ -1190,7 +1190,7 @@ const Vehicles = () => {
                 <select
                   value={usageEmployeeFilter}
                   onChange={(e) => setUsageEmployeeFilter(e.target.value)}
-                  className="h-10 rounded-md border border-gray-300 px-3 text-sm bg-white text-gray-900"
+                  className="h-10 rounded-md border border-input px-3 text-sm bg-white text-foreground"
                 >
                   <option value="All">All employees</option>
                   {uniqueUsageEmployees.map((name) => (
@@ -1198,47 +1198,47 @@ const Vehicles = () => {
                   ))}
                 </select>
               </div>
-              <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-600">
-                <span>Rows: <strong className="text-gray-900">{filteredUsageRecords.length}</strong></span>
-                <span>Total distance: <strong className="text-gray-900">{usageDistanceTotal.toFixed(1)} km</strong></span>
-                <span>Total fuel: <strong className="text-gray-900">{usageFuelTotal.toFixed(2)} L</strong></span>
+              <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                <span>Rows: <strong className="text-foreground">{filteredUsageRecords.length}</strong></span>
+                <span>Total distance: <strong className="text-foreground">{usageDistanceTotal.toFixed(1)} km</strong></span>
+                <span>Total fuel: <strong className="text-foreground">{usageFuelTotal.toFixed(2)} L</strong></span>
               </div>
             </Card>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b-2 border-gray-200 bg-gray-50">
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Vehicle</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Employee</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Status</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Start (km)</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">End (km)</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Distance (km)</th>
-                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Fuel (L)</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Started</th>
+                  <tr className="border-b-2 border-border bg-muted">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">Vehicle</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">Employee</th>
+                    <th className="px-4 py-3 text-center text-sm font-semibold text-foreground">Status</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Start (km)</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">End (km)</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Distance (km)</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Fuel (L)</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">Started</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredUsageRecords.map(usage => (
-                    <tr key={usage.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
-                      <td className="px-4 py-3 font-medium text-gray-900">{usage.own_vehicle_type ? `Own ${usage.own_vehicle_type}` : getVehicleName(usage.vehicle_id)}</td>
-                      <td className="px-4 py-3 text-gray-700">{usage.employee_name}</td>
+                    <tr key={usage.id} className="border-b border-border hover:bg-muted transition">
+                      <td className="px-4 py-3 font-medium text-foreground">{usage.own_vehicle_type ? `Own ${usage.own_vehicle_type}` : getVehicleName(usage.vehicle_id)}</td>
+                      <td className="px-4 py-3 text-foreground">{usage.employee_name}</td>
                       <td className="px-4 py-3 text-center">
                         <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${usage.status === 'Active' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
                           {usage.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-900 font-medium">{usage.start_meter_reading}</td>
-                      <td className="px-4 py-3 text-right text-gray-900 font-medium">{usage.end_meter_reading || '-'}</td>
+                      <td className="px-4 py-3 text-right text-foreground font-medium">{usage.start_meter_reading}</td>
+                      <td className="px-4 py-3 text-right text-foreground font-medium">{usage.end_meter_reading || '-'}</td>
                       <td className="px-4 py-3 text-right text-green-600 font-medium">{usage.km_driven ? usage.km_driven.toFixed(1) : '-'}</td>
-                      <td className="px-4 py-3 text-right text-blue-600 font-medium">{usage.fuel_consumed ? usage.fuel_consumed.toFixed(2) : '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{formatDateTime(usage.start_date)}</td>
+                      <td className="px-4 py-3 text-right text-accent-foreground font-medium">{usage.fuel_consumed ? usage.fuel_consumed.toFixed(2) : '-'}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">{formatDateTime(usage.start_date)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {filteredUsageRecords.length === 0 && <p className="text-center text-gray-500 py-8">No journeys found for selected filters</p>}
+            {filteredUsageRecords.length === 0 && <p className="text-center text-muted-foreground py-8">No journeys found for selected filters</p>}
           </div>
         </div>
       )}
@@ -1257,11 +1257,11 @@ const Vehicles = () => {
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label className="text-gray-900">Journey *</Label>
-                  <select
+                  <Label htmlFor="vehicles-field-8" className="text-foreground">Journey *</Label>
+                  <select id="vehicles-field-8"
                     value={claimData.vehicle_usage_id}
                     onChange={e => setClaimData({ ...claimData, vehicle_usage_id: e.target.value })}
-                    className="w-full border rounded px-3 py-2 text-gray-900 bg-white"
+                    className="w-full border rounded px-3 py-2 text-foreground bg-white"
                   >
                     <option value="">Select journey</option>
                     {usageRecords
@@ -1281,8 +1281,8 @@ const Vehicles = () => {
                   </select>
                 </div>
                 <div>
-                  <Label className="text-gray-900">Price Per Liter (₹)</Label>
-                  <Input
+                  <Label htmlFor="vehicles-field-9" className="text-foreground">Price Per Liter (₹)</Label>
+                  <Input id="vehicles-field-9"
                     type="number"
                     value={claimData.price_per_liter}
                     onChange={e => setClaimData({ ...claimData, price_per_liter: e.target.value })}
@@ -1290,8 +1290,8 @@ const Vehicles = () => {
                   />
                 </div>
                 <div>
-                  <Label className="text-gray-900">Claimed Amount (₹) *</Label>
-                  <Input
+                  <Label htmlFor="vehicles-field-10" className="text-foreground">Claimed Amount (₹) *</Label>
+                  <Input id="vehicles-field-10"
                     type="number"
                     value={claimData.claimed_amount}
                     onChange={e => setClaimData({ ...claimData, claimed_amount: e.target.value })}
@@ -1307,11 +1307,11 @@ const Vehicles = () => {
 
           {user?.role === 'Admin' && (
             <div className="mb-4 flex items-center gap-4 bg-muted/50 p-4 rounded-xl border border-border">
-              <Label className="text-gray-900 font-semibold">Filter by Employee:</Label>
-              <select
+              <Label htmlFor="vehicles-field-11" className="text-foreground font-semibold">Filter by Employee:</Label>
+              <select id="vehicles-field-11"
                 value={claimEmployeeFilter}
                 onChange={e => setClaimEmployeeFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:border-blue-500"
+                className="px-3 py-2 border border-input rounded-lg text-foreground bg-white focus:outline-none focus:border-primary/60"
               >
                 <option value="">All Employees</option>
                 {Array.from(new Set(fuelClaims.map(c => c.employee_name))).sort().map(empName => (
@@ -1320,11 +1320,11 @@ const Vehicles = () => {
               </select>
             </div>
           )}
-          <Card className="p-4 border border-gray-200 bg-white">
+          <Card className="p-4 border border-border bg-white">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="relative">
-                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <Input
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input aria-label="Search employee, vehicle, type..."
                   value={claimSearch}
                   onChange={(e) => setClaimSearch(e.target.value)}
                   placeholder="Search employee, vehicle, type..."
@@ -1334,7 +1334,7 @@ const Vehicles = () => {
               <select
                 value={claimStatusFilter}
                 onChange={(e) => setClaimStatusFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-gray-900 bg-white focus:outline-none focus:border-blue-500"
+                className="px-3 py-2 border border-input rounded-lg text-foreground bg-white focus:outline-none focus:border-primary/60"
               >
                 <option value="All">All status</option>
                 <option value="Pending">Pending</option>
@@ -1342,26 +1342,26 @@ const Vehicles = () => {
                 <option value="Partially-Approved">Partially-Approved</option>
                 <option value="Rejected">Rejected</option>
               </select>
-              <div className="flex items-center text-sm text-gray-600">
-                Showing <span className="mx-1 font-semibold text-gray-900">{filteredClaims.length}</span> claims
+              <div className="flex items-center text-sm text-muted-foreground">
+                Showing <span className="mx-1 font-semibold text-foreground">{filteredClaims.length}</span> claims
               </div>
             </div>
           </Card>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b-2 border-gray-200 bg-gray-50">
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Employee</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Vehicle</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">KM</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Fuel (L)</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Expected (₹)</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Claimed (₹)</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Difference (₹)</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Type</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Status</th>
+                <tr className="border-b-2 border-border bg-muted">
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">Employee</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">Vehicle</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">KM</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Fuel (L)</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Expected (₹)</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Claimed (₹)</th>
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Difference (₹)</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-foreground">Type</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-foreground">Status</th>
                   {fuelClaims.some(c => c.approved_amount) && (
-                    <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Approved (₹)</th>
+                    <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Approved (₹)</th>
                   )}
                 </tr>
               </thead>
@@ -1369,27 +1369,27 @@ const Vehicles = () => {
                 {filteredClaims.map(claim => (
                   <tr 
                     key={claim.id} 
-                    className="border-b border-gray-100 hover:bg-gray-50 transition cursor-pointer"
+                    className="border-b border-border hover:bg-muted transition cursor-pointer"
                     onClick={() => setSelectedClaim(claim)}
                   >
-                    <td className="px-4 py-3 font-medium text-gray-900">{claim.employee_name || 'Unknown'}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{claim.vehicle_name}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">{claim.km_driven}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">{claim.fuel_consumed?.toFixed(2)}</td>
-                    <td className="px-4 py-3 text-right text-gray-900">
-                      <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm font-semibold">
+                    <td className="px-4 py-3 font-medium text-foreground">{claim.employee_name || 'Unknown'}</td>
+                    <td className="px-4 py-3 font-medium text-foreground">{claim.vehicle_name}</td>
+                    <td className="px-4 py-3 text-right text-foreground">{claim.km_driven}</td>
+                    <td className="px-4 py-3 text-right text-foreground">{claim.fuel_consumed?.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-foreground">
+                      <span className="inline-block px-2 py-1 bg-accent text-accent-foreground rounded text-sm font-semibold">
                         ₹{claim.calculated_fuel_cost?.toLocaleString()}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-900">
+                    <td className="px-4 py-3 text-right text-foreground">
                       <span className="inline-block px-2 py-1 bg-orange-100 text-orange-800 rounded text-sm font-semibold">
                         ₹{claim.claimed_amount}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-900">
+                    <td className="px-4 py-3 text-right text-foreground">
                       <span className={`inline-block px-2 py-1 rounded text-sm font-semibold ${
                         (claim.difference || 0) > 0 ? 'bg-red-100 text-red-800' : 
-                        (claim.difference || 0) < 0 ? 'bg-blue-100 text-blue-800' :
+                        (claim.difference || 0) < 0 ? 'bg-accent text-accent-foreground' :
                         'bg-green-100 text-green-800'
                       }`}>
                         {(claim.difference || 0) > 0 ? '+₹' : (claim.difference || 0) < 0 ? '-₹' : '₹'}{Math.abs(claim.difference || 0).toLocaleString()}
@@ -1398,7 +1398,7 @@ const Vehicles = () => {
                     <td className="px-4 py-3 text-center">
                       <span className={`inline-block text-xs px-2 py-1 rounded font-medium ${
                         claim.claim_type === 'Over-Claimed' ? 'bg-red-100 text-red-800' :
-                        claim.claim_type === 'Under-Claimed' ? 'bg-blue-100 text-blue-800' :
+                        claim.claim_type === 'Under-Claimed' ? 'bg-accent text-accent-foreground' :
                         'bg-green-100 text-green-800'
                       }`}>
                         {claim.claim_type || 'Exact'}
@@ -1410,13 +1410,13 @@ const Vehicles = () => {
                       </span>
                     </td>
                     {fuelClaims.some(c => c.approved_amount) && (
-                      <td className="px-4 py-3 text-right text-gray-900">
+                      <td className="px-4 py-3 text-right text-foreground">
                         {claim.approved_amount ? (
                           <span className="inline-block px-2 py-1 bg-green-100 text-green-800 rounded text-sm font-semibold">
                             ₹{claim.approved_amount}
                           </span>
                         ) : (
-                          <span className="text-gray-400">-</span>
+                          <span className="text-muted-foreground">-</span>
                         )}
                       </td>
                     )}
@@ -1425,7 +1425,7 @@ const Vehicles = () => {
               </tbody>
             </table>
           </div>
-          {filteredClaims.length === 0 && <p className="text-center text-gray-500 py-8">No claims found for selected filters</p>}
+          {filteredClaims.length === 0 && <p className="text-center text-muted-foreground py-8">No claims found for selected filters</p>}
         </div>
       )}
 
@@ -1435,7 +1435,7 @@ const Vehicles = () => {
           {summaryLoading ? (
             <Card className="p-12 text-center">
               <Loader className="h-8 w-8 animate-spin mx-auto mb-2" />
-              <p className="text-gray-600">Loading summary...</p>
+              <p className="text-muted-foreground">Loading summary...</p>
             </Card>
           ) : (
             <>
@@ -1446,8 +1446,8 @@ const Vehicles = () => {
                     <Card className="p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-orange-200">
                       <div className="flex items-center justify-between">
                         <div>
-                          <h3 className="text-lg font-bold text-gray-900 mb-2">⛽ Fuel Price Per Liter</h3>
-                          <p className="text-sm text-gray-600">Set the current fuel price to calculate fuel costs</p>
+                          <h3 className="text-lg font-bold text-foreground mb-2">⛽ Fuel Price Per Liter</h3>
+                          <p className="text-sm text-muted-foreground">Set the current fuel price to calculate fuel costs</p>
                           {!editingFuelPrice && (
                             <p className="text-2xl font-bold text-orange-600 mt-2">₹{fuelPrice || '0'}</p>
                           )}
@@ -1458,7 +1458,7 @@ const Vehicles = () => {
                           </Button>
                         ) : (
                           <div className="flex gap-2">
-                            <Input 
+                            <Input aria-label="Enter fuel price" 
                               type="number"
                               value={fuelPrice}
                               onChange={(e) => setFuelPrice(e.target.value)}
@@ -1474,7 +1474,7 @@ const Vehicles = () => {
                             >
                               {fuelPriceLoading ? 'Saving...' : 'Save'}
                             </Button>
-                            <Button 
+                            <Button aria-label="Close" 
                               onClick={() => setEditingFuelPrice(false)} 
                               variant="outline"
                               className="bg-gray-200"
@@ -1490,40 +1490,40 @@ const Vehicles = () => {
                   {/* Cost Analysis Summary */}
                   {dashboardSummary && (
                     <Card className="p-6 bg-gradient-to-r from-cyan-50 to-blue-50 border-2 border-cyan-200">
-                      <h3 className="text-lg font-bold text-gray-900 mb-4">💰 Cost Analysis</h3>
+                      <h3 className="text-lg font-bold text-foreground mb-4">💰 Cost Analysis</h3>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="bg-white rounded-lg p-4 border-l-4 border-l-blue-500">
-                          <p className="text-sm text-gray-600 font-semibold">Total Fuel Used</p>
-                          <p className="text-2xl font-bold text-gray-900 mt-2">{dashboardSummary.total_fuel_used.toFixed(2)} L</p>
-                          <p className="text-xs text-gray-500 mt-2">Liters consumed</p>
+                          <p className="text-sm text-muted-foreground font-semibold">Total Fuel Used</p>
+                          <p className="text-2xl font-bold text-foreground mt-2">{dashboardSummary.total_fuel_used.toFixed(2)} L</p>
+                          <p className="text-xs text-muted-foreground mt-2">Liters consumed</p>
                         </div>
                         <div className="bg-white rounded-lg p-4 border-l-4 border-l-green-500">
-                          <p className="text-sm text-gray-600 font-semibold">Should Cost</p>
+                          <p className="text-sm text-muted-foreground font-semibold">Should Cost</p>
                           <p className="text-2xl font-bold text-green-700 mt-2">₹{dashboardSummary.calculated_fuel_cost?.toLocaleString() || 0}</p>
-                          <p className="text-xs text-gray-500 mt-2">At ₹{dashboardSummary.fuel_price_per_liter}/L</p>
+                          <p className="text-xs text-muted-foreground mt-2">At ₹{dashboardSummary.fuel_price_per_liter}/L</p>
                         </div>
                         <div className="bg-white rounded-lg p-4 border-l-4 border-l-orange-500">
-                          <p className="text-sm text-gray-600 font-semibold">Total Claimed</p>
+                          <p className="text-sm text-muted-foreground font-semibold">Total Claimed</p>
                           <p className="text-2xl font-bold text-orange-700 mt-2">₹{dashboardSummary.total_pending_amount?.toLocaleString() || 0}</p>
-                          <p className="text-xs text-gray-500 mt-2">Pending claims</p>
+                          <p className="text-xs text-muted-foreground mt-2">Pending claims</p>
                         </div>
                       </div>
-                      <div className="mt-4 pt-4 border-t-2 border-gray-200">
+                      <div className="mt-4 pt-4 border-t-2 border-border">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
                           <div>
-                            <p className="text-xs text-gray-600">Approved Claims</p>
+                            <p className="text-xs text-muted-foreground">Approved Claims</p>
                             <p className="text-lg font-bold text-green-700">₹{dashboardSummary.total_approved_amount?.toLocaleString() || 0}</p>
                           </div>
                           <div>
-                            <p className="text-xs text-gray-600">Pending Claims</p>
+                            <p className="text-xs text-muted-foreground">Pending Claims</p>
                             <p className="text-lg font-bold text-yellow-700">{claimStatusSummary?.Pending?.count || 0}</p>
                           </div>
                           <div>
-                            <p className="text-xs text-gray-600">Rejected Claims</p>
+                            <p className="text-xs text-muted-foreground">Rejected Claims</p>
                             <p className="text-lg font-bold text-red-700">{claimStatusSummary?.Rejected?.count || 0}</p>
                           </div>
                           <div>
-                            <p className="text-xs text-gray-600">Price Set</p>
+                            <p className="text-xs text-muted-foreground">Price Set</p>
                             <p className={`text-lg font-bold ${dashboardSummary.fuel_price_per_liter > 0 ? 'text-green-700' : 'text-red-700'}`}>
                               {dashboardSummary.fuel_price_per_liter > 0 ? '✓' : '✕'}
                             </p>
@@ -1537,8 +1537,8 @@ const Vehicles = () => {
                   {employeeSummary.length > 0 && (
                     <Card className="p-6 bg-white">
                       <div className="mb-6">
-                        <h3 className="text-lg font-bold text-gray-900 mb-2">Employee Journey Summary</h3>
-                        <p className="text-xs text-gray-600 mb-3">💡 Fuel Cost = Fuel Consumed × Price | Difference highlights over/under claims</p>
+                        <h3 className="text-lg font-bold text-foreground mb-2">Employee Journey Summary</h3>
+                        <p className="text-xs text-muted-foreground mb-3">💡 Fuel Cost = Fuel Consumed × Price | Difference highlights over/under claims</p>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs mb-4">
                           <div className="bg-green-50 border border-green-200 rounded p-2">
                             <span className="font-semibold text-green-800">✓ Correct Claim</span>
@@ -1548,24 +1548,24 @@ const Vehicles = () => {
                             <span className="font-semibold text-red-800">⚠ Over Claim</span>
                             <p className="text-red-700">Claimed more than 10% high</p>
                           </div>
-                          <div className="bg-gray-50 border border-gray-200 rounded p-2">
-                            <span className="font-semibold text-gray-800">! Under Claim</span>
-                            <p className="text-gray-700">Claimed more than 10% low</p>
+                          <div className="bg-muted border border-border rounded p-2">
+                            <span className="font-semibold text-foreground">! Under Claim</span>
+                            <p className="text-foreground">Claimed more than 10% low</p>
                           </div>
                         </div>
                       </div>
                       <div className="overflow-x-auto">
                         <table className="w-full">
                           <thead>
-                            <tr className="border-b-2 border-gray-200 bg-gray-50">
-                              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Employee Name</th>
-                              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Journeys</th>
-                              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">KM</th>
-                              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Fuel (L)</th>
-                              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Should Cost</th>
-                              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Claimed</th>
-                              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Difference</th>
-                              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Approved</th>
+                            <tr className="border-b-2 border-border bg-muted">
+                              <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">Employee Name</th>
+                              <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Journeys</th>
+                              <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">KM</th>
+                              <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Fuel (L)</th>
+                              <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Should Cost</th>
+                              <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Claimed</th>
+                              <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Difference</th>
+                              <th className="px-4 py-3 text-right text-sm font-semibold text-foreground">Approved</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1577,16 +1577,16 @@ const Vehicles = () => {
                               const underClaim = difference < -shouldCost * 0.1; // More than 10% under
                               
                               return (
-                                <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50 transition">
-                                  <td className="px-4 py-3 font-medium text-gray-900">{emp.employee_name}</td>
-                                  <td className="px-4 py-3 text-right text-gray-600">{emp.total_journeys}</td>
-                                  <td className="px-4 py-3 text-right text-gray-600">{emp.total_km.toFixed(1)}</td>
-                                  <td className="px-4 py-3 text-right text-gray-600">{emp.total_fuel.toFixed(2)}</td>
+                                <tr key={idx} className="border-b border-border hover:bg-muted transition">
+                                  <td className="px-4 py-3 font-medium text-foreground">{emp.employee_name}</td>
+                                  <td className="px-4 py-3 text-right text-muted-foreground">{emp.total_journeys}</td>
+                                  <td className="px-4 py-3 text-right text-muted-foreground">{emp.total_km.toFixed(1)}</td>
+                                  <td className="px-4 py-3 text-right text-muted-foreground">{emp.total_fuel.toFixed(2)}</td>
                                   <td className="px-4 py-3 text-right">
                                     <span className={`inline-block px-3 py-1 rounded text-sm font-semibold ${
                                       emp.fuel_price_per_liter > 0 
-                                        ? 'bg-blue-100 text-blue-800' 
-                                        : 'bg-gray-100 text-gray-600'
+                                        ? 'bg-accent text-accent-foreground' 
+                                        : 'bg-muted text-muted-foreground'
                                     }`}>
                                       ₹{shouldCost.toLocaleString()}
                                     </span>
@@ -1594,7 +1594,7 @@ const Vehicles = () => {
                                   <td className="px-4 py-3 text-right">
                                     <span className={`inline-block px-3 py-1 rounded text-sm font-semibold ${
                                       overClaim ? 'bg-red-100 text-red-800' : 
-                                      underClaim ? 'bg-gray-100 text-gray-800' :
+                                      underClaim ? 'bg-muted text-foreground' :
                                       'bg-green-100 text-green-800'
                                     }`}>
                                       ₹{claimed.toLocaleString()}
@@ -1603,8 +1603,8 @@ const Vehicles = () => {
                                   <td className="px-4 py-3 text-right">
                                     <span className={`inline-block px-3 py-1 rounded text-sm font-semibold whitespace-nowrap ${
                                       overClaim ? 'bg-red-100 text-red-800' :
-                                      underClaim ? 'bg-gray-100 text-gray-800' :
-                                      'bg-gray-100 text-gray-700'
+                                      underClaim ? 'bg-muted text-foreground' :
+                                      'bg-muted text-foreground'
                                     }`}>
                                       {difference > 0 ? '+' : ''} ₹{difference.toLocaleString()}
                                     </span>
@@ -1628,7 +1628,7 @@ const Vehicles = () => {
                     <Card className="p-6 bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200">
                       <div className="mb-6">
                         <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-bold text-gray-900">📋 Claims Approval Grid</h3>
+                          <h3 className="text-lg font-bold text-foreground">📋 Claims Approval Grid</h3>
                           <div className="flex gap-2">
                             {['Pending', 'Approved', 'Rejected', 'Partially-Approved', 'All'].map(status => (
                               <Button
@@ -1646,24 +1646,24 @@ const Vehicles = () => {
                             ))}
                           </div>
                         </div>
-                        <p className="text-xs text-gray-600">Date-wise view of all claims with approval status and calculated costs</p>
+                        <p className="text-xs text-muted-foreground">Date-wise view of all claims with approval status and calculated costs</p>
                       </div>
 
                       {approvalClaims.length > 0 ? (
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead>
-                              <tr className="border-b-2 border-gray-300 bg-purple-100">
-                                <th className="px-4 py-3 text-left font-semibold text-gray-700">Date</th>
-                                <th className="px-4 py-3 text-left font-semibold text-gray-700">Employee</th>
-                                <th className="px-4 py-3 text-left font-semibold text-gray-700">Vehicle</th>
-                                <th className="px-4 py-3 text-right font-semibold text-gray-700">KM</th>
-                                <th className="px-4 py-3 text-right font-semibold text-gray-700">Fuel (L)</th>
-                                <th className="px-4 py-3 text-right font-semibold text-gray-700">Should Cost</th>
-                                <th className="px-4 py-3 text-right font-semibold text-gray-700">Claimed</th>
-                                <th className="px-4 py-3 text-right font-semibold text-gray-700">Difference</th>
-                                <th className="px-4 py-3 text-center font-semibold text-gray-700">Status</th>
-                                <th className="px-4 py-3 text-center font-semibold text-gray-700">Action</th>
+                              <tr className="border-b-2 border-input bg-purple-100">
+                                <th className="px-4 py-3 text-left font-semibold text-foreground">Date</th>
+                                <th className="px-4 py-3 text-left font-semibold text-foreground">Employee</th>
+                                <th className="px-4 py-3 text-left font-semibold text-foreground">Vehicle</th>
+                                <th className="px-4 py-3 text-right font-semibold text-foreground">KM</th>
+                                <th className="px-4 py-3 text-right font-semibold text-foreground">Fuel (L)</th>
+                                <th className="px-4 py-3 text-right font-semibold text-foreground">Should Cost</th>
+                                <th className="px-4 py-3 text-right font-semibold text-foreground">Claimed</th>
+                                <th className="px-4 py-3 text-right font-semibold text-foreground">Difference</th>
+                                <th className="px-4 py-3 text-center font-semibold text-foreground">Status</th>
+                                <th className="px-4 py-3 text-center font-semibold text-foreground">Action</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1672,31 +1672,31 @@ const Vehicles = () => {
                                   'Pending': 'bg-yellow-50',
                                   'Approved': 'bg-green-50',
                                   'Rejected': 'bg-red-50',
-                                  'Partially-Approved': 'bg-blue-50'
-                                }[claim.claim_status] || 'bg-gray-50';
+                                  'Partially-Approved': 'bg-accent'
+                                }[claim.claim_status] || 'bg-muted';
 
                                 const statusColor = {
                                   'Pending': 'bg-yellow-100 text-yellow-800',
                                   'Approved': 'bg-green-100 text-green-800',
                                   'Rejected': 'bg-red-100 text-red-800',
-                                  'Partially-Approved': 'bg-blue-100 text-blue-800'
-                                }[claim.claim_status] || 'bg-gray-100 text-gray-800';
+                                  'Partially-Approved': 'bg-accent text-accent-foreground'
+                                }[claim.claim_status] || 'bg-muted text-foreground';
 
                                 return (
-                                  <tr key={idx} className={`border-b border-gray-200 hover:shadow-sm transition ${statusBgColor}`}>
-                                    <td className="px-4 py-3 text-gray-700 font-medium">
+                                  <tr key={idx} className={`border-b border-border hover:shadow-sm transition ${statusBgColor}`}>
+                                    <td className="px-4 py-3 text-foreground font-medium">
                                       {new Date(claim.created_at).toLocaleDateString('en-IN')}
                                     </td>
-                                    <td className="px-4 py-3 text-gray-900 font-medium">{claim.employee_name}</td>
-                                    <td className="px-4 py-3 text-gray-700">{claim.vehicle_name}</td>
-                                    <td className="px-4 py-3 text-right text-gray-700">{claim.km_driven?.toFixed(1)}</td>
-                                    <td className="px-4 py-3 text-right text-gray-700">{claim.fuel_consumed?.toFixed(2)}</td>
+                                    <td className="px-4 py-3 text-foreground font-medium">{claim.employee_name}</td>
+                                    <td className="px-4 py-3 text-foreground">{claim.vehicle_name}</td>
+                                    <td className="px-4 py-3 text-right text-foreground">{claim.km_driven?.toFixed(1)}</td>
+                                    <td className="px-4 py-3 text-right text-foreground">{claim.fuel_consumed?.toFixed(2)}</td>
                                     <td className="px-4 py-3 text-right">
-                                      <span className="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-semibold">
+                                      <span className="inline-block bg-accent text-accent-foreground px-2 py-1 rounded text-xs font-semibold">
                                         ₹{claim.calculated_fuel_cost?.toLocaleString()}
                                       </span>
                                     </td>
-                                    <td className="px-4 py-3 text-right text-gray-700 font-semibold">
+                                    <td className="px-4 py-3 text-right text-foreground font-semibold">
                                       ₹{claim.claimed_amount?.toLocaleString()}
                                     </td>
                                     <td className="px-4 py-3 text-right">
@@ -1727,7 +1727,7 @@ const Vehicles = () => {
                                           <CheckCircle className="h-3 w-3 mr-1" /> Approve
                                         </Button>
                                       ) : (
-                                        <span className="text-xs text-gray-500">Processed</span>
+                                        <span className="text-xs text-muted-foreground">Processed</span>
                                       )}
                                     </td>
                                   </tr>
@@ -1738,7 +1738,7 @@ const Vehicles = () => {
                         </div>
                       ) : (
                         <div className="text-center py-8">
-                          <p className="text-gray-600">No {approvalFilter !== 'All' ? approvalFilter.toLowerCase() : 'pending'} claims</p>
+                          <p className="text-muted-foreground">No {approvalFilter !== 'All' ? approvalFilter.toLowerCase() : 'pending'} claims</p>
                         </div>
                       )}
                     </Card>
@@ -1753,35 +1753,35 @@ const Vehicles = () => {
       {/* APPROVAL DIALOG */}
       {selectedClaimForApproval && (
         <Dialog open={approvalDialogOpen} onOpenChange={setApprovalDialogOpen}>
-          <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl text-gray-900">
+          <DialogContent className="max-w-lg bg-white rounded-lg border border-border shadow-xl text-foreground">
             <DialogHeader>
-              <DialogTitle className="text-gray-900">Approve Fuel Claim</DialogTitle>
-              <DialogDescription className="text-gray-600">Review and approve the fuel expense claim</DialogDescription>
+              <DialogTitle className="text-foreground">Approve Fuel Claim</DialogTitle>
+              <DialogDescription className="text-muted-foreground">Review and approve the fuel expense claim</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="bg-gray-50 border rounded-lg p-4 space-y-2 text-sm text-gray-900">
+              <div className="bg-muted border rounded-lg p-4 space-y-2 text-sm text-foreground">
                 <div className="flex justify-between">
-                  <span className="text-gray-700 font-medium">Employee:</span>
-                  <span className="font-semibold text-gray-900">{selectedClaimForApproval.employee_name}</span>
+                  <span className="text-foreground font-medium">Employee:</span>
+                  <span className="font-semibold text-foreground">{selectedClaimForApproval.employee_name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-700 font-medium">Vehicle:</span>
-                  <span className="font-semibold text-gray-900">{selectedClaimForApproval.vehicle_name}</span>
+                  <span className="text-foreground font-medium">Vehicle:</span>
+                  <span className="font-semibold text-foreground">{selectedClaimForApproval.vehicle_name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-700 font-medium">Fuel Consumed:</span>
-                  <span className="font-semibold text-gray-900">{selectedClaimForApproval.fuel_consumed?.toFixed(2)} L</span>
+                  <span className="text-foreground font-medium">Fuel Consumed:</span>
+                  <span className="font-semibold text-foreground">{selectedClaimForApproval.fuel_consumed?.toFixed(2)} L</span>
                 </div>
                 <div className="border-t pt-2 flex justify-between">
-                  <span className="text-gray-700 font-medium">Should Cost (Calculated):</span>
-                  <span className="font-bold text-blue-600">₹{selectedClaimForApproval.calculated_fuel_cost?.toLocaleString()}</span>
+                  <span className="text-foreground font-medium">Should Cost (Calculated):</span>
+                  <span className="font-bold text-accent-foreground">₹{selectedClaimForApproval.calculated_fuel_cost?.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-700 font-medium">Claimed Amount:</span>
+                  <span className="text-foreground font-medium">Claimed Amount:</span>
                   <span className="font-bold text-orange-600">₹{selectedClaimForApproval.claimed_amount?.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between pt-2 border-t">
-                  <span className="text-gray-700 font-medium">Difference:</span>
+                  <span className="text-foreground font-medium">Difference:</span>
                   <span className={`font-bold ${selectedClaimForApproval.difference > 0 ? 'text-red-600' : 'text-green-600'}`}>
                     {selectedClaimForApproval.difference > 0 ? '+' : ''} ₹{selectedClaimForApproval.difference?.toLocaleString()}
                   </span>
@@ -1789,8 +1789,8 @@ const Vehicles = () => {
               </div>
 
               <div>
-                <Label className="text-gray-900">Approval Action</Label>
-                <select
+                <Label htmlFor="vehicles-field-12" className="text-foreground">Approval Action</Label>
+                <select id="vehicles-field-12"
                   value={approvalAction}
                   onChange={(e) => {
                     setApprovalAction(e.target.value);
@@ -1800,7 +1800,7 @@ const Vehicles = () => {
                       setApprovalAmount(selectedClaimForApproval.calculated_fuel_cost?.toString() || '');
                     }
                   }}
-                  className="w-full border rounded px-3 py-2 text-gray-900 bg-white"
+                  className="w-full border rounded px-3 py-2 text-foreground bg-white"
                 >
                   <option value="Approved">Approve (Full Amount)</option>
                   <option value="Partially-Approved">Partially Approve (Custom Amount)</option>
@@ -1810,8 +1810,8 @@ const Vehicles = () => {
 
               {approvalAction === 'Partially-Approved' && (
                 <div>
-                  <Label className="text-gray-900">Approved Amount (₹)</Label>
-                  <Input
+                  <Label htmlFor="vehicles-field-13" className="text-foreground">Approved Amount (₹)</Label>
+                  <Input id="vehicles-field-13"
                     type="number"
                     value={approvalAmount}
                     onChange={(e) => setApprovalAmount(e.target.value)}
@@ -1821,8 +1821,8 @@ const Vehicles = () => {
               )}
 
               <div>
-                <Label>Notes (Optional)</Label>
-                <textarea
+                <Label htmlFor="vehicles-field-14">Notes (Optional)</Label>
+                <textarea id="vehicles-field-14"
                   value={approvalNotes}
                   onChange={(e) => setApprovalNotes(e.target.value)}
                   className="w-full border rounded px-3 py-2 text-sm"
@@ -1858,26 +1858,26 @@ const Vehicles = () => {
 // DIALOG COMPONENTS
 const CreateVehicleDialog = ({ open, onOpenChange, newVehicle, setNewVehicle, onSubmit, loading }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl text-gray-900">
+    <DialogContent className="max-w-lg bg-white rounded-lg border border-border shadow-xl text-foreground">
       <DialogHeader>
-        <DialogTitle className="text-gray-900">Create New Vehicle</DialogTitle>
-        <DialogDescription className="text-gray-600">Add a new company vehicle</DialogDescription>
+        <DialogTitle className="text-foreground">Create New Vehicle</DialogTitle>
+        <DialogDescription className="text-muted-foreground">Add a new company vehicle</DialogDescription>
       </DialogHeader>
       <div className="space-y-4">
         <div>
-          <Label className="text-gray-900">Vehicle Name *</Label>
-          <Input
+          <Label htmlFor="vehicles-field-15" className="text-foreground">Vehicle Name *</Label>
+          <Input id="vehicles-field-15"
             value={newVehicle.vehicle_name}
             onChange={e => setNewVehicle({ ...newVehicle, vehicle_name: e.target.value })}
             placeholder="e.g., Toyota Innova"
           />
         </div>
         <div>
-          <Label className="text-gray-900">Vehicle Type *</Label>
-          <select
+          <Label htmlFor="vehicles-field-16" className="text-foreground">Vehicle Type *</Label>
+          <select id="vehicles-field-16"
             value={newVehicle.vehicle_type}
             onChange={e => setNewVehicle({ ...newVehicle, vehicle_type: e.target.value })}
-            className="w-full border rounded px-3 py-2 text-gray-900 bg-white"
+            className="w-full border rounded px-3 py-2 text-foreground bg-white"
           >
             <option>Car</option>
             <option>Bike</option>
@@ -1886,11 +1886,11 @@ const CreateVehicleDialog = ({ open, onOpenChange, newVehicle, setNewVehicle, on
           </select>
         </div>
         <div>
-          <Label className="text-gray-900">Fuel Type *</Label>
-          <select
+          <Label htmlFor="vehicles-field-17" className="text-foreground">Fuel Type *</Label>
+          <select id="vehicles-field-17"
             value={newVehicle.fuel_type}
             onChange={e => setNewVehicle({ ...newVehicle, fuel_type: e.target.value })}
-            className="w-full border rounded px-3 py-2 text-gray-900 bg-white"
+            className="w-full border rounded px-3 py-2 text-foreground bg-white"
           >
             <option>Petrol</option>
             <option>Diesel</option>
@@ -1898,16 +1898,16 @@ const CreateVehicleDialog = ({ open, onOpenChange, newVehicle, setNewVehicle, on
           </select>
         </div>
         <div>
-          <Label className="text-gray-900">Registration Number *</Label>
-          <Input
+          <Label htmlFor="vehicles-field-18" className="text-foreground">Registration Number *</Label>
+          <Input id="vehicles-field-18"
             value={newVehicle.registration_number}
             onChange={e => setNewVehicle({ ...newVehicle, registration_number: e.target.value })}
             placeholder="e.g., MH-01-AB-1234"
           />
         </div>
         <div>
-          <Label className="text-gray-900">Mileage (km/liter) *</Label>
-          <Input
+          <Label htmlFor="vehicles-field-19" className="text-foreground">Mileage (km/liter) *</Label>
+          <Input id="vehicles-field-19"
             type="number"
             value={newVehicle.milage}
             onChange={e => setNewVehicle({ ...newVehicle, milage: e.target.value })}
@@ -1915,7 +1915,7 @@ const CreateVehicleDialog = ({ open, onOpenChange, newVehicle, setNewVehicle, on
             step="0.1"
           />
         </div>
-        <Button onClick={onSubmit} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700">
+        <Button onClick={onSubmit} disabled={loading} className="w-full bg-primary hover:bg-primary/90">
           {loading ? 'Creating...' : 'Create'}
         </Button>
       </div>
@@ -1925,13 +1925,13 @@ const CreateVehicleDialog = ({ open, onOpenChange, newVehicle, setNewVehicle, on
 
 const VehiclePhotoDialog = ({ open, onOpenChange, vehiclePhotoFile, setVehiclePhotoFile, onUpload, loading }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl text-gray-900">
+    <DialogContent className="max-w-lg bg-white rounded-lg border border-border shadow-xl text-foreground">
       <DialogHeader>
-        <DialogTitle className="text-gray-900">Upload Vehicle Photo</DialogTitle>
+        <DialogTitle className="text-foreground">Upload Vehicle Photo</DialogTitle>
       </DialogHeader>
       <div className="space-y-4">
         <Input type="file" accept="image/*" onChange={e => setVehiclePhotoFile(e.target.files?.[0] || null)} />
-        <Button onClick={onUpload} disabled={!vehiclePhotoFile || loading} className="w-full bg-blue-600 hover:bg-blue-700">
+        <Button onClick={onUpload} disabled={!vehiclePhotoFile || loading} className="w-full bg-primary hover:bg-primary/90">
           {loading ? 'Uploading...' : 'Upload'}
         </Button>
       </div>

@@ -67,7 +67,7 @@ export default function SuppliersPage() {
         <input className={inputClass} value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} placeholder="Search suppliers" aria-label="Search suppliers" />
         {loading ? <Spinner /> : rows.length === 0 ? <EmptyState title="No suppliers" /> : (
           <table className="min-w-full text-sm">
-            <thead className="text-left text-xs uppercase text-slate-600"><tr><th className="py-2">Name</th><th className="py-2">Phone</th><th className="py-2">Status</th><th /></tr></thead>
+            <thead className="text-left text-xs uppercase text-muted-foreground"><tr><th className="py-2">Name</th><th className="py-2">Phone</th><th className="py-2">Status</th><th /></tr></thead>
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id} className="border-t border-border">

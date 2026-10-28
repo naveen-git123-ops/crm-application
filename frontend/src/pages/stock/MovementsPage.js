@@ -71,7 +71,7 @@ export default function MovementsPage() {
       {loading ? <Spinner /> : rows.length === 0 ? <EmptyState title="No ledger entries" detail="Receipts, transfers, and adjustments appear here." /> : (
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-600">
+            <thead className="bg-muted text-left text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-3 py-3">Date</th>
                 <th className="px-3 py-3">Number</th>
@@ -113,7 +113,7 @@ export default function MovementsPage() {
         <form onSubmit={reverse} className="border border-border rounded-lg p-4 space-y-3">
           <h2 className="font-semibold">Reverse transaction</h2>
           <p className="text-sm text-muted-foreground">This posts a compensating entry. The original line stays on the ledger.</p>
-          <textarea className={`${inputClass} h-20`} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason" required />
+          <textarea aria-label="Reason" className={`${inputClass} h-20`} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason" required />
           <div className="flex gap-2">
             <Button type="submit" disabled={saving}>{saving ? 'Posting…' : 'Post reversal'}</Button>
             <Button type="button" variant="outline" onClick={() => setTarget(null)}>Cancel</Button>

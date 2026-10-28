@@ -123,7 +123,7 @@ const nameInitials = (name) => {
 const deriveDayCellModel = (record, isFutureDate, isSunday, isHoliday) => {
   let statusText = '';
   let letter = '–';
-  let circleClass = 'bg-slate-100 text-slate-400';
+  let circleClass = 'bg-muted text-muted-foreground';
 
   if (isSunday || isHoliday) {
     statusText = isSunday ? 'Sunday' : 'Holiday';
@@ -134,7 +134,7 @@ const deriveDayCellModel = (record, isFutureDate, isSunday, isHoliday) => {
   if (isFutureDate) {
     statusText = 'No Data';
     letter = '–';
-    circleClass = 'bg-slate-50 text-slate-300';
+    circleClass = 'bg-muted text-slate-300';
     return { letter, circleClass, statusText };
   }
   if (!record) {
@@ -1215,7 +1215,7 @@ export const Attendance = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -1290,7 +1290,7 @@ export const Attendance = () => {
       {(canManageAttendanceGrid || canViewOwnAttendanceGrid) && activeTab === 'grid' && (
         <Card className="overflow-hidden p-5 sm:p-6">
           {/* <div className="mb-4">
-            <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
               {canViewOwnAttendanceGrid ? 'My attendance grid' : 'Attendance grid dashboard'}
             </h3>
           </div> */}
@@ -1298,49 +1298,49 @@ export const Attendance = () => {
           <div className="mb-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl border border-border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground sm:gap-2 sm:px-3 sm:py-2 sm:text-sm">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-bold text-white">
                 P
               </span>
               Present
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-500 text-[11px] font-bold text-white">
                 X
               </span>
               Absent
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-500 text-[10px] font-bold text-white">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-500 text-[11px] font-bold text-white">
                 L
               </span>
               Leave
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal-500 text-[10px] font-bold text-white">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal-500 text-[11px] font-bold text-white">
                 H
               </span>
               Half day
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-[11px] font-bold text-white">
                 O
               </span>
               Late / incomplete
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-fuchsia-400 text-[10px] font-bold text-white">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-fuchsia-400 text-[11px] font-bold text-white">
                 T
               </span>
               Tour
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-500 text-[10px] font-bold text-white">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-500 text-[11px] font-bold text-white">
                 !
               </span>
               Pending
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-100 text-[10px] font-bold text-sky-700 ring-1 ring-sky-200">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-100 text-[11px] font-bold text-sky-700 ring-1 ring-sky-200">
                 –
               </span>
               Sun / holiday
@@ -1410,7 +1410,7 @@ export const Attendance = () => {
                 </div>
               )}
               {gridViewMode === 'today' && (
-                <div className="rounded-xl bg-white px-3 py-1.5 text-center text-xs font-semibold text-slate-700 ring-1 ring-slate-200 sm:text-sm">
+                <div className="rounded-xl bg-white px-3 py-1.5 text-center text-xs font-semibold text-foreground ring-1 ring-slate-200 sm:text-sm">
                   {format(new Date(), 'MMM d, yyyy')}
                 </div>
               )}
@@ -1420,8 +1420,8 @@ export const Attendance = () => {
           {gridViewMode === 'month' && (
             <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
               <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input aria-label="Search by name or employee ID…"
                   type="search"
                   value={gridSearch}
                   onChange={(e) => setGridSearch(e.target.value)}
@@ -1431,7 +1431,7 @@ export const Attendance = () => {
               </div>
               {canManageAttendanceGrid && departmentOptions.length > 0 && (
                 <div className="relative sm:w-56">
-                  <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <select
                     value={gridDepartmentFilter}
                     onChange={(e) => setGridDepartmentFilter(e.target.value)}
@@ -1451,12 +1451,12 @@ export const Attendance = () => {
 
           {gridLoading ? (
             <div className="flex justify-center py-12">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+              <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
             </div>
           ) : gridViewMode === 'today' ? (
             <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
               {(canManageAttendanceGrid ? employees : user?.employee_id ? [{ employee_id: user.employee_id, name: user.name }] : []).length === 0 ? (
-                <p className="col-span-full py-12 text-center text-sm text-slate-500">No employee data available.</p>
+                <p className="col-span-full py-12 text-center text-sm text-muted-foreground">No employee data available.</p>
               ) : (
                 (canManageAttendanceGrid ? employees : [{ employee_id: user.employee_id, name: user.name }]).map((emp) => {
                   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -1499,7 +1499,7 @@ export const Attendance = () => {
                   return (
                     <div
                       key={emp.employee_id}
-                      className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]"
+                      className="overflow-hidden rounded-2xl border border-border bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]"
                     >
                       <div
                         className={`bg-gradient-to-r px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-white ${stripClass}`}
@@ -1508,12 +1508,12 @@ export const Attendance = () => {
                       </div>
                       <div className="space-y-4 p-4 sm:p-5">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600 ring-2 ring-white shadow-sm">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-bold text-muted-foreground ring-2 ring-white shadow-sm">
                             {nameInitials(emp.name)}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate font-semibold text-slate-900">{emp.name}</p>
-                            <p className="text-xs text-slate-500">
+                            <p className="truncate font-semibold text-foreground">{emp.name}</p>
+                            <p className="text-xs text-muted-foreground">
                               {emp.employee_id}
                               <span className="text-slate-300"> · </span>
                               {dept}
@@ -1527,7 +1527,7 @@ export const Attendance = () => {
                           </div>
                         </div>
                         <div>
-                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             Last 7 days
                           </p>
                           <div className="flex flex-wrap gap-1.5">
@@ -1544,7 +1544,7 @@ export const Attendance = () => {
                                 <div
                                   key={ds}
                                   title={`${format(d, 'EEE d MMM')}: ${m.statusText}`}
-                                  className={`flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-bold ${m.circleClass}`}
+                                  className={`flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold ${m.circleClass}`}
                                 >
                                   {m.letter}
                                 </div>
@@ -1556,7 +1556,7 @@ export const Attendance = () => {
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-11 w-full rounded-xl border-slate-200 font-semibold text-slate-800 hover:bg-slate-50"
+                            className="h-11 w-full rounded-xl border-border font-semibold text-foreground hover:bg-muted"
                             onClick={() => setActiveTab('punch')}
                           >
                             Mark today&apos;s status
@@ -1570,11 +1570,11 @@ export const Attendance = () => {
             </div>
           ) : (
             <>
-            <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-slate-50/40 shadow-inner">
+            <div className="overflow-x-auto rounded-2xl border border-border bg-muted/40 shadow-inner">
               <table className="w-full border-collapse text-xs sm:text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200/80">
-                    <th className="sticky left-0 z-20 min-w-[200px] border-b border-r border-slate-200 bg-slate-100/95 p-3 text-left text-[11px] font-bold uppercase tracking-wide text-slate-600 backdrop-blur-sm sm:min-w-[220px]">
+                  <tr className="border-b border-border/80">
+                    <th className="sticky left-0 z-20 min-w-[200px] border-b border-r border-border bg-muted/95 p-3 text-left text-xs font-bold uppercase tracking-wide text-muted-foreground backdrop-blur-sm sm:min-w-[220px]">
                       Employee
                     </th>
                     {(() => {
@@ -1590,31 +1590,31 @@ export const Attendance = () => {
                         return (
                           <th
                             key={dateStr}
-                            className={`min-w-[42px] border-b border-l border-slate-200 p-1.5 text-center font-semibold sm:min-w-[48px] sm:p-2 ${
+                            className={`min-w-[42px] border-b border-l border-border p-1.5 text-center font-semibold sm:min-w-[48px] sm:p-2 ${
                               isSunday || isHoliday
                                 ? 'bg-sky-100 text-sky-800'
                                 : isWeekend(day)
-                                  ? 'bg-slate-100 text-slate-500'
-                                  : 'bg-white text-slate-700'
+                                  ? 'bg-muted text-muted-foreground'
+                                  : 'bg-white text-foreground'
                             }`}
                             title={format(day, 'EEEE, MMM dd')}
                           >
-                            <div className="text-[10px] font-bold leading-none opacity-80">{format(day, 'EEE')}</div>
+                            <div className="text-[11px] font-bold leading-none opacity-80">{format(day, 'EEE')}</div>
                             <div className="mt-1 text-xs tabular-nums">{getDate(day)}</div>
                           </th>
                         );
                       });
                     })()}
-                    <th className="min-w-[100px] border-b border-l border-slate-200 bg-slate-100 p-2 text-center text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                    <th className="min-w-[100px] border-b border-l border-border bg-muted p-2 text-center text-xs font-bold uppercase tracking-wide text-muted-foreground">
                       Present / days
                     </th>
-                    <th className="min-w-[72px] border-b border-l border-slate-200 bg-slate-100 p-2 text-center text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                    <th className="min-w-[72px] border-b border-l border-border bg-muted p-2 text-center text-xs font-bold uppercase tracking-wide text-muted-foreground">
                       Half day
                     </th>
-                    <th className="min-w-[72px] border-b border-l border-slate-200 bg-slate-100 p-2 text-center text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                    <th className="min-w-[72px] border-b border-l border-border bg-muted p-2 text-center text-xs font-bold uppercase tracking-wide text-muted-foreground">
                       Tours
                     </th>
-                    <th className="min-w-[88px] border-b border-l border-slate-200 bg-slate-100 p-2 text-center text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                    <th className="min-w-[88px] border-b border-l border-border bg-muted p-2 text-center text-xs font-bold uppercase tracking-wide text-muted-foreground">
                       Late logins
                     </th>
                   </tr>
@@ -1622,13 +1622,13 @@ export const Attendance = () => {
                 <tbody>
                   {gridRowsSorted.length === 0 ? (
                     <tr>
-                      <td colSpan={daysInGridMonth + 5} className="p-10 text-center text-sm text-slate-500">
+                      <td colSpan={daysInGridMonth + 5} className="p-10 text-center text-sm text-muted-foreground">
                         No attendance data yet for this month.
                       </td>
                     </tr>
                   ) : filteredGridRowsForTable.length === 0 ? (
                     <tr>
-                      <td colSpan={daysInGridMonth + 5} className="p-10 text-center text-sm text-slate-500">
+                      <td colSpan={daysInGridMonth + 5} className="p-10 text-center text-sm text-muted-foreground">
                         No employees match your search or department filter.
                       </td>
                     </tr>
@@ -1636,17 +1636,17 @@ export const Attendance = () => {
                     pagedGridRows.map((empData, rowIdx) => (
                       <tr
                         key={empData.employee_id}
-                        className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'}
+                        className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-muted/80'}
                       >
-                        <td className="sticky left-0 z-10 min-w-[200px] border-b border-r border-slate-100 bg-inherit p-3 text-left sm:min-w-[220px]">
+                        <td className="sticky left-0 z-10 min-w-[200px] border-b border-r border-border bg-inherit p-3 text-left sm:min-w-[220px]">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200/90 text-xs font-bold text-slate-700 ring-2 ring-white shadow-sm">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200/90 text-xs font-bold text-foreground ring-2 ring-white shadow-sm">
                               {nameInitials(empData.employee_name)}
                             </div>
                             <div className="min-w-0">
-                              <div className="truncate font-semibold text-slate-900">{empData.employee_name}</div>
-                              <div className="text-[11px] font-medium text-slate-500">{empData.employee_id}</div>
-                              <div className="truncate text-[11px] text-slate-400">
+                              <div className="truncate font-semibold text-foreground">{empData.employee_name}</div>
+                              <div className="text-xs font-medium text-muted-foreground">{empData.employee_id}</div>
+                              <div className="truncate text-xs text-muted-foreground">
                                 {getDeptForGridRow(empData.employee_id)}
                               </div>
                             </div>
@@ -1702,13 +1702,13 @@ export const Attendance = () => {
                             return (
                               <td
                                 key={dateStr}
-                                className={`cursor-default border-b border-l border-slate-100 p-1.5 text-center transition-colors hover:bg-slate-100/80 sm:p-2 ${
-                                  isWeekend(day) ? 'bg-slate-50/50' : 'bg-white/80'
+                                className={`cursor-default border-b border-l border-border p-1.5 text-center transition-colors hover:bg-muted/80 sm:p-2 ${
+                                  isWeekend(day) ? 'bg-muted/50' : 'bg-white/80'
                                 }`}
                                 title={`${empData.employee_name} — ${format(day, 'EEEE, MMM dd')}: ${statusText}${punchHint}`}
                               >
                                 <div
-                                  className={`mx-auto flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold leading-none ${circleClass}`}
+                                  className={`mx-auto flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold leading-none ${circleClass}`}
                                 >
                                   {letter}
                                 </div>
@@ -1719,16 +1719,16 @@ export const Attendance = () => {
                           return (
                             <>
                               {cells}
-                              <td className="border-b border-l border-slate-100 bg-slate-50/90 p-2 text-center text-sm font-bold tabular-nums text-slate-800 whitespace-nowrap">
+                              <td className="border-b border-l border-border bg-muted/90 p-2 text-center text-sm font-bold tabular-nums text-foreground whitespace-nowrap">
                                 {formatDayCount(presentDays)} / {totalWorkingDays}
                               </td>
-                              <td className="border-b border-l border-slate-100 bg-slate-50/90 p-2 text-center text-sm font-bold tabular-nums text-teal-600 whitespace-nowrap">
+                              <td className="border-b border-l border-border bg-muted/90 p-2 text-center text-sm font-bold tabular-nums text-teal-600 whitespace-nowrap">
                                 {halfDayCount}
                               </td>
-                              <td className="border-b border-l border-slate-100 bg-slate-50/90 p-2 text-center text-sm font-bold tabular-nums text-fuchsia-600 whitespace-nowrap">
+                              <td className="border-b border-l border-border bg-muted/90 p-2 text-center text-sm font-bold tabular-nums text-fuchsia-600 whitespace-nowrap">
                                 {tourCount}
                               </td>
-                              <td className="border-b border-l border-slate-100 bg-slate-50/90 p-2 text-center text-sm font-bold tabular-nums text-emerald-600 whitespace-nowrap">
+                              <td className="border-b border-l border-border bg-muted/90 p-2 text-center text-sm font-bold tabular-nums text-emerald-600 whitespace-nowrap">
                                 {lateLoginCount}
                               </td>
                             </>
@@ -1741,11 +1741,11 @@ export const Attendance = () => {
               </table>
             </div>
             {filteredGridRowsForTable.length > GRID_PAGE_SIZE && (
-              <div className="mt-5 flex flex-col items-stretch justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center">
-                <p className="text-center text-xs text-slate-600 sm:text-left">
-                  Page <span className="font-bold text-slate-900">{gridPage}</span> of{' '}
-                  <span className="font-bold text-slate-900">{gridPageCount}</span>
-                  <span className="text-slate-400"> · </span>
+              <div className="mt-5 flex flex-col items-stretch justify-between gap-3 rounded-2xl border border-border bg-muted/80 px-4 py-3 sm:flex-row sm:items-center">
+                <p className="text-center text-xs text-muted-foreground sm:text-left">
+                  Page <span className="font-bold text-foreground">{gridPage}</span> of{' '}
+                  <span className="font-bold text-foreground">{gridPageCount}</span>
+                  <span className="text-muted-foreground"> · </span>
                   {filteredGridRowsForTable.length} employees
                 </p>
                 <div className="flex justify-center gap-2 sm:justify-end">
@@ -1753,7 +1753,7 @@ export const Attendance = () => {
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-9 rounded-xl border-slate-200"
+                    className="h-9 rounded-xl border-border"
                     onClick={() => setGridPage((p) => Math.max(1, p - 1))}
                     disabled={gridPage <= 1}
                     aria-label="Previous page"
@@ -1764,7 +1764,7 @@ export const Attendance = () => {
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-9 rounded-xl border-slate-200"
+                    className="h-9 rounded-xl border-border"
                     onClick={() => setGridPage((p) => Math.min(gridPageCount, p + 1))}
                     disabled={gridPage >= gridPageCount}
                     aria-label="Next page"
@@ -1783,17 +1783,17 @@ export const Attendance = () => {
       {canManageAttendanceFull && activeTab === 'regularize' && (
         <Card className="p-5 sm:p-6">
           <div className="mb-6">
-            <h3 className="text-lg font-semibold text-gray-900">Regularize Attendance</h3>
-            <p className="text-sm text-gray-600 mt-1">Mark an employee as present for a specific date with standard office hours (9:15 AM - 7:00 PM)</p>
+            <h3 className="text-lg font-semibold text-foreground">Regularize Attendance</h3>
+            <p className="text-sm text-muted-foreground mt-1">Mark an employee as present for a specific date with standard office hours (9:15 AM - 7:00 PM)</p>
           </div>
 
           <div className="space-y-4 max-w-md">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Employee*</label>
-              <select
+              <label htmlFor="attendance-field-1" className="block text-sm font-medium text-foreground mb-2">Select Employee*</label>
+              <select id="attendance-field-1"
                 value={regularizeEmployee}
                 onChange={(e) => setRegularizeEmployee(e.target.value)}
-                className="flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                className="flex h-10 w-full rounded-lg border border-input bg-white px-3 py-2 text-sm text-foreground"
               >
                 <option value="">Choose an employee</option>
                 {employees.map((emp) => (
@@ -1805,21 +1805,21 @@ export const Attendance = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Date*</label>
-              <input
+              <label htmlFor="attendance-field-2" className="block text-sm font-medium text-foreground mb-2">Select Date*</label>
+              <input id="attendance-field-2"
                 type="date"
                 value={regularizeDate}
                 onChange={(e) => setRegularizeDate(e.target.value)}
-                className="flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                className="flex h-10 w-full rounded-lg border border-input bg-white px-3 py-2 text-sm text-foreground"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Action*</label>
-              <select
+              <label htmlFor="attendance-field-3" className="block text-sm font-medium text-foreground mb-2">Action*</label>
+              <select id="attendance-field-3"
                 value={regularizeAction}
                 onChange={(e) => setRegularizeAction(e.target.value)}
-                className="flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                className="flex h-10 w-full rounded-lg border border-input bg-white px-3 py-2 text-sm text-foreground"
               >
                 <option value="present">Mark Present</option>
                 <option value="absent">Mark Absent</option>
@@ -1885,12 +1885,12 @@ export const Attendance = () => {
 
           {canSelectPunchEmployee && (
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Employee</label>
-              <select
+              <label htmlFor="attendance-field-4" className="block text-sm font-medium text-foreground mb-2">Select Employee</label>
+              <select id="attendance-field-4"
                 data-testid="employee-select"
                 value={selectedEmployee}
                 onChange={(e) => setSelectedEmployee(e.target.value)}
-                className="flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                className="flex h-10 w-full rounded-lg border border-input bg-white px-3 py-2 text-sm text-foreground"
               >
                 <option value="">Select an employee</option>
                 {employees.map((emp) => (
@@ -1943,25 +1943,25 @@ export const Attendance = () => {
               {/* Summary Cards */}
               <div className="p-4 bg-muted/50 rounded-xl border border-border grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
-                  <p className="text-muted-foreground text-[11px] uppercase font-semibold tracking-[0.06em]">First Punch In</p>
+                  <p className="text-muted-foreground text-xs uppercase font-semibold tracking-[0.06em]">First Punch In</p>
                   <p className="font-mono font-semibold text-foreground text-lg">{formatPunchTime(todayAttendance.punch_in)}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-[11px] uppercase font-semibold tracking-[0.06em]">Last Punch Out</p>
+                  <p className="text-muted-foreground text-xs uppercase font-semibold tracking-[0.06em]">Last Punch Out</p>
                   <p className="font-mono font-semibold text-foreground text-lg">{formatPunchTime(todayAttendance.punch_out)}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-[11px] uppercase font-semibold tracking-[0.06em]">Total Work Hours</p>
+                  <p className="text-muted-foreground text-xs uppercase font-semibold tracking-[0.06em]">Total Work Hours</p>
                   <p className="font-mono font-semibold text-foreground text-lg">{totalWorkHours?.toFixed(2) ?? 0} hrs</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-[11px] uppercase font-semibold tracking-[0.06em]">Status</p>
+                  <p className="text-muted-foreground text-xs uppercase font-semibold tracking-[0.06em]">Status</p>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
                       className={`inline-block px-2 py-1 rounded text-xs font-medium ${
                         todayAttendance.status === 'Present' ? 'bg-green-100 text-green-700' :
                         todayAttendance.status === 'Late' ? 'bg-amber-100 text-amber-700' :
-                        'bg-gray-200 text-gray-700'
+                        'bg-gray-200 text-foreground'
                       }`}
                     >
                       {todayAttendance.status}
@@ -1971,7 +1971,7 @@ export const Attendance = () => {
                 </div>
               </div>
               {isPunchedIn && !canSelectPunchEmployee && (
-                <p className="mt-3 text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                <p className="mt-3 text-xs text-accent-foreground bg-accent border border-primary/20 rounded-lg px-3 py-2">
                   GPS tracking is on while you are punched in. Keep this browser tab open (or install the app on your
                   phone) so your route appears on the admin Location Tracker map.
                 </p>
@@ -1979,20 +1979,20 @@ export const Attendance = () => {
 
               {/* Sessions History */}
               {todaySessions.length > 0 && (
-                <div className="p-4 bg-white rounded-lg border border-gray-200">
-                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Work Sessions ({todaySessions.length})</h4>
+                <div className="p-4 bg-white rounded-lg border border-border">
+                  <h4 className="text-sm font-semibold text-foreground mb-3">Work Sessions ({todaySessions.length})</h4>
                   <div className="space-y-2">
                     {todaySessions.map((session, idx) => (
-                      <div key={session.id} className="flex items-start justify-between p-3 bg-gray-50 rounded border border-gray-200 text-sm">
+                      <div key={session.id} className="flex items-start justify-between p-3 bg-muted rounded border border-border text-sm">
                         <div className="flex-1">
-                          <p className="font-medium text-gray-900">Session {session.session_number}</p>
-                          <p className="text-gray-600 text-xs">
+                          <p className="font-medium text-foreground">Session {session.session_number}</p>
+                          <p className="text-muted-foreground text-xs">
                             <span className="font-mono">{formatPunchTime(session.punch_in)}</span>
                             {session.punch_out && <> → <span className="font-mono">{formatPunchTime(session.punch_out)}</span></>}
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-medium text-gray-900">{session.work_hours.toFixed(2)} hrs</p>
+                          <p className="font-medium text-foreground">{session.work_hours.toFixed(2)} hrs</p>
                           {session.is_tour === 1 && <p className="text-xs text-amber-600">Tour</p>}
                         </div>
                       </div>
@@ -2020,11 +2020,11 @@ export const Attendance = () => {
         <Card className="p-5 sm:p-6 overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                 <Briefcase className="h-5 w-5 text-amber-600" />
                 Tour Requests (Punch outside office)
               </h3>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 Employees who punched in/out outside 50 m of office. View pending/approved/rejected history.
               </p>
             </div>
@@ -2056,7 +2056,7 @@ export const Attendance = () => {
               <select
                 value={tourEmployeeFilter}
                 onChange={(e) => setTourEmployeeFilter(e.target.value)}
-                className="h-9 rounded-lg border border-gray-300 px-3 text-sm text-gray-900 bg-white min-w-[220px]"
+                className="h-9 rounded-lg border border-input px-3 text-sm text-foreground bg-white min-w-[220px]"
               >
                 <option value="">All employees</option>
                 {Array.from(new Set((tourPending || []).map((r) => r.employee_name).filter(Boolean))).sort().map((name) => (
@@ -2078,24 +2078,24 @@ export const Attendance = () => {
 
           {tourLoading ? (
             <div className="flex justify-center py-8">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+              <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
             </div>
           ) : tourPending.filter((row) => !tourEmployeeFilter || row.employee_name === tourEmployeeFilter).length === 0 ? (
-            <p className="text-center py-8 text-gray-500">No {tourStatusFilter.toLowerCase()} tour requests.</p>
+            <p className="text-center py-8 text-muted-foreground">No {tourStatusFilter.toLowerCase()} tour requests.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Date</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch In (IST)</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch Out (IST)</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Hours</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Tour Place</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Tour Reason</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Approval Status</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+                  <tr className="border-b border-border bg-muted">
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Date</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Employee</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Punch In (IST)</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Punch Out (IST)</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Hours</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Tour Place</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Tour Reason</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Approval Status</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2105,17 +2105,17 @@ export const Attendance = () => {
                     (() => {
                       const effectiveTourStatus = (row.tour_approval_status || tourStatusFilter || 'Pending').toLowerCase();
                       return (
-                    <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                      <td className="py-3 px-4 font-medium text-gray-900">{row.date}</td>
+                    <tr key={row.id} className="border-b border-border hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium text-foreground">{row.date}</td>
                       <td className="py-3 px-4">
-                        <span className="font-medium text-gray-900">{row.employee_name}</span>
-                        <span className="text-xs text-gray-500 block">{row.employee_id}</span>
+                        <span className="font-medium text-foreground">{row.employee_name}</span>
+                        <span className="text-xs text-muted-foreground block">{row.employee_id}</span>
                       </td>
-                      <td className="py-3 px-4 font-mono text-gray-700">{formatPunchTime(row.punch_in)}</td>
-                      <td className="py-3 px-4 font-mono text-gray-700">{formatPunchTime(row.punch_out)}</td>
-                      <td className="py-3 px-4 font-mono text-gray-700">{row.work_hours?.toFixed(2) ?? '–'} hrs</td>
-                      <td className="py-3 px-4 text-gray-700">{row.tour_place || '—'}</td>
-                      <td className="py-3 px-4 text-gray-700 max-w-[320px]">{row.tour_reason || '—'}</td>
+                      <td className="py-3 px-4 font-mono text-foreground">{formatPunchTime(row.punch_in)}</td>
+                      <td className="py-3 px-4 font-mono text-foreground">{formatPunchTime(row.punch_out)}</td>
+                      <td className="py-3 px-4 font-mono text-foreground">{row.work_hours?.toFixed(2) ?? '–'} hrs</td>
+                      <td className="py-3 px-4 text-foreground">{row.tour_place || '—'}</td>
+                      <td className="py-3 px-4 text-foreground max-w-[320px]">{row.tour_reason || '—'}</td>
                       <td className="py-3 px-4">
                         <span
                           className={`inline-block px-2 py-1 rounded text-xs font-medium ${
@@ -2151,7 +2151,7 @@ export const Attendance = () => {
                             </Button>
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-500">Already processed</span>
+                          <span className="text-xs text-muted-foreground">Already processed</span>
                         )}
                       </td>
                     </tr>
@@ -2170,8 +2170,8 @@ export const Attendance = () => {
         <Card className="p-5 sm:p-6 overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Late Punch-In Approval Requests</h3>
-              <p className="text-sm text-gray-600">
+              <h3 className="text-lg font-semibold text-foreground">Late Punch-In Approval Requests</h3>
+              <p className="text-sm text-muted-foreground">
                 Employees who punched in after 9:15 AM (before 10:00 AM). Each request includes the <strong>reason</strong> they entered before punching.
               </p>
             </div>
@@ -2204,7 +2204,7 @@ export const Attendance = () => {
                 <select
                   value={latePunchInEmployeeFilter}
                   onChange={(e) => setLatePunchInEmployeeFilter(e.target.value)}
-                  className="h-9 rounded-lg border border-gray-300 px-3 text-sm text-gray-900 bg-white min-w-[220px]"
+                  className="h-9 rounded-lg border border-input px-3 text-sm text-foreground bg-white min-w-[220px]"
                 >
                   <option value="">All employees</option>
                   {Array.from(new Set((latePunchInRequests || []).map((r) => r.employee_name).filter(Boolean))).sort().map((name) => (
@@ -2227,23 +2227,23 @@ export const Attendance = () => {
 
           {latePunchInLoading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+              <div role="status" aria-label="Loading" className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary/60" />
             </div>
           ) : latePunchInRequests.filter((req) => !latePunchInEmployeeFilter || req.employee_name === latePunchInEmployeeFilter).length === 0 ? (
-            <p className="text-center py-8 text-gray-500">No {latePunchInStatusFilter.toLowerCase()} late punch-in requests.</p>
+            <p className="text-center py-8 text-muted-foreground">No {latePunchInStatusFilter.toLowerCase()} late punch-in requests.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Date</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700 min-w-[220px]">Employee reason</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch In Time</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Minutes Late</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Requested</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+                  <tr className="border-b border-border bg-muted">
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Date</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Employee</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground min-w-[220px]">Employee reason</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Punch In Time</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Minutes Late</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Status</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Requested</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2253,18 +2253,18 @@ export const Attendance = () => {
                     const employeeReason = (req.employee_reason || req.employeeReason || '').trim();
                     const status = req.status || req.request_status || latePunchInStatusFilter;
                     return (
-                    <tr key={req.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                      <td className="py-3 px-4 font-mono text-gray-900">{req.punch_in_date}</td>
+                    <tr key={req.id} className="border-b border-border hover:bg-muted/50">
+                      <td className="py-3 px-4 font-mono text-foreground">{req.punch_in_date}</td>
                       <td className="py-3 px-4">
-                        <span className="font-medium text-gray-900">{req.employee_name}</span>
-                        <span className="text-xs text-gray-500 block">{req.employee_id}</span>
+                        <span className="font-medium text-foreground">{req.employee_name}</span>
+                        <span className="text-xs text-muted-foreground block">{req.employee_id}</span>
                       </td>
                       <td className="py-3 px-4 align-top max-w-[360px]">
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 whitespace-pre-wrap break-words">
+                        <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground whitespace-pre-wrap break-words">
                           {employeeReason || <span className="text-amber-700 font-medium">No reason on file — contact employee or check app version.</span>}
                         </div>
                       </td>
-                      <td className="py-3 px-4 font-mono font-semibold text-gray-900">{formatPunchTime(req.punch_in_time)}</td>
+                      <td className="py-3 px-4 font-mono font-semibold text-foreground">{formatPunchTime(req.punch_in_time)}</td>
                       <td className="py-3 px-4">
                         <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700">
                           {req.minutes_late !== null && req.minutes_late !== undefined ? req.minutes_late : '0'} min
@@ -2281,7 +2281,7 @@ export const Attendance = () => {
                           {status}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-xs text-gray-500">
+                      <td className="py-3 px-4 text-xs text-muted-foreground">
                         {new Date(req.requested_at).toLocaleString()}
                       </td>
                       <td className="py-3 px-4">
@@ -2306,7 +2306,7 @@ export const Attendance = () => {
                             </Button>
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-500">Already processed</span>
+                          <span className="text-xs text-muted-foreground">Already processed</span>
                         )}
                       </td>
                     </tr>
@@ -2324,8 +2324,8 @@ export const Attendance = () => {
         <Card className="p-5 sm:p-6 overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Late Punch-Out Approval Requests</h3>
-              <p className="text-sm text-gray-600">
+              <h3 className="text-lg font-semibold text-foreground">Late Punch-Out Approval Requests</h3>
+              <p className="text-sm text-muted-foreground">
                 Employees who punched out after 7:30 PM. Each request includes the <strong>reason</strong> they entered before punching out.
               </p>
             </div>
@@ -2358,7 +2358,7 @@ export const Attendance = () => {
                 <select
                   value={latePunchOutEmployeeFilter}
                   onChange={(e) => setLatePunchOutEmployeeFilter(e.target.value)}
-                  className="h-9 rounded-lg border border-gray-300 px-3 text-sm text-gray-900 bg-white min-w-[220px]"
+                  className="h-9 rounded-lg border border-input px-3 text-sm text-foreground bg-white min-w-[220px]"
                 >
                   <option value="">All employees</option>
                   {Array.from(new Set((latePunchOutRequests || []).map((r) => r.employee_name).filter(Boolean))).sort().map((name) => (
@@ -2381,23 +2381,23 @@ export const Attendance = () => {
 
           {latePunchOutLoading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+              <div role="status" aria-label="Loading" className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary/60" />
             </div>
           ) : latePunchOutRequests.filter((req) => !latePunchOutEmployeeFilter || req.employee_name === latePunchOutEmployeeFilter).length === 0 ? (
-            <p className="text-center py-8 text-gray-500">No {latePunchOutStatusFilter.toLowerCase()} late punch-out requests.</p>
+            <p className="text-center py-8 text-muted-foreground">No {latePunchOutStatusFilter.toLowerCase()} late punch-out requests.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Date</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700 min-w-[220px]">Employee reason</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch Out Time</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Minutes Late</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Requested</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+                  <tr className="border-b border-border bg-muted">
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Date</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Employee</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground min-w-[220px]">Employee reason</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Punch Out Time</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Minutes Late</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Status</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Requested</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2407,18 +2407,18 @@ export const Attendance = () => {
                     const employeeReason = (req.employee_reason || req.employeeReason || '').trim();
                     const status = req.status || req.request_status || latePunchOutStatusFilter;
                     return (
-                    <tr key={req.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                      <td className="py-3 px-4 font-mono text-gray-900">{req.punch_out_date}</td>
+                    <tr key={req.id} className="border-b border-border hover:bg-muted/50">
+                      <td className="py-3 px-4 font-mono text-foreground">{req.punch_out_date}</td>
                       <td className="py-3 px-4">
-                        <span className="font-medium text-gray-900">{req.employee_name}</span>
-                        <span className="text-xs text-gray-500 block">{req.employee_id}</span>
+                        <span className="font-medium text-foreground">{req.employee_name}</span>
+                        <span className="text-xs text-muted-foreground block">{req.employee_id}</span>
                       </td>
                       <td className="py-3 px-4 align-top max-w-[360px]">
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 whitespace-pre-wrap break-words">
+                        <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground whitespace-pre-wrap break-words">
                           {employeeReason || <span className="text-amber-700 font-medium">No reason on file — contact employee or check app version.</span>}
                         </div>
                       </td>
-                      <td className="py-3 px-4 font-mono text-gray-700">{req.punch_out_time}</td>
+                      <td className="py-3 px-4 font-mono text-foreground">{req.punch_out_time}</td>
                       <td className="py-3 px-4">
                         <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-orange-100 text-orange-700">
                           {req.minutes_late} min
@@ -2435,7 +2435,7 @@ export const Attendance = () => {
                           {status}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-xs text-gray-500">
+                      <td className="py-3 px-4 text-xs text-muted-foreground">
                         {new Date(req.requested_at).toLocaleString()}
                       </td>
                       <td className="py-3 px-4">
@@ -2460,7 +2460,7 @@ export const Attendance = () => {
                             </Button>
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-500">Already processed</span>
+                          <span className="text-xs text-muted-foreground">Already processed</span>
                         )}
                       </td>
                     </tr>
@@ -2478,8 +2478,8 @@ export const Attendance = () => {
         <Card className="p-5 sm:p-6 overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Half Day Punch-In Approval Requests</h3>
-              <p className="text-sm text-gray-600">
+              <h3 className="text-lg font-semibold text-foreground">Half Day Punch-In Approval Requests</h3>
+              <p className="text-sm text-muted-foreground">
                 Employees who punched in after 10:00 AM. Each request includes the <strong>reason</strong> they entered before punching.
               </p>
             </div>
@@ -2495,21 +2495,21 @@ export const Attendance = () => {
             ))}
           </div>
           {halfDayPunchInLoading ? (
-            <div className="flex items-center justify-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+            <div className="flex items-center justify-center py-8"><div role="status" aria-label="Loading" className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary/60" /></div>
           ) : halfDayPunchInRequests.length === 0 ? (
-            <p className="text-center py-8 text-gray-500">No {halfDayPunchInStatusFilter.toLowerCase()} half-day punch-in requests.</p>
+            <p className="text-center py-8 text-muted-foreground">No {halfDayPunchInStatusFilter.toLowerCase()} half-day punch-in requests.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Date</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700 min-w-[220px]">Reason</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch In</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Min after 10 AM</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+                  <tr className="border-b border-border bg-muted">
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Date</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Employee</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground min-w-[220px]">Reason</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Punch In</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Min after 10 AM</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Status</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2517,10 +2517,10 @@ export const Attendance = () => {
                     const status = req.status || halfDayPunchInStatusFilter;
                     const employeeReason = (req.employee_reason || '').trim();
                     return (
-                      <tr key={req.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                      <tr key={req.id} className="border-b border-border hover:bg-muted/50">
                         <td className="py-3 px-4 font-mono">{req.punch_in_date}</td>
-                        <td className="py-3 px-4"><span className="font-medium">{req.employee_name}</span><span className="text-xs text-gray-500 block">{req.employee_id}</span></td>
-                        <td className="py-3 px-4 max-w-[360px]"><div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm whitespace-pre-wrap">{employeeReason || '—'}</div></td>
+                        <td className="py-3 px-4"><span className="font-medium">{req.employee_name}</span><span className="text-xs text-muted-foreground block">{req.employee_id}</span></td>
+                        <td className="py-3 px-4 max-w-[360px]"><div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm whitespace-pre-wrap">{employeeReason || '—'}</div></td>
                         <td className="py-3 px-4 font-mono">{formatPunchTime(req.punch_in_time)}</td>
                         <td className="py-3 px-4">{req.minutes_after_threshold ?? 0} min</td>
                         <td className="py-3 px-4"><span className="inline-block px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-700">{status}</span></td>
@@ -2530,7 +2530,7 @@ export const Attendance = () => {
                               <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white h-8" onClick={() => handleApproveHalfDayPunchIn(req.id, 'Approved')}><Check className="h-4 w-4 mr-1" />Approve</Button>
                               <Button size="sm" variant="outline" className="border-red-300 text-red-700 h-8" onClick={() => handleApproveHalfDayPunchIn(req.id, 'Rejected')}><X className="h-4 w-4 mr-1" />Reject</Button>
                             </div>
-                          ) : <span className="text-xs text-gray-500">Already processed</span>}
+                          ) : <span className="text-xs text-muted-foreground">Already processed</span>}
                         </td>
                       </tr>
                     );
@@ -2547,8 +2547,8 @@ export const Attendance = () => {
         <Card className="p-5 sm:p-6 overflow-hidden">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Early Punch-Out Approval Requests</h3>
-              <p className="text-sm text-gray-600">
+              <h3 className="text-lg font-semibold text-foreground">Early Punch-Out Approval Requests</h3>
+              <p className="text-sm text-muted-foreground">
                 Employees who punched out before 6:15 PM. Each request includes the <strong>reason</strong> they entered before punching out.
               </p>
             </div>
@@ -2564,21 +2564,21 @@ export const Attendance = () => {
             ))}
           </div>
           {earlyPunchOutLoading ? (
-            <div className="flex items-center justify-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+            <div className="flex items-center justify-center py-8"><div role="status" aria-label="Loading" className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary/60" /></div>
           ) : earlyPunchOutRequests.length === 0 ? (
-            <p className="text-center py-8 text-gray-500">No {earlyPunchOutStatusFilter.toLowerCase()} early punch-out requests.</p>
+            <p className="text-center py-8 text-muted-foreground">No {earlyPunchOutStatusFilter.toLowerCase()} early punch-out requests.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Date</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700 min-w-[220px]">Reason</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Punch Out</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Min early</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
+                  <tr className="border-b border-border bg-muted">
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Date</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Employee</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground min-w-[220px]">Reason</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Punch Out</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Min early</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Status</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2586,10 +2586,10 @@ export const Attendance = () => {
                     const status = req.status || earlyPunchOutStatusFilter;
                     const employeeReason = (req.employee_reason || '').trim();
                     return (
-                      <tr key={req.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                      <tr key={req.id} className="border-b border-border hover:bg-muted/50">
                         <td className="py-3 px-4 font-mono">{req.punch_out_date}</td>
-                        <td className="py-3 px-4"><span className="font-medium">{req.employee_name}</span><span className="text-xs text-gray-500 block">{req.employee_id}</span></td>
-                        <td className="py-3 px-4 max-w-[360px]"><div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm whitespace-pre-wrap">{employeeReason || '—'}</div></td>
+                        <td className="py-3 px-4"><span className="font-medium">{req.employee_name}</span><span className="text-xs text-muted-foreground block">{req.employee_id}</span></td>
+                        <td className="py-3 px-4 max-w-[360px]"><div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm whitespace-pre-wrap">{employeeReason || '—'}</div></td>
                         <td className="py-3 px-4 font-mono">{formatPunchTime(req.punch_out_time)}</td>
                         <td className="py-3 px-4">{req.minutes_early ?? 0} min</td>
                         <td className="py-3 px-4"><span className="inline-block px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-700">{status}</span></td>
@@ -2599,7 +2599,7 @@ export const Attendance = () => {
                               <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white h-8" onClick={() => handleApproveEarlyPunchOut(req.id, 'Approved')}><Check className="h-4 w-4 mr-1" />Approve</Button>
                               <Button size="sm" variant="outline" className="border-red-300 text-red-700 h-8" onClick={() => handleApproveEarlyPunchOut(req.id, 'Rejected')}><X className="h-4 w-4 mr-1" />Reject</Button>
                             </div>
-                          ) : <span className="text-xs text-gray-500">Already processed</span>}
+                          ) : <span className="text-xs text-muted-foreground">Already processed</span>}
                         </td>
                       </tr>
                     );
@@ -2614,32 +2614,32 @@ export const Attendance = () => {
       {/* Report by date range - Admin/HR */}
       {canManageAttendanceFull && activeTab === 'report' && (
         <Card className="p-5 sm:p-6 overflow-hidden">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Attendance Report (Date Range)</h3>
+          <h3 className="text-lg font-semibold text-foreground mb-4">Attendance Report (Date Range)</h3>
           <div className="flex flex-wrap gap-3 mb-4">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Start</label>
-              <input
+              <label htmlFor="attendance-field-5" className="block text-xs text-muted-foreground mb-1">Start</label>
+              <input id="attendance-field-5"
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900"
+                className="h-10 rounded-lg border border-input px-3 text-sm text-foreground"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">End</label>
-              <input
+              <label htmlFor="attendance-field-6" className="block text-xs text-muted-foreground mb-1">End</label>
+              <input id="attendance-field-6"
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900"
+                className="h-10 rounded-lg border border-input px-3 text-sm text-foreground"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Employee</label>
-              <select
+              <label htmlFor="attendance-field-7" className="block text-xs text-muted-foreground mb-1">Employee</label>
+              <select id="attendance-field-7"
                 value={selectedEmployee}
                 onChange={(e) => setSelectedEmployee(e.target.value)}
-                className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900 bg-white min-w-[180px]"
+                className="h-10 rounded-lg border border-input px-3 text-sm text-foreground bg-white min-w-[180px]"
               >
                 <option value="">All employees</option>
                 {employees.map((emp) => (
@@ -2653,34 +2653,34 @@ export const Attendance = () => {
               </Button>
             </div>
           </div>
-          <div className="overflow-x-auto border border-gray-200 rounded-lg">
+          <div className="overflow-x-auto border border-border rounded-lg">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="text-left p-3 font-medium text-gray-700">Date</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Employee</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Punch In (IST)</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Punch Out (IST)</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Hours</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Status</th>
+                <tr className="bg-muted border-b border-border">
+                  <th className="text-left p-3 font-medium text-foreground">Date</th>
+                  <th className="text-left p-3 font-medium text-foreground">Employee</th>
+                  <th className="text-left p-3 font-medium text-foreground">Punch In (IST)</th>
+                  <th className="text-left p-3 font-medium text-foreground">Punch Out (IST)</th>
+                  <th className="text-left p-3 font-medium text-foreground">Hours</th>
+                  <th className="text-left p-3 font-medium text-foreground">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {report.map((row, idx) => (
-                  <tr key={`${row.date}-${row.employee_id}-${idx}`} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="p-3 font-mono text-gray-900">{row.date}</td>
-                    <td className="p-3 text-gray-900">{row.employee_name}</td>
-                    <td className="p-3 font-mono text-gray-700">{formatPunchTime(row.punch_in)}</td>
-                    <td className="p-3 font-mono text-gray-700">{formatPunchTime(row.punch_out)}</td>
-                    <td className="p-3 font-mono text-gray-700">{row.work_hours?.toFixed(2) ?? '0'}</td>
+                  <tr key={`${row.date}-${row.employee_id}-${idx}`} className="border-b border-border hover:bg-muted">
+                    <td className="p-3 font-mono text-foreground">{row.date}</td>
+                    <td className="p-3 text-foreground">{row.employee_name}</td>
+                    <td className="p-3 font-mono text-foreground">{formatPunchTime(row.punch_in)}</td>
+                    <td className="p-3 font-mono text-foreground">{formatPunchTime(row.punch_out)}</td>
+                    <td className="p-3 font-mono text-foreground">{row.work_hours?.toFixed(2) ?? '0'}</td>
                     <td className="p-3">
                       <span
                         className={`px-2 py-0.5 rounded text-xs font-medium ${
                           row.status === 'Present' ? 'bg-green-50 text-green-700' :
                           row.status === 'Late' ? 'bg-amber-50 text-amber-700' :
                           row.status === 'Absent' ? 'bg-red-50 text-red-700' :
-                          row.status === 'Holiday' ? 'bg-slate-100 text-slate-700' :
-                          'bg-gray-100 text-gray-700'
+                          row.status === 'Holiday' ? 'bg-muted text-foreground' :
+                          'bg-muted text-foreground'
                         }`}
                       >
                         {row.status}
@@ -2692,7 +2692,7 @@ export const Attendance = () => {
             </table>
           </div>
           {report.length === 0 && !reportLoading && (
-            <p className="text-center py-8 text-gray-500">Select date range and click Load Report.</p>
+            <p className="text-center py-8 text-muted-foreground">Select date range and click Load Report.</p>
           )}
         </Card>
       )}
@@ -2702,23 +2702,23 @@ export const Attendance = () => {
         <Card className="p-5 sm:p-6 overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Monthly Overview</h3>
-              <p className="text-sm text-gray-600">
+              <h3 className="text-lg font-semibold text-foreground">Monthly Overview</h3>
+              <p className="text-sm text-muted-foreground">
                 {canManageAttendance ? 'Present, late, absent summary per employee' : 'Your attendance summary'}
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <label className="text-sm font-medium text-gray-700">Month</label>
-              <input
+              <label htmlFor="attendance-field-8" className="text-sm font-medium text-foreground">Month</label>
+              <input id="attendance-field-8"
                 type="month"
                 value={summaryMonth}
                 onChange={(e) => setSummaryMonth(e.target.value)}
-                className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900"
+                className="h-10 rounded-lg border border-input px-3 text-sm text-foreground"
               />
               <Button
                 type="button"
                 variant="outline"
-                className="h-10 border-gray-300"
+                className="h-10 border-input"
                 onClick={downloadMonthlyOverview}
                 disabled={attendanceSummary.length === 0}
               >
@@ -2727,37 +2727,37 @@ export const Attendance = () => {
               </Button>
             </div>
           </div>
-          <div className="overflow-x-auto border border-gray-200 rounded-lg">
+          <div className="overflow-x-auto border border-border rounded-lg">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="text-left p-3 font-medium text-gray-700">{canManageAttendance ? 'Employee' : 'Summary'}</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Present</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Late</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Half Day</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Absent</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Total Days</th>
+                <tr className="bg-muted border-b border-border">
+                  <th className="text-left p-3 font-medium text-foreground">{canManageAttendance ? 'Employee' : 'Summary'}</th>
+                  <th className="text-left p-3 font-medium text-foreground">Present</th>
+                  <th className="text-left p-3 font-medium text-foreground">Late</th>
+                  <th className="text-left p-3 font-medium text-foreground">Half Day</th>
+                  <th className="text-left p-3 font-medium text-foreground">Absent</th>
+                  <th className="text-left p-3 font-medium text-foreground">Total Days</th>
                 </tr>
               </thead>
               <tbody>
                 {attendanceSummary.map((row) => (
-                  <tr key={row.employee_id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <tr key={row.employee_id} className="border-b border-border hover:bg-muted">
                     <td className="p-3">
-                      <div className="font-medium text-gray-900">{canManageAttendance ? row.employee_name : 'My Attendance'}</div>
-                      {canManageAttendance && <div className="text-xs text-gray-500">{row.employee_id}</div>}
+                      <div className="font-medium text-foreground">{canManageAttendance ? row.employee_name : 'My Attendance'}</div>
+                      {canManageAttendance && <div className="text-xs text-muted-foreground">{row.employee_id}</div>}
                     </td>
                     <td className="p-3 text-green-700 font-medium">{formatDayCount(row.present_days)}</td>
                     <td className="p-3 text-amber-700 font-medium">{row.late_days}</td>
-                    <td className="p-3 text-blue-700 font-medium">{row.half_day_days}</td>
+                    <td className="p-3 text-accent-foreground font-medium">{row.half_day_days}</td>
                     <td className="p-3 text-red-700 font-medium">{formatDayCount(row.absent_days)}</td>
-                    <td className="p-3 text-gray-700 font-medium">{row.total_days}</td>
+                    <td className="p-3 text-foreground font-medium">{row.total_days}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           {attendanceSummary.length === 0 && (
-            <p className="text-center py-8 text-gray-500">No summary for this month.</p>
+            <p className="text-center py-8 text-muted-foreground">No summary for this month.</p>
           )}
         </Card>
       )}
@@ -2765,16 +2765,16 @@ export const Attendance = () => {
       {/* Recent attendance history - employees: only on punch tab when tab bar exists */}
       {!canManageAttendance && (!showAttendanceTabs || activeTab === 'punch') && (
         <Card className="p-5 sm:p-6 overflow-hidden">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent History</h3>
+          <h3 className="text-lg font-semibold text-foreground mb-4">Recent History</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left p-3 text-gray-600 font-medium">Date</th>
-                  <th className="text-left p-3 text-gray-600 font-medium">Punch In (IST)</th>
-                  <th className="text-left p-3 text-gray-600 font-medium">Punch Out (IST)</th>
-                  <th className="text-left p-3 text-gray-600 font-medium">Hours</th>
-                  <th className="text-left p-3 text-gray-600 font-medium">Status</th>
+                <tr className="border-b border-border">
+                  <th className="text-left p-3 text-muted-foreground font-medium">Date</th>
+                  <th className="text-left p-3 text-muted-foreground font-medium">Punch In (IST)</th>
+                  <th className="text-left p-3 text-muted-foreground font-medium">Punch Out (IST)</th>
+                  <th className="text-left p-3 text-muted-foreground font-medium">Hours</th>
+                  <th className="text-left p-3 text-muted-foreground font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -2782,19 +2782,19 @@ export const Attendance = () => {
                   .filter((r) => r.employee_id === user?.employee_id)
                   .slice(0, 15)
                   .map((record) => (
-                    <tr key={record.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="p-3 font-mono text-gray-900">{record.date}</td>
-                      <td className="p-3 font-mono text-gray-700">{formatPunchTime(record.punch_in)}</td>
-                      <td className="p-3 font-mono text-gray-700">{formatPunchTime(record.punch_out)}</td>
-                      <td className="p-3 font-mono text-gray-700">{record.work_hours?.toFixed(2) ?? 0}</td>
+                    <tr key={record.id} className="border-b border-border hover:bg-muted">
+                      <td className="p-3 font-mono text-foreground">{record.date}</td>
+                      <td className="p-3 font-mono text-foreground">{formatPunchTime(record.punch_in)}</td>
+                      <td className="p-3 font-mono text-foreground">{formatPunchTime(record.punch_out)}</td>
+                      <td className="p-3 font-mono text-foreground">{record.work_hours?.toFixed(2) ?? 0}</td>
                       <td className="p-3">
                         <span
                           className={`px-2 py-0.5 rounded text-xs font-medium ${
                             record.status === 'Present' ? 'bg-green-50 text-green-700' :
                             record.status === 'Late' ? 'bg-amber-50 text-amber-700' :
                             record.status === 'Absent' ? 'bg-red-50 text-red-700' :
-                            record.status === 'Holiday' ? 'bg-slate-100 text-slate-700' :
-                            'bg-gray-100 text-gray-700'
+                            record.status === 'Holiday' ? 'bg-muted text-foreground' :
+                            'bg-muted text-foreground'
                           }`}
                         >
                           {record.status}
@@ -2806,7 +2806,7 @@ export const Attendance = () => {
             </table>
           </div>
           {attendance.filter((r) => r.employee_id === user?.employee_id).length === 0 && (
-            <p className="text-center py-8 text-gray-500">No attendance records yet.</p>
+            <p className="text-center py-8 text-muted-foreground">No attendance records yet.</p>
           )}
         </Card>
       )}
@@ -2829,7 +2829,7 @@ export const Attendance = () => {
             </DialogHeader>
           </div>
           <div className="space-y-3 p-5">
-            <Label htmlFor="late-reason-text" className="text-sm font-semibold text-gray-900">
+            <Label htmlFor="late-reason-text" className="text-sm font-semibold text-foreground">
               Reason (required) *
             </Label>
             <textarea
@@ -2838,11 +2838,11 @@ export const Attendance = () => {
               onChange={(e) => setLateReasonText(e.target.value)}
               rows={4}
               placeholder="e.g. Client meeting ran over, production issue, traffic, approved overtime…"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full border border-input rounded-lg px-3 py-2 text-sm text-foreground placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             />
           </div>
-          <div className="flex gap-2 justify-end p-5 border-t border-gray-200 bg-gray-50">
-            <Button type="button" variant="outline" className="border-gray-300" onClick={handleCancelLateReasonDialog} disabled={punchLoading}>
+          <div className="flex gap-2 justify-end p-5 border-t border-border bg-muted">
+            <Button type="button" variant="outline" className="border-input" onClick={handleCancelLateReasonDialog} disabled={punchLoading}>
               Cancel
             </Button>
             <Button
@@ -2872,7 +2872,7 @@ export const Attendance = () => {
           </div>
           <div className="space-y-3 p-5">
             <div className="space-y-1.5">
-              <Label htmlFor="tour-place-text" className="text-sm font-semibold text-gray-900">
+              <Label htmlFor="tour-place-text" className="text-sm font-semibold text-foreground">
                 Tour place (required) *
               </Label>
               <Input
@@ -2884,7 +2884,7 @@ export const Attendance = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="tour-reason-text" className="text-sm font-semibold text-gray-900">
+              <Label htmlFor="tour-reason-text" className="text-sm font-semibold text-foreground">
                 Tour reason (required) *
               </Label>
               <textarea
@@ -2893,12 +2893,12 @@ export const Attendance = () => {
                 onChange={(e) => setTourReasonText(e.target.value)}
                 rows={4}
                 placeholder="e.g. On-site installation, client meeting, field verification..."
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:border-transparent"
+                className="w-full border border-input rounded-lg px-3 py-2 text-sm text-foreground placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:border-transparent"
               />
             </div>
           </div>
-          <div className="flex gap-2 justify-end p-5 border-t border-gray-200 bg-gray-50">
-            <Button type="button" variant="outline" className="border-gray-300" onClick={handleCancelTourReasonDialog} disabled={punchLoading}>
+          <div className="flex gap-2 justify-end p-5 border-t border-border bg-muted">
+            <Button type="button" variant="outline" className="border-input" onClick={handleCancelTourReasonDialog} disabled={punchLoading}>
               Cancel
             </Button>
             <Button
@@ -2933,7 +2933,7 @@ export const Attendance = () => {
               <p className="text-xs text-amber-700 mt-1">Include tasks completed, achievements, and any blockers or challenges faced.</p>
             </div>
             <div>
-              <Label htmlFor="punch-work-summary" className="text-sm font-semibold text-gray-900 block mb-2">
+              <Label htmlFor="punch-work-summary" className="text-sm font-semibold text-foreground block mb-2">
                 Today's Work Summary *
               </Label>
               <textarea
@@ -2942,13 +2942,13 @@ export const Attendance = () => {
                 onChange={(e) => setWorkLogSummary(e.target.value)}
                 placeholder="E.g., Completed bug fixes for feature X, attended team meeting, started documentation for API..."
                 rows={4}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                className="w-full border border-input rounded-lg px-3 py-2 text-sm text-foreground placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
               />
-              <p className="text-xs text-gray-500 mt-1">{workLogSummary.trim().length} characters entered</p>
+              <p className="text-xs text-muted-foreground mt-1">{workLogSummary.trim().length} characters entered</p>
             </div>
           </div>
 
-          <div className="flex gap-3 justify-end p-6 border-t border-gray-200 bg-gray-50">
+          <div className="flex gap-3 justify-end p-6 border-t border-border bg-muted">
             <Button
               className="bg-amber-600 text-white hover:bg-amber-700 px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handleSubmitPunchOutWorkLog}

@@ -40,7 +40,7 @@ export function BpoDesk() {
                 onClick={() => setViewTab(tab.key)}
                 className={cn(
                   'inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium',
-                  viewTab === tab.key ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-gray-200 bg-white text-gray-700 hover:bg-slate-50',
+                  viewTab === tab.key ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-border bg-white text-foreground hover:bg-muted',
                 )}
               >
                 <tab.icon className="h-4 w-4" />

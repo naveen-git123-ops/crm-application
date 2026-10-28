@@ -37,7 +37,7 @@ import {
   ClipboardList,
   Wrench,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PageHeaderProvider, usePageHeader, usePageHeaderActions } from '@/contexts/PageHeaderContext';
 import { EmployeeLocationTracker } from '@/components/EmployeeLocationTracker';
 import { cn } from '@/lib/utils';
@@ -81,7 +81,7 @@ function AppHeaderBar({
   })();
 
   return (
-    <header className="min-h-14 border-b border-border/80 bg-card/90 backdrop-blur-xl flex items-center gap-2.5 sm:gap-3 px-3 sm:px-5 py-2 sm:py-2.5 flex-shrink-0 pt-[max(0.5rem,env(safe-area-inset-top))]">
+    <header className="min-h-16 border-b border-border/70 bg-card/80 backdrop-blur-xl shadow-[0_1px_0_rgb(255_255_255/0.6)_inset] flex items-center gap-2.5 sm:gap-3 px-3 sm:px-6 py-2 sm:py-3 flex-shrink-0 pt-[max(0.5rem,env(safe-area-inset-top))]">
       <Button
         variant="ghost"
         size="icon"
@@ -104,9 +104,9 @@ function AppHeaderBar({
         {desktopSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
       </Button>
       <div className="flex-1 min-w-0 flex items-center gap-2">
-        <h2 className="text-[15px] sm:text-base font-semibold tracking-tight text-foreground truncate">{title}</h2>
+        <h1 className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate">{title}</h1>
         {header.subtitle ? (
-          <span className="hidden sm:inline text-sm text-muted-foreground truncate border-l border-border pl-2.5 ml-0.5">
+          <span className="hidden sm:inline-flex items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground truncate ml-1">
             {header.subtitle}
           </span>
         ) : null}
@@ -161,6 +161,34 @@ export const Layout = () => {
     logout();
     navigate('/login');
   };
+
+  // Escape closes the mobile menu and the page behind it stops scrolling while it is open.
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setSidebarOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [sidebarOpen]);
+
+  // After a client-side navigation, move focus to the page content so keyboard and
+  // screen-reader users do not stay stranded in the sidebar link they just activated.
+  const mainRef = useRef(null);
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    mainRef.current?.focus({ preventScroll: true });
+    mainRef.current?.scrollTo?.({ top: 0 });
+  }, [location.pathname]);
 
   const canSeeNavItem = (item) => {
     if (item.adminOnly && user?.role !== 'Admin') return false;
@@ -298,21 +326,22 @@ export const Layout = () => {
           return cn(
             'flex items-center gap-3 px-3 py-3 rounded-xl min-h-[48px] text-sm transition-colors',
             isActive
-              ? 'bg-indigo-50 text-indigo-700 font-semibold'
+              ? 'bg-accent text-accent-foreground font-semibold'
               : 'text-foreground hover:bg-muted active:bg-muted',
           );
         }
         return cn(
-          'relative flex items-center text-[13px] transition-colors',
-          compact ? 'justify-center px-2 py-2.5 rounded-lg' : 'gap-3 px-3 py-2 rounded-lg',
+          'group relative flex items-center text-sm transition-all duration-150',
+          compact ? 'justify-center px-2 py-2.5 rounded-xl' : 'gap-3 px-3 py-2.5 rounded-xl',
           isActive
-            ? 'bg-white/10 text-white font-medium'
-            : 'text-sidebar-muted hover:bg-white/5 hover:text-sidebar-foreground',
+            ? 'bg-gradient-to-r from-sidebar-primary/25 via-sidebar-primary/10 to-transparent text-white font-semibold shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-r-full before:bg-sidebar-primary'
+            : 'text-sidebar-muted hover:bg-white/[0.06] hover:text-white',
         );
       }}
-      title={item.label}
+      title={compact ? item.label : undefined}
+      aria-label={compact ? item.label : undefined}
     >
-      <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
+      <item.icon className="h-[19px] w-[19px] flex-shrink-0 transition-transform group-hover:scale-110" />
       {!compact && <span className={mobile ? 'truncate' : 'truncate'}>{item.label}</span>}
     </NavLink>
   );
@@ -339,8 +368,8 @@ export const Layout = () => {
             aria-controls={`nav-section-${section.id}`}
           >
             <span className={cn(
-              'text-[10px] font-semibold uppercase tracking-[0.12em]',
-              mobile ? 'text-muted-foreground' : 'text-sidebar-muted',
+              'text-[11px] font-bold uppercase tracking-[0.14em]',
+              mobile ? 'text-muted-foreground' : 'text-sidebar-muted/80',
             )}>
               {section.label}
             </span>
@@ -380,8 +409,9 @@ export const Layout = () => {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <aside className={cn(
-        'hidden lg:flex flex-col flex-shrink-0 transition-all duration-200 bg-sidebar text-sidebar-foreground border-r border-sidebar-border',
+      <a href="#main-content" className="skip-link">Skip to main content</a>
+      <aside aria-label="Sidebar" className={cn(
+        'hidden lg:flex flex-col flex-shrink-0 transition-all duration-200 bg-gradient-to-b from-sidebar to-[hsl(236,52%,6%)] text-sidebar-foreground border-r border-sidebar-border',
         desktopSidebarCollapsed ? 'w-[72px]' : 'w-64',
       )}>
         <div className={cn(
@@ -409,12 +439,12 @@ export const Layout = () => {
         <div className="p-3 border-t border-white/10 space-y-2">
           {!desktopSidebarCollapsed && (
             <div className="flex items-center gap-3 px-2 py-2">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-xs font-semibold text-indigo-200">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 text-xs font-bold text-white shadow-glow ring-2 ring-white/10">
                 {userInitials(user?.name)}
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-white truncate">{user?.name}</p>
-                <p className="text-[11px] text-sidebar-muted truncate">{user?.role}</p>
+                <p className="text-xs text-sidebar-muted truncate">{user?.role}</p>
               </div>
             </div>
           )}
@@ -427,6 +457,7 @@ export const Layout = () => {
             onClick={handleLogout}
             data-testid="logout-button"
             title="Logout"
+            aria-label="Logout"
           >
             <LogOut className={cn('h-4 w-4', desktopSidebarCollapsed ? '' : 'mr-2')} />
             {!desktopSidebarCollapsed && 'Logout'}
@@ -448,7 +479,7 @@ export const Layout = () => {
                 alt="Company Logo" 
                 className="h-10 object-contain"
               />
-              <Button variant="ghost" size="icon" className="h-11 w-11 min-h-[44px] min-w-[44px]" onClick={() => setSidebarOpen(false)}>
+              <Button variant="ghost" size="icon" className="h-11 w-11 min-h-[44px] min-w-[44px]" aria-label="Close menu" onClick={() => setSidebarOpen(false)}>
                 <X className="h-5 w-5" />
               </Button>
             </div>
@@ -494,7 +525,12 @@ export const Layout = () => {
             onToggleDesktopSidebar={() => setDesktopSidebarCollapsed((prev) => !prev)}
           />
 
-          <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8 bg-background">
+          <main
+            id="main-content"
+            ref={mainRef}
+            tabIndex={-1}
+            className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8 bg-background focus:outline-none"
+          >
             <Outlet />
           </main>
         </PageHeaderProvider>
@@ -510,7 +546,7 @@ export const Layout = () => {
               onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
                 cn(
-                  'flex flex-col items-center justify-center gap-0.5 py-2 px-1.5 min-h-[56px] min-w-[56px] rounded-xl transition-colors text-[11px]',
+                  'flex flex-col items-center justify-center gap-0.5 py-2 px-1.5 min-h-[56px] min-w-[56px] rounded-xl transition-colors text-xs',
                   isActive ? 'text-primary font-semibold' : 'text-muted-foreground',
                 )
               }
@@ -522,7 +558,7 @@ export const Layout = () => {
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="flex flex-col items-center justify-center gap-0.5 py-2 px-1.5 min-h-[56px] min-w-[56px] rounded-xl transition-colors text-[11px] text-muted-foreground hover:text-foreground"
+            className="flex flex-col items-center justify-center gap-0.5 py-2 px-1.5 min-h-[56px] min-w-[56px] rounded-xl transition-colors text-xs text-muted-foreground hover:text-foreground"
             aria-label="More menu"
           >
             <Menu className="h-5 w-5" />

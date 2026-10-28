@@ -8,7 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save, Calendar } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/page';
+import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save, Calendar, Check, SearchX, FolderOpen } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 import { getApiErrorMessage } from '@/lib/apiErrors';
@@ -43,6 +45,15 @@ const DRAFT_STEP_TITLES = {
   3: 'Flow metre',
   4: 'Piezometer',
   5: 'Additional attachment',
+};
+
+const CGW_STEP_HINTS = {
+  Customer: 'Choose the customer and confirm the contact details.',
+  NOC: 'Upload the NOC document and record its validity period.',
+  'Flow metre': 'Add every flow metre with its calibration and telemetry details.',
+  'Flow metre details': 'Add every flow metre with its calibration and telemetry details.',
+  Piezometer: 'Record piezometer details and supporting files.',
+  'Additional attachment': 'Attach any remaining approvals, certificates and documents.',
 };
 
 function cgwDraftProgressLabel(item) {
@@ -853,13 +864,13 @@ function RenewalDateCell({ groupEditActive, inlineEditData, groupAnchor, onChang
           type="date"
           value={inlineEditData.renewal_date}
           onChange={(e) => onChange('renewal_date', e.target.value)}
-          className="h-7 text-[11px] px-2"
+          className="h-7 text-xs px-2"
         />
         {urgency === 'overdue' && (
-          <span className="text-[10px] font-semibold text-red-600 leading-tight">Still past due — pick a future date</span>
+          <span className="text-[11px] font-semibold text-red-600 leading-tight">Still past due — pick a future date</span>
         )}
         {urgency === 'dueSoon' && (
-          <span className="text-[10px] font-medium text-amber-700 leading-tight">Due within 30 days</span>
+          <span className="text-[11px] font-medium text-amber-700 leading-tight">Due within 30 days</span>
         )}
       </div>
     );
@@ -868,23 +879,23 @@ function RenewalDateCell({ groupEditActive, inlineEditData, groupAnchor, onChang
   return (
     <div className="flex flex-col gap-0.5 min-w-[108px]">
       <span
-        className={`font-mono tabular-nums text-[11px] font-semibold ${
+        className={`font-mono tabular-nums text-xs font-semibold ${
           urgency === 'overdue'
             ? 'text-red-700'
             : urgency === 'dueSoon'
               ? 'text-amber-800'
               : urgency === 'ok'
-                ? 'text-gray-800'
-                : 'text-gray-400'
+                ? 'text-foreground'
+                : 'text-muted-foreground'
         }`}
       >
         {display}
       </span>
       {urgency === 'overdue' && (
-        <span className="text-[10px] font-bold uppercase tracking-wide text-red-600 leading-tight">Past due</span>
+        <span className="text-[11px] font-bold uppercase tracking-wide text-red-600 leading-tight">Past due</span>
       )}
       {urgency === 'dueSoon' && (
-        <span className="text-[10px] font-medium text-amber-700 leading-tight">Due in ≤30 days</span>
+        <span className="text-[11px] font-medium text-amber-700 leading-tight">Due in ≤30 days</span>
       )}
     </div>
   );
@@ -894,28 +905,28 @@ function RenewalDateCell({ groupEditActive, inlineEditData, groupAnchor, onChang
 function TelemValidToCell({ value }) {
   const tu = value ? renewalUrgency(value) : 'empty';
   if (!value) {
-    return <span className="text-[11px] text-gray-400">—</span>;
+    return <span className="text-xs text-muted-foreground">—</span>;
   }
   return (
     <div className="flex flex-col gap-0.5 min-w-[108px]">
-      <p className="text-[11px] font-mono tabular-nums leading-tight">
+      <p className="text-xs font-mono tabular-nums leading-tight">
         <span
           className={
             tu === 'overdue'
               ? 'text-red-600 font-bold'
               : tu === 'dueSoon'
                 ? 'text-amber-800 font-semibold'
-                : 'text-gray-800 font-medium'
+                : 'text-foreground font-medium'
           }
         >
           {value}
         </span>
         {tu === 'overdue' ? (
-          <span className="ml-1 text-[10px] font-bold text-red-600 uppercase tracking-wide">Expired</span>
+          <span className="ml-1 text-[11px] font-bold text-red-600 uppercase tracking-wide">Expired</span>
         ) : null}
       </p>
       {tu === 'dueSoon' ? (
-        <span className="text-[10px] font-medium text-amber-700 leading-tight">≤30 days</span>
+        <span className="text-[11px] font-medium text-amber-700 leading-tight">≤30 days</span>
       ) : null}
     </div>
   );
@@ -930,29 +941,29 @@ function NocValidUptoColumnCell({ groupRows = [] }) {
         const nu = v ? nocValidUrgency(v) : 'empty';
         const label = (r.inventory_id || r.equipment_name || '—').slice(0, 22);
         return (
-          <div key={r.id} className="rounded border border-gray-100 bg-gray-50/60 px-1.5 py-1">
-            <p className="text-[9px] text-gray-500 truncate mb-0.5 font-mono" title={r.inventory_id}>
+          <div key={r.id} className="rounded border border-border bg-muted/60 px-1.5 py-1">
+            <p className="text-[11px] text-muted-foreground truncate mb-0.5 font-mono" title={r.inventory_id}>
               {label}
             </p>
             {v ? (
-              <p className="text-[11px] font-mono tabular-nums leading-tight">
+              <p className="text-xs font-mono tabular-nums leading-tight">
                 <span
                   className={
                     nu === 'overdue'
                       ? 'text-red-600 font-bold'
                       : nu === 'dueSoon'
                         ? 'text-amber-800 font-semibold'
-                        : 'text-gray-800 font-medium'
+                        : 'text-foreground font-medium'
                   }
                 >
                   {v}
                 </span>
                 {nu === 'overdue' ? (
-                  <span className="ml-1 text-[10px] font-bold text-red-600 uppercase tracking-wide">Expired</span>
+                  <span className="ml-1 text-[11px] font-bold text-red-600 uppercase tracking-wide">Expired</span>
                 ) : null}
               </p>
             ) : (
-              <span className="text-[11px] text-gray-400">—</span>
+              <span className="text-xs text-muted-foreground">—</span>
             )}
           </div>
         );
@@ -986,16 +997,23 @@ function cgwFirstAttachmentCategory(item) {
 
 function AttachmentPreviewCell({ item, category, onPreview }) {
   const count = (item?.cgw_attachments?.[category] || []).length;
-  if (!count) return <span className="text-xs text-gray-400">—</span>;
+  if (!count) {
+    return (
+      <span className="text-xs text-muted-foreground" aria-label="No files">
+        —
+      </span>
+    );
+  }
   return (
     <Button
       type="button"
       variant="ghost"
       size="sm"
-      className="h-7 px-2 text-[10px] text-blue-700"
+      className="h-8 px-2 text-xs text-primary hover:bg-accent hover:text-accent-foreground"
+      aria-label={`Preview ${count} ${count === 1 ? 'file' : 'files'}: ${cgwUploadCategoryLabel(category)}`}
       onClick={() => onPreview(item, category)}
     >
-      <Eye className="h-3 w-3 mr-1" />
+      <Eye className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
       Preview ({count})
     </Button>
   );
@@ -1008,14 +1026,16 @@ function CgwGridSectionHeader({ title, isOpen, onToggle }) {
         type="button"
         variant="ghost"
         size="sm"
-        className="h-7 w-7 p-0 shrink-0 text-current hover:bg-white/50"
+        className="h-8 w-8 p-0 shrink-0 text-current hover:bg-white/50"
         title={isOpen ? 'Collapse section' : 'Expand section'}
+        aria-label={`${isOpen ? 'Collapse' : 'Expand'} section ${title}`}
+        aria-expanded={isOpen}
         onClick={(e) => {
           e.preventDefault();
           onToggle();
         }}
       >
-        {isOpen ? <Minus className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+        {isOpen ? <Minus className="h-3.5 w-3.5" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
       </Button>
       <span className="text-center text-xs font-semibold leading-tight">{title}</span>
     </div>
@@ -3137,6 +3157,22 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
     setShowColumnFilter(false);
   };
 
+  /** Resets the search box and every filter so the empty state can offer a one-click way out. */
+  const handleClearAllFilters = () => {
+    setSearchTerm('');
+    setNocValidUptoFilter('');
+    setTelemValidToFilter('');
+    handleClearColumnFilter();
+  };
+
+  /** Bring the top of the form into view when moving between wizard steps (long forms on small screens). */
+  useEffect(() => {
+    if (!isCreateScreen) return;
+    if (typeof window === 'undefined') return;
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  }, [addStep, isCreateScreen]);
+
   const saveDigestSettings = async () => {
     setDigestSaving(true);
     try {
@@ -3198,12 +3234,13 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
           value={nocValidUptoFilter}
           onChange={(e) => setNocValidUptoFilter(e.target.value)}
           className={cn(
-            'h-9 sm:h-10 rounded-lg border px-2 sm:px-3 text-xs sm:text-sm bg-white text-gray-900 max-w-[220px] sm:max-w-none',
+            'h-9 sm:h-10 rounded-lg border px-2 sm:px-3 text-xs sm:text-sm bg-card text-foreground max-w-[220px] sm:max-w-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
             nocValidUptoFilter
               ? 'border-amber-400 ring-1 ring-amber-200 font-medium'
-              : 'border-gray-300',
+              : 'border-input',
           )}
           title="Filter by NOC valid upto date"
+          aria-label="Filter by NOC valid upto date"
         >
           {NOC_VALID_UPTO_FILTER_OPTIONS.map((opt) => (
             <option key={opt.value || 'all'} value={opt.value}>
@@ -3215,12 +3252,13 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
           value={telemValidToFilter}
           onChange={(e) => setTelemValidToFilter(e.target.value)}
           className={cn(
-            'h-9 sm:h-10 rounded-lg border px-2 sm:px-3 text-xs sm:text-sm bg-white text-gray-900 max-w-[220px] sm:max-w-none',
+            'h-9 sm:h-10 rounded-lg border px-2 sm:px-3 text-xs sm:text-sm bg-card text-foreground max-w-[220px] sm:max-w-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
             telemValidToFilter
               ? 'border-amber-400 ring-1 ring-amber-200 font-medium'
-              : 'border-gray-300',
+              : 'border-input',
           )}
           title="Filter by telemetry valid to date"
+          aria-label="Filter by telemetry valid to date"
         >
           {TELEM_VALID_TO_FILTER_OPTIONS.map((opt) => (
             <option key={opt.value || 'all-telem'} value={opt.value}>
@@ -3233,22 +3271,33 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
             type="button"
             variant="outline"
             size="sm"
-            className="border-gray-300 text-gray-700 hover:bg-gray-50 h-9 sm:h-10 text-xs sm:text-sm"
+            className="border-input text-foreground hover:bg-muted h-9 sm:h-10 text-xs sm:text-sm"
             onClick={() => setShowColumnFilter((prev) => !prev)}
             title="Filter specific column"
+            aria-label="Filter specific column"
+            aria-haspopup="dialog"
+            aria-expanded={showColumnFilter}
           >
-            <Filter className="h-4 w-4 sm:mr-1.5" />
+            <Filter className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
             <span className="hidden sm:inline">Filter</span>
           </Button>
           {showColumnFilter && (
-            <Card className="absolute right-0 top-full z-50 mt-1 w-80 p-3 border border-gray-200 shadow-lg bg-white rounded-lg">
+            <Card
+              role="dialog"
+              aria-label="Filter specific column"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setShowColumnFilter(false);
+              }}
+              className="absolute right-0 top-full z-50 mt-1 w-[min(20rem,calc(100vw-2rem))] p-3 border border-border shadow-lg bg-popover rounded-lg"
+            >
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-gray-800">Filter specific column</p>
+                <p className="text-sm font-medium text-foreground">Filter specific column</p>
                 <Button
                   type="button"
                   size="sm"
                   variant="ghost"
-                  className="h-7 w-7 p-0 text-gray-600"
+                  className="h-8 w-8 p-0 text-muted-foreground"
+                  aria-label="Close column filter"
                   onClick={() => setShowColumnFilter(false)}
                 >
                   <X className="h-4 w-4" />
@@ -3258,7 +3307,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 <select
                   value={selectedFilterField}
                   onChange={(e) => setSelectedFilterField(e.target.value)}
-                  className="w-full h-10 rounded-lg border border-gray-300 px-2 text-sm bg-white text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  aria-label="Column to filter"
+                  className="w-full h-10 rounded-lg border border-input px-2 text-sm bg-card text-foreground focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                 >
                   {FILTER_GROUPS.map((group) => (
                     <optgroup key={group.label} label={group.label}>
@@ -3274,13 +3324,20 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   value={selectedFilterValue}
                   onChange={(e) => setSelectedFilterValue(e.target.value)}
                   placeholder="Type value to filter..."
-                  className="h-10 text-sm border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  aria-label="Filter value"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleApplyColumnFilter();
+                    }
+                  }}
+                  className="h-10 text-sm rounded-lg"
                 />
                 <div className="flex justify-end gap-2 pt-1">
-                  <Button type="button" size="sm" variant="outline" className="h-9 text-xs border-gray-300 text-gray-700 hover:bg-gray-50" onClick={handleClearColumnFilter}>
+                  <Button type="button" size="sm" variant="outline" className="h-9 text-xs border-input text-foreground hover:bg-muted" onClick={handleClearColumnFilter}>
                     Clear
                   </Button>
-                  <Button type="button" size="sm" className="h-9 text-xs bg-blue-600 hover:bg-blue-700 text-white" onClick={handleApplyColumnFilter}>
+                  <Button type="button" size="sm" className="h-9 text-xs" onClick={handleApplyColumnFilter}>
                     Apply
                   </Button>
                 </div>
@@ -3309,9 +3366,47 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
   });
 
   if (loading || (isCreateScreen && editHydrating)) {
+    const isFormSkeleton = isCreateScreen;
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+      <div className="space-y-4" role="status" aria-busy="true" aria-live="polite">
+        <span className="sr-only">Loading CGWA data…</span>
+        {isFormSkeleton ? (
+          <Card className="space-y-6 p-4 sm:p-6">
+            <div className="flex items-center gap-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-7 flex-1 motion-reduce:animate-none" />
+              ))}
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="space-y-2">
+                  <Skeleton className="h-4 w-24 motion-reduce:animate-none" />
+                  <Skeleton className="h-11 w-full motion-reduce:animate-none" />
+                </div>
+              ))}
+            </div>
+          </Card>
+        ) : (
+          <>
+            <Card className="p-4 sm:p-5">
+              <Skeleton className="h-10 w-full motion-reduce:animate-none" />
+            </Card>
+            <Card className="overflow-hidden">
+              <div className="space-y-px">
+                <Skeleton className="h-12 w-full rounded-none motion-reduce:animate-none" />
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 px-4 py-3">
+                    <Skeleton className="h-4 w-28 motion-reduce:animate-none" />
+                    <Skeleton className="h-4 w-48 motion-reduce:animate-none" />
+                    <Skeleton className="hidden h-4 w-32 sm:block motion-reduce:animate-none" />
+                    <Skeleton className="hidden h-4 w-24 md:block motion-reduce:animate-none" />
+                    <Skeleton className="ml-auto h-4 w-16 motion-reduce:animate-none" />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </>
+        )}
       </div>
     );
   }
@@ -3319,40 +3414,91 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
   return (
     <div className="space-y-6" data-testid={isCreateScreen ? 'create-cgwa-page' : isDraftsScreen ? 'my-cgwa-drafts-page' : 'view-cgwa-page'}>
       {isCreateScreen && canCreateCgw && (
-        <Card className="overflow-hidden">
+        <Card className="overflow-clip">
               <form
                 onSubmit={(e) => e.preventDefault()}
-                className="space-y-6 p-6"
+                className="space-y-7 p-5 sm:p-8"
               >
-                <div className="flex items-center justify-between gap-2">
-                  {addWizardStepDefs.map((step, si) => (
-                    <div key={step.n} className="flex items-center gap-2 flex-1">
-                      <div
-                        className={`h-7 w-7 rounded-full text-xs font-semibold flex items-center justify-center ${
-                          addStep >= step.n ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-                        }`}
-                      >
-                        {step.n}
-                      </div>
-                      <span className={`text-xs font-medium ${addStep >= step.n ? 'text-primary' : 'text-muted-foreground'}`}>
-                        {step.title}
-                      </span>
-                      {si < addWizardStepDefs.length - 1 ? (
-                        <div className={`h-px flex-1 ${addStep > step.n ? 'bg-primary' : 'bg-border'}`} />
-                      ) : null}
+                <nav aria-label="CGWA form progress" className="space-y-4">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">
+                        Step {addStep} of {addWizardStepDefs.length}
+                      </p>
+                      <h2 className="mt-1 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+                        {addWizardStepDefs.find((s) => s.n === addStep)?.title || 'Details'}
+                      </h2>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {CGW_STEP_HINTS[addWizardStepDefs.find((s) => s.n === addStep)?.title] || 'Fill in the details for this step.'}
+                      </p>
                     </div>
-                  ))}
-                </div>
+                    <p className="text-sm font-semibold text-muted-foreground tabular-nums">
+                      {Math.round(((addStep - 1) / Math.max(1, addWizardStepDefs.length - 1)) * 100)}% complete
+                    </p>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-primary to-violet-500 transition-all duration-500"
+                      style={{ width: `${((addStep - 1) / Math.max(1, addWizardStepDefs.length - 1)) * 100}%` }}
+                    />
+                  </div>
+                  <ol className="flex items-center justify-between gap-2">
+                    {addWizardStepDefs.map((step, si) => {
+                      const isCurrent = addStep === step.n;
+                      const isDone = addStep > step.n;
+                      return (
+                        <li
+                          key={step.n}
+                          className={`flex items-center gap-2.5 ${si < addWizardStepDefs.length - 1 ? 'flex-1' : ''}`}
+                          aria-current={isCurrent ? 'step' : undefined}
+                        >
+                          <div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-all ${
+                              isCurrent
+                                ? 'bg-primary text-primary-foreground shadow-glow ring-4 ring-primary/15'
+                                : isDone
+                                  ? 'bg-emerald-500 text-white'
+                                  : 'bg-muted text-muted-foreground'
+                            }`}
+                          >
+                            {isDone ? <Check className="h-4 w-4" aria-hidden="true" /> : step.n}
+                          </div>
+                          <span
+                            className={`hidden text-sm font-semibold sm:inline ${
+                              isCurrent ? 'text-foreground' : isDone ? 'text-foreground' : 'text-muted-foreground'
+                            }`}
+                          >
+                            <span className="sr-only">
+                              {isDone ? 'Completed: ' : isCurrent ? 'Current step: ' : 'Upcoming: '}
+                            </span>
+                            {step.title}
+                          </span>
+                          {si < addWizardStepDefs.length - 1 ? (
+                            <div
+                              aria-hidden="true"
+                              className={`h-0.5 min-w-3 flex-1 rounded-full transition-colors ${isDone ? 'bg-emerald-500' : 'bg-border'}`}
+                            />
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </nav>
 
                 {addStep === 1 && (
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="customer_id" className="text-sm font-medium text-gray-700">Select Customer</Label>
+                      <Label htmlFor="customer_id" className="text-sm font-medium text-foreground">
+                        Select Customer <span className="text-destructive" aria-hidden="true">*</span>
+                        <span className="sr-only">(required)</span>
+                      </Label>
                       <select
                         id="customer_id"
                         value={formData.customer_id}
                         onChange={handleCustomerChange}
-                        className="w-full border border-gray-300 rounded-lg px-3 h-11 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                        required
+                        aria-describedby="customer_id_hint"
+                        className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                       >
                         <option value="">Choose a customer...</option>
                         {customers.map(customer => (
@@ -3361,34 +3507,38 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                           </option>
                         ))}
                       </select>
+                      <p id="customer_id_hint" className="text-xs text-muted-foreground">
+                        Choosing a customer pre-fills the contact details below. You can still edit them.
+                      </p>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Location</Label>
-                        <Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className="border border-gray-300 h-11" />
+                        <Label htmlFor="cgw_location" className="text-sm font-medium text-foreground">Location</Label>
+                        <Input id="cgw_location" autoComplete="off" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className="h-11" />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Contact Person</Label>
-                        <Input value={formData.contact_person} onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })} className="border border-gray-300 h-11" />
+                        <Label htmlFor="cgw_contact_person" className="text-sm font-medium text-foreground">Contact Person</Label>
+                        <Input id="cgw_contact_person" autoComplete="off" value={formData.contact_person} onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })} className="h-11" />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">System Mobile</Label>
-                        <Input value={formData.system_mobile_number} onChange={(e) => setFormData({ ...formData, system_mobile_number: e.target.value })} className="border border-gray-300 h-11" />
+                        <Label htmlFor="cgw_system_mobile" className="text-sm font-medium text-foreground">System Mobile</Label>
+                        <Input id="cgw_system_mobile" type="tel" inputMode="tel" autoComplete="off" value={formData.system_mobile_number} onChange={(e) => setFormData({ ...formData, system_mobile_number: e.target.value })} className="h-11" />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Person Mobile</Label>
-                        <Input value={formData.person_mobile_number} onChange={(e) => setFormData({ ...formData, person_mobile_number: e.target.value })} className="border border-gray-300 h-11" />
+                        <Label htmlFor="cgw_person_mobile" className="text-sm font-medium text-foreground">Person Mobile</Label>
+                        <Input id="cgw_person_mobile" type="tel" inputMode="tel" autoComplete="off" value={formData.person_mobile_number} onChange={(e) => setFormData({ ...formData, person_mobile_number: e.target.value })} className="h-11" />
                       </div>
-                      <div className="space-y-2 col-span-2">
-                        <Label className="text-sm font-medium text-gray-700">Email</Label>
-                        <Input type="email" value={formData.email_id} onChange={(e) => setFormData({ ...formData, email_id: e.target.value })} className="border border-gray-300 h-11" />
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="cgw_email" className="text-sm font-medium text-foreground">Email</Label>
+                        <Input id="cgw_email" type="email" inputMode="email" autoComplete="off" value={formData.email_id} onChange={(e) => setFormData({ ...formData, email_id: e.target.value })} className="h-11" />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Status</Label>
+                        <Label htmlFor="cgw_status" className="text-sm font-medium text-foreground">Status</Label>
                         <select
+                          id="cgw_status"
                           value={formData.status}
                           onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                          className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                          className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                         >
                           <option value="Active">Active</option>
                           <option value="Inactive">Inactive</option>
@@ -3397,16 +3547,16 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                         </select>
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">NOC Renewal date</Label>
-                        <Input type="date" value={formData.renewal_date} onChange={(e) => setFormData({ ...formData, renewal_date: e.target.value })} className="border border-gray-300 h-11" />
+                        <Label htmlFor="cgw_renewal_date" className="text-sm font-medium text-foreground">NOC Renewal date</Label>
+                        <Input id="cgw_renewal_date" type="date" value={formData.renewal_date} onChange={(e) => setFormData({ ...formData, renewal_date: e.target.value })} className="h-11" />
                       </div>
-                      <div className="space-y-2 col-span-2">
-                        <Label className="text-sm font-medium text-gray-700">Portal URL</Label>
-                        <Input type="url" value={formData.url_link} onChange={(e) => setFormData({ ...formData, url_link: e.target.value })} className="border border-gray-300 h-11" />
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="cgw_url_link" className="text-sm font-medium text-foreground">Portal URL</Label>
+                        <Input id="cgw_url_link" type="url" inputMode="url" autoComplete="off" placeholder="https://" value={formData.url_link} onChange={(e) => setFormData({ ...formData, url_link: e.target.value })} className="h-11" />
                       </div>
-                      <div className="space-y-2 col-span-2">
-                        <Label className="text-sm font-medium text-gray-700">Remarks</Label>
-                        <Input value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} className="border border-gray-300 h-11" />
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="cgw_remarks" className="text-sm font-medium text-foreground">Remarks</Label>
+                        <Input id="cgw_remarks" value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} className="h-11" />
                       </div>
                     </div>
                   </div>
@@ -3425,20 +3575,20 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                             <>
                         {showPicker ? (
                           <>
-                            <Label className="text-sm font-medium text-gray-700">NOC PDF (optional)</Label>
+                            <Label className="text-sm font-medium text-foreground">NOC PDF (optional)</Label>
                             <Input
                               type="file"
                               accept=".pdf,application/pdf"
                               onChange={handleAddNocWizardFilePicked}
                               className="h-11"
                             />
-                            <p className="text-[11px] text-gray-500">
+                            <p className="text-xs text-muted-foreground">
                               This is the first validity period. Additional or renewed NOC periods can be added later from View CGWA.
                             </p>
                           </>
                         ) : null}
                         {addNocUploading ? (
-                          <p className="text-[11px] text-blue-700">Saving NOC to draft…</p>
+                          <p className="text-xs text-primary">Saving NOC to draft…</p>
                         ) : null}
                         {previewSrc ? (
                           <div className="space-y-2 pt-1">
@@ -3462,7 +3612,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                               >
                                 Preview PDF
                               </Button>
-                              <label className="text-[11px] font-medium text-blue-600 hover:text-blue-800 cursor-pointer shrink-0 underline-offset-2 hover:underline">
+                              <label className="text-xs font-medium text-accent-foreground hover:text-accent-foreground cursor-pointer shrink-0 underline-offset-2 hover:underline">
                                 Replace PDF
                                 <input
                                   type="file"
@@ -3471,12 +3621,12 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                   className="sr-only"
                                 />
                               </label>
-                              <span className="text-[11px] text-gray-500 truncate max-w-[200px]" title={addNocFile?.name || 'NOC PDF'}>
+                              <span className="text-xs text-muted-foreground truncate max-w-[200px]" title={addNocFile?.name || 'NOC PDF'}>
                                 {addNocFile?.name || 'Saved NOC PDF'}
                               </span>
                             </div>
                             {addNocPdfPreviewVisible ? (
-                              <div className="rounded-md border border-gray-200 overflow-hidden bg-neutral-900">
+                              <div className="rounded-md border border-border overflow-hidden bg-neutral-900">
                                 <iframe
                                   title="NOC PDF preview"
                                   src={previewSrc}
@@ -3486,7 +3636,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                             ) : null}
                           </div>
                         ) : addNocFile || wizardSavedNocPreviewLoading ? (
-                          <p className="text-[11px] text-amber-700 pt-1">
+                          <p className="text-xs text-amber-700 pt-1">
                             {wizardSavedNocPreviewLoading ? 'Loading saved NOC preview…' : 'Preparing preview…'}
                           </p>
                         ) : null}
@@ -3495,79 +3645,79 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                         })()}
                       </div>
                       <div className="min-w-0 w-full shrink-0 space-y-4 lg:w-[280px]">
-                    <div className="rounded-lg border border-gray-200 bg-slate-50/50 p-3 space-y-3">
-                      <p className="text-sm font-semibold text-gray-800">BHUNEER / no-cap portal</p>
+                    <div className="rounded-lg border border-border bg-muted/50 p-3 space-y-3">
+                      <p className="text-sm font-semibold text-foreground">BHUNEER / no-cap portal</p>
                       <div className="grid grid-cols-1 gap-3">
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">BHUNEER user ID</Label>
-                          <Input
+                          <Label htmlFor="cgwflowmetre-field-1" className="text-sm font-medium text-foreground">BHUNEER user ID</Label>
+                          <Input id="cgwflowmetre-field-1"
                             value={addNocForm.bhuneer_user_id}
                             onChange={(e) => setAddNocForm((p) => ({ ...p, bhuneer_user_id: e.target.value }))}
                             autoComplete="off"
-                            className="h-11 border border-gray-300"
+                            className="h-11"
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">Password</Label>
-                          <Input
+                          <Label htmlFor="cgwflowmetre-field-2" className="text-sm font-medium text-foreground">Password</Label>
+                          <Input id="cgwflowmetre-field-2"
                             type="password"
                             value={addNocForm.bhuneer_password}
                             onChange={(e) => setAddNocForm((p) => ({ ...p, bhuneer_password: e.target.value }))}
                             autoComplete="new-password"
-                            className="h-11 border border-gray-300"
+                            className="h-11"
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">No cap user ID</Label>
-                          <Input
+                          <Label htmlFor="cgwflowmetre-field-3" className="text-sm font-medium text-foreground">No cap user ID</Label>
+                          <Input id="cgwflowmetre-field-3"
                             value={addNocForm.nocap_user_id}
                             onChange={(e) =>
                               setAddNocForm((p) => ({ ...p, nocap_user_id: e.target.value.toLowerCase() }))
                             }
                             autoComplete="off"
                             placeholder="stored lowercase"
-                            className="h-11 border border-gray-300"
+                            className="h-11"
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">Password</Label>
-                          <Input
+                          <Label htmlFor="cgwflowmetre-field-4" className="text-sm font-medium text-foreground">Password</Label>
+                          <Input id="cgwflowmetre-field-4"
                             type="password"
                             value={addNocForm.nocap_password}
                             onChange={(e) => setAddNocForm((p) => ({ ...p, nocap_password: e.target.value }))}
                             autoComplete="new-password"
-                            className="h-11 border border-gray-300"
+                            className="h-11"
                           />
                         </div>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 gap-3">
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Project name</Label>
-                        <Input value={addNocForm.project_name} onChange={(e) => setAddNocForm((p) => ({ ...p, project_name: e.target.value }))} className="h-11" />
+                        <Label htmlFor="cgwflowmetre-field-5" className="text-sm font-medium text-foreground">Project name</Label>
+                        <Input id="cgwflowmetre-field-5" value={addNocForm.project_name} onChange={(e) => setAddNocForm((p) => ({ ...p, project_name: e.target.value }))} className="h-11" />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Project address</Label>
-                        <Input value={addNocForm.project_address} onChange={(e) => setAddNocForm((p) => ({ ...p, project_address: e.target.value }))} className="h-11" />
+                        <Label htmlFor="cgwflowmetre-field-6" className="text-sm font-medium text-foreground">Project address</Label>
+                        <Input id="cgwflowmetre-field-6" value={addNocForm.project_address} onChange={(e) => setAddNocForm((p) => ({ ...p, project_address: e.target.value }))} className="h-11" />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Communication address</Label>
-                        <Input value={addNocForm.communication_address} onChange={(e) => setAddNocForm((p) => ({ ...p, communication_address: e.target.value }))} className="h-11" />
+                        <Label htmlFor="cgwflowmetre-field-7" className="text-sm font-medium text-foreground">Communication address</Label>
+                        <Input id="cgwflowmetre-field-7" value={addNocForm.communication_address} onChange={(e) => setAddNocForm((p) => ({ ...p, communication_address: e.target.value }))} className="h-11" />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">NOC number</Label>
-                        <Input value={addNocForm.noc_no} onChange={(e) => setAddNocForm((p) => ({ ...p, noc_no: e.target.value }))} className="h-11" />
+                        <Label htmlFor="cgwflowmetre-field-8" className="text-sm font-medium text-foreground">NOC number</Label>
+                        <Input id="cgwflowmetre-field-8" value={addNocForm.noc_no} onChange={(e) => setAddNocForm((p) => ({ ...p, noc_no: e.target.value }))} className="h-11" />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Application number</Label>
-                        <Input value={addNocForm.application_no} onChange={(e) => setAddNocForm((p) => ({ ...p, application_no: e.target.value }))} className="h-11" />
+                        <Label htmlFor="cgwflowmetre-field-9" className="text-sm font-medium text-foreground">Application number</Label>
+                        <Input id="cgwflowmetre-field-9" value={addNocForm.application_no} onChange={(e) => setAddNocForm((p) => ({ ...p, application_no: e.target.value }))} className="h-11" />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Project status</Label>
-                        <select
+                        <Label htmlFor="cgwflowmetre-field-10" className="text-sm font-medium text-foreground">Project status</Label>
+                        <select id="cgwflowmetre-field-10"
                           value={addNocForm.project_status}
                           onChange={(e) => setAddNocForm((p) => ({ ...p, project_status: e.target.value }))}
-                          className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                          className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                         >
                           <option value="">Select status</option>
                           <option value="existing_ground_water">Existing ground water</option>
@@ -3575,11 +3725,11 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                         </select>
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">NOC type</Label>
-                        <select
+                        <Label htmlFor="cgwflowmetre-field-11" className="text-sm font-medium text-foreground">NOC type</Label>
+                        <select id="cgwflowmetre-field-11"
                           value={addNocForm.noc_type}
                           onChange={(e) => setAddNocForm((p) => ({ ...p, noc_type: e.target.value }))}
-                          className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                          className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                         >
                           <option value="">Select type</option>
                           <option value="new">New</option>
@@ -3587,41 +3737,41 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                         </select>
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Valid from</Label>
-                        <Input type="date" value={addNocForm.valid_from} onChange={(e) => setAddNocForm((p) => ({ ...p, valid_from: e.target.value }))} className="h-11" />
+                        <Label htmlFor="cgwflowmetre-field-12" className="text-sm font-medium text-foreground">Valid from</Label>
+                        <Input id="cgwflowmetre-field-12" type="date" value={addNocForm.valid_from} onChange={(e) => setAddNocForm((p) => ({ ...p, valid_from: e.target.value }))} className="h-11" />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Valid up to</Label>
-                        <Input type="date" value={addNocForm.valid_upto} onChange={(e) => setAddNocForm((p) => ({ ...p, valid_upto: e.target.value }))} className="h-11" />
+                        <Label htmlFor="cgwflowmetre-field-13" className="text-sm font-medium text-foreground">Valid up to</Label>
+                        <Input id="cgwflowmetre-field-13" type="date" value={addNocForm.valid_upto} onChange={(e) => setAddNocForm((p) => ({ ...p, valid_upto: e.target.value }))} className="h-11" />
                       </div>
                     </div>
-                    <div className="rounded-lg border border-gray-200 p-3">
-                      <p className="text-sm font-semibold text-gray-800 mb-3">Ground water abstraction permitted</p>
+                    <div className="rounded-lg border border-border p-3">
+                      <p className="text-sm font-semibold text-foreground mb-3">Ground water abstraction permitted</p>
                       <div className="grid grid-cols-1 gap-3">
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">M3 per day</Label>
-                          <Input value={addNocForm.permitted_m3_per_day} onChange={(e) => setAddNocForm((p) => ({ ...p, permitted_m3_per_day: e.target.value }))} className="h-11" />
+                          <Label htmlFor="cgwflowmetre-field-14" className="text-sm font-medium text-foreground">M3 per day</Label>
+                          <Input id="cgwflowmetre-field-14" value={addNocForm.permitted_m3_per_day} onChange={(e) => setAddNocForm((p) => ({ ...p, permitted_m3_per_day: e.target.value }))} className="h-11" />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">M3 per year</Label>
-                          <Input value={addNocForm.permitted_m3_per_year} onChange={(e) => setAddNocForm((p) => ({ ...p, permitted_m3_per_year: e.target.value }))} className="h-11" />
+                          <Label htmlFor="cgwflowmetre-field-15" className="text-sm font-medium text-foreground">M3 per year</Label>
+                          <Input id="cgwflowmetre-field-15" value={addNocForm.permitted_m3_per_year} onChange={(e) => setAddNocForm((p) => ({ ...p, permitted_m3_per_year: e.target.value }))} className="h-11" />
                         </div>
                       </div>
                     </div>
-                    <div className="rounded-lg border border-gray-200 p-3">
-                      <p className="text-sm font-semibold text-gray-800 mb-3">Detail of ground water abstraction / dewatering structure</p>
+                    <div className="rounded-lg border border-border p-3">
+                      <p className="text-sm font-semibold text-foreground mb-3">Detail of ground water abstraction / dewatering structure</p>
                       <div className="grid grid-cols-1 gap-3">
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">Existing BW count</Label>
-                          <Input value={addNocForm.existing_bw_count} onChange={(e) => setAddNocForm((p) => ({ ...p, existing_bw_count: e.target.value }))} className="h-11" />
+                          <Label htmlFor="cgwflowmetre-field-16" className="text-sm font-medium text-foreground">Existing BW count</Label>
+                          <Input id="cgwflowmetre-field-16" value={addNocForm.existing_bw_count} onChange={(e) => setAddNocForm((p) => ({ ...p, existing_bw_count: e.target.value }))} className="h-11" />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">Total proposed BW count</Label>
-                          <Input value={addNocForm.total_proposed_bw_count} onChange={(e) => setAddNocForm((p) => ({ ...p, total_proposed_bw_count: e.target.value }))} className="h-11" />
+                          <Label htmlFor="cgwflowmetre-field-17" className="text-sm font-medium text-foreground">Total proposed BW count</Label>
+                          <Input id="cgwflowmetre-field-17" value={addNocForm.total_proposed_bw_count} onChange={(e) => setAddNocForm((p) => ({ ...p, total_proposed_bw_count: e.target.value }))} className="h-11" />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">Flowmeter applicable or not</Label>
-                          <select
+                          <Label htmlFor="cgwflowmetre-field-18" className="text-sm font-medium text-foreground">Flowmeter applicable or not</Label>
+                          <select id="cgwflowmetre-field-18"
                             value={addNocForm.flowmeter_applicable}
                             onChange={(e) => {
                               const v = e.target.value;
@@ -3631,7 +3781,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                 flowmeter_count: v === 'yes' ? p.flowmeter_count : '',
                               }));
                             }}
-                            className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                            className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                           >
                             <option value="">Select</option>
                             <option value="yes">Yes</option>
@@ -3640,13 +3790,13 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                         </div>
                         {addNocForm.flowmeter_applicable === 'yes' && (
                           <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-700">Flowmeter count</Label>
-                            <Input value={addNocForm.flowmeter_count} onChange={(e) => setAddNocForm((p) => ({ ...p, flowmeter_count: e.target.value }))} className="h-11" />
+                            <Label htmlFor="cgwflowmetre-field-19" className="text-sm font-medium text-foreground">Flowmeter count</Label>
+                            <Input id="cgwflowmetre-field-19" value={addNocForm.flowmeter_count} onChange={(e) => setAddNocForm((p) => ({ ...p, flowmeter_count: e.target.value }))} className="h-11" />
                           </div>
                         )}
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">Piezometer applicable or not</Label>
-                          <select
+                          <Label htmlFor="cgwflowmetre-field-20" className="text-sm font-medium text-foreground">Piezometer applicable or not</Label>
+                          <select id="cgwflowmetre-field-20"
                             value={addNocForm.piezometer_applicable}
                             onChange={(e) => {
                               const v = e.target.value;
@@ -3656,7 +3806,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                 piezometer_count: v === 'yes' ? p.piezometer_count : '',
                               }));
                             }}
-                            className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                            className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                           >
                             <option value="">Select</option>
                             <option value="yes">Yes</option>
@@ -3665,8 +3815,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                         </div>
                         {addNocForm.piezometer_applicable === 'yes' && (
                           <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-700">Piezometer count</Label>
-                            <Input value={addNocForm.piezometer_count} onChange={(e) => setAddNocForm((p) => ({ ...p, piezometer_count: e.target.value }))} className="h-11" />
+                            <Label htmlFor="cgwflowmetre-field-21" className="text-sm font-medium text-foreground">Piezometer count</Label>
+                            <Input id="cgwflowmetre-field-21" value={addNocForm.piezometer_count} onChange={(e) => setAddNocForm((p) => ({ ...p, piezometer_count: e.target.value }))} className="h-11" />
                           </div>
                         )}
                       </div>
@@ -3678,16 +3828,16 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
                 {addStep === 3 && (
                   <div className="space-y-4">
-                    <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-4">
+                    <div className="rounded-lg border border-border bg-white p-4 space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <Label className="text-sm font-medium text-gray-700">Flow metre lines</Label>
-                          <p className="text-xs text-gray-500 mt-0.5">One card per flow metre; add rows for multiple units.</p>
+                          <Label className="text-sm font-medium text-foreground">Flow metre lines</Label>
+                          <p className="text-xs text-muted-foreground mt-0.5">One card per flow metre; add rows for multiple units.</p>
                         </div>
                         <Button
                           type="button"
                           variant="outline"
-                          className="border-gray-300 text-gray-700 hover:bg-gray-50 bg-white"
+                          className="border-input text-foreground hover:bg-muted bg-white"
                           onClick={() => {
                             setEquipmentRows((prev) => [...prev, { ...EMPTY_EQUIPMENT_ROW }]);
                             setEquipmentFlowFiles((prev) => [...prev, EMPTY_EQUIPMENT_FLOW_FILES()]);
@@ -3718,44 +3868,44 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                               : null,
                           });
                           return (
-                            <Card key={idx} className="p-4 border border-gray-200 bg-white shadow-none rounded-lg">
+                            <Card key={idx} className="p-4 border border-border bg-white shadow-none rounded-lg">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="flex-1 min-w-0 space-y-4">
-                                  <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
-                                    <p className="text-sm font-semibold text-gray-800">Flow metre details</p>
+                                  <div className="rounded-lg border border-border bg-white p-3 space-y-3">
+                                    <p className="text-sm font-semibold text-foreground">Flow metre details</p>
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                       <div className="space-y-2">
-                                        <Label className="text-sm font-medium text-gray-700">Make</Label>
-                                        <Input
+                                        <Label className="text-sm font-medium text-foreground">Make</Label>
+                                        <Input aria-label="UPC"
                                           value={row.flow_meter_make}
                                           onChange={(e) => patchRow({ flow_meter_make: e.target.value })}
                                           placeholder="UPC"
-                                          className="border border-gray-300 h-11"
+                                          className="h-11"
                                         />
                                       </div>
                                       <div className="space-y-2">
-                                        <Label className="text-sm font-medium text-gray-700">Size of flow metre</Label>
+                                        <Label className="text-sm font-medium text-foreground">Size of flow metre</Label>
                                         <Input
                                           value={row.flow_meter_size}
                                           onChange={(e) => patchRow({ flow_meter_size: e.target.value })}
-                                          className="border border-gray-300 h-11"
+                                          className="h-11"
                                         />
                                       </div>
                                       <div className="space-y-2">
-                                        <Label className="text-sm font-medium text-gray-700">Serial number</Label>
+                                        <Label className="text-sm font-medium text-foreground">Serial number</Label>
                                         <Input
                                           value={row.flow_meter_serial}
                                           onChange={(e) => patchRow({ flow_meter_serial: e.target.value })}
-                                          className="border border-gray-300 h-11"
+                                          className="h-11"
                                         />
                                       </div>
                                       <div className="space-y-2">
-                                        <Label className="text-sm font-medium text-gray-700">Commissioning date</Label>
+                                        <Label className="text-sm font-medium text-foreground">Commissioning date</Label>
                                         <Input
                                           type="date"
                                           value={row.flow_meter_commissioning_date}
                                           onChange={(e) => patchRow({ flow_meter_commissioning_date: e.target.value })}
-                                          className="border border-gray-300 h-11"
+                                          className="h-11"
                                         />
                                       </div>
                                     </div>
@@ -3766,13 +3916,13 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                       files={flowFiles.bwGeoPhotos}
                                       onChange={(bwGeoPhotos) => patchFlowFiles({ bwGeoPhotos })}
                                       hint="Click + to add GEO photos. Uploads after save (S3)."
-                                      className="border-t border-gray-200 pt-3"
+                                      className="border-t border-border pt-3"
                                       {...rowSaved('bw_geo_flowmeter')}
                                     />
                                   </div>
 
-                                  <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
-                                    <p className="text-sm font-semibold text-gray-800">Calibration certificate</p>
+                                  <div className="rounded-lg border border-border bg-white p-3 space-y-3">
+                                    <p className="text-sm font-semibold text-foreground">Calibration certificate</p>
                                     <CgwMultiFilePicker
                                       label="Certificate (file)"
                                       accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
@@ -3783,7 +3933,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                     />
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                       <div className="space-y-2">
-                                        <Label className="text-sm font-medium text-gray-700">Valid from</Label>
+                                        <Label className="text-sm font-medium text-foreground">Valid from</Label>
                                         <Input
                                           type="date"
                                           value={row.calibration_valid_from}
@@ -3792,7 +3942,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                         />
                                       </div>
                                       <div className="space-y-2">
-                                        <Label className="text-sm font-medium text-gray-700">Valid to</Label>
+                                        <Label className="text-sm font-medium text-foreground">Valid to</Label>
                                         <Input
                                           type="date"
                                           value={row.calibration_valid_to}
@@ -3803,8 +3953,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                     </div>
                                   </div>
 
-                                  <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
-                                    <p className="text-sm font-semibold text-gray-800">Service report</p>
+                                  <div className="rounded-lg border border-border bg-white p-3 space-y-2">
+                                    <p className="text-sm font-semibold text-foreground">Service report</p>
                                     <CgwMultiFilePicker
                                       label="Upload service report"
                                       accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/*"
@@ -3816,11 +3966,11 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                   </div>
 
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-medium text-gray-700">Applicable telemetry system?</Label>
+                                    <Label className="text-sm font-medium text-foreground">Applicable telemetry system?</Label>
                                     <select
                                       value={row.telemetry_applicable}
                                       onChange={(e) => patchRow({ telemetry_applicable: e.target.value })}
-                                      className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                                      className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                                     >
                                       <option value="">Select</option>
                                       <option value="yes">Yes</option>
@@ -3829,15 +3979,15 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                   </div>
 
                                   {row.telemetry_applicable === 'yes' ? (
-                                    <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-4">
-                                      <p className="text-sm font-semibold text-gray-800">Telemetry system</p>
+                                    <div className="rounded-lg border border-border bg-white p-3 space-y-4">
+                                      <p className="text-sm font-semibold text-foreground">Telemetry system</p>
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-700">Telemetry company</Label>
+                                          <Label className="text-sm font-medium text-foreground">Telemetry company</Label>
                                           <select
                                             value={row.telemetry_company}
                                             onChange={(e) => patchRow({ telemetry_company: e.target.value })}
-                                            className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                                            className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                                           >
                                             <option value="">Select</option>
                                             <option value="frinso">FRINSO</option>
@@ -3847,7 +3997,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                         </div>
                                         {row.telemetry_company === 'other' ? (
                                           <div className="space-y-2">
-                                            <Label className="text-sm font-medium text-gray-700">Company name (manual)</Label>
+                                            <Label className="text-sm font-medium text-foreground">Company name (manual)</Label>
                                             <Input
                                               value={row.telemetry_company_other}
                                               onChange={(e) => patchRow({ telemetry_company_other: e.target.value })}
@@ -3856,11 +4006,11 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           </div>
                                         ) : null}
                                         <div className="space-y-2 sm:col-span-2">
-                                          <Label className="text-sm font-medium text-gray-700">Telemetry communication via</Label>
+                                          <Label className="text-sm font-medium text-foreground">Telemetry communication via</Label>
                                           <select
                                             value={row.telemetry_communication_via}
                                             onChange={(e) => patchRow({ telemetry_communication_via: e.target.value })}
-                                            className="w-full border border-gray-300 rounded-lg px-3 h-11 max-w-md"
+                                            className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 max-w-md"
                                           >
                                             <option value="">Select</option>
                                             <option value="sim">SIM</option>
@@ -3871,15 +4021,15 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                       </div>
 
                                       {row.telemetry_communication_via === 'sim' ? (
-                                        <div className="rounded-md border border-gray-200 bg-white p-3 space-y-3">
-                                          <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Telemetry SIM</p>
+                                        <div className="rounded-md border border-border bg-white p-3 space-y-3">
+                                          <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Telemetry SIM</p>
                                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             <div className="space-y-2">
-                                              <Label className="text-sm font-medium text-gray-700">SIM provider</Label>
+                                              <Label className="text-sm font-medium text-foreground">SIM provider</Label>
                                               <select
                                                 value={row.telemetry_sim_provider}
                                                 onChange={(e) => patchRow({ telemetry_sim_provider: e.target.value })}
-                                                className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                                                className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                                               >
                                                 <option value="">Select</option>
                                                 <option value="airtel">Airtel</option>
@@ -3891,7 +4041,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                             </div>
                                             {row.telemetry_sim_provider === 'other' ? (
                                               <div className="space-y-2">
-                                                <Label className="text-sm font-medium text-gray-700">Provider (manual)</Label>
+                                                <Label className="text-sm font-medium text-foreground">Provider (manual)</Label>
                                                 <Input
                                                   value={row.telemetry_sim_provider_other}
                                                   onChange={(e) => patchRow({ telemetry_sim_provider_other: e.target.value })}
@@ -3900,7 +4050,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                               </div>
                                             ) : null}
                                             <div className="space-y-2 sm:col-span-2">
-                                              <Label className="text-sm font-medium text-gray-700">SIM number</Label>
+                                              <Label className="text-sm font-medium text-foreground">SIM number</Label>
                                               <Input
                                                 value={row.telemetry_sim_number}
                                                 onChange={(e) => patchRow({ telemetry_sim_number: e.target.value })}
@@ -3908,7 +4058,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                               />
                                             </div>
                                             <div className="space-y-2">
-                                              <Label className="text-sm font-medium text-gray-700">SIM valid from</Label>
+                                              <Label className="text-sm font-medium text-foreground">SIM valid from</Label>
                                               <Input
                                                 type="date"
                                                 value={row.telemetry_sim_valid_from}
@@ -3917,7 +4067,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                               />
                                             </div>
                                             <div className="space-y-2">
-                                              <Label className="text-sm font-medium text-gray-700">SIM valid to</Label>
+                                              <Label className="text-sm font-medium text-foreground">SIM valid to</Label>
                                               <Input
                                                 type="date"
                                                 value={row.telemetry_sim_valid_to}
@@ -3931,7 +4081,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-700">Telemetry product code</Label>
+                                          <Label className="text-sm font-medium text-foreground">Telemetry product code</Label>
                                           <Input
                                             value={row.telemetry_product_code}
                                             onChange={(e) => patchRow({ telemetry_product_code: e.target.value })}
@@ -3939,7 +4089,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           />
                                         </div>
                                         <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-700">Telemetry serial number</Label>
+                                          <Label className="text-sm font-medium text-foreground">Telemetry serial number</Label>
                                           <Input
                                             value={row.telemetry_serial_number}
                                             onChange={(e) => patchRow({ telemetry_serial_number: e.target.value })}
@@ -3947,7 +4097,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           />
                                         </div>
                                         <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-700">Commissioning date of telemetry</Label>
+                                          <Label className="text-sm font-medium text-foreground">Commissioning date of telemetry</Label>
                                           <Input
                                             type="date"
                                             value={row.telemetry_commissioning_date}
@@ -3956,7 +4106,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           />
                                         </div>
                                         <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-700">How many telemetry SIM changed?</Label>
+                                          <Label className="text-sm font-medium text-foreground">How many telemetry SIM changed?</Label>
                                           <Input
                                             type="number"
                                             min="0"
@@ -3966,7 +4116,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           />
                                         </div>
                                         <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-700">How many times recharge done?</Label>
+                                          <Label className="text-sm font-medium text-foreground">How many times recharge done?</Label>
                                           <Input
                                             type="number"
                                             min="0"
@@ -3998,8 +4148,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <div className="space-y-2 sm:col-span-2">
-                                          <Label className="text-sm font-medium text-gray-700">Telemetry portal URL</Label>
-                                          <Input
+                                          <Label className="text-sm font-medium text-foreground">Telemetry portal URL</Label>
+                                          <Input aria-label="https://…"
                                             type="url"
                                             value={row.telemetry_portal_url}
                                             onChange={(e) => patchRow({ telemetry_portal_url: e.target.value })}
@@ -4008,7 +4158,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           />
                                         </div>
                                         <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-700">Telemetry username</Label>
+                                          <Label className="text-sm font-medium text-foreground">Telemetry username</Label>
                                           <Input
                                             value={row.telemetry_username}
                                             onChange={(e) => patchRow({ telemetry_username: e.target.value })}
@@ -4017,7 +4167,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           />
                                         </div>
                                         <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-700">Telemetry password</Label>
+                                          <Label className="text-sm font-medium text-foreground">Telemetry password</Label>
                                           <Input
                                             type="password"
                                             value={row.telemetry_password}
@@ -4027,7 +4177,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           />
                                         </div>
                                         <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-700">Telemetry valid from</Label>
+                                          <Label className="text-sm font-medium text-foreground">Telemetry valid from</Label>
                                           <Input
                                             type="date"
                                             value={row.telemetry_valid_from}
@@ -4036,7 +4186,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           />
                                         </div>
                                         <div className="space-y-2">
-                                          <Label className="text-sm font-medium text-gray-700">Telemetry valid to</Label>
+                                          <Label className="text-sm font-medium text-foreground">Telemetry valid to</Label>
                                           <Input
                                             type="date"
                                             value={row.telemetry_valid_to}
@@ -4047,11 +4197,11 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                       </div>
 
                                       <div className="space-y-2">
-                                        <Label className="text-sm font-medium text-gray-700">Telemetry uploaded in previous year?</Label>
+                                        <Label className="text-sm font-medium text-foreground">Telemetry uploaded in previous year?</Label>
                                         <select
                                           value={row.telemetry_uploaded_previous_year}
                                           onChange={(e) => patchRow({ telemetry_uploaded_previous_year: e.target.value })}
-                                          className="w-full border border-gray-300 rounded-lg px-3 h-11 max-w-md"
+                                          className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 max-w-md"
                                         >
                                           <option value="">Select</option>
                                           <option value="yes">Yes</option>
@@ -4060,13 +4210,13 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                       </div>
 
                                       {row.telemetry_uploaded_previous_year === 'yes' ? (
-                                        <div className="rounded-md border border-gray-200 bg-white p-3 space-y-3">
+                                        <div className="rounded-md border border-border bg-white p-3 space-y-3">
                                           <div className="space-y-2">
-                                            <Label className="text-sm font-medium text-gray-700">Prior telemetry serial number</Label>
+                                            <Label className="text-sm font-medium text-foreground">Prior telemetry serial number</Label>
                                             <select
                                               value={row.telemetry_previous_serial_pick}
                                               onChange={(e) => patchRow({ telemetry_previous_serial_pick: e.target.value })}
-                                              className="w-full border border-gray-300 rounded-lg px-3 h-11"
+                                              className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                                             >
                                               <option value="">Select serial</option>
                                               {telemetrySerialOptions.map((s) => (
@@ -4079,7 +4229,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           </div>
                                           {row.telemetry_previous_serial_pick === '__manual__' ? (
                                             <div className="space-y-2">
-                                              <Label className="text-sm font-medium text-gray-700">Serial number (manual)</Label>
+                                              <Label className="text-sm font-medium text-foreground">Serial number (manual)</Label>
                                               <Input
                                                 value={row.telemetry_previous_serial_free}
                                                 onChange={(e) => patchRow({ telemetry_previous_serial_free: e.target.value })}
@@ -4089,11 +4239,11 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           ) : null}
 
                                           <div className="space-y-2">
-                                            <Label className="text-sm font-medium text-gray-700">Old telemetry data available?</Label>
+                                            <Label className="text-sm font-medium text-foreground">Old telemetry data available?</Label>
                                             <select
                                               value={row.telemetry_previous_data_available}
                                               onChange={(e) => patchRow({ telemetry_previous_data_available: e.target.value })}
-                                              className="w-full border border-gray-300 rounded-lg px-3 h-11 max-w-md"
+                                              className="w-full border border-input bg-card rounded-lg px-3 h-11 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 max-w-md"
                                             >
                                               <option value="">Select</option>
                                               <option value="yes">Yes</option>
@@ -4102,10 +4252,10 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           </div>
 
                                           {row.telemetry_previous_data_available === 'yes' ? (
-                                            <div className="space-y-3 pt-1 border-t border-gray-200">
+                                            <div className="space-y-3 pt-1 border-t border-border">
                                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                 <div className="space-y-2">
-                                                  <Label className="text-sm font-medium text-gray-700">Old data from</Label>
+                                                  <Label className="text-sm font-medium text-foreground">Old data from</Label>
                                                   <Input
                                                     type="date"
                                                     value={row.telemetry_previous_data_from}
@@ -4114,7 +4264,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                                   />
                                                 </div>
                                                 <div className="space-y-2">
-                                                  <Label className="text-sm font-medium text-gray-700">Old data to</Label>
+                                                  <Label className="text-sm font-medium text-foreground">Old data to</Label>
                                                   <Input
                                                     type="date"
                                                     value={row.telemetry_previous_data_to}
@@ -4149,7 +4299,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                   type="button"
                                   variant="outline"
                                   size="sm"
-                                  className="h-9 px-3 border-gray-200 text-red-600 hover:bg-red-50 shrink-0"
+                                  className="h-9 px-3 border-border text-red-600 hover:bg-red-50 shrink-0"
                                   disabled={equipmentRows.length === 1}
                                   onClick={() => {
                                     setEquipmentRows((prev) => prev.filter((_, i) => i !== idx));
@@ -4169,7 +4319,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 )}
 
                 {addStep === 4 && needsPiezometerWizardStep ? (
-                  <div className="rounded-lg border border-gray-200 bg-white p-4">
+                  <div className="rounded-lg border border-border bg-white p-4">
                     <PiezometerAddWizardStep
                       piezometerRows={piezometerRows}
                       setPiezometerRows={setPiezometerRows}
@@ -4186,10 +4336,10 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
                 {addStep === (needsPiezometerWizardStep ? 5 : 4) ? (
                   <div className="space-y-4">
-                    <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
+                    <div className="rounded-lg border border-border bg-white p-4 space-y-3">
                       <div>
-                        <p className="text-sm font-semibold text-gray-800">Additional attachment</p>
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-sm font-semibold text-foreground">Additional attachment</p>
+                        <p className="text-xs text-muted-foreground mt-1">
                           Click + or the dashed area to add files. They upload when you save the item or draft.
                           {needsPiezometerWizardStep ? ' (This is step 5 — after piezometer.)' : ''}
                         </p>
@@ -4216,8 +4366,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                             : null,
                         });
                         return (
-                          <div key={`add-attach-${idx}`} className="rounded-md border border-gray-200 bg-white p-3 space-y-3">
-                            <p className="text-xs font-semibold text-gray-700">Flow metre line {idx + 1}</p>
+                          <div key={`add-attach-${idx}`} className="rounded-md border border-border bg-white p-3 space-y-3">
+                            <p className="text-xs font-semibold text-foreground">Flow metre line {idx + 1}</p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <CgwMultiFilePicker
                                 label="Water quality certificate"
@@ -4262,10 +4412,10 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                 {...attachSaved('rain_water_harvesting_data')}
                               />
                             </div>
-                            <div className="rounded-md border border-gray-200 bg-white p-3 space-y-3">
-                              <p className="text-sm font-semibold text-gray-800">Additional doc</p>
+                            <div className="rounded-md border border-border bg-white p-3 space-y-3">
+                              <p className="text-sm font-semibold text-foreground">Additional doc</p>
                               <div className="space-y-2">
-                                <Label className="text-sm font-medium text-gray-700">Document type</Label>
+                                <Label className="text-sm font-medium text-foreground">Document type</Label>
                                 <Input
                                   value={row.additional_document_type}
                                   onChange={(e) => patchRow({ additional_document_type: e.target.value })}
@@ -4288,20 +4438,20 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   </div>
                 ) : null}
 
-                <div className="flex justify-between gap-3 pt-2">
+                <div className="sticky bottom-0 -mx-4 -mb-4 flex flex-col-reverse gap-3 border-t border-border bg-card/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-card/80 sm:static sm:mx-0 sm:mb-0 sm:flex-row sm:justify-between sm:border-0 sm:bg-transparent sm:p-0 sm:pt-2 sm:backdrop-blur-none">
                   <div>
                     {addStep > 1 && (
-                      <Button type="button" variant="outline" onClick={goAddPrevStep} className="border-gray-300 text-gray-700 hover:bg-gray-50">
+                      <Button type="button" variant="outline" onClick={goAddPrevStep} className="border-input text-foreground hover:bg-muted">
                         Back
                       </Button>
                     )}
                   </div>
-                  <div className="flex flex-wrap gap-3 justify-end">
+                  <div className="flex flex-wrap gap-2 sm:gap-3 sm:justify-end">
                     <Button
                       type="button"
                       variant="outline"
                       disabled={draftSaving || addWizardSubmitting}
-                      className="border-gray-300 text-gray-700 hover:bg-gray-50 bg-white"
+                      className="border-input text-foreground hover:bg-muted bg-white"
                       onClick={handleSaveDraft}
                     >
                       <Save className="h-4 w-4 mr-2" />
@@ -4310,7 +4460,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                     <Button type="button" variant="outline" onClick={() => {
                       resetForm();
                       navigate(editMode && isDraftRecord(editingItem) ? DRAFTS_CGWA_PATH : VIEW_CGWA_PATH);
-                    }} className="border-gray-300 text-gray-700 hover:bg-gray-50">
+                    }} className="border-input text-foreground hover:bg-muted">
                       Cancel
                     </Button>
                     {addStep < addWizardFinalStep ? (
@@ -4343,38 +4493,54 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
         <>
       <Card className="p-4 sm:p-5">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Label htmlFor="cgw-search-all" className="sr-only">Search CGWA records</Label>
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden="true" />
           <Input
             id="cgw-search-all"
+            type="search"
+            autoComplete="off"
             placeholder="Search customer, CGWA ID, project, location, NOC number, application number…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 h-10"
+            className="pl-10 pr-10 h-10 [&::-webkit-search-cancel-button]:appearance-none"
           />
+          {searchTerm ? (
+            <button
+              type="button"
+              onClick={() => setSearchTerm('')}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
+        <p className="sr-only" role="status" aria-live="polite">
+          {filteredItems.length} {filteredItems.length === 1 ? 'record' : 'records'} found
+        </p>
       </Card>
 
       {isAdminUser(user) && SHOW_CGW_DIGEST_EMAIL_SECTION && (
-        <Card className="rounded-lg border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
+        <Card className="rounded-lg border border-border bg-white p-4 sm:p-5 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1 min-w-0 flex-1">
-              <h3 className="text-sm font-semibold text-gray-900">Daily past-due renewal email</h3>
-              <p className="text-xs text-gray-600 leading-relaxed">
-                Each morning at <span className="font-medium text-gray-800">9:00</span>
+              <h3 className="text-sm font-semibold text-foreground">Daily past-due renewal email</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Each morning at <span className="font-medium text-foreground">9:00</span>
                 {digestScheduleTz ? (
                   <> ({digestScheduleTz})</>
                 ) : null}
                 , the server emails a list of all CGW rows whose renewal date is already past, including customer name and contact details for follow-up. Requires SMTP variables in the server environment (
-                <span className="font-mono text-[11px]">SMTP_SERVER</span>,{' '}
-                <span className="font-mono text-[11px]">SMTP_USERNAME</span>,{' '}
-                <span className="font-mono text-[11px]">SMTP_PASSWORD</span>,{' '}
-                <span className="font-mono text-[11px]">SENDER_EMAIL</span>).
+                <span className="font-mono text-xs">SMTP_SERVER</span>,{' '}
+                <span className="font-mono text-xs">SMTP_USERNAME</span>,{' '}
+                <span className="font-mono text-xs">SMTP_PASSWORD</span>,{' '}
+                <span className="font-mono text-xs">SENDER_EMAIL</span>).
               </p>
             </div>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 sm:items-end">
             <div className="space-y-1.5 sm:col-span-2 lg:col-span-2">
-              <Label htmlFor="digest_notification_email" className="text-xs font-medium text-gray-700">
+              <Label htmlFor="digest_notification_email" className="text-xs font-medium text-foreground">
                 Notification email (digest recipient)
               </Label>
               <Input
@@ -4383,7 +4549,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 placeholder="team@company.com"
                 value={digestNotificationEmail}
                 onChange={(e) => setDigestNotificationEmail(e.target.value)}
-                className="h-9 text-sm border-gray-300"
+                className="h-9 text-sm border-input"
               />
             </div>
             <label className="flex items-center gap-2 cursor-pointer select-none pb-1">
@@ -4391,9 +4557,9 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 type="checkbox"
                 checked={digestEnabled}
                 onChange={(e) => setDigestEnabled(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="h-4 w-4 rounded border-input text-accent-foreground focus:ring-ring"
               />
-              <span className="text-sm text-gray-800">Enable daily digest</span>
+              <span className="text-sm text-foreground">Enable daily digest</span>
             </label>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
@@ -4405,7 +4571,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
             >
               {digestSaving ? 'Saving…' : 'Save settings'}
             </Button>
-            <Button type="button" variant="outline" className="h-9 border-gray-300" onClick={runDigestNow}>
+            <Button type="button" variant="outline" className="h-9 border-input" onClick={runDigestNow}>
               Send digest now
             </Button>
           </div>
@@ -4414,14 +4580,20 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
       {/* Inventory grid */}
       {filteredItems.length > 0 ? (
-        <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <Card className="overflow-hidden">
           <div
             className="table-scroll overflow-x-auto overflow-y-scroll h-[calc(100vh-240px)] min-h-[400px] max-h-[calc(100vh-240px)] scrollbar-thin"
             style={{ scrollbarWidth: 'auto' }}
+            tabIndex={0}
+            role="region"
+            aria-label="CGWA records table, scrollable"
           >
             <table className="w-full text-sm min-w-max border-separate border-spacing-0">
+              <caption className="sr-only">
+                CGWA records grouped by customer, with NOC, flow metre, piezometer and attachment details
+              </caption>
               <thead className="sticky top-0 z-30">
-                <tr className="border-b border-gray-200 bg-gray-50">
+                <tr className="border-b border-border bg-muted">
                   <th
                     colSpan={2}
                     className={`text-center py-2.5 px-2 font-semibold text-sky-900 ${cgwStickyPairHead}`}
@@ -4471,12 +4643,12 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                     </th>
                   )}
                   {canManage && (
-                    <th rowSpan={2} className="text-left py-3 px-4 font-semibold text-gray-700 whitespace-nowrap border-l border-gray-200 align-middle bg-gray-50">
+                    <th rowSpan={2} className="text-left py-3 px-4 font-semibold text-foreground whitespace-nowrap border-l border-border align-middle bg-muted">
                       ACTIONS
                     </th>
                   )}
                 </tr>
-                <tr className="border-b border-gray-200 bg-gray-50/90">
+                <tr className="border-b border-border bg-muted/90">
                     <>
                       <th className={`text-left py-3 px-4 font-semibold text-sky-900 whitespace-nowrap ${cgwStickyIdHead}`}>CGWA ID</th>
                       <th className={`text-left py-3 px-4 font-semibold text-sky-900 whitespace-nowrap ${cgwStickyNameHead}`}>CUSTOMER NAME</th>
@@ -4494,7 +4666,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                     <>
                       <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 whitespace-nowrap min-w-[108px] align-top">
                         <span className="block leading-snug">NOC</span>
-                        <span className="mt-0.5 block text-[10px] font-normal text-gray-500 leading-tight">Per equipment row</span>
+                        <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground leading-tight">Per equipment row</span>
                       </th>
                       <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 whitespace-nowrap">PROJECT NAME</th>
                       <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 whitespace-nowrap">NOC NUMBER</th>
@@ -4502,7 +4674,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                       <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 whitespace-nowrap">NOC VALID FROM</th>
                       <th className="text-left py-3 px-4 font-semibold text-cyan-900 bg-cyan-50 align-top min-w-[120px] whitespace-normal">
                         <span className="block leading-snug">NOC VALID UPTO</span>
-                        <span className="mt-1 block text-[10px] font-normal text-gray-500 leading-tight">
+                        <span className="mt-1 block text-[11px] font-normal text-muted-foreground leading-tight">
                           <span className="text-red-600 font-semibold">Red</span> = expired · <span className="text-amber-700 font-semibold">Amber</span> = ≤30 days
                         </span>
                       </th>
@@ -4529,7 +4701,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                       <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 whitespace-nowrap">TELEM VALID FROM</th>
                       <th className="text-left py-2.5 px-4 font-semibold text-indigo-900 bg-indigo-50 align-top min-w-[120px] whitespace-normal">
                         <span className="block leading-snug">TELEM VALID TO</span>
-                        <span className="mt-1 block text-[10px] font-normal text-gray-500 leading-tight">
+                        <span className="mt-1 block text-[11px] font-normal text-muted-foreground leading-tight">
                           <span className="text-red-600 font-semibold">Red</span> = expired · <span className="text-amber-700 font-semibold">Amber</span> = ≤30 days
                         </span>
                       </th>
@@ -4576,29 +4748,29 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                       ? 'border-b border-red-100 hover:bg-red-50/40 bg-red-50/20'
                       : renewalU === 'dueSoon'
                         ? 'border-b border-amber-100 hover:bg-amber-50/35 bg-amber-50/12'
-                        : 'border-b border-gray-100 hover:bg-gray-50/50';
+                        : 'border-b border-border hover:bg-muted/50';
 
                   return group.rows.map((item, rowIndex) => (
                     <tr key={item.id} className={`${rowRenewalClass} align-top group`}>
                       <>
-                          <td className={`py-3 px-4 text-gray-800 whitespace-nowrap font-mono text-[11px] align-top ${cgwStickyIdCell}`}>
+                          <td className={`py-3 px-4 text-foreground whitespace-nowrap font-mono text-xs align-top ${cgwStickyIdCell}`}>
                             {item.inventory_id ? (
-                              <button
+                              <button aria-label="View CGWA details"
                                 type="button"
-                                className="font-semibold text-left text-blue-700 hover:text-blue-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded"
+                                className="font-semibold text-left text-primary hover:text-accent-foreground hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
                                 title="View CGWA details"
                                 onClick={() => openCustomerPreview(group)}
                               >
                                 {item.inventory_id}
                               </button>
                             ) : (
-                              <span className="font-semibold text-gray-900">—</span>
+                              <span className="font-semibold text-foreground">—</span>
                             )}
                           </td>
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className={`py-3 px-4 font-medium text-gray-900 ${cgwStickyNameCell}`}>
+                            <td rowSpan={group.rows.length} className={`py-3 px-4 font-medium text-foreground ${cgwStickyNameCell}`}>
                               {groupEditActive ? (
-                                <Input value={inlineEditData.customer_name} onChange={(e) => handleInlineChange('customer_name', e.target.value)} className="h-7 text-[11px] px-2" />
+                                <Input value={inlineEditData.customer_name} onChange={(e) => handleInlineChange('customer_name', e.target.value)} className="h-7 text-xs px-2" />
                               ) : (
                                 <span className="block truncate" title={groupAnchor.customer_name || ''}>
                                   {groupAnchor.customer_name || '—'}
@@ -4609,39 +4781,39 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                           {cgwGridSectionsOpen.customer ? (
                             <>
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-sky-50/40">
-                              {groupEditActive ? <Input value={inlineEditData.location} onChange={(e) => handleInlineChange('location', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.location || '—')}
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-muted-foreground whitespace-nowrap bg-sky-50/40">
+                              {groupEditActive ? <Input value={inlineEditData.location} onChange={(e) => handleInlineChange('location', e.target.value)} className="h-7 text-xs px-2" /> : (groupAnchor.location || '—')}
                             </td>
                           )}
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-sky-50/40">
-                              {groupEditActive ? <Input value={inlineEditData.contact_person} onChange={(e) => handleInlineChange('contact_person', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.contact_person || '—')}
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-muted-foreground whitespace-nowrap bg-sky-50/40">
+                              {groupEditActive ? <Input value={inlineEditData.contact_person} onChange={(e) => handleInlineChange('contact_person', e.target.value)} className="h-7 text-xs px-2" /> : (groupAnchor.contact_person || '—')}
                             </td>
                           )}
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-sky-50/40">
-                              {groupEditActive ? <Input value={inlineEditData.system_mobile_number} onChange={(e) => handleInlineChange('system_mobile_number', e.target.value)} className="h-7 text-[11px] px-2" /> : (groupAnchor.system_mobile_number || '—')}
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-muted-foreground whitespace-nowrap bg-sky-50/40">
+                              {groupEditActive ? <Input value={inlineEditData.system_mobile_number} onChange={(e) => handleInlineChange('system_mobile_number', e.target.value)} className="h-7 text-xs px-2" /> : (groupAnchor.system_mobile_number || '—')}
                             </td>
                           )}
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-sky-50/40">
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-muted-foreground whitespace-nowrap bg-sky-50/40">
                               {groupEditActive ? (
-                                <Input value={inlineEditData.person_mobile_number} onChange={(e) => handleInlineChange('person_mobile_number', e.target.value)} className="h-7 text-[11px] px-2" />
+                                <Input value={inlineEditData.person_mobile_number} onChange={(e) => handleInlineChange('person_mobile_number', e.target.value)} className="h-7 text-xs px-2" />
                               ) : groupAnchor.person_mobile_number ? (
                                 <span className="flex items-center gap-1">
-                                  <Phone className="h-3 w-3 text-gray-400 shrink-0" />
+                                  <Phone className="h-3 w-3 text-muted-foreground shrink-0" />
                                   {groupAnchor.person_mobile_number}
                                 </span>
                               ) : '—'}
                             </td>
                           )}
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 min-w-[180px] bg-sky-50/40">
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-muted-foreground min-w-[180px] bg-sky-50/40">
                               {groupEditActive ? (
-                                <Input value={inlineEditData.email_id} onChange={(e) => handleInlineChange('email_id', e.target.value)} className="h-7 text-[11px] px-2" />
+                                <Input value={inlineEditData.email_id} onChange={(e) => handleInlineChange('email_id', e.target.value)} className="h-7 text-xs px-2" />
                               ) : groupAnchor.email_id ? (
                                 <span className="flex items-center gap-1">
-                                  <Mail className="h-3 w-3 text-gray-400 shrink-0" />
+                                  <Mail className="h-3 w-3 text-muted-foreground shrink-0" />
                                   <span>{groupAnchor.email_id}</span>
                                 </span>
                               ) : '—'}
@@ -4659,8 +4831,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                 {group.rows.map((inv) => {
                                   const cgwaId = inv.inventory_id || '—';
                                   return (
-                                  <div key={inv.id} className="rounded border border-gray-200 bg-gray-50/80 p-1.5">
-                                    <p className="text-[9px] font-mono font-semibold text-gray-800 mb-1 truncate" title={cgwaId}>
+                                  <div key={inv.id} className="rounded border border-border bg-muted/80 p-1.5">
+                                    <p className="text-[11px] font-mono font-semibold text-foreground mb-1 truncate" title={cgwaId}>
                                       {cgwaId}
                                     </p>
                                     {canManage ? (
@@ -4669,7 +4841,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                           type="button"
                                           variant="outline"
                                           size="sm"
-                                          className="h-7 px-1 text-[9px] border-gray-200"
+                                          className="h-7 px-1 text-[11px] border-border"
                                           onClick={() => openNocDialog(inv)}
                                         >
                                           <FileText className="h-3 w-3 mr-0.5 shrink-0" />
@@ -4680,7 +4852,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                             type="button"
                                             variant="ghost"
                                             size="sm"
-                                            className="h-6 px-1 text-[9px] text-blue-700"
+                                            className="h-6 px-1 text-[11px] text-primary"
                                             onClick={() => openNocDialog(inv, { startInPreviewMode: true })}
                                           >
                                             <Eye className="h-3 w-3 mr-0.5" />
@@ -4693,14 +4865,14 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                                         type="button"
                                         variant="ghost"
                                         size="sm"
-                                        className="h-7 px-1 text-[9px]"
+                                        className="h-7 px-1 text-[11px]"
                                         onClick={() => openNocDialog(inv, { startInPreviewMode: true })}
                                       >
                                         <Eye className="h-3 w-3 mr-0.5" />
                                         View
                                       </Button>
                                 ) : (
-                                  <span className="text-[10px] text-gray-400">—</span>
+                                  <span className="text-[11px] text-muted-foreground">—</span>
                                 )}
                               </div>
                                   );
@@ -4709,23 +4881,23 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                             </td>
                           )}
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 text-xs bg-cyan-50/35 max-w-[200px]">
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-muted-foreground text-xs bg-cyan-50/35 max-w-[200px]">
                               <span className="line-clamp-4" title={groupAnchor.noc_project_name || ''}>{groupAnchor.noc_project_name || '—'}</span>
                             </td>
                           )}
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-cyan-50/35">
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-muted-foreground whitespace-nowrap bg-cyan-50/35">
                               <p>{groupAnchor.noc_no || '—'}</p>
                               {nocRecordsFromItem(groupAnchor).length > 1 ? (
-                                <p className="text-[10px] text-cyan-800 mt-0.5">{nocRecordsFromItem(groupAnchor).length} periods</p>
+                                <p className="text-[11px] text-cyan-800 mt-0.5">{nocRecordsFromItem(groupAnchor).length} periods</p>
                               ) : null}
                             </td>
                           )}
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap bg-cyan-50/35">{groupAnchor.noc_application_no || '—'}</td>
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-muted-foreground whitespace-nowrap bg-cyan-50/35">{groupAnchor.noc_application_no || '—'}</td>
                           )}
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 whitespace-nowrap font-mono text-[11px] bg-cyan-50/35">{groupAnchor.noc_valid_from || '—'}</td>
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-muted-foreground whitespace-nowrap font-mono text-xs bg-cyan-50/35">{groupAnchor.noc_valid_from || '—'}</td>
                           )}
                           {rowIndex === 0 && (
                             <td rowSpan={group.rows.length} className="py-3 px-4 align-top bg-cyan-50/35">
@@ -4733,16 +4905,16 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                             </td>
                           )}
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 text-xs bg-cyan-50/35">{groupAnchor.noc_type || '—'}</td>
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-muted-foreground text-xs bg-cyan-50/35">{groupAnchor.noc_type || '—'}</td>
                           )}
                           {rowIndex === 0 && (
-                            <td rowSpan={group.rows.length} className="py-3 px-4 text-gray-600 text-xs bg-cyan-50/35">{groupAnchor.noc_project_status || '—'}</td>
+                            <td rowSpan={group.rows.length} className="py-3 px-4 text-muted-foreground text-xs bg-cyan-50/35">{groupAnchor.noc_project_status || '—'}</td>
                           )}
                         </>
                       ) : rowIndex === 0 ? (
-                        <td rowSpan={group.rows.length} className="py-3 px-3 text-gray-800 bg-cyan-50/35 align-top text-xs">
+                        <td rowSpan={group.rows.length} className="py-3 px-3 text-foreground bg-cyan-50/35 align-top text-xs">
                           <p className="font-mono font-medium">{groupAnchor.noc_no || groupAnchor.noc_application_no || '—'}</p>
-                          <p className="text-[10px] text-gray-500 mt-1 line-clamp-2" title={groupAnchor.noc_project_name || ''}>
+                          <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2" title={groupAnchor.noc_project_name || ''}>
                             {groupAnchor.noc_project_name || ''}
                           </p>
                         </td>
@@ -4750,45 +4922,45 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
                       {cgwGridSectionsOpen.flowMetre ? (
                         <>
-                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
-                            {inlineEditId === item.id ? <Input value={inlineEditData.flow_meter_make} onChange={(e) => handleInlineChange('flow_meter_make', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.flow_meter_make || '—')}
+                          <td className="py-3 px-4 text-muted-foreground whitespace-nowrap bg-indigo-50/35">
+                            {inlineEditId === item.id ? <Input value={inlineEditData.flow_meter_make} onChange={(e) => handleInlineChange('flow_meter_make', e.target.value)} className="h-7 text-xs px-2" /> : (item.flow_meter_make || '—')}
                           </td>
-                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
-                            {inlineEditId === item.id ? <Input value={inlineEditData.flow_meter_size} onChange={(e) => handleInlineChange('flow_meter_size', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.flow_meter_size || '—')}
+                          <td className="py-3 px-4 text-muted-foreground whitespace-nowrap bg-indigo-50/35">
+                            {inlineEditId === item.id ? <Input value={inlineEditData.flow_meter_size} onChange={(e) => handleInlineChange('flow_meter_size', e.target.value)} className="h-7 text-xs px-2" /> : (item.flow_meter_size || '—')}
                           </td>
-                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap font-mono bg-indigo-50/35">
-                            {inlineEditId === item.id ? <Input value={inlineEditData.flow_meter_serial} onChange={(e) => handleInlineChange('flow_meter_serial', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.flow_meter_serial || '—')}
+                          <td className="py-3 px-4 text-muted-foreground whitespace-nowrap font-mono bg-indigo-50/35">
+                            {inlineEditId === item.id ? <Input value={inlineEditData.flow_meter_serial} onChange={(e) => handleInlineChange('flow_meter_serial', e.target.value)} className="h-7 text-xs px-2" /> : (item.flow_meter_serial || '—')}
                           </td>
-                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
-                            {inlineEditId === item.id ? <Input type="date" value={inlineEditData.calibration_valid_from} onChange={(e) => handleInlineChange('calibration_valid_from', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.calibration_valid_from || '—')}
+                          <td className="py-3 px-4 text-muted-foreground whitespace-nowrap bg-indigo-50/35">
+                            {inlineEditId === item.id ? <Input type="date" value={inlineEditData.calibration_valid_from} onChange={(e) => handleInlineChange('calibration_valid_from', e.target.value)} className="h-7 text-xs px-2" /> : (item.calibration_valid_from || '—')}
                           </td>
-                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap bg-indigo-50/35">
-                            {inlineEditId === item.id ? <Input type="date" value={inlineEditData.calibration_valid_to} onChange={(e) => handleInlineChange('calibration_valid_to', e.target.value)} className="h-7 text-[11px] px-2" /> : (item.calibration_valid_to || '—')}
+                          <td className="py-3 px-4 text-muted-foreground whitespace-nowrap bg-indigo-50/35">
+                            {inlineEditId === item.id ? <Input type="date" value={inlineEditData.calibration_valid_to} onChange={(e) => handleInlineChange('calibration_valid_to', e.target.value)} className="h-7 text-xs px-2" /> : (item.calibration_valid_to || '—')}
                           </td>
-                          <td className="py-3 px-4 text-gray-600 text-xs bg-indigo-50/35">{item.telemetry_applicable || '—'}</td>
-                          <td className="py-3 px-4 text-gray-600 text-xs bg-indigo-50/35 max-w-[140px]">
+                          <td className="py-3 px-4 text-muted-foreground text-xs bg-indigo-50/35">{item.telemetry_applicable || '—'}</td>
+                          <td className="py-3 px-4 text-muted-foreground text-xs bg-indigo-50/35 max-w-[140px]">
                             <span className="line-clamp-3" title={formatTelemetryCompanyDisplay(item)}>{formatTelemetryCompanyDisplay(item)}</span>
                           </td>
-                          <td className="py-3 px-4 text-gray-600 text-xs bg-indigo-50/35">{item.telemetry_communication_via || '—'}</td>
-                          <td className="py-3 px-4 text-gray-600 text-[11px] bg-indigo-50/35 max-w-[200px]">
+                          <td className="py-3 px-4 text-muted-foreground text-xs bg-indigo-50/35">{item.telemetry_communication_via || '—'}</td>
+                          <td className="py-3 px-4 text-muted-foreground text-xs bg-indigo-50/35 max-w-[200px]">
                             <span className="line-clamp-3" title={formatTelemetrySimLine(item)}>{formatTelemetrySimLine(item)}</span>
                           </td>
-                          <td className="py-3 px-4 text-gray-600 text-xs font-mono bg-indigo-50/35">{item.telemetry_product_code || '—'}</td>
-                          <td className="py-3 px-4 text-gray-600 text-xs font-mono bg-indigo-50/35">{item.telemetry_serial_number || '—'}</td>
-                          <td className="py-3 px-4 text-gray-600 text-[11px] bg-indigo-50/35 max-w-[200px]">
+                          <td className="py-3 px-4 text-muted-foreground text-xs font-mono bg-indigo-50/35">{item.telemetry_product_code || '—'}</td>
+                          <td className="py-3 px-4 text-muted-foreground text-xs font-mono bg-indigo-50/35">{item.telemetry_serial_number || '—'}</td>
+                          <td className="py-3 px-4 text-muted-foreground text-xs bg-indigo-50/35 max-w-[200px]">
                             {item.telemetry_portal_url ? (
-                              <a href={item.telemetry_portal_url} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline break-all line-clamp-2">
+                              <a href={item.telemetry_portal_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all line-clamp-2">
                                 {item.telemetry_portal_url}
                               </a>
                             ) : '—'}
                           </td>
-                          <td className="py-3 px-4 text-gray-600 text-xs bg-indigo-50/35">{item.telemetry_username || '—'}</td>
-                          <td className="py-3 px-4 text-gray-600 text-xs bg-indigo-50/35">{item.telemetry_password ? '••••••' : '—'}</td>
-                          <td className="py-3 px-4 text-gray-600 whitespace-nowrap font-mono text-[11px] bg-indigo-50/35">{item.telemetry_valid_from || '—'}</td>
+                          <td className="py-3 px-4 text-muted-foreground text-xs bg-indigo-50/35">{item.telemetry_username || '—'}</td>
+                          <td className="py-3 px-4 text-muted-foreground text-xs bg-indigo-50/35">{item.telemetry_password ? '••••••' : '—'}</td>
+                          <td className="py-3 px-4 text-muted-foreground whitespace-nowrap font-mono text-xs bg-indigo-50/35">{item.telemetry_valid_from || '—'}</td>
                           <td className="py-3 px-4 align-top bg-indigo-50/35">
                             <TelemValidToCell value={item.telemetry_valid_to} />
                           </td>
-                          <td className="py-3 px-4 text-gray-600 text-[10px] bg-indigo-50/35 max-w-[220px]">
+                          <td className="py-3 px-4 text-muted-foreground text-[11px] bg-indigo-50/35 max-w-[220px]">
                             <span className="line-clamp-4 whitespace-normal" title={formatTelemetryPriorLine(item)}>{formatTelemetryPriorLine(item)}</span>
                           </td>
                           <td className="py-3 px-4 bg-fuchsia-50/30 whitespace-nowrap">
@@ -4811,22 +4983,22 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                           </td>
                         </>
                       ) : (
-                        <td className="py-3 px-3 text-gray-800 bg-indigo-50/35 text-xs align-top">
+                        <td className="py-3 px-3 text-foreground bg-indigo-50/35 text-xs align-top">
                           <p className="font-mono font-medium">
                             {item.flow_meter_serial || item.inventory_id || '—'}
                             {isDraftRecord(item) ? (
-                              <span className="ml-2 inline-flex rounded bg-slate-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-slate-700">
+                              <span className="ml-2 inline-flex rounded bg-slate-200 px-1.5 py-0.5 text-[11px] font-semibold uppercase text-foreground">
                                 Draft
                               </span>
                             ) : null}
                           </p>
-                          <p className="text-[10px] text-gray-500 mt-0.5">{formatTelemetryCompanyDisplay(item)}</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">{formatTelemetryCompanyDisplay(item)}</p>
                         </td>
                       )}
 
                       {cgwGridSectionsOpen.piezometer ? (
                         <>
-                          <td className="py-3 px-4 text-gray-600 min-w-[220px] bg-violet-50/35 text-xs">
+                          <td className="py-3 px-4 text-muted-foreground min-w-[220px] bg-violet-50/35 text-xs">
                             {piezometerSummaryCellText(item)}
                           </td>
                           <td className="py-3 px-4 bg-violet-50/20 whitespace-nowrap">
@@ -4846,7 +5018,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                           </td>
                         </>
                       ) : (
-                        <td className="py-3 px-3 text-gray-800 bg-violet-50/35 text-[11px] align-top max-w-[200px]">
+                        <td className="py-3 px-3 text-foreground bg-violet-50/35 text-xs align-top max-w-[200px]">
                           <span className="line-clamp-4" title={piezometerSummaryCellText(item)}>{piezometerSummaryCellText(item)}</span>
                         </td>
                       )}
@@ -4876,14 +5048,14 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                           </td>
                         </>
                       ) : (
-                        <td className="py-3 px-3 text-gray-800 bg-amber-50/30 text-xs align-top">
+                        <td className="py-3 px-3 text-foreground bg-amber-50/30 text-xs align-top">
                           {(() => {
                             const cats = ['water_quality_certificate', 'cte', 'cto', 'rwss_watco_phed_noc', 'approval_letter', 'rain_water_harvesting_data', 'additional_doc'];
                             const n = cats.reduce((acc, k) => acc + (item?.cgw_attachments?.[k]?.length || 0), 0);
                             return (
                               <>
-                                <p className="font-medium text-gray-900">Step 5 files</p>
-                                <p className="text-[10px] text-gray-500 mt-0.5">{n ? `${n} file(s)` : 'None'}</p>
+                                <p className="font-medium text-foreground">Step 5 files</p>
+                                <p className="text-[11px] text-muted-foreground mt-0.5">{n ? `${n} file(s)` : 'None'}</p>
                               </>
                             );
                           })()}
@@ -4896,21 +5068,23 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-7 w-7 p-0 border-gray-200 text-xs text-gray-700 hover:bg-gray-50"
+                              className="h-8 w-8 p-0 border-border text-xs text-foreground hover:bg-muted"
                               title={isDraftRecord(item) ? 'Continue draft' : 'Edit'}
+                              aria-label={`${isDraftRecord(item) ? 'Continue draft for' : 'Edit'} ${item.customer_name || item.inventory_id || 'record'}`}
                               onClick={() => handleEdit(item)}
                             >
-                              <Edit className="h-3 w-3" />
+                              <Edit className="h-3.5 w-3.5" aria-hidden="true" />
                             </Button>
                             {canDeleteCgw && (
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-7 w-7 p-0 border-gray-200 text-xs text-red-600 hover:bg-red-50"
+                                className="h-8 w-8 p-0 border-border text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
                                 title="Delete"
+                                aria-label={`Delete ${item.customer_name || item.inventory_id || 'record'}`}
                                 onClick={() => handleDelete(item.id)}
                               >
-                                <Trash2 className="h-3 w-3" />
+                                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                               </Button>
                             )}
                           </div>
@@ -4922,17 +5096,18 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
               </tbody>
             </table>
           </div>
-          <div className="border-t border-gray-200 bg-gray-50/80 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm">
-            <div className="text-gray-600">
-              Showing customer groups <span className="font-medium text-gray-900">{totalGroups === 0 ? 0 : pageStartIndex + 1}</span> to{' '}
-              <span className="font-medium text-gray-900">{Math.min(pageStartIndex + pageSize, totalGroups)}</span> of{' '}
-              <span className="font-medium text-gray-900">{totalGroups}</span>
+          <div className="border-t border-border bg-muted/50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm">
+            <div className="text-muted-foreground" aria-live="polite">
+              Showing customer groups <span className="font-medium text-foreground tabular-nums">{totalGroups === 0 ? 0 : pageStartIndex + 1}</span> to{' '}
+              <span className="font-medium text-foreground tabular-nums">{Math.min(pageStartIndex + pageSize, totalGroups)}</span> of{' '}
+              <span className="font-medium text-foreground tabular-nums">{totalGroups}</span>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2" role="navigation" aria-label="Pagination">
               <select
                 value={pageSize}
                 onChange={(e) => setPageSize(Number(e.target.value))}
-                className="h-10 rounded-lg border border-gray-300 px-2 text-sm bg-white text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                aria-label="Rows per page"
+                className="h-10 rounded-lg border border-input px-2 text-sm bg-card text-foreground focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
               >
                 {PAGE_SIZE_OPTIONS.map((size) => (
                   <option key={size} value={size}>{size} / page</option>
@@ -4942,20 +5117,20 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 px-3 text-sm border-gray-300 text-gray-700 hover:bg-gray-50"
+                className="h-9 px-3 text-sm border-input text-foreground hover:bg-muted"
                 disabled={safeCurrentPage <= 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               >
                 Prev
               </Button>
-              <span className="text-gray-700 min-w-[88px] text-center text-sm">
+              <span className="text-foreground min-w-[88px] text-center text-sm tabular-nums" aria-current="page">
                 Page {safeCurrentPage} / {totalPages}
               </span>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 px-3 text-sm border-gray-300 text-gray-700 hover:bg-gray-50"
+                className="h-9 px-3 text-sm border-input text-foreground hover:bg-muted"
                 disabled={safeCurrentPage >= totalPages}
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               >
@@ -4965,13 +5140,40 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
           </div>
         </Card>
       ) : (
-        <Card className="p-12 text-center">
-          <p className="text-muted-foreground">
-            {searchTerm.trim() || nocValidUptoFilter || telemValidToFilter
-              ? 'No records match your search'
-              : 'No inventory items found'}
-          </p>
-        </Card>
+        (() => {
+          const hasActiveFilters =
+            !!searchTerm.trim() ||
+            !!nocValidUptoFilter ||
+            !!telemValidToFilter ||
+            Object.values(columnFilters || {}).some((v) => String(v || '').trim());
+          return hasActiveFilters ? (
+            <EmptyState
+              icon={SearchX}
+              title="No records match your filters"
+              description="Try a different search term, or clear the filters to see every CGWA record again."
+              action={
+                <Button type="button" variant="outline" onClick={handleClearAllFilters}>
+                  <X className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                  Clear search &amp; filters
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={FolderOpen}
+              title="No CGWA records yet"
+              description="Records you create will appear here, with their NOC, flow metre, piezometer and attachment details."
+              action={
+                canCreateCgw ? (
+                  <Button type="button" onClick={() => navigate(CREATE_CGWA_PATH)}>
+                    <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                    Create CGWA
+                  </Button>
+                ) : null
+              }
+            />
+          );
+        })()
       )}
         </>
       )}
@@ -4980,19 +5182,33 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
         <>
           <Card className="p-4 sm:p-5">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Label htmlFor="cgw-drafts-search" className="sr-only">Search drafts</Label>
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden="true" />
               <Input
+                id="cgw-drafts-search"
+                type="search"
+                autoComplete="off"
                 placeholder="Search drafts by customer, location, or ID…"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 h-10"
+                className="pl-10 pr-10 h-10 [&::-webkit-search-cancel-button]:appearance-none"
               />
+              {searchTerm ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              ) : null}
             </div>
           </Card>
           {filteredItems.length > 0 ? (
             <Card className="overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="app-table">
+                <table className="app-table min-w-[720px]">
                   <thead>
                     <tr>
                       <th>Customer</th>
@@ -5005,39 +5221,41 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   </thead>
                   <tbody>
                     {filteredItems.map((item) => (
-                      <tr key={item.id} className="border-b border-gray-100 hover:bg-slate-50/80">
+                      <tr key={item.id} className="border-b border-border hover:bg-muted/50">
                         <td className="py-3 px-4">
-                          <p className="font-medium text-gray-900">{item.customer_name || '—'}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{item.location || item.contact_person || '—'}</p>
+                          <p className="font-medium text-foreground">{item.customer_name || '—'}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{item.location || item.contact_person || '—'}</p>
                         </td>
-                        <td className="py-3 px-4 font-mono text-xs text-gray-700">{item.inventory_id || item.id}</td>
+                        <td className="py-3 px-4 font-mono text-xs text-foreground">{item.inventory_id || item.id}</td>
                         <td className="py-3 px-4">
-                          <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                          <span className="inline-flex rounded-full bg-accent px-2.5 py-1 text-xs font-medium text-accent-foreground">
                             {cgwDraftProgressLabel(item)}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-gray-700">{formatHistoryDateTime(item.updated_at || item.created_at)}</td>
-                        <td className="py-3 px-4 text-gray-700">{item.last_modified_by_name || item.created_by_name || '—'}</td>
+                        <td className="py-3 px-4 text-foreground">{formatHistoryDateTime(item.updated_at || item.created_at)}</td>
+                        <td className="py-3 px-4 text-foreground">{item.last_modified_by_name || item.created_by_name || '—'}</td>
                         <td className="py-3 px-4">
                           <div className="flex gap-1.5">
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-8 px-2.5 border-gray-200 text-xs text-blue-700 hover:bg-blue-50"
+                              className="h-8 px-2.5 border-border text-xs text-primary hover:bg-accent hover:text-accent-foreground"
+                              aria-label={`Continue draft for ${item.customer_name || item.inventory_id || 'record'}`}
                               onClick={() => handleEdit(item)}
                             >
-                              <Edit className="h-3 w-3 mr-1" />
+                              <Edit className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
                               Continue
                             </Button>
                             {(canDeleteCgw || (isDraftsScreen && hasCgwAccess)) && (
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-8 w-8 p-0 border-gray-200 text-xs text-red-600 hover:bg-red-50"
+                                className="h-8 w-8 p-0 border-border text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
                                 title="Delete draft"
+                                aria-label={`Delete draft for ${item.customer_name || item.inventory_id || 'record'}`}
                                 onClick={() => handleDelete(item.id)}
                               >
-                                <Trash2 className="h-3 w-3" />
+                                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                               </Button>
                             )}
                           </div>
@@ -5049,18 +5267,31 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
               </div>
             </Card>
           ) : (
-            <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
-              <p className="text-gray-800 font-medium">No saved drafts</p>
-              <p className="text-sm text-gray-500 mt-1">
-                Use Create CGWA and click Save draft to leave the form mid-way. You can continue from here later.
-              </p>
-              <Button
-                className="mt-4"
-                onClick={() => navigate(CREATE_CGWA_PATH)}
-              >
-                Create CGWA
-              </Button>
-            </Card>
+            searchTerm.trim() ? (
+              <EmptyState
+                icon={SearchX}
+                title="No drafts match your search"
+                description="Check the spelling, or clear the search to see all of your saved drafts."
+                action={
+                  <Button type="button" variant="outline" onClick={() => setSearchTerm('')}>
+                    <X className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                    Clear search
+                  </Button>
+                }
+              />
+            ) : (
+              <EmptyState
+                icon={FileText}
+                title="No saved drafts"
+                description="Use Create CGWA and click Save draft to leave the form mid-way. You can continue from here later."
+                action={
+                  <Button type="button" onClick={() => navigate(CREATE_CGWA_PATH)}>
+                    <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                    Create CGWA
+                  </Button>
+                }
+              />
+            )
           )}
         </>
       )}
@@ -5092,10 +5323,10 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
             </DialogHeader>
           </div>
           <div className="flex flex-1 min-h-0 flex-col lg:flex-row gap-0 overflow-hidden">
-            <div className="w-full shrink-0 border-b border-gray-200 bg-slate-50 lg:w-[240px] lg:max-w-[240px] lg:border-b-0 lg:border-r overflow-y-auto p-3 space-y-3">
+            <div className="w-full shrink-0 border-b border-border bg-muted lg:w-[240px] lg:max-w-[240px] lg:border-b-0 lg:border-r overflow-y-auto p-3 space-y-3">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Validity periods</p>
-                <p className="text-xs text-gray-500 mt-0.5">{nocPeriodRecords.length} period{nocPeriodRecords.length === 1 ? '' : 's'}</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Validity periods</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{nocPeriodRecords.length} period{nocPeriodRecords.length === 1 ? '' : 's'}</p>
               </div>
               {!nocReadOnly ? (
                 <div className="flex flex-col gap-2">
@@ -5123,7 +5354,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
               ) : null}
               <div className="space-y-2">
                 {nocPeriodRecords.length === 0 ? (
-                  <p className="text-xs text-gray-500">No NOC periods yet. Add the first validity period.</p>
+                  <p className="text-xs text-muted-foreground">No NOC periods yet. Add the first validity period.</p>
                 ) : (
                   nocPeriodRecords.map((rec) => {
                     const status = nocPeriodStatus(rec);
@@ -5135,20 +5366,20 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                         onClick={() => selectNocPeriod(rec)}
                         className={cn(
                           'w-full text-left rounded-md border px-2.5 py-2 transition-colors',
-                          selected ? 'border-blue-500 bg-white shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300',
+                          selected ? 'border-primary/60 bg-white shadow-sm' : 'border-border bg-white hover:border-input',
                         )}
                       >
-                        <p className="text-xs font-semibold text-gray-900">{formatNocPeriod(rec)}</p>
-                        <p className="text-[11px] text-gray-500 mt-0.5 truncate">{rec.noc_no || rec.application_no || rec.file_name || 'NOC'}</p>
+                        <p className="text-xs font-semibold text-foreground">{formatNocPeriod(rec)}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">{rec.noc_no || rec.application_no || rec.file_name || 'NOC'}</p>
                         <div className="mt-1 flex flex-wrap gap-1">
                           <span className={cn(
-                            'inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-                            status === 'active' ? 'bg-emerald-50 text-emerald-700' : status === 'expired' ? 'bg-gray-100 text-gray-600' : status === 'upcoming' ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600',
+                            'inline-flex rounded-full px-1.5 py-0.5 text-[11px] font-medium',
+                            status === 'active' ? 'bg-emerald-50 text-emerald-700' : status === 'expired' ? 'bg-muted text-muted-foreground' : status === 'upcoming' ? 'bg-sky-50 text-sky-700' : 'bg-muted text-muted-foreground',
                           )}>
                             {status === 'active' ? 'Current' : status === 'expired' ? 'Expired' : status === 'upcoming' ? 'Upcoming' : 'Saved'}
                           </span>
                           {rec.noc_type ? (
-                            <span className="inline-flex rounded-full bg-cyan-50 px-1.5 py-0.5 text-[10px] font-medium text-cyan-800">
+                            <span className="inline-flex rounded-full bg-cyan-50 px-1.5 py-0.5 text-[11px] font-medium text-cyan-800">
                               {rec.noc_type === 'renewal' ? 'Renewal' : rec.noc_type === 'new' ? 'New' : rec.noc_type}
                             </span>
                           ) : null}
@@ -5159,7 +5390,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 )}
               </div>
             </div>
-            <div className="relative min-h-[40vh] flex-1 min-w-0 basis-0 bg-neutral-900 border-b lg:min-h-0 lg:border-b-0 lg:border-r lg:border-gray-200">
+            <div className="relative min-h-[40vh] flex-1 min-w-0 basis-0 bg-neutral-900 border-b lg:min-h-0 lg:border-b-0 lg:border-r lg:border-border">
               {(() => {
                 const rawUrl = selectedNocDocumentUrl;
                 const fullHref = rawUrl ? nocDocHref(rawUrl) : '';
@@ -5175,20 +5406,20 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 }
                 if (useStream && nocRemotePreviewLoading) {
                   return (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-100 p-6 text-center text-sm text-gray-600">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted p-6 text-center text-sm text-muted-foreground">
                       <span>Loading PDF…</span>
                     </div>
                   );
                 }
                 if (useStream && fullHref && !nocRemotePreviewLoading && !nocRemotePreviewUrl) {
                   return (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gray-100 p-6 text-center text-sm text-gray-600">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-muted p-6 text-center text-sm text-muted-foreground">
                       <p>Preview could not be loaded. You can still open the file in a new tab.</p>
                       <a
                         href={fullHref}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-600 font-medium underline hover:text-blue-800"
+                        className="text-accent-foreground font-medium underline hover:text-accent-foreground"
                       >
                         Open NOC PDF
                       </a>
@@ -5196,7 +5427,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   );
                 }
                 return (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gray-100 p-6 text-center text-sm text-gray-500">
+                  <div className="absolute inset-0 flex items-center justify-center bg-muted p-6 text-center text-sm text-muted-foreground">
                     {nocReadOnly
                       ? 'No NOC document on file for this row.'
                       : nocSaveMode === 'add' || nocSaveMode === 'renew'
@@ -5208,13 +5439,13 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 );
               })()}
             </div>
-            <div className="w-full shrink-0 space-y-2 overflow-y-auto border-t border-gray-200 bg-white p-3 lg:w-[min(300px,28vw)] lg:max-w-[300px] lg:border-l lg:border-t-0 lg:border-gray-200">
+            <div className="w-full shrink-0 space-y-2 overflow-y-auto border-t border-border bg-white p-3 lg:w-[min(300px,28vw)] lg:max-w-[300px] lg:border-l lg:border-t-0 lg:border-border">
               {nocSaveMode === 'add' || nocSaveMode === 'renew' ? (
-                <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
-                  <p className="text-xs font-semibold text-blue-950">
+                <div className="rounded-md border border-primary/30 bg-accent px-3 py-2">
+                  <p className="text-xs font-semibold text-accent-foreground">
                     {nocSaveMode === 'renew' ? 'Renewing NOC' : 'Adding a new validity period'}
                   </p>
-                  <p className="text-[11px] text-blue-800 mt-0.5">
+                  <p className="text-xs text-accent-foreground mt-0.5">
                     Set the new valid from / valid up to dates and upload the PDF for this period. Earlier periods stay on file.
                   </p>
                   {nocPeriodRecords.length ? (
@@ -5222,7 +5453,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="mt-1 h-7 px-0 text-[11px] text-blue-800 hover:text-blue-950"
+                      className="mt-1 h-7 px-0 text-xs text-accent-foreground hover:text-accent-foreground"
                       onClick={() => selectNocPeriod(pickCurrentNocRecord(nocPeriodRecords) || nocPeriodRecords[nocPeriodRecords.length - 1])}
                     >
                       Cancel and keep existing periods
@@ -5230,11 +5461,11 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   ) : null}
                 </div>
               ) : null}
-              <div className="rounded-md border border-gray-200 bg-gray-50/70 p-3 space-y-2">
-                <p className="text-xs font-semibold text-gray-800">BHUNEER / no-cap portal</p>
+              <div className="rounded-md border border-border bg-muted/70 p-3 space-y-2">
+                <p className="text-xs font-semibold text-foreground">BHUNEER / no-cap portal</p>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-gray-700">BHUNEER user ID</Label>
-                  <Input
+                  <Label htmlFor="cgwflowmetre-field-22" className="text-xs font-medium text-foreground">BHUNEER user ID</Label>
+                  <Input id="cgwflowmetre-field-22"
                     value={nocForm.bhuneer_user_id}
                     onChange={(e) => setNocForm((p) => ({ ...p, bhuneer_user_id: e.target.value }))}
                     disabled={nocReadOnly || !nocSideFieldsEditable}
@@ -5243,8 +5474,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-gray-700">Password</Label>
-                  <Input
+                  <Label htmlFor="cgwflowmetre-field-23" className="text-xs font-medium text-foreground">Password</Label>
+                  <Input id="cgwflowmetre-field-23"
                     type="password"
                     value={nocForm.bhuneer_password}
                     onChange={(e) => setNocForm((p) => ({ ...p, bhuneer_password: e.target.value }))}
@@ -5254,8 +5485,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-gray-700">No cap user ID</Label>
-                  <Input
+                  <Label htmlFor="cgwflowmetre-field-24" className="text-xs font-medium text-foreground">No cap user ID</Label>
+                  <Input id="cgwflowmetre-field-24"
                     value={nocForm.nocap_user_id}
                     onChange={(e) => setNocForm((p) => ({ ...p, nocap_user_id: e.target.value.toLowerCase() }))}
                     disabled={nocReadOnly || !nocSideFieldsEditable}
@@ -5265,8 +5496,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-gray-700">Password</Label>
-                  <Input
+                  <Label htmlFor="cgwflowmetre-field-25" className="text-xs font-medium text-foreground">Password</Label>
+                  <Input id="cgwflowmetre-field-25"
                     type="password"
                     value={nocForm.nocap_password}
                     onChange={(e) => setNocForm((p) => ({ ...p, nocap_password: e.target.value }))}
@@ -5278,7 +5509,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
               </div>
               {canManage && !nocSideFieldsEditable && (
                 <div className="rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2">
-                  <p className="text-[11px] text-amber-950 mb-2">
+                  <p className="text-xs text-amber-950 mb-2">
                     Fields are locked in preview. Click below to upload a new PDF or edit metadata.
                   </p>
                   <Button
@@ -5294,7 +5525,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
               )}
               {!nocReadOnly && nocSideFieldsEditable && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-gray-700">NOC PDF</Label>
+                  <Label className="text-xs font-medium text-foreground">NOC PDF</Label>
                   <div className="flex items-center gap-2">
                     <Input
                       type="file"
@@ -5302,14 +5533,14 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                       onChange={handleNocFilePicked}
                       className="h-9 text-xs"
                     />
-                    <Upload className="h-4 w-4 text-gray-400 shrink-0" aria-hidden />
+                    <Upload className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden />
                   </div>
-                  <p className="text-[11px] text-gray-500">PDF only, max 25 MB. Required for a new or renewed period.</p>
+                  <p className="text-xs text-muted-foreground">PDF only, max 25 MB. Required for a new or renewed period.</p>
                 </div>
               )}
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">Project name</Label>
-                <Input
+                <Label htmlFor="cgwflowmetre-field-26" className="text-xs font-medium text-foreground">Project name</Label>
+                <Input id="cgwflowmetre-field-26"
                   value={nocForm.project_name}
                   onChange={(e) => setNocForm((p) => ({ ...p, project_name: e.target.value }))}
                   disabled={nocReadOnly || !nocSideFieldsEditable}
@@ -5317,8 +5548,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">NOC No</Label>
-                <Input
+                <Label htmlFor="cgwflowmetre-field-27" className="text-xs font-medium text-foreground">NOC No</Label>
+                <Input id="cgwflowmetre-field-27"
                   value={nocForm.noc_no}
                   onChange={(e) => setNocForm((p) => ({ ...p, noc_no: e.target.value }))}
                   disabled={nocReadOnly || !nocSideFieldsEditable}
@@ -5326,8 +5557,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">Application No</Label>
-                <Input
+                <Label htmlFor="cgwflowmetre-field-28" className="text-xs font-medium text-foreground">Application No</Label>
+                <Input id="cgwflowmetre-field-28"
                   value={nocForm.application_no}
                   onChange={(e) => setNocForm((p) => ({ ...p, application_no: e.target.value }))}
                   disabled={nocReadOnly || !nocSideFieldsEditable}
@@ -5335,8 +5566,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">Project address</Label>
-                <Input
+                <Label htmlFor="cgwflowmetre-field-29" className="text-xs font-medium text-foreground">Project address</Label>
+                <Input id="cgwflowmetre-field-29"
                   value={nocForm.project_address}
                   onChange={(e) => setNocForm((p) => ({ ...p, project_address: e.target.value }))}
                   disabled={nocReadOnly || !nocSideFieldsEditable}
@@ -5344,8 +5575,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">Communication address</Label>
-                <Input
+                <Label htmlFor="cgwflowmetre-field-30" className="text-xs font-medium text-foreground">Communication address</Label>
+                <Input id="cgwflowmetre-field-30"
                   value={nocForm.communication_address}
                   onChange={(e) => setNocForm((p) => ({ ...p, communication_address: e.target.value }))}
                   disabled={nocReadOnly || !nocSideFieldsEditable}
@@ -5353,12 +5584,12 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">Project status</Label>
-                <select
+                <Label htmlFor="cgwflowmetre-field-31" className="text-xs font-medium text-foreground">Project status</Label>
+                <select id="cgwflowmetre-field-31"
                   value={nocForm.project_status}
                   onChange={(e) => setNocForm((p) => ({ ...p, project_status: e.target.value }))}
                   disabled={nocReadOnly || !nocSideFieldsEditable}
-                  className="w-full border border-gray-300 rounded-md px-2 h-9 text-sm"
+                  className="w-full border border-input bg-card rounded-md px-2 h-9 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                 >
                   <option value="">—</option>
                   <option value="existing_ground_water">Existing ground water</option>
@@ -5366,12 +5597,12 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 </select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">NOC type</Label>
-                <select
+                <Label htmlFor="cgwflowmetre-field-32" className="text-xs font-medium text-foreground">NOC type</Label>
+                <select id="cgwflowmetre-field-32"
                   value={nocForm.noc_type}
                   onChange={(e) => setNocForm((p) => ({ ...p, noc_type: e.target.value }))}
                   disabled={nocReadOnly || !nocSideFieldsEditable}
-                  className="w-full border border-gray-300 rounded-md px-2 h-9 text-sm"
+                  className="w-full border border-input bg-card rounded-md px-2 h-9 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                 >
                   <option value="">—</option>
                   <option value="new">New</option>
@@ -5379,8 +5610,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 </select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">M3 per day</Label>
-                <Input
+                <Label htmlFor="cgwflowmetre-field-33" className="text-xs font-medium text-foreground">M3 per day</Label>
+                <Input id="cgwflowmetre-field-33"
                   value={nocForm.permitted_m3_per_day}
                   onChange={(e) => setNocForm((p) => ({ ...p, permitted_m3_per_day: e.target.value }))}
                   disabled={nocReadOnly || !nocSideFieldsEditable}
@@ -5388,8 +5619,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">M3 per year</Label>
-                <Input
+                <Label htmlFor="cgwflowmetre-field-34" className="text-xs font-medium text-foreground">M3 per year</Label>
+                <Input id="cgwflowmetre-field-34"
                   value={nocForm.permitted_m3_per_year}
                   onChange={(e) => setNocForm((p) => ({ ...p, permitted_m3_per_year: e.target.value }))}
                   disabled={nocReadOnly || !nocSideFieldsEditable}
@@ -5397,8 +5628,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">Existing BW count</Label>
-                <Input
+                <Label htmlFor="cgwflowmetre-field-35" className="text-xs font-medium text-foreground">Existing BW count</Label>
+                <Input id="cgwflowmetre-field-35"
                   value={nocForm.existing_bw_count}
                   onChange={(e) => setNocForm((p) => ({ ...p, existing_bw_count: e.target.value }))}
                   disabled={nocReadOnly || !nocSideFieldsEditable}
@@ -5406,19 +5637,19 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">Total proposed BW count</Label>
-                <Input
+                <Label htmlFor="cgwflowmetre-field-36" className="text-xs font-medium text-foreground">Total proposed BW count</Label>
+                <Input id="cgwflowmetre-field-36"
                   value={nocForm.total_proposed_bw_count}
                   onChange={(e) => setNocForm((p) => ({ ...p, total_proposed_bw_count: e.target.value }))}
                   disabled={nocReadOnly || !nocSideFieldsEditable}
                   className="h-9 text-sm"
                 />
               </div>
-              <div className="rounded-md border border-gray-100 p-2 space-y-2">
-                <p className="text-[11px] font-semibold text-gray-700">Dewatering / structure</p>
+              <div className="rounded-md border border-border p-2 space-y-2">
+                <p className="text-xs font-semibold text-foreground">Dewatering / structure</p>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-gray-700">Flowmeter applicable</Label>
-                  <select
+                  <Label htmlFor="cgwflowmetre-field-37" className="text-xs font-medium text-foreground">Flowmeter applicable</Label>
+                  <select id="cgwflowmetre-field-37"
                     value={nocForm.flowmeter_applicable}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -5429,7 +5660,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                       }));
                     }}
                     disabled={nocReadOnly || !nocSideFieldsEditable}
-                    className="w-full border border-gray-300 rounded-md px-2 h-9 text-sm"
+                    className="w-full border border-input bg-card rounded-md px-2 h-9 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                   >
                     <option value="">—</option>
                     <option value="yes">Yes</option>
@@ -5438,8 +5669,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 </div>
                 {nocForm.flowmeter_applicable === 'yes' && (
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-medium text-gray-700">Flowmeter count</Label>
-                    <Input
+                    <Label htmlFor="cgwflowmetre-field-38" className="text-xs font-medium text-foreground">Flowmeter count</Label>
+                    <Input id="cgwflowmetre-field-38"
                       value={nocForm.flowmeter_count}
                       onChange={(e) => setNocForm((p) => ({ ...p, flowmeter_count: e.target.value }))}
                       disabled={nocReadOnly || !nocSideFieldsEditable}
@@ -5448,8 +5679,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-gray-700">Piezometer applicable</Label>
-                  <select
+                  <Label htmlFor="cgwflowmetre-field-39" className="text-xs font-medium text-foreground">Piezometer applicable</Label>
+                  <select id="cgwflowmetre-field-39"
                     value={nocForm.piezometer_applicable}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -5460,7 +5691,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                       }));
                     }}
                     disabled={nocReadOnly || !nocSideFieldsEditable}
-                    className="w-full border border-gray-300 rounded-md px-2 h-9 text-sm"
+                    className="w-full border border-input bg-card rounded-md px-2 h-9 text-sm focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                   >
                     <option value="">—</option>
                     <option value="yes">Yes</option>
@@ -5469,8 +5700,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 </div>
                 {nocForm.piezometer_applicable === 'yes' && (
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-medium text-gray-700">Piezometer count</Label>
-                    <Input
+                    <Label htmlFor="cgwflowmetre-field-40" className="text-xs font-medium text-foreground">Piezometer count</Label>
+                    <Input id="cgwflowmetre-field-40"
                       value={nocForm.piezometer_count}
                       onChange={(e) => setNocForm((p) => ({ ...p, piezometer_count: e.target.value }))}
                       disabled={nocReadOnly || !nocSideFieldsEditable}
@@ -5480,8 +5711,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 )}
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">Valid from</Label>
-                <Input
+                <Label htmlFor="cgwflowmetre-field-41" className="text-xs font-medium text-foreground">Valid from</Label>
+                <Input id="cgwflowmetre-field-41"
                   type="date"
                   value={nocForm.valid_from}
                   onChange={(e) => setNocForm((p) => ({ ...p, valid_from: e.target.value }))}
@@ -5490,8 +5721,8 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-700">Valid up to</Label>
-                <Input
+                <Label htmlFor="cgwflowmetre-field-42" className="text-xs font-medium text-foreground">Valid up to</Label>
+                <Input id="cgwflowmetre-field-42"
                   type="date"
                   value={nocForm.valid_upto}
                   onChange={(e) => setNocForm((p) => ({ ...p, valid_upto: e.target.value }))}
@@ -5499,7 +5730,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   className="h-9 text-sm"
                 />
               </div>
-              <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
                 {!nocReadOnly && nocSideFieldsEditable && (
                   <Button
                     type="button"
@@ -5533,17 +5764,17 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 text-sm">
-            <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
-              <p className="text-xs text-gray-500">Created by</p>
-              <p className="font-medium text-gray-900">{historyItem?.created_by_name || '—'}</p>
+            <div className="rounded-md border border-border bg-muted p-3">
+              <p className="text-xs text-muted-foreground">Created by</p>
+              <p className="font-medium text-foreground">{historyItem?.created_by_name || '—'}</p>
             </div>
-            <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
-              <p className="text-xs text-gray-500">Created date</p>
-              <p className="font-medium text-gray-900">{formatHistoryDateTime(historyItem?.created_at)}</p>
+            <div className="rounded-md border border-border bg-muted p-3">
+              <p className="text-xs text-muted-foreground">Created date</p>
+              <p className="font-medium text-foreground">{formatHistoryDateTime(historyItem?.created_at)}</p>
             </div>
-            <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
-              <p className="text-xs text-gray-500">Last modified by</p>
-              <p className="font-medium text-gray-900">{historyItem?.last_modified_by_name || historyItem?.created_by_name || '—'}</p>
+            <div className="rounded-md border border-border bg-muted p-3">
+              <p className="text-xs text-muted-foreground">Last modified by</p>
+              <p className="font-medium text-foreground">{historyItem?.last_modified_by_name || historyItem?.created_by_name || '—'}</p>
             </div>
           </div>
         </DialogContent>
@@ -5581,17 +5812,17 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
               </DialogTitle>
             </DialogHeader>
           </div>
-          <p className="px-4 py-2 text-[11px] text-amber-900 bg-amber-50 border-b border-amber-100 shrink-0">
+          <p className="px-4 py-2 text-xs text-amber-900 bg-amber-50 border-b border-amber-100 shrink-0">
             Uploads require S3 to be configured on the server. Preview opens here — no download needed for images/PDF.
           </p>
-          <div className="flex flex-wrap gap-1 px-3 py-2 border-b border-gray-200 bg-gray-50 shrink-0">
+          <div className="flex flex-wrap gap-1 px-3 py-2 border-b border-border bg-muted shrink-0">
             {CGW_MEDIA_KEYS.map((k) => (
               <Button
                 key={k}
                 type="button"
                 size="sm"
                 variant={mediaActiveCategory === k ? 'default' : 'outline'}
-                className={`h-8 text-[10px] px-2 ${mediaActiveCategory === k ? 'bg-blue-600' : ''}`}
+                className={`h-8 text-[11px] px-2 ${mediaActiveCategory === k ? 'bg-primary' : ''}`}
                 onClick={() => setMediaActiveCategory(k)}
               >
                 {CGW_MEDIA_LABELS[k]}
@@ -5600,15 +5831,15 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
             ))}
           </div>
           <div className="flex flex-1 min-h-0 flex-col md:flex-row overflow-hidden">
-            <div className="w-full md:w-72 shrink-0 border-b md:border-b-0 md:border-r border-gray-200 flex flex-col min-h-0 bg-white">
-              <div className="p-2 border-b border-gray-100 flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-gray-700">Files in tab</span>
+            <div className="w-full md:w-72 shrink-0 border-b md:border-b-0 md:border-r border-border flex flex-col min-h-0 bg-white">
+              <div className="p-2 border-b border-border flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-foreground">Files in tab</span>
                 {canManage && (
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-8 text-[10px]"
+                    className="h-8 text-[11px]"
                     disabled={mediaUploading}
                     onClick={() => triggerMediaFilePick(mediaActiveCategory)}
                   >
@@ -5622,13 +5853,13 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                   getAttachList(mediaDialogItem, mediaActiveCategory).map((att) => (
                     <div
                       key={att.id}
-                      className={`flex items-start justify-between gap-1 rounded border px-2 py-1.5 text-[11px] ${
-                        mediaSelectedFileId === att.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
+                      className={`flex items-start justify-between gap-1 rounded border px-2 py-1.5 text-xs ${
+                        mediaSelectedFileId === att.id ? 'border-primary/60 bg-accent' : 'border-border bg-white'
                       }`}
                     >
-                      <button
+                      <button aria-label={att.file_name}
                         type="button"
-                        className="text-left flex-1 min-w-0 truncate text-gray-800 hover:underline"
+                        className="text-left flex-1 min-w-0 truncate text-foreground hover:underline"
                         onClick={() => setMediaSelectedFileId(att.id)}
                         title={att.file_name}
                       >
@@ -5637,7 +5868,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                       {canManage && (
                         <button
                           type="button"
-                          className="text-red-600 shrink-0 text-[10px] hover:underline"
+                          className="text-red-600 shrink-0 text-[11px] hover:underline"
                           onClick={() => handleDeleteMediaFile(mediaActiveCategory, att.id)}
                         >
                           Remove
@@ -5646,7 +5877,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                     </div>
                   ))
                 ) : (
-                  <p className="text-[11px] text-gray-500 p-2">No files in this category yet.</p>
+                  <p className="text-xs text-muted-foreground p-2">No files in this category yet.</p>
                 ))}
               </div>
             </div>
@@ -5661,21 +5892,21 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 const effectiveImage = shouldStream ? mediaIsImage(sel?.file_name || href) : mediaIsImage(href);
                 if (!href) {
                   return (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm text-gray-500 p-6 text-center">
+                    <div className="absolute inset-0 flex items-center justify-center bg-muted text-sm text-muted-foreground p-6 text-center">
                       Select a file from the list to preview.
                     </div>
                   );
                 }
                 if (shouldStream && mediaPreviewLoading) {
                   return (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm text-gray-600 p-6 text-center">
+                    <div className="absolute inset-0 flex items-center justify-center bg-muted text-sm text-muted-foreground p-6 text-center">
                       Loading file preview...
                     </div>
                   );
                 }
                 if (shouldStream && mediaPreviewError) {
                   return (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm text-gray-600 p-6 text-center">
+                    <div className="absolute inset-0 flex items-center justify-center bg-muted text-sm text-muted-foreground p-6 text-center">
                       {mediaPreviewError}
                     </div>
                   );
@@ -5685,20 +5916,20 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 }
                 if (effectiveImage && previewSrc) {
                   return (
-                    <div className="absolute inset-0 overflow-auto bg-gray-100 flex items-center justify-center p-2">
+                    <div className="absolute inset-0 overflow-auto bg-muted flex items-center justify-center p-2">
                       <img src={previewSrc} alt="" className="max-h-full max-w-full object-contain" />
                     </div>
                   );
                 }
                 return (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gray-100 text-sm text-gray-600 p-4 text-center">
+                  <div className="absolute inset-0 flex items-center justify-center bg-muted text-sm text-muted-foreground p-4 text-center">
                     Inline preview is not available for this file type. URL is stored on the row in S3.
                   </div>
                 );
               })()}
             </div>
           </div>
-          <div className="px-4 py-2 border-t border-gray-200 bg-white shrink-0 flex justify-end">
+          <div className="px-4 py-2 border-t border-border bg-white shrink-0 flex justify-end">
             <Button type="button" variant="outline" onClick={closeMediaDialog}>
               Close
             </Button>

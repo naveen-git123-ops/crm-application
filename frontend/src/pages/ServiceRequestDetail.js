@@ -119,7 +119,7 @@ export function ServiceRequestDetail() {
       </div>
     );
   }
-  if (!detail || !meta || !lookups) return <div className="p-6 text-sm text-slate-500">Loading service request…</div>;
+  if (!detail || !meta || !lookups) return <div className="p-6 text-sm text-muted-foreground">Loading service request…</div>;
 
   const s = detail.service;
   const caps = detail.caps;
@@ -141,15 +141,15 @@ export function ServiceRequestDetail() {
 
   return (
     <div className="space-y-4 p-4 md:p-6" data-testid="service-detail">
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="rounded-xl border border-border bg-white p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold text-slate-900">{s.service_code}</h2>
+          <h2 className="text-lg font-semibold text-foreground">{s.service_code}</h2>
           <StatusBadge status={s.status} />
           <PriorityBadge priority={s.priority} />
-          {detail.overdue && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800">Overdue</span>}
-          <span className="text-sm text-slate-600">{s.service_type} · {s.customer_type} customer</span>
+          {detail.overdue && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">Overdue</span>}
+          <span className="text-sm text-muted-foreground">{s.service_type} · {s.customer_type} customer</span>
         </div>
-        <div className="mt-1 text-sm text-slate-700">
+        <div className="mt-1 text-sm text-foreground">
           {s.customer_name}{s.product_name ? ` · ${s.product_name}` : ''}
           {s.lead_id && (
             <>
@@ -159,7 +159,7 @@ export function ServiceRequestDetail() {
           )}
         </div>
         {detail.locked && (
-          <div className="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+          <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-muted p-2 text-xs text-foreground">
             <Lock className="h-3.5 w-3.5" />
             This request is {s.status.toLowerCase()}.
             {caps.manage ? ' You can change it as a service manager; each change needs a reason.' : ' Only a service manager can change it.'}

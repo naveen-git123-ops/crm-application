@@ -466,7 +466,7 @@ export const Leaves = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -488,7 +488,7 @@ export const Leaves = () => {
               <StandardAppDialogBody>
                 {canApprove ? (
                   <div className="space-y-2">
-                    <Label htmlFor="employee" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                    <Label htmlFor="employee" className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Select employee *
                     </Label>
                     <div className="relative">
@@ -497,7 +497,7 @@ export const Leaves = () => {
                         data-testid="leave-employee-select"
                         value={formData.employee_id}
                         onChange={(e) => handleEmployeeChange(e.target.value)}
-                        className="flex h-12 w-full appearance-none rounded-xl border border-slate-200/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20"
+                        className="flex h-12 w-full appearance-none rounded-xl border border-border/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-foreground shadow-sm transition-all hover:border-input hover:shadow-md focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20"
                         required
                       >
                         <option value="">Select employee</option>
@@ -507,27 +507,27 @@ export const Leaves = () => {
                           </option>
                         ))}
                       </select>
-                      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     </div>
                   </div>
                 ) : (
-                  <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm ring-1 ring-slate-100">
+                  <div className="relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm ring-1 ring-slate-100">
                     <div className="absolute left-0 top-0 h-full w-1 rounded-l-2xl bg-gradient-to-b from-red-500 to-rose-500" aria-hidden />
                     <div className="pl-3">
-                      <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                      <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
                         <User className="h-3.5 w-3.5 text-red-500" aria-hidden />
                         Employee
                       </div>
-                      <div className="mt-1.5 text-base font-semibold text-slate-900">
+                      <div className="mt-1.5 text-base font-semibold text-foreground">
                         {formData.employee_name || user?.name}
                       </div>
-                      <div className="mt-0.5 text-sm text-slate-600">ID {user?.employee_id}</div>
+                      <div className="mt-0.5 text-sm text-muted-foreground">ID {user?.employee_id}</div>
                     </div>
                   </div>
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="leave_type" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                  <Label htmlFor="leave_type" className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Leave type *
                   </Label>
                   <div className="relative">
@@ -536,7 +536,7 @@ export const Leaves = () => {
                       data-testid="leave-type-select"
                       value={formData.leave_type}
                       onChange={(e) => handleLeaveTypeChange(e.target.value)}
-                      className="flex h-12 w-full appearance-none rounded-xl border border-slate-200/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20"
+                      className="flex h-12 w-full appearance-none rounded-xl border border-border/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-foreground shadow-sm transition-all hover:border-input hover:shadow-md focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       required
                     >
                       <option value="Casual">Casual Leave</option>
@@ -545,14 +545,14 @@ export const Leaves = () => {
                       <option value="WFH">Work From Home</option>
                       <option value="Half Day">Half Day Leave</option>
                     </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   </div>
                 </div>
 
                 {isHalfDayForm ? (
                   <>
                     <div className="space-y-2">
-                      <Label htmlFor="start_date" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                      <Label htmlFor="start_date" className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Date *
                       </Label>
                       <div className="relative">
@@ -563,13 +563,13 @@ export const Leaves = () => {
                           value={formData.start_date}
                           onChange={(e) => handleStartDateChange(e.target.value)}
                           required
-                          className="h-12 rounded-xl border-slate-200/90 bg-white pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus-visible:border-red-500 focus-visible:ring-4 focus-visible:ring-red-500/12"
+                          className="h-12 rounded-xl border-border/90 bg-white pr-10 text-sm font-medium text-foreground shadow-sm transition-all hover:border-input hover:shadow-md focus-visible:border-red-500 focus-visible:ring-4 focus-visible:ring-red-500/12"
                         />
                         <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-red-400/80" />
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="half_day_session" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                      <Label htmlFor="half_day_session" className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Half day session *
                       </Label>
                       <div className="relative">
@@ -578,20 +578,20 @@ export const Leaves = () => {
                           data-testid="half-day-session-select"
                           value={formData.half_day_session}
                           onChange={(e) => setFormData({ ...formData, half_day_session: e.target.value })}
-                          className="flex h-12 w-full appearance-none rounded-xl border border-slate-200/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20"
+                          className="flex h-12 w-full appearance-none rounded-xl border border-border/90 bg-white px-4 py-2 pr-10 text-sm font-medium text-foreground shadow-sm transition-all hover:border-input hover:shadow-md focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20"
                           required
                         >
                           <option value="First Half">First half (morning)</option>
                           <option value="Second Half">Second half (afternoon)</option>
                         </select>
-                        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       </div>
                     </div>
                   </>
                 ) : (
                   <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="start_date" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                      <Label htmlFor="start_date" className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
                         From date *
                       </Label>
                       <div className="relative">
@@ -602,13 +602,13 @@ export const Leaves = () => {
                           value={formData.start_date}
                           onChange={(e) => handleStartDateChange(e.target.value)}
                           required
-                          className="h-12 rounded-xl border-slate-200/90 bg-white pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus-visible:border-red-500 focus-visible:ring-4 focus-visible:ring-red-500/12"
+                          className="h-12 rounded-xl border-border/90 bg-white pr-10 text-sm font-medium text-foreground shadow-sm transition-all hover:border-input hover:shadow-md focus-visible:border-red-500 focus-visible:ring-4 focus-visible:ring-red-500/12"
                         />
                         <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-red-400/80" />
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="end_date" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                      <Label htmlFor="end_date" className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
                         To date *
                       </Label>
                       <div className="relative">
@@ -619,7 +619,7 @@ export const Leaves = () => {
                           value={formData.end_date}
                           onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
                           required
-                          className="h-12 rounded-xl border-slate-200/90 bg-white pr-10 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus-visible:border-red-500 focus-visible:ring-4 focus-visible:ring-red-500/12"
+                          className="h-12 rounded-xl border-border/90 bg-white pr-10 text-sm font-medium text-foreground shadow-sm transition-all hover:border-input hover:shadow-md focus-visible:border-red-500 focus-visible:ring-4 focus-visible:ring-red-500/12"
                         />
                         <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-red-400/80" />
                       </div>
@@ -628,21 +628,21 @@ export const Leaves = () => {
                 )}
 
                 <div className="space-y-2">
-                  <Label className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                  <Label className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Number of days
                   </Label>
-                  <div className="flex h-12 items-center justify-between rounded-xl border border-slate-200/90 bg-gradient-to-r from-slate-50/90 to-white px-4 shadow-inner ring-1 ring-slate-100/80">
-                    <span className="text-lg font-bold tabular-nums tracking-tight text-slate-800">
+                  <div className="flex h-12 items-center justify-between rounded-xl border border-border/90 bg-gradient-to-r from-slate-50/90 to-white px-4 shadow-inner ring-1 ring-slate-100/80">
+                    <span className="text-lg font-bold tabular-nums tracking-tight text-foreground">
                       {isHalfDayForm ? '0.5' : formData.days}
                     </span>
-                    <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       {isHalfDayForm || formData.days === 0.5 ? 'half day' : 'days'}
                     </span>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="reason" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                  <Label htmlFor="reason" className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Reason *
                   </Label>
                   <textarea
@@ -653,15 +653,15 @@ export const Leaves = () => {
                     required
                     placeholder="e.g. Personal work"
                     rows={4}
-                    className="min-h-[6.5rem] w-full resize-y rounded-xl border border-slate-200/90 bg-white px-4 py-3 text-sm leading-relaxed text-slate-900 shadow-sm transition-all placeholder:text-slate-400 hover:border-slate-300 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20"
+                    className="min-h-[6.5rem] w-full resize-y rounded-xl border border-border/90 bg-white px-4 py-3 text-sm leading-relaxed text-foreground shadow-sm transition-all placeholder:text-muted-foreground hover:border-input focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/20"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="attachment" className="text-[13px] font-semibold uppercase tracking-wide text-slate-500">
+                  <Label htmlFor="attachment" className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Attachment (optional)
                   </Label>
-                  <div className="rounded-xl border border-dashed border-slate-200/90 bg-slate-50/40 p-3 ring-1 ring-inset ring-slate-100/60 transition-colors hover:border-red-200/80 hover:bg-red-50/20">
+                  <div className="rounded-xl border border-dashed border-border/90 bg-muted/40 p-3 ring-1 ring-inset ring-slate-100/60 transition-colors hover:border-red-200/80 hover:bg-red-50/20">
                     <div className="flex flex-wrap items-center gap-2">
                       <Input
                         id="attachment"
@@ -697,7 +697,7 @@ export const Leaves = () => {
                         </>
                       )}
                     </div>
-                    <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                       Images, PDF, documents, Outlook (.msg, .eml)
                     </p>
                   </div>
@@ -743,7 +743,7 @@ export const Leaves = () => {
           />
           <StandardAppDialogBody className="min-h-0 flex-1 py-4">
             {leaveAttachmentPreview.url ? (
-              <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-slate-50/50 shadow-inner ring-1 ring-slate-100">
+              <div className="overflow-hidden rounded-xl border border-border/90 bg-muted/50 shadow-inner ring-1 ring-slate-100">
                 <FilePreviewSimple
                   fileUrl={leaveAttachmentPreview.url}
                   fileName={leaveAttachmentPreview.name}
@@ -781,10 +781,10 @@ export const Leaves = () => {
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         {/* <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Leave Management</h1>
-          <p className="mt-1 text-sm text-slate-500">Apply and manage leave requests</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Leave Management</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Apply and manage leave requests</p>
         </div> */}
-        {/* <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 sm:flex">
+        {/* <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground sm:flex">
           <User className="h-6 w-6" />
         </div> */}
       </div>
@@ -792,14 +792,14 @@ export const Leaves = () => {
       {balance != null && (
         <Card className="overflow-hidden rounded-2xl border-0 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/70">
           <div className="flex flex-col lg:flex-row lg:items-stretch">
-            <div className="grid flex-1 grid-cols-2 divide-x divide-slate-100 border-b border-slate-100 sm:grid-cols-4 lg:border-b-0">
+            <div className="grid flex-1 grid-cols-2 divide-x divide-border border-b border-border sm:grid-cols-4 lg:border-b-0">
               <div className="flex flex-col justify-center px-4 py-4 sm:py-5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total annual balance</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total annual balance</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
                   {balance.allowed}{' '}
-                  <span className="text-base font-semibold text-slate-600">Days</span>
+                  <span className="text-base font-semibold text-muted-foreground">Days</span>
                 </p>
-                <p className="mt-0.5 text-xs text-slate-400">{balance.year || new Date().getFullYear()} policy</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{balance.year || new Date().getFullYear()} policy</p>
               </div>
               <div className="flex flex-col justify-center px-4 py-4 sm:flex-row sm:items-center sm:gap-3 sm:py-5">
                 <div
@@ -814,33 +814,33 @@ export const Leaves = () => {
                   }}
                   title="Remaining vs annual balance"
                 >
-                  <div className="absolute inset-1 flex items-center justify-center rounded-full bg-white text-[10px] font-bold text-emerald-700">
+                  <div className="absolute inset-1 flex items-center justify-center rounded-full bg-white text-[11px] font-bold text-emerald-700">
                     {balance.balance}
                   </div>
                 </div>
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Remaining</p>
-                  <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900">
-                    {balance.balance} <span className="text-sm font-medium text-slate-600">Days</span>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Remaining</p>
+                  <p className="mt-0.5 text-lg font-bold tabular-nums text-foreground">
+                    {balance.balance} <span className="text-sm font-medium text-muted-foreground">Days</span>
                   </p>
                 </div>
               </div>
-              <div className="flex flex-col justify-center border-t border-slate-100 px-4 py-4 sm:border-t-0 sm:py-5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Used</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">
-                  {balance.taken} <span className="text-base font-semibold text-slate-600">Days</span>
+              <div className="flex flex-col justify-center border-t border-border px-4 py-4 sm:border-t-0 sm:py-5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Used</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                  {balance.taken} <span className="text-base font-semibold text-muted-foreground">Days</span>
                 </p>
               </div>
-              <div className="flex flex-col justify-center border-t border-slate-100 px-4 py-4 sm:border-t-0 sm:py-5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pending</p>
+              <div className="flex flex-col justify-center border-t border-border px-4 py-4 sm:border-t-0 sm:py-5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pending</p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-amber-700">
                   {pendingRequestCount}{' '}
                   <span className="text-base font-semibold text-amber-600/90">Requests</span>
                 </p>
-                <p className="mt-0.5 text-[11px] text-amber-700/80">Awaiting approval</p>
+                <p className="mt-0.5 text-xs text-amber-700/80">Awaiting approval</p>
               </div>
             </div>
-            <div className="hidden items-center justify-center border-t border-slate-100 p-4 md:flex lg:w-52 lg:border-l lg:border-t-0 lg:px-5">
+            <div className="hidden items-center justify-center border-t border-border p-4 md:flex lg:w-52 lg:border-l lg:border-t-0 lg:px-5">
               <Button
                 type="button"
                 className="h-11 w-full rounded-xl bg-sky-600 px-5 text-sm font-semibold text-white shadow-md shadow-sky-600/25 hover:bg-sky-700 lg:w-auto"
@@ -858,21 +858,21 @@ export const Leaves = () => {
       {user?.role === 'Admin' && (
         <Card className="p-5">
           <div className="mb-3 flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-muted text-muted-foreground">
               <Settings2 className="h-4 w-4" />
             </div>
-            <h2 className="text-base font-bold text-slate-900">Leave policy</h2>
+            <h2 className="text-base font-bold text-foreground">Leave policy</h2>
           </div>
-          <p className="mb-4 text-sm text-slate-600">
+          <p className="mb-4 text-sm text-muted-foreground">
             Paid leaves allowed per employee per year. This applies to all employees.
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <Input
+            <Input aria-label="e.g. 12"
               type="number"
               min={0}
               value={policyInput}
               onChange={(e) => setPolicyInput(e.target.value)}
-              className="h-10 w-28 rounded-xl border-slate-200"
+              className="h-10 w-28 rounded-xl border-border"
               placeholder="e.g. 12"
             />
             <Button
@@ -883,7 +883,7 @@ export const Leaves = () => {
               {savingPolicy ? 'Saving…' : 'Save'}
             </Button>
             {policy?.paid_leaves_per_year != null && (
-              <span className="text-sm text-slate-500">Current: {policy.paid_leaves_per_year} days/year</span>
+              <span className="text-sm text-muted-foreground">Current: {policy.paid_leaves_per_year} days/year</span>
             )}
           </div>
         </Card>
@@ -900,7 +900,7 @@ export const Leaves = () => {
                 className={`h-9 rounded-xl px-4 text-sm font-semibold ${
                   activeTab === tab
                     ? 'bg-indigo-50 text-indigo-800'
-                    : 'text-slate-600 hover:bg-slate-50'
+                    : 'text-muted-foreground hover:bg-muted'
                 }`}
                 onClick={() => setActiveTab(tab)}
                 data-testid={`status-tab-${tab.toLowerCase()}`}
@@ -914,7 +914,7 @@ export const Leaves = () => {
               <select
                 value={employeeFilter}
                 onChange={(e) => setEmployeeFilter(e.target.value)}
-                className="flex h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 shadow-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20"
+                className="flex h-10 w-full rounded-xl border border-border bg-white px-3 text-sm font-medium text-foreground shadow-sm outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-500/20"
               >
                 <option value="all">All employees</option>
                 {employees.map((emp) => (
@@ -930,10 +930,10 @@ export const Leaves = () => {
 
       <div className="grid grid-cols-1 gap-5">
         <Card className="overflow-hidden rounded-2xl border-0 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.06)] ring-1 ring-slate-200/60">
-          <div className="border-b border-slate-100 px-5 py-4">
-            <h2 className="text-lg font-bold text-slate-900">My requests (current & past)</h2>
+          <div className="border-b border-border px-5 py-4">
+            <h2 className="text-lg font-bold text-foreground">My requests (current & past)</h2>
             {canApprove && (
-              <p className="mt-1 text-xs text-slate-500">Showing requests for the selected filters.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Showing requests for the selected filters.</p>
             )}
           </div>
           {filteredLeaves.length > 0 ? (
@@ -941,7 +941,7 @@ export const Leaves = () => {
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[760px] text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/80 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                    <tr className="border-b border-border bg-muted/80 text-xs font-bold uppercase tracking-wide text-muted-foreground">
                       {canApprove && <th className="px-4 py-3">Employee</th>}
                       <th className="px-4 py-3">Type</th>
                       <th className="px-4 py-3">Reason</th>
@@ -956,23 +956,23 @@ export const Leaves = () => {
                     {filteredLeaves.map((leave) => (
                       <tr
                         key={leave.id}
-                        className="border-b border-slate-50 transition-colors hover:bg-slate-50/60"
+                        className="border-b border-border transition-colors hover:bg-muted/60"
                         data-testid={`leave-card-${leave.id}`}
                       >
                         {canApprove && (
-                          <td className="px-4 py-3 font-medium text-slate-900">
+                          <td className="px-4 py-3 font-medium text-foreground">
                             <div>{leave.employee_name}</div>
-                            <div className="text-xs font-normal text-slate-500">{leave.employee_id}</div>
+                            <div className="text-xs font-normal text-muted-foreground">{leave.employee_id}</div>
                           </td>
                         )}
                         <td className="px-4 py-3">
-                          <div className="font-semibold text-slate-900">{leaveTypeLabel(leave.leave_type)}</div>
+                          <div className="font-semibold text-foreground">{leaveTypeLabel(leave.leave_type)}</div>
                           {leave.half_day_session && (
-                            <div className="text-xs text-slate-500">{leave.half_day_session}</div>
+                            <div className="text-xs text-muted-foreground">{leave.half_day_session}</div>
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="line-clamp-3 max-w-[280px] text-sm text-slate-700">{leave.reason}</div>
+                          <div className="line-clamp-3 max-w-[280px] text-sm text-foreground">{leave.reason}</div>
                           {leave.attachment_path && (
                             <button
                               type="button"
@@ -989,10 +989,10 @@ export const Leaves = () => {
                             </button>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-slate-700">
+                        <td className="px-4 py-3 text-foreground">
                           {formatLeaveRange(leave.start_date, leave.end_date, leave.days, leave)}
                         </td>
-                        <td className="px-4 py-3 font-medium tabular-nums text-slate-900">
+                        <td className="px-4 py-3 font-medium tabular-nums text-foreground">
                           {formatLeaveDays(effectiveLeaveDays(leave), isHalfDayLeave(leave))}
                         </td>
                         <td className="px-4 py-3">
@@ -1008,12 +1008,12 @@ export const Leaves = () => {
                             {leave.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{leave.approver_name || '—'}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{leave.approver_name || '—'}</td>
                         {canApprove && (
                           <td className="px-4 py-3 text-right">
                             {leave.status === 'Pending' ? (
                               <div className="flex justify-end gap-2">
-                                <Button
+                                <Button aria-label="Confirm"
                                   size="sm"
                                   className="h-8 rounded-lg bg-emerald-600 px-3 text-white hover:bg-emerald-700"
                                   onClick={() => handleLeaveAction(leave.id, 'Approved')}
@@ -1021,7 +1021,7 @@ export const Leaves = () => {
                                 >
                                   <Check className="h-3.5 w-3.5" />
                                 </Button>
-                                <Button
+                                <Button aria-label="Close"
                                   size="sm"
                                   variant="outline"
                                   className="h-8 rounded-lg border-rose-200 text-rose-700 hover:bg-rose-50"
@@ -1032,7 +1032,7 @@ export const Leaves = () => {
                                 </Button>
                               </div>
                             ) : (
-                              <span className="text-xs text-slate-400">—</span>
+                              <span className="text-xs text-muted-foreground">—</span>
                             )}
                           </td>
                         )}
@@ -1042,7 +1042,7 @@ export const Leaves = () => {
                 </table>
               </div>
 
-              <div className="divide-y divide-slate-100 md:hidden">
+              <div className="divide-y divide-border md:hidden">
                 {filteredLeaves.map((leave) => (
               <div key={leave.id} className="flex items-center gap-3 px-4 py-4" data-testid={`leave-card-${leave.id}`}>
                 <div
@@ -1057,17 +1057,17 @@ export const Leaves = () => {
                   {leave.status === 'Approved' ? <Check className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-slate-900">
+                  <p className="font-semibold text-foreground">
                     {leaveTypeLabel(leave.leave_type)}{' '}
-                    <span className="text-slate-500">({leave.status})</span>
+                    <span className="text-muted-foreground">({leave.status})</span>
                   </p>
                   {canApprove && (
-                    <p className="truncate text-xs text-slate-500">{leave.employee_name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{leave.employee_name}</p>
                   )}
-                  <p className="text-sm text-slate-600">
+                  <p className="text-sm text-muted-foreground">
                     {formatLeaveRange(leave.start_date, leave.end_date, leave.days, leave)}
                   </p>
-                  <p className="mt-1 text-sm text-slate-700 line-clamp-2">{leave.reason}</p>
+                  <p className="mt-1 text-sm text-foreground line-clamp-2">{leave.reason}</p>
                   {leave.attachment_path && (
                     <button
                       type="button"
@@ -1111,12 +1111,12 @@ export const Leaves = () => {
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <Clock className="mb-3 h-12 w-12 text-slate-200" />
-              <p className="text-sm font-medium text-slate-600">No leave requests found</p>
+              <p className="text-sm font-medium text-muted-foreground">No leave requests found</p>
             </div>
           )}
 
           {canApprove && (
-            <div className="hidden border-t border-slate-100 bg-slate-50/50 px-4 py-3 text-xs text-slate-500 md:block">
+            <div className="hidden border-t border-border bg-muted/50 px-4 py-3 text-xs text-muted-foreground md:block">
               Use row actions to approve or reject pending requests.
             </div>
           )}

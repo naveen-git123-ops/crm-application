@@ -70,13 +70,13 @@ export default function DashboardPage() {
         </div>
       </div>
       {loading || !data ? (
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       ) : (
         <>
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
             {KPI.map(([key, label, fmt]) => (
               <Card key={key} className="p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
                 <p className="text-2xl font-semibold tabular-nums mt-1">{fmt ? fmt(data.kpis[key]) : data.kpis[key]}</p>
               </Card>
             ))}

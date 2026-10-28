@@ -6,7 +6,8 @@ function Skeleton({
 }) {
   return (
     <div
-      className={cn("animate-pulse rounded-md bg-primary/10", className)}
+      aria-hidden="true"
+      className={cn("animate-pulse motion-reduce:animate-none rounded-md bg-foreground/[0.07]", className)}
       {...props} />
   );
 }

@@ -19,7 +19,7 @@ const API = API_ENDPOINT;
 function Field({ label, children }) {
   return (
     <div>
-      <Label className="text-xs text-slate-500">{label}</Label>
+      <Label className="text-xs text-muted-foreground">{label}</Label>
       <div className="mt-1">{children}</div>
     </div>
   );
@@ -30,18 +30,18 @@ function SimpleTable({ columns, rows, emptyText }) {
     <div className="overflow-x-auto">
       <table className="min-w-full text-sm">
         <thead>
-          <tr className="border-b text-left text-[11px] uppercase text-slate-500">
+          <tr className="border-b text-left text-xs uppercase text-muted-foreground">
             {columns.map((col) => <th key={col} className="py-2 pr-3">{col}</th>)}
           </tr>
         </thead>
         <tbody>
           {(rows || []).map((row) => (
-            <tr key={row._key} className="border-b border-slate-100 align-top">
+            <tr key={row._key} className="border-b border-border align-top">
               {row.cells.map((cell, i) => <td key={i} className="py-2 pr-3">{cell}</td>)}
             </tr>
           ))}
           {(!rows || rows.length === 0) && (
-            <tr><td colSpan={columns.length} className="py-6 text-center text-slate-500">{emptyText}</td></tr>
+            <tr><td colSpan={columns.length} className="py-6 text-center text-muted-foreground">{emptyText}</td></tr>
           )}
         </tbody>
       </table>
@@ -139,7 +139,7 @@ export function OperationWorkspace() {
   );
 
   if (loading) {
-    return <div className="flex h-64 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" /></div>;
+    return <div className="flex h-64 items-center justify-center"><div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" /></div>;
   }
   if (!data) {
     return (
@@ -156,11 +156,11 @@ export function OperationWorkspace() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold text-slate-900">{data.operation_code}</h1>
-              <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', health.badge)}>{health.label}</span>
+              <h1 className="text-xl font-semibold text-foreground">{data.operation_code}</h1>
+              <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', health.badge)}>{health.label}</span>
             </div>
-            <div className="text-lg font-medium text-slate-800">{data.customer_name}</div>
-            <div className="text-sm text-slate-500">{data.project_name || data.operation_type}</div>
+            <div className="text-lg font-medium text-foreground">{data.customer_name}</div>
+            <div className="text-sm text-muted-foreground">{data.project_name || data.operation_type}</div>
           </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
             <div>PO: <b>{data.po_number || '—'}</b></div>
@@ -177,7 +177,7 @@ export function OperationWorkspace() {
             const current = stageIndex === index;
             return (
               <div key={stage} className="flex items-center gap-2 shrink-0">
-                <div className={cn('flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold', done && 'bg-emerald-50 text-emerald-700', current && 'bg-indigo-50 text-indigo-800', !done && !current && 'bg-slate-100 text-slate-500')}>
+                <div className={cn('flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold', done && 'bg-emerald-50 text-emerald-700', current && 'bg-indigo-50 text-indigo-800', !done && !current && 'bg-muted text-muted-foreground')}>
                   {done ? <Check className="h-3 w-3" /> : <Circle className="h-3 w-3" />}
                   {stage}
                 </div>
@@ -194,7 +194,7 @@ export function OperationWorkspace() {
             key={key}
             type="button"
             onClick={() => setTab(key)}
-            className={cn('shrink-0 rounded-lg border px-3 py-1.5 text-sm', tab === key ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-600')}
+            className={cn('shrink-0 rounded-lg border px-3 py-1.5 text-sm', tab === key ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-border bg-white text-muted-foreground')}
           >
             {TAB_LABELS[key] || key}
           </button>
@@ -217,24 +217,24 @@ export function OperationWorkspace() {
               ['Target', data.target_date],
               ['Priority', data.priority],
             ].map(([k, v]) => (
-              <div key={k} className="flex justify-between gap-4 border-b border-slate-100 py-1"><span className="text-slate-500">{k}</span><span className="font-medium text-right">{v || '—'}</span></div>
+              <div key={k} className="flex justify-between gap-4 border-b border-border py-1"><span className="text-muted-foreground">{k}</span><span className="font-medium text-right">{v || '—'}</span></div>
             ))}
           </Card>
           <Card className="p-4 space-y-2 text-sm">
             <h3 className="font-semibold">What must happen next</h3>
-            <div className="rounded-lg bg-slate-50 p-3">
-              <div className="text-[11px] uppercase text-slate-500">Current stage</div>
+            <div className="rounded-lg bg-muted p-3">
+              <div className="text-xs uppercase text-muted-foreground">Current stage</div>
               <div className="font-semibold">{data.current_stage || '—'}</div>
-              <div className="mt-2 text-[11px] uppercase text-slate-500">Current blocker</div>
+              <div className="mt-2 text-xs uppercase text-muted-foreground">Current blocker</div>
               <div className="font-medium">{data.blocker_category || 'None'}{data.blocker_description ? ` — ${data.blocker_description}` : ''}</div>
-              <div className="mt-2 text-[11px] uppercase text-slate-500">Next action</div>
+              <div className="mt-2 text-xs uppercase text-muted-foreground">Next action</div>
               <div className="font-medium">{data.next_action || '—'}</div>
-              <div className="text-xs text-slate-500">{data.next_action_date || ''}</div>
+              <div className="text-xs text-muted-foreground">{data.next_action_date || ''}</div>
             </div>
             <div className="grid grid-cols-2 gap-2 pt-2">
               {Object.entries(data.cost_summary || {}).map(([k, v]) => (
-                <div key={k} className="rounded-lg border border-slate-100 p-2">
-                  <div className="text-[10px] uppercase text-slate-400">{k.replace(/_/g, ' ')}</div>
+                <div key={k} className="rounded-lg border border-border p-2">
+                  <div className="text-[11px] uppercase text-muted-foreground">{k.replace(/_/g, ' ')}</div>
                   <div className="font-semibold">{formatMoney(v)}</div>
                 </div>
               ))}
@@ -413,14 +413,14 @@ export function OperationWorkspace() {
           <h3 className="font-semibold">Timeline & audit</h3>
           <div className="space-y-2">
             {(data.updates || []).map((u) => (
-              <div key={u.id} className="rounded-lg border border-slate-100 px-3 py-2 text-sm">
-                <div className="text-[11px] text-slate-400">{(u.created_at || '').replace('T', ' ').slice(0, 16)} · {u.employee_name}</div>
+              <div key={u.id} className="rounded-lg border border-border px-3 py-2 text-sm">
+                <div className="text-xs text-muted-foreground">{(u.created_at || '').replace('T', ' ').slice(0, 16)} · {u.employee_name}</div>
                 <div className="font-medium">{u.action_type}</div>
-                <div className="text-slate-600">{u.action_result}</div>
+                <div className="text-muted-foreground">{u.action_result}</div>
                 {u.next_action && <div className="text-xs text-indigo-700">Next: {u.next_action} {u.next_action_date || ''}</div>}
               </div>
             ))}
-            {(data.updates || []).length === 0 && <p className="text-sm text-slate-500">No timeline events yet.</p>}
+            {(data.updates || []).length === 0 && <p className="text-sm text-muted-foreground">No timeline events yet.</p>}
           </div>
         </Card>
       )}
@@ -428,7 +428,7 @@ export function OperationWorkspace() {
       {tab === 'closure' && (
         <Card className="p-4 space-y-3">
           <h3 className="font-semibold">Closure</h3>
-          <p className="text-sm text-slate-500">An operation cannot close just because material was delivered.</p>
+          <p className="text-sm text-muted-foreground">An operation cannot close just because material was delivered.</p>
           <div className="grid gap-2 sm:grid-cols-2">
             {Object.entries(CLOSURE_LABELS).map(([key, label]) => (
               <label key={key} className="flex items-center gap-2 text-sm">
@@ -446,7 +446,7 @@ export function OperationWorkspace() {
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             <Field label="Final status">
-              <select className="h-10 w-full rounded-md border border-slate-200 px-2 text-sm" value={form.closure_status || 'Completed'} onChange={(e) => setF('closure_status', e.target.value)}>
+              <select className="h-10 w-full rounded-md border border-border px-2 text-sm" value={form.closure_status || 'Completed'} onChange={(e) => setF('closure_status', e.target.value)}>
                 {(meta.closure_statuses || ['Completed']).map((s) => <option key={s}>{s}</option>)}
               </select>
             </Field>

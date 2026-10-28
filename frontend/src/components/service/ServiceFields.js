@@ -13,8 +13,8 @@ export function StatusBadge({ status, className }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap',
-        STATUS_STYLES[status] || 'bg-slate-100 text-slate-700 border-slate-200',
+        'inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold whitespace-nowrap',
+        STATUS_STYLES[status] || 'bg-muted text-foreground border-border',
         className,
       )}
     >
@@ -25,7 +25,7 @@ export function StatusBadge({ status, className }) {
 
 export function PriorityBadge({ priority }) {
   return (
-    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', PRIORITY_STYLES[priority] || 'bg-slate-100 text-slate-700')}>
+    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-semibold', PRIORITY_STYLES[priority] || 'bg-muted text-foreground')}>
       {priority || '—'}
     </span>
   );
@@ -73,7 +73,7 @@ export function FieldInput({ field, value, onChange, options = [], disabled = fa
     );
   }
   return (
-    <input
+    <input aria-label={field.placeholder}
       {...common}
       type="text"
       value={current}
@@ -88,7 +88,7 @@ export function FormField({ field, value, onChange, options, disabled, error }) 
   const id = `svc-${field.key}`;
   return (
     <div className={cn('space-y-1', field.wide && 'md:col-span-2')}>
-      <Label htmlFor={id} className="text-xs font-medium text-slate-600">
+      <Label htmlFor={id} className="text-xs font-medium text-muted-foreground">
         {field.label}
         {field.required && <span className="text-rose-600"> *</span>}
       </Label>
@@ -105,8 +105,8 @@ export function FieldGrid({ children, className }) {
 export function ReadRow({ label, children }) {
   return (
     <div className="min-w-0">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-0.5 text-sm text-slate-900 break-words">{children === undefined || children === null || children === '' ? '—' : children}</div>
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-sm text-foreground break-words">{children === undefined || children === null || children === '' ? '—' : children}</div>
     </div>
   );
 }
@@ -129,12 +129,12 @@ export function BlockerList({ items, title = 'Not ready yet' }) {
 
 export function SectionCard({ title, description, actions, children, className }) {
   return (
-    <div className={cn('rounded-xl border border-slate-200 bg-white p-4', className)}>
+    <div className={cn('rounded-xl border border-border bg-white p-4', className)}>
       {(title || actions) && (
         <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
           <div>
-            {title && <h3 className="text-sm font-semibold text-slate-900">{title}</h3>}
-            {description && <p className="text-xs text-slate-500">{description}</p>}
+            {title && <h3 className="text-sm font-semibold text-foreground">{title}</h3>}
+            {description && <p className="text-xs text-muted-foreground">{description}</p>}
           </div>
           {actions}
         </div>

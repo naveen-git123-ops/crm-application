@@ -65,32 +65,32 @@ export function BpoCallDesk({ onConverted }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
       <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Today’s target</p>
+        <div className="rounded-lg border border-border bg-muted px-3 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Today’s target</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums">{target || '—'}</p>
         </div>
         <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600">Follow-ups today</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Follow-ups today</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-indigo-800">{calls}</p>
         </div>
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Our client today</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Our client today</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-emerald-800">{Number(stats.my_conversions || 0)}</p>
         </div>
         <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-yellow-800">Still in queue</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-yellow-800">Still in queue</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-yellow-900">{remaining || Number(stats.open_records || 0)}</p>
         </div>
       </div>
       {target > 0 && (
-        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className="h-2 overflow-hidden rounded-full bg-muted">
           <div className="h-full bg-indigo-500" style={{ width: `${progress}%` }} />
         </div>
       )}
 
       {loading && !record ? (
         <div className="flex flex-1 items-center justify-center py-16">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+          <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
         </div>
       ) : !record ? (
         <div className="flex flex-1 flex-col items-center justify-center py-16 text-center text-muted-foreground">

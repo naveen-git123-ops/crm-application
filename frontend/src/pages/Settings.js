@@ -214,7 +214,7 @@ export const Settings = () => {
               <User className="h-5 w-5 text-indigo-600" />
             </div>
             <div className="flex-1">
-              <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-[0.08em]">Full Name</p>
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-[0.08em]">Full Name</p>
               <p className="font-medium text-foreground">{user?.name}</p>
             </div>
           </div>
@@ -224,7 +224,7 @@ export const Settings = () => {
               <Mail className="h-5 w-5 text-indigo-600" />
             </div>
             <div className="flex-1">
-              <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-[0.08em]">Email Address</p>
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-[0.08em]">Email Address</p>
               <p className="font-medium text-foreground">{user?.email}</p>
             </div>
           </div>
@@ -234,7 +234,7 @@ export const Settings = () => {
               <Shield className="h-5 w-5 text-indigo-600" />
             </div>
             <div className="flex-1">
-              <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-[0.08em]">Role</p>
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-[0.08em]">Role</p>
               <p className="font-medium text-foreground">{user?.role}</p>
             </div>
           </div>
@@ -245,7 +245,7 @@ export const Settings = () => {
                 <Calendar className="h-5 w-5 text-indigo-600" />
               </div>
               <div className="flex-1">
-                <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-[0.08em]">Employee ID</p>
+                <p className="text-xs text-muted-foreground font-semibold uppercase tracking-[0.08em]">Employee ID</p>
                 <p className="font-mono font-medium text-foreground">{user.employee_id}</p>
               </div>
             </div>
@@ -403,12 +403,12 @@ export const Settings = () => {
 
       {/* Editable Profile Information */}
       <Card className="p-5 sm:p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-6">Update Profile Information</h3>
+        <h3 className="text-lg font-semibold text-foreground mb-6">Update Profile Information</h3>
         
         <div className="space-y-6">
           {/* Mobile Number Section */}
           <div className="space-y-3">
-            <Label htmlFor="mobile" className="text-sm font-medium text-gray-700">
+            <Label htmlFor="mobile" className="text-sm font-medium text-foreground">
               Mobile Number
             </Label>
             <div className="flex gap-2">
@@ -418,31 +418,31 @@ export const Settings = () => {
                 placeholder="Enter your mobile number"
                 value={mobileNumber}
                 onChange={(e) => setMobileNumber(e.target.value)}
-                className="flex-1 border border-gray-300 rounded-lg text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                className="flex-1 border border-input rounded-lg text-foreground focus:border-primary/60 focus:ring-2 focus:ring-ring/30"
               />
               <Button
                 onClick={handleUpdateMobileNumber}
                 disabled={loading}
-                className="bg-blue-600 text-white hover:bg-blue-700 h-10"
+                className="bg-primary text-white hover:bg-primary/90 h-10"
               >
                 {loading ? 'Saving...' : 'Save'}
               </Button>
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Your mobile number will appear on your ID card
             </p>
           </div>
 
           {/* Profile Photo Section */}
           <div className="space-y-3">
-            <Label className="text-sm font-medium text-gray-700">
+            <Label className="text-sm font-medium text-foreground">
               Profile Photo
             </Label>
             
             <div className="flex gap-4">
               {/* Photo Preview */}
               <div className="flex-shrink-0">
-                <div className="w-24 h-24 bg-blue-50 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300 overflow-hidden">
+                <div className="w-24 h-24 bg-accent rounded-lg flex items-center justify-center border-2 border-dashed border-input overflow-hidden">
                   {photoPreview ? (
                     <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
                   ) : user?.profile_photo ? (
@@ -456,7 +456,7 @@ export const Settings = () => {
                       }}
                     />
                   ) : (
-                    <User className="h-12 w-12 text-gray-400" />
+                    <User className="h-12 w-12 text-muted-foreground" />
                   )}
                 </div>
               </div>
@@ -469,7 +469,7 @@ export const Settings = () => {
                     type="file"
                     accept="image/*"
                     onChange={handlePhotoChange}
-                    className="border border-gray-300 rounded-lg text-gray-900"
+                    className="border border-input rounded-lg text-foreground"
                   />
                 </div>
                 
@@ -477,14 +477,14 @@ export const Settings = () => {
                   <Button
                     onClick={handleUploadPhoto}
                     disabled={loading}
-                    className="bg-blue-600 text-white hover:bg-blue-700 w-full gap-2"
+                    className="bg-primary text-white hover:bg-primary/90 w-full gap-2"
                   >
                     <Upload className="h-4 w-4" />
                     {loading ? 'Uploading...' : 'Upload Photo'}
                   </Button>
                 )}
                 
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Supported formats: JPG, PNG, GIF (Max 5MB). Your photo will appear on your ID card.
                 </p>
               </div>
@@ -496,15 +496,15 @@ export const Settings = () => {
       {/* Office location - Admin only */}
       {user?.role === 'Admin' && (
         <Card className="p-5 sm:p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <MapPin className="h-5 w-5 text-blue-600" />
+          <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+            <MapPin className="h-5 w-5 text-accent-foreground" />
             Office Location
           </h3>
-          <p className="text-sm text-gray-600 mb-4">
+          <p className="text-sm text-muted-foreground mb-4">
             Set the office location for attendance. Employees can punch in/out only within 50 m of this point. Outside 50 m is recorded as Tour (requires your or Manager approval).
           </p>
           {officeLocation.configured ? (
-            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 text-sm text-gray-700 mb-4">
+            <div className="p-4 bg-muted rounded-lg border border-border text-sm text-foreground mb-4">
               <span className="font-medium">Current office:</span>{' '}
               {officeLocation.latitude?.toFixed(6)}, {officeLocation.longitude?.toFixed(6)}
             </div>
@@ -515,7 +515,7 @@ export const Settings = () => {
             <Button
               onClick={setOfficeFromCurrentLocation}
               disabled={officeLoading}
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-primary text-white hover:bg-primary/90"
             >
               <MapPin className="h-4 w-4 mr-2" />
               {officeLoading ? 'Getting location...' : 'Use my current location as office'}
@@ -552,19 +552,19 @@ export const Settings = () => {
 
       {/* System Info */}
       <Card className="p-5 sm:p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">System Information</h3>
-        <div className="space-y-3 text-sm bg-gray-50 p-4 rounded-lg border border-gray-200">
+        <h3 className="text-lg font-semibold text-foreground mb-4">System Information</h3>
+        <div className="space-y-3 text-sm bg-muted p-4 rounded-lg border border-border">
           <div className="flex justify-between">
-            <span className="text-gray-600 font-medium">Application Version</span>
-            <span className="font-mono font-medium text-gray-900">1.0.0</span>
+            <span className="text-muted-foreground font-medium">Application Version</span>
+            <span className="font-mono font-medium text-foreground">1.0.0</span>
           </div>
-          <div className="flex justify-between border-t border-gray-300 pt-3">
-            <span className="text-gray-600 font-medium">Theme</span>
-            <span className="font-medium text-gray-900">RESOLINE TECHBIS Professional</span>
+          <div className="flex justify-between border-t border-input pt-3">
+            <span className="text-muted-foreground font-medium">Theme</span>
+            <span className="font-medium text-foreground">RESOLINE TECHBIS Professional</span>
           </div>
-          <div className="flex justify-between border-t border-gray-300 pt-3">
-            <span className="text-gray-600 font-medium">Last Login</span>
-            <span className="font-mono text-xs text-gray-600">{new Date().toLocaleString()}</span>
+          <div className="flex justify-between border-t border-input pt-3">
+            <span className="text-muted-foreground font-medium">Last Login</span>
+            <span className="font-mono text-xs text-muted-foreground">{new Date().toLocaleString()}</span>
           </div>
         </div>
       </Card>

@@ -361,17 +361,17 @@ export const Documents = () => {
   const pageHeaderActions = useMemo(
     () => (
       <div className="flex items-center gap-2">
-        <Button
+        <Button aria-label="Refresh"
           variant="outline"
           size="sm"
           onClick={handleReload}
           disabled={reloading}
-          className="border-gray-300 text-gray-700 hover:bg-gray-50 h-9"
+          className="border-input text-foreground hover:bg-muted h-9"
         >
           <RefreshCw className={reloading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
         </Button>
         <Button
-          className="bg-blue-600 text-white font-medium hover:bg-blue-700 h-9"
+          className="bg-primary text-white font-medium hover:bg-primary/90 h-9"
           onClick={() => {
             resetForm();
             setDialogOpen(true);
@@ -394,7 +394,7 @@ export const Documents = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -403,15 +403,15 @@ export const Documents = () => {
     <div className="space-y-5" data-testid="documents-page">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Total documents</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Total documents</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{baseDocuments.length}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Expiring in 30 days</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Expiring in 30 days</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-amber-600">{expiringSoonCount}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Expired</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Expired</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-rose-600">{expiredCount}</p>
         </Card>
       </div>
@@ -420,11 +420,11 @@ export const Documents = () => {
         <div className={`grid gap-3 ${canViewAllDocuments ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-2'}`}>
           {canViewAllDocuments ? (
             <div>
-              <Label className="text-xs font-semibold text-gray-600">Employee</Label>
-              <select
+              <Label htmlFor="documents-field-1" className="text-xs font-semibold text-muted-foreground">Employee</Label>
+              <select id="documents-field-1"
                 value={selectedEmployeeForView}
                 onChange={(e) => setSelectedEmployeeForView(e.target.value)}
-                className="mt-1.5 flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                className="mt-1.5 flex h-10 w-full rounded-lg border border-input bg-white px-3 py-2 text-sm focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-ring/30"
               >
                 <option value="">All employees</option>
                 {employees.map((emp) => (
@@ -436,19 +436,19 @@ export const Documents = () => {
             </div>
           ) : (
             <div className="flex items-center gap-2 pt-6">
-              <FolderOpen className="h-5 w-5 text-blue-600" />
+              <FolderOpen className="h-5 w-5 text-accent-foreground" />
               <div>
-                <p className="text-sm font-semibold text-gray-900">Your documents</p>
-                <p className="text-xs text-gray-500">{user?.name} · {user?.employee_id}</p>
+                <p className="text-sm font-semibold text-foreground">Your documents</p>
+                <p className="text-xs text-muted-foreground">{user?.name} · {user?.employee_id}</p>
               </div>
             </div>
           )}
           <div>
-            <Label className="text-xs font-semibold text-gray-600">Document type</Label>
-            <select
+            <Label htmlFor="documents-field-2" className="text-xs font-semibold text-muted-foreground">Document type</Label>
+            <select id="documents-field-2"
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="mt-1.5 flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              className="mt-1.5 flex h-10 w-full rounded-lg border border-input bg-white px-3 py-2 text-sm focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-ring/30"
             >
               {availableDocumentTypes.map((typ) => (
                 <option key={typ} value={typ}>
@@ -458,10 +458,10 @@ export const Documents = () => {
             </select>
           </div>
           <div>
-            <Label className="text-xs font-semibold text-gray-600">Search</Label>
+            <Label className="text-xs font-semibold text-muted-foreground">Search</Label>
             <div className="relative mt-1.5">
-              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <Input
+              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input aria-label="Document name, file, employee..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Document name, file, employee..."
@@ -472,8 +472,8 @@ export const Documents = () => {
         </div>
       </Card>
 
-      <p className="text-sm text-gray-600">
-        Showing <span className="font-semibold text-gray-900">{searchedDocuments.length}</span> document
+      <p className="text-sm text-muted-foreground">
+        Showing <span className="font-semibold text-foreground">{searchedDocuments.length}</span> document
         {searchedDocuments.length === 1 ? '' : 's'}
       </p>
 
@@ -489,21 +489,21 @@ export const Documents = () => {
           const category = documentCategoryLabel(document.document_type);
 
           return (
-            <Card key={document.id} className="p-0 border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all bg-white overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100 bg-slate-50/80 flex items-start justify-between gap-3">
+            <Card key={document.id} className="p-0 border border-border hover:border-input hover:shadow-md transition-all bg-white overflow-hidden">
+              <div className="px-4 py-3 border-b border-border bg-muted/80 flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3 min-w-0">
-                  <div className="h-10 w-10 rounded-lg bg-white border border-gray-200 flex items-center justify-center shrink-0">
+                  <div className="h-10 w-10 rounded-lg bg-white border border-border flex items-center justify-center shrink-0">
                     {isImageFile(document) ? (
-                      <ImageIcon className="h-5 w-5 text-blue-600" />
+                      <ImageIcon className="h-5 w-5 text-accent-foreground" />
                     ) : (
-                      <FileText className="h-5 w-5 text-blue-600" />
+                      <FileText className="h-5 w-5 text-accent-foreground" />
                     )}
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-semibold text-gray-900 truncate" title={title}>
+                    <h3 className="text-sm font-semibold text-foreground truncate" title={title}>
                       {title}
                     </h3>
-                    <span className="mt-1 inline-flex items-center rounded-full bg-white border border-gray-200 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                    <span className="mt-1 inline-flex items-center rounded-full bg-white border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground">
                       {category}
                     </span>
                   </div>
@@ -512,29 +512,29 @@ export const Documents = () => {
               </div>
 
               <div className="p-4 space-y-3">
-                <div className="flex items-center gap-2 text-sm text-gray-700">
-                  <User className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                <div className="flex items-center gap-2 text-sm text-foreground">
+                  <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   <span className="truncate">{document.employee_name}</span>
-                  <span className="text-xs text-gray-400 shrink-0">{document.employee_id}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{document.employee_id}</span>
                 </div>
-                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Document file</p>
-                  <p className="text-sm text-gray-900 truncate mt-0.5" title={document.file_name}>
+                <div className="rounded-md border border-border bg-muted px-3 py-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Document file</p>
+                  <p className="text-sm text-foreground truncate mt-0.5" title={document.file_name}>
                     {document.file_name || 'Unnamed file'}
                   </p>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                    <span className="inline-flex px-1.5 py-0.5 rounded bg-white border border-gray-200 text-gray-700">{fileExt}</span>
+                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                    <span className="inline-flex px-1.5 py-0.5 rounded bg-white border border-border text-foreground">{fileExt}</span>
                     <span>{bytesToSize(document.file_size)}</span>
                   </div>
                 </div>
                 {document.expiry_date ? (
-                  <p className={`flex items-center gap-1.5 text-xs ${isExpired ? 'text-red-600' : isExpiringSoon ? 'text-amber-600' : 'text-gray-500'}`}>
+                  <p className={`flex items-center gap-1.5 text-xs ${isExpired ? 'text-red-600' : isExpiringSoon ? 'text-amber-600' : 'text-muted-foreground'}`}>
                     <Calendar className="h-3.5 w-3.5" />
                     Expires {document.expiry_date}
                     {isExpired ? ' · Expired' : isExpiringSoon ? ' · Expiring soon' : ''}
                   </p>
                 ) : (
-                  <p className="text-xs text-gray-400">No expiry date</p>
+                  <p className="text-xs text-muted-foreground">No expiry date</p>
                 )}
 
                 <div className="flex gap-2 pt-1">
@@ -558,10 +558,10 @@ export const Documents = () => {
       </div>
 
       {searchedDocuments.length === 0 && (
-        <Card className="p-12 text-center border border-dashed border-gray-300 bg-white">
+        <Card className="p-12 text-center border border-dashed border-input bg-white">
           <FileArchive className="h-10 w-10 mx-auto mb-3 text-gray-300" />
-          <p className="text-gray-800 font-medium">No documents found</p>
-          <p className="text-sm text-gray-500 mt-1">Upload a file to start the employee document folder.</p>
+          <p className="text-foreground font-medium">No documents found</p>
+          <p className="text-sm text-muted-foreground mt-1">Upload a file to start the employee document folder.</p>
         </Card>
       )}
 
@@ -572,11 +572,11 @@ export const Documents = () => {
           if (!open) resetForm();
         }}
       >
-        <DialogContent className="max-w-lg bg-white rounded-lg border border-gray-200 shadow-xl p-0">
-          <div className="border-b border-gray-200 px-5 py-4">
+        <DialogContent className="max-w-lg bg-white rounded-lg border border-border shadow-xl p-0">
+          <div className="border-b border-border px-5 py-4">
             <DialogHeader className="space-y-1">
-              <DialogTitle className="text-lg font-semibold text-gray-900">Upload document</DialogTitle>
-              <p className="text-sm text-gray-500">
+              <DialogTitle className="text-lg font-semibold text-foreground">Upload document</DialogTitle>
+              <p className="text-sm text-muted-foreground">
                 {canUploadForOthers ? 'Attach a file to an employee record' : 'Add a document to your profile'}
               </p>
             </DialogHeader>
@@ -584,11 +584,11 @@ export const Documents = () => {
           <form onSubmit={handleSubmit} className="space-y-4 px-5 py-5">
             {canUploadForOthers ? (
               <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-gray-800">Employee *</Label>
-                <select
+                <Label htmlFor="documents-field-3" className="text-sm font-medium text-foreground">Employee *</Label>
+                <select id="documents-field-3"
                   value={formData.employee_id}
                   onChange={(e) => handleEmployeeChange(e.target.value)}
-                  className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  className="flex h-11 w-full rounded-lg border border-input bg-white px-3 py-2 text-sm focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-ring/30"
                   required
                 >
                   <option value="">Select employee</option>
@@ -600,18 +600,18 @@ export const Documents = () => {
                 </select>
               </div>
             ) : (
-              <div className="rounded-lg border border-gray-200 bg-slate-50 px-3 py-2.5">
-                <p className="text-sm font-medium text-gray-900">{user?.name}</p>
-                <p className="text-xs text-gray-500">Employee ID {user?.employee_id}</p>
+              <div className="rounded-lg border border-border bg-muted px-3 py-2.5">
+                <p className="text-sm font-medium text-foreground">{user?.name}</p>
+                <p className="text-xs text-muted-foreground">Employee ID {user?.employee_id}</p>
               </div>
             )}
 
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium text-gray-800">Document type *</Label>
-              <select
+              <Label htmlFor="documents-field-4" className="text-sm font-medium text-foreground">Document type *</Label>
+              <select id="documents-field-4"
                 value={formData.document_type}
                 onChange={(e) => handleTypeChange(e.target.value)}
-                className="flex h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                className="flex h-11 w-full rounded-lg border border-input bg-white px-3 py-2 text-sm focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-ring/30"
                 required
               >
                 {DOCUMENT_TYPES.map((opt) => (
@@ -621,9 +621,9 @@ export const Documents = () => {
             </div>
 
             {formData.document_type === 'Other' ? (
-              <div className="space-y-1.5 rounded-lg border border-blue-100 bg-blue-50/60 p-3">
-                <Label className="text-sm font-medium text-gray-800">Which document are you uploading? *</Label>
-                <Input
+              <div className="space-y-1.5 rounded-lg border border-primary/20 bg-accent/60 p-3">
+                <Label htmlFor="documents-field-5" className="text-sm font-medium text-foreground">Which document are you uploading? *</Label>
+                <Input id="documents-field-5"
                   value={formData.other_document_name}
                   onChange={(e) => setFormData({ ...formData, other_document_name: e.target.value })}
                   placeholder="e.g. Passport, Driving licence, Experience letter"
@@ -631,13 +631,13 @@ export const Documents = () => {
                   required
                   maxLength={80}
                 />
-                <p className="text-xs text-gray-600">This name is shown on the document after upload.</p>
+                <p className="text-xs text-muted-foreground">This name is shown on the document after upload.</p>
               </div>
             ) : null}
 
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium text-gray-800">Expiry date (optional)</Label>
-              <Input
+              <Label htmlFor="documents-field-6" className="text-sm font-medium text-foreground">Expiry date (optional)</Label>
+              <Input id="documents-field-6"
                 type="date"
                 value={formData.expiry_date}
                 onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })}
@@ -646,29 +646,29 @@ export const Documents = () => {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium text-gray-800">File *</Label>
-              <Input
+              <Label htmlFor="documents-field-7" className="text-sm font-medium text-foreground">File *</Label>
+              <Input id="documents-field-7"
                 type="file"
                 onChange={(e) => setFormData({ ...formData, file: e.target.files?.[0] || null })}
                 required
                 className="h-11"
               />
               {formData.file ? (
-                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Selected file</p>
-                  <p className="text-sm text-gray-900 truncate mt-0.5">{formData.file.name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{bytesToSize(formData.file.size)}</p>
+                <div className="rounded-md border border-border bg-muted px-3 py-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Selected file</p>
+                  <p className="text-sm text-foreground truncate mt-0.5">{formData.file.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{bytesToSize(formData.file.size)}</p>
                 </div>
               ) : (
-                <p className="text-xs text-gray-500">PDF, images, Office files, and archives. Maximum 10 MB.</p>
+                <p className="text-xs text-muted-foreground">PDF, images, Office files, and archives. Maximum 10 MB.</p>
               )}
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={uploading} className="bg-blue-600 hover:bg-blue-700">
+              <Button type="submit" disabled={uploading} className="bg-primary hover:bg-primary/90">
                 {uploading ? 'Uploading…' : 'Upload'}
               </Button>
             </div>
@@ -692,12 +692,12 @@ export const Documents = () => {
         }}
       >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-white p-0">
-          <div className="sticky top-0 z-10 border-b border-gray-200 bg-white px-5 py-4">
+          <div className="sticky top-0 z-10 border-b border-border bg-white px-5 py-4">
             <DialogHeader className="space-y-1">
-              <DialogTitle className="text-lg font-semibold text-gray-900">
+              <DialogTitle className="text-lg font-semibold text-foreground">
                 {documentDisplayName(previewDocument?.document_type)}
               </DialogTitle>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 {documentCategoryLabel(previewDocument?.document_type)}
                 {previewDocument?.file_name ? ` · ${previewDocument.file_name}` : ''}
               </p>
@@ -708,33 +708,33 @@ export const Documents = () => {
             <div className="px-5 pb-5 space-y-4 pt-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Employee</p>
-                  <p className="text-gray-900 mt-0.5">{previewDocument.employee_name}</p>
+                  <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Employee</p>
+                  <p className="text-foreground mt-0.5">{previewDocument.employee_name}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Document name</p>
-                  <p className="text-gray-900 mt-0.5">{documentDisplayName(previewDocument.document_type)}</p>
+                  <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Document name</p>
+                  <p className="text-foreground mt-0.5">{documentDisplayName(previewDocument.document_type)}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">File</p>
-                  <p className="truncate text-gray-900 mt-0.5">{previewDocument.file_name}</p>
+                  <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">File</p>
+                  <p className="truncate text-foreground mt-0.5">{previewDocument.file_name}</p>
                 </div>
                 {previewDocument.expiry_date && (
                   <div>
-                    <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Expiry</p>
-                    <p className="text-gray-900 mt-0.5">{previewDocument.expiry_date}</p>
+                    <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Expiry</p>
+                    <p className="text-foreground mt-0.5">{previewDocument.expiry_date}</p>
                   </div>
                 )}
                 <div>
-                  <p className="text-gray-500 text-xs font-medium uppercase tracking-wide">Uploaded</p>
-                  <p className="text-gray-900 mt-0.5">{new Date(previewDocument.uploaded_at).toLocaleDateString()}</p>
+                  <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Uploaded</p>
+                  <p className="text-foreground mt-0.5">{new Date(previewDocument.uploaded_at).toLocaleDateString()}</p>
                 </div>
               </div>
 
               {previewDocument.file_path && (
-                <div className="border-t border-gray-100 pt-4">
+                <div className="border-t border-border pt-4">
                   {previewLoading && (
-                    <div className="bg-gray-50 rounded-lg p-10 text-center text-gray-600">
+                    <div className="bg-muted rounded-lg p-10 text-center text-muted-foreground">
                       <RefreshCw className="h-5 w-5 mx-auto mb-2 animate-spin" />
                       Loading preview...
                     </div>
@@ -749,7 +749,7 @@ export const Documents = () => {
                     </div>
                   )}
                   {!previewLoading && !previewError && previewBlobUrl && (isImageFile(previewDocument) || previewMimeType.startsWith('image/')) && (
-                    <div className="bg-gray-50 rounded-lg p-4 flex justify-center">
+                    <div className="bg-muted rounded-lg p-4 flex justify-center">
                       <img src={previewBlobUrl} alt="preview" className="max-w-full max-h-[70vh] rounded" />
                     </div>
                   )}
@@ -763,13 +763,13 @@ export const Documents = () => {
                     </div>
                   )}
                   {!previewLoading && !previewError && previewBlobUrl && (isTextLikeFile(previewDocument) || previewMimeType.startsWith('text/') || previewMimeType.includes('json') || previewMimeType.includes('xml')) && (
-                    <div className="rounded border bg-gray-50 p-4 h-[70vh] overflow-auto">
-                      <pre className="text-xs whitespace-pre-wrap break-words text-gray-800">{previewTextContent || 'No text preview available'}</pre>
+                    <div className="rounded border bg-muted p-4 h-[70vh] overflow-auto">
+                      <pre className="text-xs whitespace-pre-wrap break-words text-foreground">{previewTextContent || 'No text preview available'}</pre>
                     </div>
                   )}
                   {!previewLoading && !previewError && previewBlobUrl && !isImageFile(previewDocument) && !isPdfFile(previewDocument) && !isTextLikeFile(previewDocument) && !previewMimeType.startsWith('image/') && !previewMimeType.includes('pdf') && !previewMimeType.startsWith('text/') && (
-                    <div className="bg-gray-50 rounded-lg p-6 text-center">
-                      <p className="text-gray-600 text-sm mb-4">Preview not available for this file type</p>
+                    <div className="bg-muted rounded-lg p-6 text-center">
+                      <p className="text-muted-foreground text-sm mb-4">Preview not available for this file type</p>
                       <Button onClick={() => handleDownload(previewDocument.id, previewDocument.file_name)}>
                         <Download className="h-4 w-4 mr-2" />
                         Download
@@ -779,10 +779,10 @@ export const Documents = () => {
                 </div>
               )}
 
-              <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+              <div className="flex justify-end gap-2 pt-4 border-t border-border">
                 <Button variant="outline" onClick={() => setPreviewOpen(false)}>Close</Button>
                 <Button
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="bg-primary hover:bg-primary/90"
                   onClick={() => {
                     handleDownload(previewDocument.id, previewDocument.file_name);
                     setPreviewOpen(false);

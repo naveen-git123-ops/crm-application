@@ -93,7 +93,7 @@ export const Workspace = () => {
   if (loading && logs.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -114,7 +114,7 @@ export const Workspace = () => {
           </h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="summary" className="text-sm font-semibold text-gray-700">
+              <Label htmlFor="summary" className="text-sm font-semibold text-foreground">
                 What did you work on today? (Brief summary)
               </Label>
               <textarea
@@ -123,7 +123,7 @@ export const Workspace = () => {
                 onChange={(e) => setSummary(e.target.value)}
                 placeholder="e.g. Completed API for reports, fixed login bug, attended standup..."
                 rows={4}
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 resize-none"
+                className="w-full rounded-lg border border-input px-4 py-3 text-sm focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-ring/30 resize-none"
               />
             </div>
             <div className="flex items-center gap-3">
@@ -133,7 +133,7 @@ export const Workspace = () => {
               >
                 {submitting ? 'Submitting...' : 'Submit Work Log'}
               </Button>
-              <span className="text-xs text-gray-500">Date: {today}</span>
+              <span className="text-xs text-muted-foreground">Date: {today}</span>
             </div>
           </form>
         </Card>
@@ -151,13 +151,13 @@ export const Workspace = () => {
               type="month"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-input px-3 py-2 text-sm"
             />
             {canViewAll && (
               <select
                 value={filterEmployeeId}
                 onChange={(e) => setFilterEmployeeId(e.target.value)}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm min-w-[160px]"
+                className="rounded-lg border border-input px-3 py-2 text-sm min-w-[160px]"
               >
                 <option value="">All employees</option>
                 {employees.map((emp) => (
@@ -174,22 +174,22 @@ export const Workspace = () => {
           {logs.map((log) => (
             <div
               key={log.id}
-              className="border border-gray-100 rounded-lg p-4 bg-gray-50/50 hover:bg-gray-50"
+              className="border border-border rounded-lg p-4 bg-muted/50 hover:bg-muted"
             >
               <div className="flex items-center justify-between gap-2 mb-2">
-                <span className="font-medium text-gray-900">{log.employee_name}</span>
-                <span className="text-sm text-gray-500 flex items-center gap-1">
+                <span className="font-medium text-foreground">{log.employee_name}</span>
+                <span className="text-sm text-muted-foreground flex items-center gap-1">
                   <Calendar className="h-4 w-4" />
                   {log.log_date}
                 </span>
               </div>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{log.summary}</p>
+              <p className="text-sm text-foreground whitespace-pre-wrap">{log.summary}</p>
             </div>
           ))}
         </div>
 
         {logs.length === 0 && (
-          <div className="py-12 text-center text-gray-500">
+          <div className="py-12 text-center text-muted-foreground">
             <FileText className="h-12 w-12 mx-auto mb-2 opacity-20" />
             <p>No work logs for this period</p>
           </div>

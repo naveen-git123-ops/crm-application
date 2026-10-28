@@ -250,14 +250,14 @@ export const IDCards = () => {
             className="h-6 w-auto object-contain"
             onError={(e) => { e.target.style.display = 'none'; }}
           />
-          <div className="text-white font-black text-[9px] tracking-widest ml-2">
+          <div className="text-white font-black text-[11px] tracking-widest ml-2">
             {COMPANY_NAME}
           </div>
         </div>
 
         {/* Photo Section */}
         <div className="flex justify-center py-4 px-4">
-          <div className="w-24 h-24 rounded-lg border-3 border-slate-200 shadow-md overflow-hidden flex items-center justify-center flex-shrink-0 bg-slate-50">
+          <div className="w-24 h-24 rounded-lg border-3 border-border shadow-md overflow-hidden flex items-center justify-center flex-shrink-0 bg-muted">
             {photoUrl ? (
               <img 
                 src={photoUrl}
@@ -273,7 +273,7 @@ export const IDCards = () => {
                 }}
               />
             ) : (
-              <div className="flex items-center justify-center w-full h-full bg-slate-100">
+              <div className="flex items-center justify-center w-full h-full bg-muted">
                 <span className="text-5xl font-black text-slate-300">{employee.name.charAt(0).toUpperCase()}</span>
               </div>
             )}
@@ -283,21 +283,21 @@ export const IDCards = () => {
         {/* Employee Info */}
         <div className="flex-1 px-3 py-2 flex flex-col justify-between text-center">
           <div>
-            <h3 className="text-sm font-black text-slate-900 leading-tight track-tight">
+            <h3 className="text-sm font-black text-foreground leading-tight track-tight">
               {employee.name}
             </h3>
             <div className="text-[8px] font-bold text-indigo-600 uppercase tracking-wider mt-1">
               {employee.job_role || '—'}
             </div>
-            <div className="text-[7px] text-slate-500 uppercase tracking-wider font-semibold">
+            <div className="text-[7px] text-muted-foreground uppercase tracking-wider font-semibold">
               {employee.department || '—'}
             </div>
           </div>
         </div>
 
         {/* ID Badge Section */}
-        <div className="px-3 py-2 border-t-2 border-slate-200">
-          <div className="text-[7px] text-slate-500 uppercase font-bold tracking-wider text-center mb-1.5">
+        <div className="px-3 py-2 border-t-2 border-border">
+          <div className="text-[7px] text-muted-foreground uppercase font-bold tracking-wider text-center mb-1.5">
             Employee ID
           </div>
           <div className="font-mono text-sm font-black text-white bg-gradient-to-r from-blue-700 to-indigo-700 py-1.5 px-2 rounded-md text-center">
@@ -332,15 +332,15 @@ export const IDCards = () => {
             className="h-6 w-auto object-contain"
             onError={(e) => { e.target.style.display = 'none'; }}
           />
-          <div className="text-white font-black text-[9px] tracking-widest ml-2">
+          <div className="text-white font-black text-[11px] tracking-widest ml-2">
             {COMPANY_NAME}
           </div>
         </div>
 
         <div className="px-3 py-3 flex-1 flex flex-col justify-between">
           <div>
-            <h2 className="text-[9px] font-black text-slate-900 uppercase tracking-widest">Terms & Conditions</h2>
-            <div className="text-[6.5px] text-slate-600 mt-1 leading-snug">
+            <h2 className="text-[11px] font-black text-foreground uppercase tracking-widest">Terms & Conditions</h2>
+            <div className="text-[6.5px] text-muted-foreground mt-1 leading-snug">
               This card is the property of {COMPANY_NAME}. Please keep it safe and secure at all times.
             </div>
           </div>
@@ -349,38 +349,38 @@ export const IDCards = () => {
             <div>
               <div className="text-[7px] font-bold text-indigo-600 uppercase tracking-widest mb-1">Contact Info</div>
               <div className="space-y-1">
-                <div className="text-[8px] text-slate-700">
+                <div className="text-[8px] text-foreground">
                   <span className="font-semibold">Email:</span> {employee.email || '—'}
                 </div>
-                <div className="text-[8px] text-slate-700">
+                <div className="text-[8px] text-foreground">
                   <span className="font-semibold">Phone:</span> {employee.phone || '—'}
                 </div>
               </div>
             </div>
 
-            <div className="pt-2 border-t-2 border-slate-200">
+            <div className="pt-2 border-t-2 border-border">
               <div className="text-[7px] font-bold text-indigo-600 uppercase tracking-widest mb-1">Company</div>
-              <div className="text-[8px] text-slate-700">
+              <div className="text-[8px] text-foreground">
                 {COMPANY_NUMBER}
               </div>
             </div>
 
-            <div className="pt-2 border-t-2 border-slate-200">
+            <div className="pt-2 border-t-2 border-border">
               <div className="text-[7px] font-bold text-indigo-600 uppercase tracking-widest mb-1 flex items-center gap-1">
                 <AlertCircle className="h-2.5 w-2.5" />
                 Emergency
               </div>
-              <div className="text-[8px] font-semibold text-slate-800 bg-indigo-50 px-2 py-1 rounded">
+              <div className="text-[8px] font-semibold text-foreground bg-indigo-50 px-2 py-1 rounded">
                 {employee.emergency_contact || '—'}
               </div>
             </div>
           </div>
 
-          <div className="pt-2 border-t border-slate-200 text-center">
-            <div className="text-[6px] text-slate-600 font-mono">
+          <div className="pt-2 border-t border-border text-center">
+            <div className="text-[6px] text-muted-foreground font-mono">
               If found, please return to HR Department
             </div>
-            <div className="text-[5.5px] text-slate-500 mt-0.5">
+            <div className="text-[5.5px] text-muted-foreground mt-0.5">
               Issued: 2026 • {COMPANY_NAME.split(' ')[0]}
             </div>
           </div>
@@ -392,7 +392,7 @@ export const IDCards = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+        <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
       </div>
     );
   }
@@ -408,15 +408,15 @@ export const IDCards = () => {
       </div>
 
       {/* Search Bar */}
-      <Card className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
+      <Card className="p-4 rounded-lg border border-border bg-white shadow-sm">
         <div className="flex gap-3">
-          <Input
+          <Input aria-label="Search by name, employee ID, or email..."
             placeholder="Search by name, employee ID, or email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="border border-gray-200 h-10"
+            className="border border-border h-10"
           />
-          <Button className="bg-blue-600 text-white font-medium hover:bg-blue-700 h-10 gap-2">
+          <Button className="bg-primary text-white font-medium hover:bg-primary/90 h-10 gap-2">
             <Search className="h-4 w-4" />
             Search
           </Button>
@@ -424,31 +424,31 @@ export const IDCards = () => {
       </Card>
 
       {/* Employees table */}
-      <Card className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <Card className="rounded-lg border border-border bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Employee ID</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Department</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Job Role</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Action</th>
+              <tr className="border-b border-border bg-muted">
+                <th className="text-left py-3 px-4 font-semibold text-foreground">Employee ID</th>
+                <th className="text-left py-3 px-4 font-semibold text-foreground">Name</th>
+                <th className="text-left py-3 px-4 font-semibold text-foreground">Department</th>
+                <th className="text-left py-3 px-4 font-semibold text-foreground">Job Role</th>
+                <th className="text-left py-3 px-4 font-semibold text-foreground">Action</th>
               </tr>
             </thead>
             <tbody>
               {filteredEmployees.map((employee) => (
-                <tr key={employee.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                  <td className="py-3 px-4 font-mono text-gray-900">{employee.employee_id}</td>
-                  <td className="py-3 px-4 font-medium text-gray-900">{employee.name}</td>
-                  <td className="py-3 px-4 text-gray-600">{employee.department || '—'}</td>
-                  <td className="py-3 px-4 text-gray-600">{employee.job_role || employee.job_title || '—'}</td>
+                <tr key={employee.id} className="border-b border-border hover:bg-muted/50">
+                  <td className="py-3 px-4 font-mono text-foreground">{employee.employee_id}</td>
+                  <td className="py-3 px-4 font-medium text-foreground">{employee.name}</td>
+                  <td className="py-3 px-4 text-muted-foreground">{employee.department || '—'}</td>
+                  <td className="py-3 px-4 text-muted-foreground">{employee.job_role || employee.job_title || '—'}</td>
                   <td className="py-3 px-4">
                     <Dialog open={previewOpen && selectedEmployee?.id === employee.id} onOpenChange={setPreviewOpen}>
                       <DialogTrigger asChild>
                         <Button
                           size="sm"
-                          className="bg-blue-600 text-white hover:bg-blue-700 h-9"
+                          className="bg-primary text-white hover:bg-primary/90 h-9"
                           onClick={() => handlePreview(employee)}
                         >
                           <CreditCard className="h-4 w-4 mr-2" />
@@ -456,8 +456,8 @@ export const IDCards = () => {
                         </Button>
                       </DialogTrigger>
                       {selectedEmployee?.id === employee.id && (
-                        <DialogContent className="max-w-2xl bg-gray-50 border-0 shadow-2xl">
-                          <div className="bg-blue-600 text-white p-6 -m-6 mb-0 rounded-t-lg">
+                        <DialogContent className="max-w-2xl bg-muted border-0 shadow-2xl">
+                          <div className="bg-primary text-white p-6 -m-6 mb-0 rounded-t-lg">
                             <DialogHeader>
                               <DialogTitle className="text-2xl font-bold text-white">
                                 ID Card Generator
@@ -475,8 +475,8 @@ export const IDCards = () => {
                                 onClick={() => setCardSide('front')}
                                 className={`px-6 py-2 ${
                                   cardSide === 'front'
-                                    ? 'bg-white text-blue-600 shadow-md font-semibold'
-                                    : 'bg-gray-200 text-gray-600 hover:text-gray-900'
+                                    ? 'bg-white text-accent-foreground shadow-md font-semibold'
+                                    : 'bg-gray-200 text-muted-foreground hover:text-foreground'
                                 }`}
                               >
                                 Front Side
@@ -486,8 +486,8 @@ export const IDCards = () => {
                                 onClick={() => setCardSide('back')}
                                 className={`px-6 py-2 ${
                                   cardSide === 'back'
-                                    ? 'bg-white text-blue-600 shadow-md font-semibold'
-                                    : 'bg-gray-200 text-gray-600 hover:text-gray-900'
+                                    ? 'bg-white text-accent-foreground shadow-md font-semibold'
+                                    : 'bg-gray-200 text-muted-foreground hover:text-foreground'
                                 }`}
                               >
                                 Back Side
@@ -495,9 +495,9 @@ export const IDCards = () => {
                             </div>
 
                             {photoLoading && (
-                              <div className="flex justify-center items-center p-4 bg-blue-50 rounded-lg border border-blue-200">
-                                <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent mr-2" />
-                                <span className="text-sm text-blue-700 font-medium">Processing photo...</span>
+                              <div className="flex justify-center items-center p-4 bg-accent rounded-lg border border-primary/30">
+                                <div role="status" aria-label="Loading" className="animate-spin rounded-full h-6 w-6 border-2 border-primary/60 border-t-transparent mr-2" />
+                                <span className="text-sm text-accent-foreground font-medium">Processing photo...</span>
                               </div>
                             )}
 
@@ -509,7 +509,7 @@ export const IDCards = () => {
                               )}
                             </div>
 
-                            <div className="flex gap-4 justify-center p-6 bg-white rounded-lg border border-gray-200">
+                            <div className="flex gap-4 justify-center p-6 bg-white rounded-lg border border-border">
                               <Button
                                 onClick={handleDownload}
                                 disabled={photoLoading}
@@ -520,7 +520,7 @@ export const IDCards = () => {
                               </Button>
                               <Button
                                 onClick={handlePrint}
-                                className="px-8 py-3 border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-semibold"
+                                className="px-8 py-3 border-2 border-primary/60 text-accent-foreground hover:bg-accent font-semibold"
                               >
                                 <Printer className="h-5 w-5 mr-2" />
                                 Print
@@ -539,8 +539,8 @@ export const IDCards = () => {
       </Card>
 
       {filteredEmployees.length === 0 && (
-        <Card className="p-12 text-center rounded-lg border border-gray-200 bg-white shadow-sm">
-          <p className="text-gray-600">No employees found</p>
+        <Card className="p-12 text-center rounded-lg border border-border bg-white shadow-sm">
+          <p className="text-muted-foreground">No employees found</p>
         </Card>
       )}
     </div>

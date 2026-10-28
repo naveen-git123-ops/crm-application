@@ -122,19 +122,19 @@ export function AmcDialog({ open, onClose, serviceTypes }) {
         {!customer ? (
           <div className="space-y-2">
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-              <Input className="pl-8" placeholder="Search customer" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input aria-label="Search customer" className="pl-8" placeholder="Search customer" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
             </div>
             <ul className="max-h-64 divide-y overflow-y-auto rounded-lg border">
               {customers.map((c) => (
                 <li key={c.id}>
-                  <button type="button" className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => choose(c)}>
+                  <button type="button" className="block w-full px-3 py-2 text-left text-sm hover:bg-muted" onClick={() => choose(c)}>
                     <span className="font-medium">{c.company_name}</span>
-                    <span className="ml-2 text-xs text-slate-500">{c.customer_id}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">{c.customer_id}</span>
                   </button>
                 </li>
               ))}
-              {customers.length === 0 && <li className="px-3 py-4 text-sm text-slate-500">No customers found.</li>}
+              {customers.length === 0 && <li className="px-3 py-4 text-sm text-muted-foreground">No customers found.</li>}
             </ul>
           </div>
         ) : (
@@ -149,13 +149,13 @@ export function AmcDialog({ open, onClose, serviceTypes }) {
 
             {!form && (
               <ul className="space-y-2">
-                {contracts.length === 0 && <li className="text-sm text-slate-500">No AMC contracts for this customer.</li>}
+                {contracts.length === 0 && <li className="text-sm text-muted-foreground">No AMC contracts for this customer.</li>}
                 {contracts.map((c) => (
-                  <li key={c.id} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 p-3">
+                  <li key={c.id} className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
                     <div className="text-sm">
-                      <div className="font-semibold">{c.amc_number} <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px]">{c.effective_status}</span></div>
-                      <div className="text-xs text-slate-600">{fmtDate(c.start_date)} – {fmtDate(c.end_date)} · {c.visits_used}{c.planned_visits ? ` of ${c.planned_visits}` : ''} visits used</div>
-                      <div className="text-xs text-slate-500">
+                      <div className="font-semibold">{c.amc_number} <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs">{c.effective_status}</span></div>
+                      <div className="text-xs text-muted-foreground">{fmtDate(c.start_date)} – {fmtDate(c.end_date)} · {c.visits_used}{c.planned_visits ? ` of ${c.planned_visits}` : ''} visits used</div>
+                      <div className="text-xs text-muted-foreground">
                         Covers {(c.covered_product_ids || []).length === 0 ? 'all products' : `${c.covered_product_ids.length} product(s)`}
                         {(c.covered_service_types || []).length > 0 ? ` · ${c.covered_service_types.join(', ')}` : ''}
                       </div>
@@ -167,7 +167,7 @@ export function AmcDialog({ open, onClose, serviceTypes }) {
             )}
 
             {form && (
-              <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+              <div className="space-y-3 rounded-lg border border-border p-3">
                 {error && <p className="rounded bg-rose-50 p-2 text-sm text-rose-800" role="alert">{error}</p>}
                 <FieldGrid>
                   <FormField field={{ key: 'start_date', label: 'Start date', type: 'date', required: true }} value={form.start_date} onChange={(v) => setForm((p) => ({ ...p, start_date: v }))} />
@@ -178,9 +178,9 @@ export function AmcDialog({ open, onClose, serviceTypes }) {
                   <FormField field={{ key: 'notes', label: 'Notes', type: 'textarea', wide: true }} value={form.notes} onChange={(v) => setForm((p) => ({ ...p, notes: v }))} />
                 </FieldGrid>
                 <div>
-                  <Label className="text-xs font-medium text-slate-600">Covered products (none ticked = all products of this customer)</Label>
+                  <Label className="text-xs font-medium text-muted-foreground">Covered products (none ticked = all products of this customer)</Label>
                   <div className="mt-1 grid max-h-40 grid-cols-1 gap-1 overflow-y-auto rounded-lg border p-2 md:grid-cols-2">
-                    {products.length === 0 && <p className="text-sm text-slate-500">No registered products for this customer.</p>}
+                    {products.length === 0 && <p className="text-sm text-muted-foreground">No registered products for this customer.</p>}
                     {products.map((p) => (
                       <label key={p.id} className="flex items-center gap-2 text-sm">
                         <Checkbox checked={form.covered_product_ids.includes(p.id)} onCheckedChange={() => toggle('covered_product_ids', p.id)} />
@@ -190,7 +190,7 @@ export function AmcDialog({ open, onClose, serviceTypes }) {
                   </div>
                 </div>
                 <div>
-                  <Label className="text-xs font-medium text-slate-600">Covered service types (none ticked = all)</Label>
+                  <Label className="text-xs font-medium text-muted-foreground">Covered service types (none ticked = all)</Label>
                   <div className="mt-1 flex flex-wrap gap-3 rounded-lg border p-2">
                     {amcTypes.map((t) => (
                       <label key={t} className="flex items-center gap-2 text-sm">
@@ -252,7 +252,7 @@ export function ServiceSettingsDialog({ open, onClose, meta, onSaved }) {
   const flag = (key, label, hint) => (
     <label className="flex items-start gap-2 text-sm">
       <Checkbox className="mt-0.5" checked={form[key]} onCheckedChange={(v) => setForm((p) => ({ ...p, [key]: v === true }))} />
-      <span><span className="font-medium">{label}</span><span className="block text-xs text-slate-500">{hint}</span></span>
+      <span><span className="font-medium">{label}</span><span className="block text-xs text-muted-foreground">{hint}</span></span>
     </label>
   );
 
@@ -317,7 +317,7 @@ export function ServiceSettingsDialog({ open, onClose, meta, onSaved }) {
             {flag('allow_unassigned', 'Allow work without an assigned technician', 'Normally a technician is required before work starts.')}
             {flag('vendor_approval_required', 'Vendor repair needs an approval step', 'Hides the shortcut that skips “Awaiting Approval”.')}
             <div>
-              <Label className="text-xs font-medium text-slate-600">Customer acknowledgement is mandatory for</Label>
+              <Label className="text-xs font-medium text-muted-foreground">Customer acknowledgement is mandatory for</Label>
               <div className="mt-1 flex flex-wrap gap-3 rounded-lg border p-2">
                 {allTypes.map((t) => (
                   <label key={t} className="flex items-center gap-2 text-sm">
@@ -331,23 +331,23 @@ export function ServiceSettingsDialog({ open, onClose, meta, onSaved }) {
 
           <TabsContent value="lists" className="space-y-3 pt-3">
             <div className="space-y-1">
-              <Label htmlFor="cfg-problems" className="text-xs font-medium text-slate-600">Problem categories (one per line)</Label>
+              <Label htmlFor="cfg-problems" className="text-xs font-medium text-muted-foreground">Problem categories (one per line)</Label>
               <Textarea id="cfg-problems" rows={7} value={form.problem_categories} onChange={(e) => setForm((p) => ({ ...p, problem_categories: e.target.value }))} />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="cfg-stages" className="text-xs font-medium text-slate-600">Vendor repair stages (one per line, in order)</Label>
+              <Label htmlFor="cfg-stages" className="text-xs font-medium text-muted-foreground">Vendor repair stages (one per line, in order)</Label>
               <Textarea id="cfg-stages" rows={11} value={form.vendor_stages} onChange={(e) => setForm((p) => ({ ...p, vendor_stages: e.target.value }))} />
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 You can add, remove or reorder stages. These carry rules and must stay: {meta.required_vendor_stages.join(' · ')}. The last stage must be “{meta.required_vendor_stages[meta.required_vendor_stages.length - 1]}”.
               </p>
             </div>
           </TabsContent>
 
           <TabsContent value="evidence" className="space-y-3 pt-3">
-            <p className="text-xs text-slate-500">The request cannot be completed until at least one file exists in each ticked category.</p>
+            <p className="text-xs text-muted-foreground">The request cannot be completed until at least one file exists in each ticked category.</p>
             {Object.keys(WORKFLOW_LABELS).map((workflow) => (
               <div key={workflow}>
-                <Label className="text-xs font-semibold text-slate-700">{WORKFLOW_LABELS[workflow]}</Label>
+                <Label className="text-xs font-semibold text-foreground">{WORKFLOW_LABELS[workflow]}</Label>
                 <div className="mt-1 grid grid-cols-1 gap-1 rounded-lg border p-2 md:grid-cols-2">
                   {meta.attachment_categories.map((cat) => (
                     <label key={cat} className="flex items-center gap-2 text-sm">
@@ -361,17 +361,17 @@ export function ServiceSettingsDialog({ open, onClose, meta, onSaved }) {
           </TabsContent>
 
           <TabsContent value="checklists" className="space-y-3 pt-3">
-            <p className="text-xs text-slate-500">One item per line. New requests copy these items; existing requests keep their own list.</p>
+            <p className="text-xs text-muted-foreground">One item per line. New requests copy these items; existing requests keep their own list.</p>
             {Object.entries(CHECKLIST_LABELS).map(([key, label]) => (
               <div key={key} className="space-y-1">
-                <Label htmlFor={`cfg-${key}`} className="text-xs font-medium text-slate-600">{label}</Label>
+                <Label htmlFor={`cfg-${key}`} className="text-xs font-medium text-muted-foreground">{label}</Label>
                 <Textarea id={`cfg-${key}`} rows={5} value={form.checklists[key]} onChange={(e) => setForm((p) => ({ ...p, checklists: { ...p.checklists, [key]: e.target.value } }))} />
               </div>
             ))}
           </TabsContent>
 
           <TabsContent value="company" className="pt-3">
-            <p className="mb-2 text-xs text-slate-500">Shown at the top of the final service report and its PDF.</p>
+            <p className="mb-2 text-xs text-muted-foreground">Shown at the top of the final service report and its PDF.</p>
             <FieldGrid>
               {[
                 { key: 'name', label: 'Company name', type: 'text' },

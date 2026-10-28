@@ -111,17 +111,17 @@ export function BpoSiteVisit() {
           <div className="flex min-h-0 flex-col gap-3">
             <div className="relative shrink-0">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
+              <Input aria-label="Search project, NOC, district…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search project, NOC, district…"
                 className="h-10 pl-9"
               />
             </div>
-            <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200">
+            <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border">
               {loading && items.length === 0 ? (
                 <div className="flex items-center justify-center py-16">
-                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+                  <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
                 </div>
               ) : items.length === 0 ? (
                 <div className="flex flex-col items-center justify-center px-4 py-16 text-center text-muted-foreground">
@@ -129,7 +129,7 @@ export function BpoSiteVisit() {
                   <p>No site visits in the field queue.</p>
                 </div>
               ) : (
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-border">
                   {items.map((row) => {
                     const tone = validEndRowTone(row.validity_end);
                     const active = row.id === selectedId;
@@ -140,20 +140,20 @@ export function BpoSiteVisit() {
                         onClick={() => setSelectedId(row.id)}
                         className={cn(
                           'w-full px-3 py-3 text-left',
-                          active ? 'bg-indigo-50' : 'hover:bg-slate-50',
+                          active ? 'bg-indigo-50' : 'hover:bg-muted',
                           tone === 'yellow' && !active && 'bg-yellow-50/70',
                           tone === 'red' && !active && 'bg-red-50/50',
                         )}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <p className="font-medium text-slate-900 line-clamp-2">{displayValue(row.project_name)}</p>
+                          <p className="font-medium text-foreground line-clamp-2">{displayValue(row.project_name)}</p>
                           {tone === 'yellow' && (
-                            <span className="shrink-0 rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-medium text-yellow-800">90d</span>
+                            <span className="shrink-0 rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] font-medium text-yellow-800">90d</span>
                           )}
                         </div>
-                        <p className="mt-1 text-xs text-slate-500">{displayValue(row.district_name)} · {displayValue(rowContact(row))}</p>
-                        <p className="mt-0.5 text-[11px] text-slate-500">Valid end {displayDate(row.validity_end)} · {displayDaysUntilExpiry(row.validity_end)}</p>
-                        <span className={cn('mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium', BPO_STATUS_TONES.site_visit)}>
+                        <p className="mt-1 text-xs text-muted-foreground">{displayValue(row.district_name)} · {displayValue(rowContact(row))}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">Valid end {displayDate(row.validity_end)} · {displayDaysUntilExpiry(row.validity_end)}</p>
+                        <span className={cn('mt-2 inline-flex rounded-full px-2 py-0.5 text-xs font-medium', BPO_STATUS_TONES.site_visit)}>
                           {bpoStatusLabel(row.bpo_status)}
                         </span>
                       </button>

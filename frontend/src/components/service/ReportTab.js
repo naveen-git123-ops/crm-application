@@ -160,7 +160,7 @@ export function ReportTab({ ctx }) {
   };
 
   if (loadError) return <p className="rounded bg-rose-50 p-3 text-sm text-rose-800" role="alert">{loadError}</p>;
-  if (!view) return <p className="text-sm text-slate-500">Loading report…</p>;
+  if (!view) return <p className="text-sm text-muted-foreground">Loading report…</p>;
 
   const ack = draft.customer_acknowledgement || {};
 
@@ -181,7 +181,7 @@ export function ReportTab({ ctx }) {
       >
         <BlockerList items={problems} title="This could not be completed" />
         {view.revisions.length > 0 && (
-          <div className="mt-3 text-xs text-slate-600">
+          <div className="mt-3 text-xs text-muted-foreground">
             <div className="font-semibold">Earlier revisions</div>
             <ul className="mt-1 space-y-0.5">
               {view.revisions.map((r) => (
@@ -213,7 +213,7 @@ export function ReportTab({ ctx }) {
             <FormField field={{ key: 'ack-name', label: 'Acknowledged by', type: 'text', required: true }} disabled={!editable} value={ack.name} onChange={setAck('name')} />
             <FormField field={{ key: 'ack-date', label: 'Date', type: 'date' }} disabled={!editable} value={ack.date} onChange={setAck('date')} />
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600" htmlFor="svc-ack-method">Method</label>
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="svc-ack-method">Method</label>
               <select id="svc-ack-method" className={INPUT_CLASS} disabled={!editable} value={ack.method} onChange={(e) => setAck('method')(e.target.value)}>
                 <option value="">Select…</option>
                 {ACK_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -228,20 +228,20 @@ export function ReportTab({ ctx }) {
             <Button onClick={submit} disabled={Boolean(busy)}><Send className="mr-1 h-4 w-4" />{busy === 'submit' ? 'Submitting…' : 'Submit report'}</Button>
           </div>
         )}
-        {!editable && !submitted && <p className="mt-3 text-xs text-slate-500">You can view this report but not edit it.</p>}
+        {!editable && !submitted && <p className="mt-3 text-xs text-muted-foreground">You can view this report but not edit it.</p>}
       </SectionCard>
 
       <SectionCard title="Report preview">
         <div className="space-y-4">
           {(view.report?.sections || []).map((section) => (
             <div key={section.title}>
-              <h4 className="mb-1 rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-800">{section.title}</h4>
+              <h4 className="mb-1 rounded bg-muted px-2 py-1 text-xs font-semibold text-foreground">{section.title}</h4>
               {section.rows?.length > 0 && (
                 <table className="w-full border-collapse text-xs">
                   <tbody>
                     {section.rows.map(([label, value]) => (
-                      <tr key={label} className="border-b border-slate-100">
-                        <th className="w-1/3 py-1 pr-2 text-left align-top font-medium text-slate-600">{label}</th>
+                      <tr key={label} className="border-b border-border">
+                        <th className="w-1/3 py-1 pr-2 text-left align-top font-medium text-muted-foreground">{label}</th>
                         <td className="py-1 whitespace-pre-wrap break-words">{value}</td>
                       </tr>
                     ))}
@@ -252,11 +252,11 @@ export function ReportTab({ ctx }) {
                 <div className="mt-2 overflow-x-auto">
                   <table className="min-w-full border-collapse text-xs">
                     <thead>
-                      <tr>{section.table.columns.map((c) => <th key={c} className="border-b px-2 py-1 text-left font-semibold text-slate-600">{c}</th>)}</tr>
+                      <tr>{section.table.columns.map((c) => <th key={c} className="border-b px-2 py-1 text-left font-semibold text-muted-foreground">{c}</th>)}</tr>
                     </thead>
                     <tbody>
                       {section.table.rows.map((row, i) => (
-                        <tr key={`${section.title}-${i}`} className="border-b border-slate-100">
+                        <tr key={`${section.title}-${i}`} className="border-b border-border">
                           {row.map((cell, j) => <td key={`${i}-${j}`} className="px-2 py-1 align-top">{cell}</td>)}
                         </tr>
                       ))}

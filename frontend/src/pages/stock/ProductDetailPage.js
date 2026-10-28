@@ -76,7 +76,7 @@ export default function ProductDetailPage() {
     }
   };
 
-  if (!data || !form) return <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />;
+  if (!data || !form) return <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />;
   const product = data.product;
 
   return (
@@ -91,7 +91,7 @@ export default function ProductDetailPage() {
       <Card className="p-4 overflow-x-auto">
         <h2 className="font-semibold mb-3">Stock by warehouse</h2>
         <table className="min-w-full text-sm">
-          <thead className="text-left text-xs uppercase text-slate-600">
+          <thead className="text-left text-xs uppercase text-muted-foreground">
             <tr>
               <th className="py-2 pr-3">Warehouse</th>
               <th className="py-2 pr-3 text-right">On hand</th>
@@ -150,7 +150,7 @@ export default function ProductDetailPage() {
       <Card className="p-4 overflow-x-auto">
         <h2 className="font-semibold mb-3">Ledger history</h2>
         <table className="min-w-full text-sm">
-          <thead className="text-left text-xs uppercase text-slate-600">
+          <thead className="text-left text-xs uppercase text-muted-foreground">
             <tr>
               <th className="py-2 pr-3">When</th>
               <th className="py-2 pr-3">Type</th>

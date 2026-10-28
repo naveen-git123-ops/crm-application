@@ -81,13 +81,13 @@ export function statusClass(status) {
   if (['low', 'pending_approval', 'in_transit', 'partially_received', 'warning'].includes(status)) return 'bg-amber-50 text-amber-800 border-amber-200';
   if (['out', 'cancelled', 'critical'].includes(status)) return 'bg-red-50 text-red-700 border-red-200';
   if (['approved', 'read', 'info'].includes(status)) return 'bg-indigo-50 text-indigo-700 border-indigo-200';
-  return 'bg-slate-50 text-slate-700 border-slate-200';
+  return 'bg-muted text-foreground border-border';
 }
 
 export function StatusPill({ status, label }) {
   const text = label || PO_STATUS[status] || TRANSFER_STATUS[status] || status;
   return (
-    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold ${statusClass(status)}`}>
+    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold ${statusClass(status)}`}>
       {text}
     </span>
   );
@@ -96,7 +96,7 @@ export function StatusPill({ status, label }) {
 export function Spinner() {
   return (
     <div className="flex justify-center py-12">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+      <div role="status" aria-label="Loading" className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
     </div>
   );
 }

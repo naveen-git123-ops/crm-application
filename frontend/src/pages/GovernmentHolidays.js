@@ -128,43 +128,43 @@ export const GovernmentHolidays = () => {
                 </div>
                 <form onSubmit={handleAddHoliday} className="space-y-4 p-6">
                   <div className="space-y-2">
-                    <Label htmlFor="gh-date" className="text-sm font-semibold text-gray-900 block">Date *</Label>
+                    <Label htmlFor="gh-date" className="text-sm font-semibold text-foreground block">Date *</Label>
                     <Input
                       id="gh-date"
                       type="date"
                       value={formData.date}
                       onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                       required
-                      className="h-11 bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="h-11 bg-white border border-input rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="gh-name" className="text-sm font-semibold text-gray-900 block">Holiday Name *</Label>
+                    <Label htmlFor="gh-name" className="text-sm font-semibold text-foreground block">Holiday Name *</Label>
                     <Input
                       id="gh-name"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       placeholder="e.g. Republic Day"
                       required
-                      className="h-11 bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="h-11 bg-white border border-input rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="gh-desc" className="text-sm font-semibold text-gray-900 block">Description (optional)</Label>
+                    <Label htmlFor="gh-desc" className="text-sm font-semibold text-foreground block">Description (optional)</Label>
                     <Textarea
                       id="gh-desc"
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                       placeholder="Optional notes"
                       rows={2}
-                      className="resize-none bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="resize-none bg-white border border-input rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </div>
-                  <div className="flex gap-3 pt-2 justify-end border-t border-gray-200">
-                    <Button type="button" variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2" onClick={() => setAddDialogOpen(false)}>
+                  <div className="flex gap-3 pt-2 justify-end border-t border-border">
+                    <Button type="button" variant="outline" className="border-input text-foreground hover:bg-muted px-4 py-2" onClick={() => setAddDialogOpen(false)}>
                       Cancel
                     </Button>
-                    <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2">
+                    <Button type="submit" className="bg-primary hover:bg-primary/90 text-white px-4 py-2">
                       Add Holiday
                     </Button>
                   </div>
@@ -177,12 +177,12 @@ export const GovernmentHolidays = () => {
 
       <Card className="p-4 sm:p-6">
         <div className="flex flex-wrap items-center gap-3 mb-4">
-          <Label htmlFor="year-filter" className="text-sm font-medium text-gray-700">Year</Label>
+          <Label htmlFor="year-filter" className="text-sm font-medium text-foreground">Year</Label>
           <select
             id="year-filter"
             value={yearFilter}
             onChange={(e) => setYearFilter(Number(e.target.value))}
-            className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 min-h-[44px]"
+            className="h-10 rounded-lg border border-input bg-white px-3 text-sm text-foreground min-h-[44px]"
           >
             {[new Date().getFullYear() + 1, new Date().getFullYear(), new Date().getFullYear() - 1].map((y) => (
               <option key={y} value={y}>{y}</option>
@@ -192,10 +192,10 @@ export const GovernmentHolidays = () => {
 
         {loading ? (
           <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent" />
+            <div role="status" aria-label="Loading" className="animate-spin rounded-full h-10 w-10 border-2 border-primary/60 border-t-transparent" />
           </div>
         ) : holidays.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
+          <div className="text-center py-12 text-muted-foreground">
             <Calendar className="h-12 w-12 mx-auto mb-2 opacity-40" />
             <p>No government holidays listed for {yearFilter}.</p>
             {canManageHolidays && (
@@ -209,12 +209,12 @@ export const GovernmentHolidays = () => {
               return (
                 <Card
                   key={h.id}
-                  className="relative aspect-square w-20 h-20 sm:w-24 sm:h-24 rounded-lg bg-blue-400/20 border border-blue-300/50 shadow-sm hover:bg-blue-400/30 transition-all overflow-hidden flex-shrink-0"
+                  className="relative aspect-square w-20 h-20 sm:w-24 sm:h-24 rounded-lg bg-blue-400/20 border border-primary/30 shadow-sm hover:bg-blue-400/30 transition-all overflow-hidden flex-shrink-0"
                 >
                   <div className="absolute inset-0 p-1.5 flex flex-col items-center justify-center">
-                    <span className="text-[9px] sm:text-[10px] font-medium text-blue-800 uppercase leading-none">{month}</span>
-                    <span className="text-lg sm:text-xl font-bold leading-none text-blue-900">{day}</span>
-                    <p className="text-[9px] sm:text-[10px] font-semibold text-blue-900 leading-tight text-center line-clamp-2 w-full px-0.5 mt-0.5">{h.name}</p>
+                    <span className="text-[11px] sm:text-[11px] font-medium text-accent-foreground uppercase leading-none">{month}</span>
+                    <span className="text-lg sm:text-xl font-bold leading-none text-accent-foreground">{day}</span>
+                    <p className="text-[11px] sm:text-[11px] font-semibold text-accent-foreground leading-tight text-center line-clamp-2 w-full px-0.5 mt-0.5">{h.name}</p>
                     {canManageHolidays && (
                         <Button
                           variant="outline"

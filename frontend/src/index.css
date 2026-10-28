@@ -6,33 +6,33 @@
 
 @layer base {
   :root {
-    --background: 220 16% 97%;
-    --foreground: 222 47% 11%;
+    --background: 226 28% 96%;
+    --foreground: 226 45% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 226 45% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 239 84% 63%;
+    --popover-foreground: 226 45% 10%;
+    --primary: 245 78% 58%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 14% 96%;
+    --secondary: 226 30% 94%;
     --secondary-foreground: 222 47% 11%;
-    --muted: 220 14% 96%;
-    --muted-foreground: 215 16% 42%;
-    --accent: 239 84% 96%;
-    --accent-foreground: 239 70% 40%;
+    --muted: 226 30% 94%;
+    --muted-foreground: 226 14% 38%;
+    --accent: 245 95% 96%;
+    --accent-foreground: 245 65% 42%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 13% 91%;
-    --input: 220 13% 88%;
-    --ring: 239 84% 63%;
-    --radius: 0.625rem;
-    --sidebar: 222 47% 9%;
+    --border: 226 24% 90%;
+    --input: 226 20% 84%;
+    --ring: 245 78% 58%;
+    --radius: 0.75rem;
+    --sidebar: 232 48% 10%;
     --sidebar-foreground: 210 20% 96%;
-    --sidebar-muted: 215 16% 64%;
-    --sidebar-accent: 217 33% 16%;
-    --sidebar-border: 217 19% 18%;
-    --sidebar-primary: 239 84% 67%;
-    --chart-1: 239 84% 63%;
+    --sidebar-muted: 226 22% 72%;
+    --sidebar-accent: 232 40% 18%;
+    --sidebar-border: 232 30% 18%;
+    --sidebar-primary: 245 90% 70%;
+    --chart-1: 245 78% 58%;
     --chart-2: 160 84% 39%;
     --chart-3: 38 92% 50%;
     --chart-4: 0 72% 51%;
@@ -72,7 +72,7 @@
   }
 
   html {
-    font-size: 93.75%;
+    font-size: 100%;
     background-color: hsl(var(--background));
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
@@ -144,6 +144,72 @@
     color: hsl(var(--muted-foreground));
   }
 
+  ::selection {
+    background-color: hsl(var(--primary) / 0.18);
+  }
+
+  /* Anchor jumps and focus never hide under the sticky header. */
+  html {
+    scroll-padding-top: 4.5rem;
+  }
+
+  /* Visible keyboard focus everywhere, even on elements that do not style it themselves. */
+  :where(a, button, [role="button"], [role="tab"], [role="menuitem"], summary, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  /* Form controls already draw a ring + border; avoid a double outline there. */
+  :where(input, select, textarea):focus-visible {
+    outline-offset: 0;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  /* Native selects should match Input when a page does not style them. */
+  select {
+    background-color: hsl(var(--card));
+    border-color: hsl(var(--input));
+    border-radius: var(--radius);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  select:focus-visible,
+  textarea:focus-visible {
+    border-color: hsl(var(--ring) / 0.6);
+    box-shadow: 0 0 0 3px hsl(var(--ring) / 0.18);
+  }
+
+  /* Numbers line up in tables and summaries. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  img {
+    max-width: 100%;
+  }
+
+  /* Respect the OS "reduce motion" setting; keep spinners alive, just slower. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+    .animate-spin {
+      animation-duration: 1.6s !important;
+      animation-iteration-count: infinite !important;
+    }
+  }
+
   @media (max-width: 768px) {
     button:not([class*="size-"]):not(.min-h-),
     a[role="button"],
@@ -171,19 +237,39 @@
   }
 
   .app-table thead tr {
-    @apply border-b border-border bg-muted/60;
+    @apply border-b border-border bg-muted;
+  }
+
+  .app-table thead th {
+    @apply sticky top-0 z-10 bg-muted;
   }
 
   .app-table th {
-    @apply py-2.5 px-4 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground;
+    @apply py-3 px-4 text-left text-xs font-bold uppercase tracking-[0.07em] text-muted-foreground;
+  }
+
+  .app-table tbody td:first-child {
+    @apply font-medium;
+  }
+
+  .app-table tbody tr:focus-within {
+    @apply bg-muted/50;
+  }
+
+  /* Skip link: first tab stop on every page, visible only when focused. */
+  .skip-link {
+    @apply sr-only;
+  }
+  .skip-link:focus {
+    @apply not-sr-only fixed left-3 top-3 z-[100] rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-panel;
   }
 
   .app-table td {
-    @apply py-3 px-4 text-foreground;
+    @apply py-3.5 px-4 text-foreground;
   }
 
   .app-table tbody tr {
-    @apply border-b border-border/70 transition-colors hover:bg-muted/50;
+    @apply border-b border-border/70 transition-colors hover:bg-accent/60;
   }
 
   .app-table tbody tr:last-child {

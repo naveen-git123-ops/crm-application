@@ -25,9 +25,9 @@ import { LEAD_ATTACHMENT_ACCEPT, LEAD_ATTACHMENT_HINT } from '@/lib/leadAttachme
 import { cn } from '@/lib/utils';
 
 const selectClass =
-  'flex h-11 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900';
+  'flex h-11 w-full rounded-lg border border-input bg-white px-4 py-2 text-sm text-foreground';
 
-const labelClass = 'text-sm font-semibold text-gray-700';
+const labelClass = 'text-sm font-semibold text-foreground';
 
 function customerSearchValue(customer) {
   return [
@@ -61,10 +61,10 @@ function SearchableCustomerSelect({ id, customers, value, onSelect, dialogOpen =
           aria-controls="lead-customer-list"
           className={`${selectClass} items-center justify-between gap-2`}
         >
-          <span className={cn('truncate', !selected && 'text-gray-400')}>
+          <span className={cn('truncate', !selected && 'text-muted-foreground')}>
             {selected ? selected.company_name : placeholder}
           </span>
-          <ChevronsUpDown className="h-4 w-4 shrink-0 text-gray-400" />
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -90,7 +90,7 @@ function SearchableCustomerSelect({ id, customers, value, onSelect, dialogOpen =
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate">{customer.company_name}</span>
                     {customer.customer_id ? (
-                      <span className="font-mono text-[11px] text-muted-foreground">{customer.customer_id}</span>
+                      <span className="font-mono text-xs text-muted-foreground">{customer.customer_id}</span>
                     ) : null}
                   </span>
                 </CommandItem>
@@ -218,7 +218,7 @@ export function LeadCreateDialog({
             e.preventDefault();
             submitLead();
           }}
-          className="p-6 space-y-4 text-gray-900"
+          className="p-6 space-y-4 text-foreground"
         >
           <div className="space-y-2">
             <Label htmlFor="lead-customer" className={labelClass}>Customer *</Label>
@@ -273,7 +273,7 @@ export function LeadCreateDialog({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="lead-company" className={labelClass}>Company</Label>
-              <Input id="lead-company" value={form.company} readOnly className="h-11 bg-gray-50" />
+              <Input id="lead-company" value={form.company} readOnly className="h-11 bg-muted" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="lead-contact-name" className={labelClass}>Contact name</Label>
@@ -375,7 +375,7 @@ export function LeadCreateDialog({
               value={form.brief_of_enquiry}
               onChange={(e) => setForm({ ...form, brief_of_enquiry: e.target.value })}
               rows={3}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm resize-none"
+              className="w-full rounded-lg border border-input px-3 py-2 text-sm resize-none"
             />
           </div>
 
@@ -388,13 +388,13 @@ export function LeadCreateDialog({
             addLabel="Attach"
           />
 
-          <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 space-y-3">
-            {/* <p className="text-sm font-semibold text-gray-800">Enquiry validity (OTX)</p> */}
-            {/* <p className="text-xs text-gray-500 -mt-2">Optional — shown in the enquiry workflow step. If &quot;from&quot; is empty, enquiry date is used.</p> */}
+          <div className="rounded-lg border border-border bg-muted/80 p-4 space-y-3">
+            {/* <p className="text-sm font-semibold text-foreground">Enquiry validity (OTX)</p> */}
+            {/* <p className="text-xs text-muted-foreground -mt-2">Optional — shown in the enquiry workflow step. If &quot;from&quot; is empty, enquiry date is used.</p> */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="lead-otx-from" className={labelClass}>
-                  Enquiry Validity From <span className="font-normal text-gray-500"></span>
+                  Enquiry Validity From <span className="font-normal text-muted-foreground"></span>
                 </Label>
                 <Input
                   id="lead-otx-from"
@@ -406,7 +406,7 @@ export function LeadCreateDialog({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="lead-otx-to" className={labelClass}>
-                  Enquiry Validity To <span className="font-normal text-gray-500"></span>
+                  Enquiry Validity To <span className="font-normal text-muted-foreground"></span>
                 </Label>
                 <Input
                   id="lead-otx-to"

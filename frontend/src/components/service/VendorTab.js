@@ -28,14 +28,14 @@ const POST_FIELDS = [
 function StageProgress({ stages, current, status }) {
   const index = stages.indexOf(current);
   return (
-    <ol className="flex flex-wrap gap-1.5 text-[11px]">
+    <ol className="flex flex-wrap gap-1.5 text-xs">
       {stages.map((stage, i) => {
         const done = index >= 0 && i < index;
         const active = i === index;
         return (
           <li
             key={stage}
-            className={`flex items-center gap-1 rounded-full border px-2 py-1 ${active ? (status === 'Open' ? 'border-indigo-300 bg-indigo-50 font-semibold text-indigo-800' : 'border-slate-300 bg-slate-100 font-semibold text-slate-700') : done ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-500'}`}
+            className={`flex items-center gap-1 rounded-full border px-2 py-1 ${active ? (status === 'Open' ? 'border-indigo-300 bg-indigo-50 font-semibold text-indigo-800' : 'border-input bg-muted font-semibold text-foreground') : done ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-border text-muted-foreground'}`}
           >
             {done ? <CheckCircle2 className="h-3 w-3" /> : <Circle className="h-3 w-3" />}
             {stage}
@@ -72,7 +72,7 @@ function StartDialog({ ctx, open, onClose }) {
         <DialogHeader><DialogTitle>Send for vendor repair</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600" htmlFor="svc-vendor-pick">Vendor <span className="text-rose-600">*</span></label>
+            <label className="text-xs font-medium text-muted-foreground" htmlFor="svc-vendor-pick">Vendor <span className="text-rose-600">*</span></label>
             <select id="svc-vendor-pick" className={INPUT_CLASS} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
               <option value="">Select vendor…</option>
               {lookups.vendors.map((v) => <option key={v.id} value={v.id}>{v.company_name}</option>)}
@@ -80,7 +80,7 @@ function StartDialog({ ctx, open, onClose }) {
             {lookups.vendors.length === 0 && <p className="text-xs text-amber-700">No vendors found. Add a vendor ledger first.</p>}
           </div>
           <FormField field={{ key: 'start-reason', label: 'Reason for vendor repair', type: 'textarea', wide: true }} value={reason} onChange={setReason} />
-          <p className="text-xs text-slate-500">The fault description and findings are copied from the latest troubleshooting entry. You can edit them afterwards.</p>
+          <p className="text-xs text-muted-foreground">The fault description and findings are copied from the latest troubleshooting entry. You can edit them afterwards.</p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -156,19 +156,19 @@ function RepairCard({ ctx, rep }) {
 
         {editable && rep.next_stages.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-500">Next stage:</span>
+            <span className="text-xs text-muted-foreground">Next stage:</span>
             {rep.next_stages.map((stage) => <Button key={stage} size="sm" onClick={() => advance(stage)}>{stage}</Button>)}
           </div>
         )}
         {open && !rep.post_repair_result && rep.stage !== 'Returned from Vendor' && rep.stage !== 'Post-Repair Inspection' && (
-          <p className="text-xs text-slate-500">Vendor completion does not close the request. After the product returns, a post-repair inspection by our team is mandatory.</p>
+          <p className="text-xs text-muted-foreground">Vendor completion does not close the request. After the product returns, a post-repair inspection by our team is mandatory.</p>
         )}
 
         <div>
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Vendor</h4>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vendor</h4>
           <FieldGrid>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600" htmlFor={`svc-vendor-${rep.id}`}>Vendor</label>
+              <label className="text-xs font-medium text-muted-foreground" htmlFor={`svc-vendor-${rep.id}`}>Vendor</label>
               <select id={`svc-vendor-${rep.id}`} className={INPUT_CLASS} disabled={!editable} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
                 <option value="">{rep.vendor_name || 'Select…'}</option>
                 {lookups.vendors.map((v) => <option key={v.id} value={v.id}>{v.company_name}</option>)}
@@ -180,7 +180,7 @@ function RepairCard({ ctx, rep }) {
 
         {VENDOR_FIELD_GROUPS.map((group) => (
           <div key={group.title}>
-            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{group.title}</h4>
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.title}</h4>
             <FieldGrid>
               {group.fields.map((field) => (
                 <FormField key={field.key} field={{ ...field, key: `${field.key}-${rep.id}` }} disabled={!editable} value={form[field.key]} onChange={setF(field.key)} />
@@ -195,9 +195,9 @@ function RepairCard({ ctx, rep }) {
         )}
 
         {showPost && (
-          <div className="rounded-lg border border-slate-200 p-3">
-            <h4 className="mb-2 text-sm font-semibold text-slate-900">Post-repair inspection</h4>
-            <p className="mb-2 text-xs text-slate-500">Mandatory before the service can be completed. Upload inspection photos or videos below.</p>
+          <div className="rounded-lg border border-border p-3">
+            <h4 className="mb-2 text-sm font-semibold text-foreground">Post-repair inspection</h4>
+            <p className="mb-2 text-xs text-muted-foreground">Mandatory before the service can be completed. Upload inspection photos or videos below.</p>
             <FieldGrid>
               {POST_FIELDS.map((field) => (
                 <FormField
@@ -241,12 +241,12 @@ function RepairCard({ ctx, rep }) {
         />
 
         <div>
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Stage log</h4>
-          <ol className="space-y-1 text-xs text-slate-700">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Stage log</h4>
+          <ol className="space-y-1 text-xs text-foreground">
             {[...(rep.stage_log || [])].reverse().map((entry, i) => (
               <li key={`${entry.at}-${i}`} className="flex flex-wrap gap-2">
                 <span className="font-medium">{entry.stage}</span>
-                <span className="text-slate-500">{fmtDateTime(entry.at)} · {entry.by}</span>
+                <span className="text-muted-foreground">{fmtDateTime(entry.at)} · {entry.by}</span>
                 {entry.note && <span className="italic">{entry.note}</span>}
               </li>
             ))}
@@ -271,7 +271,7 @@ export function VendorTab({ ctx }) {
         description="Use when the product cannot be repaired on site. The request stays open until our own post-repair inspection passes."
         actions={canStart && <Button size="sm" onClick={() => setStartOpen(true)}><Plus className="mr-1 h-4 w-4" />Send for vendor repair</Button>}
       >
-        {repairs.length === 0 && <p className="text-sm text-slate-500">No vendor repair has been started for this request.</p>}
+        {repairs.length === 0 && <p className="text-sm text-muted-foreground">No vendor repair has been started for this request.</p>}
       </SectionCard>
       {repairs.map((rep) => (
         <RepairCard

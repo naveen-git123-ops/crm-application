@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Store } from 'lucide-react';
 
 const selectClass =
-  'flex h-11 w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-900';
+  'flex h-11 w-full rounded-lg border border-input bg-white px-4 py-2 text-sm text-foreground';
 
 export function LeadVendorDialog({
   open,
@@ -18,13 +18,13 @@ export function LeadVendorDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="max-w-md rounded-xl border-slate-200">
+      <DialogContent className="max-w-md rounded-xl border-border">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-lg text-slate-900">
+          <DialogTitle className="flex items-center gap-2 text-lg text-foreground">
             <Store className="h-5 w-5 text-indigo-600" />
             {afterStatus ? 'Select vendor to continue' : 'Assign vendor'}
           </DialogTitle>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             {lead ? `${lead.company} — carry and order` : 'Required for carry and order leads'}
           </p>
         </DialogHeader>
