@@ -147,7 +147,7 @@ export function ServiceRequestDetail() {
           <StatusBadge status={s.status} />
           <PriorityBadge priority={s.priority} />
           {detail.overdue && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">Overdue</span>}
-          <span className="text-sm text-muted-foreground">{s.service_type} · {s.customer_type} customer</span>
+          <span className="text-sm text-muted-foreground">{(s.service_types || []).join(', ') || s.service_type || 'Service type pending'} · {s.customer_type} customer</span>
         </div>
         <div className="mt-1 text-sm text-foreground">
           {s.customer_name}{s.product_name ? ` · ${s.product_name}` : ''}

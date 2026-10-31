@@ -235,6 +235,105 @@ def test_draft_is_saved_with_minimal_data(db):
         sm.change_status(db, svc, 'New', COORD_USER, COORD)
 
 
+def call_payload(**extra):
+    base = {
+        'customer_type': 'New',
+        'contact_person': 'Ravi',
+        'mobile': '9876543210',
+        'site_address': 'Plot 1, MIDC',
+        'problem_description': 'Machine is not starting',
+        'customer_notes': 'Called this morning',
+        'site_visit_required': True,
+        'site_visit_acknowledgement': {
+            'acknowledged': True, 'name': 'Ravi', 'notes': 'Agreed to a visit',
+        },
+    }
+    base.update(extra)
+    return base
+
+
+def test_call_intake_does_not_ask_for_service_type(db):
+    with pytest.raises(ServiceError) as exc:
+        sm.create_service(db, call_payload(site_visit_acknowledgement={'acknowledged': False, 'name': ''}),
+                          COORD_USER, customer=CUSTOMER)
+    detail = ' '.join(exc.value.detail)
+    assert 'acknowledgement' in detail
+    svc, _ = sm.create_service(db, call_payload(), COORD_USER, customer=CUSTOMER)
+    assert not svc.service_type
+    assert svc.contact_person == 'Ravi' and svc.problem_description == 'Machine is not starting'
+    intake = sm._loads(svc.data_json, {})['intake']
+    assert intake['site_visit_required'] is True
+    assert intake['acknowledgement']['name'] == 'Ravi'
+    assert intake['site_visit_done'] is False
+
+
+def test_service_type_waits_until_the_site_visit_is_done(db):
+    svc, _ = sm.create_service(db, call_payload(), COORD_USER, customer=CUSTOMER)
+    fields = {
+        'service_type': rules.ST_INSTALL, 'product_category': 'Water Treatment',
+        'product_name': 'RO Plant', 'product_model': 'RO-500', 'quantity': 1,
+        'planned_date': '2026-11-05',
+    }
+    with pytest.raises(ServiceError) as exc:
+        sm.record_field_details(db, svc, fields, COORD_USER, COORD)
+    assert 'site visit' in str(exc.value).lower()
+    with pytest.raises(ServiceError) as exc:
+        sm.assign_technician(db, svc, COORD_USER, COORD, employee=TECHNICIAN)
+    assert 'service type' in str(exc.value).lower()
+    with pytest.raises(ServiceError) as exc:
+        sm.complete_site_visit(db, svc, {'findings': 'Panel is burnt'}, COORD_USER, COORD)
+    assert 'acknowledgement' in str(exc.value).lower()
+    sm.add_attachment(db, svc, file_name='ack.pdf', content=b'%PDF-1.4 ack', category='Site Visit Acknowledgement',
+                      description='Customer agreed', actor=COORD_USER, caps=COORD, upload_fn=upload_ok)
+    sm.complete_site_visit(db, svc, {'findings': 'Panel is burnt'}, COORD_USER, COORD)
+    sm.record_field_details(db, svc, fields, COORD_USER, COORD)
+    assert svc.service_type == rules.ST_INSTALL and svc.workflow == 'installation'
+    assert svc.product_name == 'RO Plant'
+    kept = sm._loads(svc.data_json, {})
+    assert kept['intake']['site_visit_done'] is True
+    assert kept['inspection']['checklist']
+    sm.assign_technician(db, svc, COORD_USER, COORD, employee=TECHNICIAN)
+    assert svc.status == 'Assigned' and svc.assigned_name == 'Technician'
+
+
+def test_site_visit_acknowledgement_notes_are_required(db):
+    payload = call_payload()
+    payload['site_visit_acknowledgement'] = {'acknowledged': True, 'name': 'Ravi', 'notes': ' '}
+    with pytest.raises(ServiceError) as exc:
+        sm.create_service(db, payload, COORD_USER, customer=CUSTOMER)
+    assert 'notes' in ' '.join(exc.value.detail).lower()
+
+
+def test_executive_can_record_several_service_and_product_types(db):
+    svc, _ = sm.create_service(db, call_payload(
+        site_visit_required=False,
+        service_types=[rules.ST_INSTALL, rules.ST_COMMISSION],
+        product_types=['Electrical Automation', 'Instrumentation'],
+        product_name='RO Plant', product_model='RO-500', quantity=1, planned_date='2026-11-05',
+    ), COORD_USER, customer=CUSTOMER)
+    assert svc.service_type == rules.ST_INSTALL
+    chosen = sm.classification_of(svc)
+    assert chosen['service_types'] == [rules.ST_INSTALL, rules.ST_COMMISSION]
+    assert chosen['product_types'] == ['Electrical Automation', 'Instrumentation']
+    assert svc.workflow == 'installation'
+    assert 'inspection' in sm._loads(svc.data_json, {})
+
+
+def test_field_details_can_be_recorded_when_no_visit_is_needed(db):
+    product = make_product(db)
+    svc, _ = sm.create_service(
+        db, call_payload(customer_type='Existing', site_visit_required=False),
+        COORD_USER, customer=CUSTOMER,
+    )
+    sm.record_field_details(db, svc, {
+        'service_type': rules.ST_REPAIR, 'lead_id': 'lead-1', 'product_id': product.id,
+        'problem_category': 'Product Not Working',
+    }, COORD_USER, COORD, lead=LEAD, product=product)
+    assert svc.workflow == 'repair'
+    assert svc.product_name == 'Booster Pump' and svc.lead_id == 'lead-1'
+    assert svc.problem_description == 'Machine is not starting'
+
+
 # --- status transitions --------------------------------------------------------
 
 def test_invalid_transition_is_rejected(db):

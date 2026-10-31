@@ -1,28 +1,45 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, Plus, Search, UserPlus } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Search, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { getApiErrorMessage } from '@/lib/apiErrors';
-import {
-  CUSTOMER_TYPE_COPY, INSTALLATION_PRODUCT_CATEGORIES, fmtDate, serviceApi, uid,
-} from '@/lib/serviceUtils';
+import { CUSTOMER_TYPE_COPY, INSTALLATION_PRODUCT_CATEGORIES, SITE_VISIT_ACK_CATEGORY, serviceApi, uid } from '@/lib/serviceUtils';
 import { cn } from '@/lib/utils';
-import { FieldGrid, FormField, ReadRow } from '@/components/service/ServiceFields';
+import { FieldGrid, FormField, MultiPicker, ReadRow } from '@/components/service/ServiceFields';
 
-const STEPS = ['Customer type', 'Customer & lead', 'Service details', 'Review'];
+const STEP_LABEL = {
+  type: 'Customer type',
+  customer: 'Customer',
+  call: 'Call details',
+  visit: 'Site visit',
+  classify: 'Service and product',
+  review: 'Review',
+};
 
-const PRODUCT_CATEGORY_FIELD = { key: 'category', label: 'Product category', type: 'text', required: true };
+function stepIdsFor(visitRequired) {
+  const ids = ['type', 'customer', 'call', 'visit'];
+  if (visitRequired === false) ids.push('classify');
+  ids.push('review');
+  return ids;
+}
+
+const blankClassify = {
+  lead_id: '', product_id: '', amc_id: '', product_name: '', product_model: '', serial_number: '',
+  quantity: '1', planned_date: '', installation_requirements: '', problem_category: '',
+};
+
+function toggleValue(list, value) {
+  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+}
 
 const blankDetails = {
-  service_type: '', priority: 'Medium', contact_person: '', mobile: '', email: '', site_address: '', city: '',
-  state: '', pincode: '', customer_notes: '', planned_date: '', expected_visit_date: '', expected_completion: '',
-  product_category: '', product_name: '', product_model: '', serial_number: '', quantity: '1',
-  installation_requirements: '', problem_category: '', problem_description: '', reported_by: '',
-  reported_date: '', remarks: '',
+  priority: 'Medium', contact_person: '', mobile: '', email: '', site_address: '', city: '',
+  state: '', pincode: '', customer_notes: '', problem_description: '',
 };
 
 const blankCustomer = {
@@ -30,9 +47,7 @@ const blankCustomer = {
   pincode: '', gst_number: '',
 };
 
-const blankProduct = {
-  category: '', name: '', model: '', serial_number: '', installation_date: '', warranty_start: '', warranty_end: '',
-};
+const blankAck = { acknowledged: false, name: '', notes: '' };
 
 const validMobile = (v) => {
   const digits = String(v || '').replace(/\D/g, '');
@@ -72,32 +87,25 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [customer, setCustomer] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [profileLoading, setProfileLoading] = useState(false);
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [newCustomer, setNewCustomer] = useState(blankCustomer);
-  const [leadId, setLeadId] = useState('');
-  const [productId, setProductId] = useState('');
-  const [newProductOpen, setNewProductOpen] = useState(false);
-  const [newProduct, setNewProduct] = useState(blankProduct);
-  const [amcId, setAmcId] = useState('');
   const [details, setDetails] = useState(blankDetails);
+  const [siteVisitRequired, setSiteVisitRequired] = useState(null);
+  const [ack, setAck] = useState(blankAck);
+  const [ackFile, setAckFile] = useState(null);
+  const [serviceTypesSelected, setServiceTypesSelected] = useState([]);
+  const [productTypesSelected, setProductTypesSelected] = useState([]);
+  const [classify, setClassify] = useState(blankClassify);
+  const [profile, setProfile] = useState(null);
   const [errors, setErrors] = useState([]);
   const [busy, setBusy] = useState(false);
   const requestId = useRef(uid());
 
-  const config = meta?.config || {};
-  const serviceTypes = useMemo(
-    () => (customerType ? meta?.service_types_by_customer?.[customerType] || [] : []),
-    [customerType, meta],
-  );
-  const workflow = meta?.workflow_by_service_type?.[details.service_type] || '';
-  const leadRequired = customerType === 'Existing' && config.require_lead_for_existing !== false;
-
   const reset = useCallback(() => {
-    setStep(0); setCustomerType(''); setQuery(''); setResults([]); setCustomer(null); setProfile(null);
-    setNewCustomerOpen(false); setNewCustomer(blankCustomer); setLeadId(''); setProductId('');
-    setNewProductOpen(false); setNewProduct(blankProduct); setAmcId(''); setDetails(blankDetails); setErrors([]);
+    setStep(0); setCustomerType(''); setQuery(''); setResults([]); setCustomer(null);
+    setNewCustomerOpen(false); setNewCustomer(blankCustomer); setDetails(blankDetails);
+    setSiteVisitRequired(null); setAck(blankAck); setAckFile(null);
+    setServiceTypesSelected([]); setProductTypesSelected([]); setClassify(blankClassify); setProfile(null); setErrors([]);
     requestId.current = uid();
   }, []);
 
@@ -105,7 +113,6 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
     if (open) reset();
   }, [open, reset]);
 
-  // Customer search (debounced).
   useEffect(() => {
     if (!open || step !== 1 || newCustomerOpen) return undefined;
     setSearching(true);
@@ -121,34 +128,17 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
     return () => clearTimeout(timer);
   }, [open, step, query, newCustomerOpen]);
 
-  const loadProfile = useCallback(async (c) => {
-    setProfileLoading(true);
-    try {
-      setProfile(await serviceApi.get(`/service/customers/${c.id}/profile`));
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, 'Could not load the customer'));
-      setProfile(null);
-    } finally {
-      setProfileLoading(false);
-    }
-  }, []);
-
   const pickCustomer = (c) => {
     setCustomer(c);
-    setLeadId('');
-    setProductId('');
-    setAmcId('');
-    setNewProductOpen(false);
-    loadProfile(c);
     setDetails((prev) => ({
       ...prev,
-      contact_person: c.contact_person_name || '',
-      mobile: c.phone || '',
-      email: c.email || '',
-      site_address: c.address_line || '',
-      city: c.city || '',
-      state: c.state || '',
-      pincode: c.pincode || '',
+      contact_person: c.contact_person_name || prev.contact_person || '',
+      mobile: c.phone || prev.mobile || '',
+      email: c.email || prev.email || '',
+      site_address: c.address_line || prev.site_address || '',
+      city: c.city || prev.city || '',
+      state: c.state || prev.state || '',
+      pincode: c.pincode || prev.pincode || '',
     }));
   };
 
@@ -168,77 +158,64 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
     }
   };
 
-  const registerProduct = async () => {
-    setBusy(true);
-    setErrors([]);
-    try {
-      const created = await serviceApi.post('/service/products', { ...newProduct, customer_id: customer.id, lead_id: leadId || null });
-      toast.success('Product registered');
-      setNewProductOpen(false);
-      setNewProduct(blankProduct);
-      await loadProfile(customer);
-      setProductId(created.id);
-    } catch (err) {
-      setErrors(errorList(err, 'Could not register the product'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const selectedProduct = profile?.products?.find((p) => p.id === productId);
-  const selectedLead = profile?.leads?.find((l) => l.id === leadId);
-  const usableAmcs = useMemo(() => (profile?.amcs || []).filter((a) => {
-    if (a.effective_status !== 'Active') return false;
-    const covered = a.covered_product_ids || [];
-    return !productId || covered.length === 0 || covered.includes(productId);
-  }), [profile, productId]);
-
-  // An active contract covering the product is picked automatically for AMC visits.
-  useEffect(() => {
-    if (details.service_type === 'AMC Visit' && !amcId && usableAmcs.length === 1) setAmcId(usableAmcs[0].id);
-  }, [details.service_type, usableAmcs, amcId]);
-
   const setDetail = (key) => (value) => setDetails((prev) => ({ ...prev, [key]: value }));
+  const stepIds = stepIdsFor(siteVisitRequired);
+  const safeStep = Math.min(step, stepIds.length - 1);
+  const current = stepIds[safeStep];
+  const typeOptions = customerType ? meta?.service_types_by_customer?.[customerType] || [] : [];
+  const selectedWorkflows = new Set(serviceTypesSelected.map((item) => meta?.workflow_by_service_type?.[item]).filter(Boolean));
+  const leadRequired = customerType === 'Existing' && meta?.config?.require_lead_for_existing !== false;
 
-  const stepErrors = (index) => {
+  useEffect(() => {
+    if (current !== 'classify' || !customer) return undefined;
+    let cancelled = false;
+    serviceApi.get(`/service/customers/${customer.id}/profile`)
+      .then((value) => { if (!cancelled) setProfile(value); })
+      .catch(() => { if (!cancelled) setProfile({ leads: [], products: [], amcs: [] }); });
+    return () => { cancelled = true; };
+  }, [current, customer]);
+
+  const stepErrors = (id) => {
     const out = [];
-    if (index === 0 && !customerType) out.push('Choose New or Existing customer');
-    if (index === 1) {
-      if (!customer) out.push('Select a customer, or add a new one');
-      if (customer && leadRequired && !leadId) out.push('Select the existing lead this service belongs to');
-      if (customer && customerType === 'Existing' && !productId) out.push('Select the affected product, or register it');
-    }
-    if (index === 2) {
-      if (!details.service_type) out.push('Select the service type');
-      if (!details.contact_person.trim()) out.push('Contact person is required');
-      if (!validMobile(details.mobile)) out.push('A valid mobile number is required');
-      if (!details.site_address.trim()) out.push('Site address is required');
+    if (id === 'type' && !customerType) out.push('Choose New or Existing customer');
+    if (id === 'customer' && !customer) out.push('Select a customer, or add a new one');
+    if (id === 'call') {
+      if (!details.contact_person.trim()) out.push('Name is required');
+      if (!validMobile(details.mobile)) out.push('A valid phone number is required');
+      if (!details.site_address.trim()) out.push('Address is required');
       if (details.pincode && !/^\d{6}$/.test(details.pincode)) out.push('PIN code must be 6 digits');
       if (details.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(details.email)) out.push('Email address is not valid');
-      if (workflow === 'installation') {
-        if (!details.product_category.trim()) out.push('Product category is required');
-        if (!details.product_name.trim()) out.push('Product name is required');
-        if (!details.product_model.trim()) out.push('Product model is required');
-        if (!(Number(details.quantity) > 0)) out.push('Quantity must be greater than zero');
-        if (!details.planned_date) out.push('Installation / planned date is required');
+      if (details.problem_description.trim().length < 5) out.push('Describe the problem the customer reported');
+    }
+    if (id === 'visit') {
+      if (siteVisitRequired == null) out.push('Say whether a site visit is required');
+      if (siteVisitRequired) {
+        if (!ack.acknowledged) out.push('Record the customer acknowledgement for the site visit');
+        if (!ack.name.trim()) out.push('Enter the name of the person who acknowledged the site visit');
+        if (!ack.notes.trim()) out.push('Acknowledgement notes are required');
+        if (!ackFile) out.push('Attach the customer acknowledgement');
       }
-      if (workflow === 'repair') {
-        if (!details.problem_category) out.push('Problem category is required');
-        if (details.problem_description.trim().length < 5) out.push('Describe the problem');
+    }
+    if (id === 'classify') {
+      if (serviceTypesSelected.length === 0) out.push('Select at least one service type');
+      if (productTypesSelected.length === 0) out.push('Select at least one product type');
+      if (selectedWorkflows.has('installation')) {
+        if (!classify.product_name.trim()) out.push('Product name is required');
+        if (!classify.product_model.trim()) out.push('Product model is required');
+        if (!(Number(classify.quantity) > 0)) out.push('Quantity must be greater than zero');
+        if (!classify.planned_date) out.push('Planned date is required');
       }
-      if (workflow === 'amc' && config.amc_required !== false && !amcId) out.push('Select an active AMC contract');
-      const start = details.planned_date || details.expected_visit_date;
-      if (start && details.expected_completion && details.expected_completion < start) {
-        out.push('Expected completion cannot be before the planned / visit date');
-      }
+      if (selectedWorkflows.has('repair') && !classify.problem_category) out.push('Problem category is required');
+      if (customerType === 'Existing' && leadRequired && !classify.lead_id) out.push('Select the existing lead this service belongs to');
+      if (selectedWorkflows.has('amc') && meta?.config?.amc_required !== false && !classify.amc_id) out.push('Select an active AMC contract');
     }
     return out;
   };
 
   const next = () => {
-    const problems = stepErrors(step);
+    const problems = stepErrors(current);
     setErrors(problems);
-    if (problems.length === 0) setStep((s) => Math.min(s + 1, STEPS.length - 1));
+    if (problems.length === 0) setStep((s) => Math.min(s + 1, stepIds.length - 1));
   };
 
   const back = () => {
@@ -246,9 +223,17 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
     setStep((s) => Math.max(0, s - 1));
   };
 
+  const chooseVisit = (required) => {
+    setSiteVisitRequired(required);
+    setErrors([]);
+    if (required) {
+      setAck((current) => ({ ...current, name: current.name || details.contact_person }));
+    }
+  };
+
   const submit = async (asDraft) => {
     if (!asDraft) {
-      const problems = [0, 1, 2].flatMap(stepErrors);
+      const problems = stepIds.flatMap((id) => stepErrors(id));
       if (problems.length > 0) {
         setErrors(problems);
         return;
@@ -261,13 +246,33 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
         ...details,
         customer_type: customerType,
         customer_id: customer.id,
-        lead_id: leadId || null,
-        product_id: productId || null,
-        amc_id: workflow === 'amc' ? amcId || null : null,
+        site_visit_required: siteVisitRequired,
+        site_visit_acknowledgement: siteVisitRequired ? ack : null,
         client_request_id: requestId.current,
         save_as_draft: asDraft,
+        ...(siteVisitRequired === false ? {
+          ...classify,
+          service_types: serviceTypesSelected,
+          service_type: serviceTypesSelected[0],
+          product_types: productTypesSelected,
+          product_category: productTypesSelected[0],
+          lead_id: classify.lead_id || null,
+          product_id: classify.product_id || null,
+          amc_id: selectedWorkflows.has('amc') ? classify.amc_id || null : null,
+        } : {}),
       };
       const detail = await serviceApi.post('/service-requests', payload);
+      if (siteVisitRequired && ackFile && detail?.service?.id) {
+        const form = new FormData();
+        form.append('file', ackFile);
+        form.append('category', SITE_VISIT_ACK_CATEGORY);
+        form.append('description', ack.notes);
+        try {
+          await serviceApi.upload(`/service-requests/${detail.service.id}/attachments`, form);
+        } catch (err) {
+          toast.error(getApiErrorMessage(err, 'The request was created, but the acknowledgement file did not upload. Add it on the request.'));
+        }
+      }
       toast.success(detail.created === false
         ? `${detail.service.service_code} was already created`
         : `${detail.service.service_code} ${asDraft ? 'saved as draft' : 'created'}`);
@@ -280,29 +285,27 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
     }
   };
 
-  const typeOptions = serviceTypes;
-
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!value && !busy) onClose(); }}>
       <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto" data-testid="create-service-dialog">
         <DialogHeader>
           <DialogTitle>Create service request</DialogTitle>
           <DialogDescription>
-            Step {step + 1} of {STEPS.length}: {STEPS[step]}
+            Step {safeStep + 1} of {stepIds.length}: {STEP_LABEL[current]}
           </DialogDescription>
         </DialogHeader>
 
         <ol className="flex flex-wrap gap-1.5 text-xs font-medium">
-          {STEPS.map((label, idx) => (
+          {stepIds.map((id, idx) => (
             <li
-              key={label}
+              key={id}
               className={cn(
                 'rounded-full border px-2.5 py-0.5',
-                idx === step ? 'border-indigo-300 bg-indigo-50 text-indigo-800'
-                  : idx < step ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-border text-muted-foreground',
+                idx === safeStep ? 'border-indigo-300 bg-indigo-50 text-indigo-800'
+                  : idx < safeStep ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-border text-muted-foreground',
               )}
             >
-              {idx + 1}. {label}
+              {idx + 1}. {STEP_LABEL[id]}
             </li>
           ))}
         </ol>
@@ -313,27 +316,31 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
           </div>
         )}
 
-        {step === 0 && (
-          <div className="grid gap-3 md:grid-cols-2">
-            {['New', 'Existing'].map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => { setCustomerType(type); setDetails((d) => ({ ...d, service_type: '' })); setErrors([]); }}
-                className={cn(
-                  'rounded-xl border p-4 text-left transition-colors',
-                  customerType === type ? 'border-indigo-400 bg-indigo-50' : 'border-border hover:bg-muted',
-                )}
-              >
-                <div className="text-base font-semibold text-foreground">{CUSTOMER_TYPE_COPY[type].title}</div>
-                <p className="mt-1 text-sm text-muted-foreground">{CUSTOMER_TYPE_COPY[type].hint}</p>
-                <p className="mt-2 text-xs text-muted-foreground">{(meta?.service_types_by_customer?.[type] || []).join(' · ')}</p>
-              </button>
-            ))}
+        {current === 'type' && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              The person on the call does not choose a service type or product. That is filled in after the site visit, once the problem is known.
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {['New', 'Existing'].map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => { setCustomerType(type); setErrors([]); }}
+                  className={cn(
+                    'rounded-xl border p-4 text-left transition-colors',
+                    customerType === type ? 'border-indigo-400 bg-indigo-50' : 'border-border hover:bg-muted',
+                  )}
+                >
+                  <div className="text-base font-semibold text-foreground">{CUSTOMER_TYPE_COPY[type].title}</div>
+                  <p className="mt-1 text-sm text-muted-foreground">{CUSTOMER_TYPE_COPY[type].hint}</p>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
-        {step === 1 && (
+        {current === 'customer' && (
           <div className="space-y-4">
             {!customer && !newCustomerOpen && (
               <div className="space-y-2">
@@ -391,257 +398,234 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
             )}
 
             {customer && (
-              <div className="space-y-4">
-                <div className="flex items-start justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                  <div>
-                    <div className="flex items-center gap-1.5 text-sm font-semibold text-emerald-900">
-                      <CheckCircle2 className="h-4 w-4" />{customer.company_name}
-                    </div>
-                    <div className="text-xs text-emerald-800">
-                      {[customer.customer_id, customer.contact_person_name, customer.phone, customer.city].filter(Boolean).join(' · ')}
-                    </div>
+              <div className="flex items-start justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                <div>
+                  <div className="flex items-center gap-1.5 text-sm font-semibold text-emerald-900">
+                    <CheckCircle2 className="h-4 w-4" />{customer.company_name}
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => { setCustomer(null); setProfile(null); setLeadId(''); setProductId(''); }}>
-                    Change
-                  </Button>
+                  <div className="text-xs text-emerald-800">
+                    {[customer.customer_id, customer.contact_person_name, customer.phone, customer.city].filter(Boolean).join(' · ')}
+                  </div>
+                  <p className="mt-2 text-xs text-emerald-900">Next, record what they said on the call. Product and service type come later.</p>
                 </div>
-
-                {profileLoading && <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading leads and products…</p>}
-
-                {profile && (
-                  <>
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-semibold text-foreground">
-                        Lead{leadRequired && <span className="text-rose-600"> *</span>}
-                        <span className="ml-2 text-xs font-normal text-muted-foreground">The service is linked to the lead you pick.</span>
-                      </h4>
-                      {profile.leads.length === 0 ? (
-                        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                          No lead exists for this customer.
-                          {leadRequired ? ' Create the lead from the Leads screen first, then come back.' : ' You can continue without one.'}
-                        </p>
-                      ) : (
-                        <div className="max-h-48 space-y-1.5 overflow-y-auto">
-                          {!leadRequired && (
-                            <ChoiceRow selected={!leadId} onSelect={() => setLeadId('')} title="No lead" />
-                          )}
-                          {profile.leads.map((lead) => (
-                            <ChoiceRow
-                              key={lead.id}
-                              selected={leadId === lead.id}
-                              onSelect={() => setLeadId(lead.id)}
-                              title={`${lead.company || 'Lead'} — ${lead.sub_category || lead.category || 'Enquiry'}`}
-                              subtitle={[lead.contact_name, lead.enquiry_date ? fmtDate(lead.enquiry_date) : null].filter(Boolean).join(' · ')}
-                              badge={<span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-foreground">{lead.status}</span>}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {customerType === 'Existing' && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-semibold text-foreground">Affected product <span className="text-rose-600">*</span></h4>
-                          {!newProductOpen && (
-                            <Button variant="outline" size="sm" onClick={() => { setNewProductOpen(true); setErrors([]); }}>
-                              <Plus className="mr-1 h-3.5 w-3.5" />Register product
-                            </Button>
-                          )}
-                        </div>
-                        {!newProductOpen && (profile.products.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">No registered products for this customer yet.</p>
-                        ) : (
-                          <div className="max-h-48 space-y-1.5 overflow-y-auto">
-                            {profile.products.map((p) => (
-                              <ChoiceRow
-                                key={p.id}
-                                selected={productId === p.id}
-                                onSelect={() => setProductId(p.id)}
-                                title={p.name}
-                                subtitle={[p.category, p.model, p.serial_number ? `S/N ${p.serial_number}` : null, p.warranty_status ? `Warranty: ${p.warranty_status}` : null].filter(Boolean).join(' · ')}
-                              />
-                            ))}
-                          </div>
-                        ))}
-                        {newProductOpen && (
-                          <div className="space-y-3 rounded-lg border border-border p-3">
-                            <FieldGrid>
-                              <div className="space-y-1">
-                                <FormField field={PRODUCT_CATEGORY_FIELD} value={newProduct.category} onChange={(v) => setNewProduct((p) => ({ ...p, category: v }))} />
-                              </div>
-                              {[
-                                { key: 'name', label: 'Product name', type: 'text', required: true },
-                                { key: 'model', label: 'Model', type: 'text' },
-                                { key: 'serial_number', label: 'Serial number', type: 'text' },
-                                { key: 'installation_date', label: 'Installation date', type: 'date' },
-                                { key: 'warranty_start', label: 'Warranty start', type: 'date' },
-                                { key: 'warranty_end', label: 'Warranty end', type: 'date' },
-                              ].map((field) => (
-                                <FormField key={field.key} field={field} value={newProduct[field.key]} onChange={(v) => setNewProduct((p) => ({ ...p, [field.key]: v }))} />
-                              ))}
-                            </FieldGrid>
-                            <div className="flex justify-end gap-2">
-                              <Button variant="outline" onClick={() => { setNewProductOpen(false); setErrors([]); }} disabled={busy}>Cancel</Button>
-                              <Button onClick={registerProduct} disabled={busy || !newProduct.name.trim() || !newProduct.category.trim()}>
-                                {busy ? 'Saving…' : 'Register product'}
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
+                <Button variant="outline" size="sm" onClick={() => setCustomer(null)}>Change</Button>
               </div>
             )}
           </div>
         )}
 
-        {step === 2 && (
+        {current === 'call' && (
           <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              This is the phone call. Write down the name, address, number, notes and the problem in the customer&apos;s words. Service type and product are not known yet.
+            </p>
             <FieldGrid>
-              <FormField
-                field={{ key: 'service_type', label: 'Service type', type: 'select', required: true }}
-                value={details.service_type}
-                options={typeOptions}
-                onChange={(v) => { setDetail('service_type')(v); setAmcId(''); }}
-              />
+              <FormField field={{ key: 'contact_person', label: 'Name', type: 'text', required: true }} value={details.contact_person} onChange={setDetail('contact_person')} />
+              <FormField field={{ key: 'mobile', label: 'Phone number', type: 'text', required: true }} value={details.mobile} onChange={setDetail('mobile')} />
+              <FormField field={{ key: 'email', label: 'Email', type: 'text' }} value={details.email} onChange={setDetail('email')} />
               <FormField
                 field={{ key: 'priority', label: 'Priority', type: 'select' }}
                 value={details.priority}
                 options={meta?.priorities || []}
                 onChange={setDetail('priority')}
               />
-            </FieldGrid>
-
-            <h4 className="text-sm font-semibold text-foreground">Contact and site</h4>
-            <FieldGrid>
-              <FormField field={{ key: 'contact_person', label: 'Contact person', type: 'text', required: true }} value={details.contact_person} onChange={setDetail('contact_person')} />
-              <FormField field={{ key: 'mobile', label: 'Mobile', type: 'text', required: true }} value={details.mobile} onChange={setDetail('mobile')} />
-              <FormField field={{ key: 'email', label: 'Email', type: 'text' }} value={details.email} onChange={setDetail('email')} />
-              <FormField field={{ key: 'pincode', label: 'PIN code', type: 'text', maxLength: 6 }} value={details.pincode} onChange={setDetail('pincode')} />
-              <FormField field={{ key: 'site_address', label: workflow === 'installation' ? 'Installation / site address' : 'Site address', type: 'textarea', required: true, wide: true }} value={details.site_address} onChange={setDetail('site_address')} />
+              <FormField field={{ key: 'site_address', label: 'Address', type: 'textarea', required: true, wide: true }} value={details.site_address} onChange={setDetail('site_address')} />
               <FormField field={{ key: 'city', label: 'City', type: 'text' }} value={details.city} onChange={setDetail('city')} />
               <FormField field={{ key: 'state', label: 'State', type: 'text' }} value={details.state} onChange={setDetail('state')} />
-            </FieldGrid>
-
-            {workflow === 'installation' && (
-              <>
-                <h4 className="text-sm font-semibold text-foreground">Product to install</h4>
-                <FieldGrid>
-                  <div className="space-y-1">
-                    <FormField
-                      field={{ key: 'product_category', label: 'Product category', type: 'text', required: true }}
-                      value={details.product_category}
-                      onChange={setDetail('product_category')}
-                    />
-                    <div className="flex flex-wrap gap-1">
-                      {INSTALLATION_PRODUCT_CATEGORIES.map((c) => (
-                        <button key={c} type="button" className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted" onClick={() => setDetail('product_category')(c)}>{c}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <FormField field={{ key: 'product_name', label: 'Product name', type: 'text', required: true }} value={details.product_name} onChange={setDetail('product_name')} />
-                  <FormField field={{ key: 'product_model', label: 'Model', type: 'text', required: true }} value={details.product_model} onChange={setDetail('product_model')} />
-                  <FormField field={{ key: 'serial_number', label: 'Serial number (if known)', type: 'text' }} value={details.serial_number} onChange={setDetail('serial_number')} />
-                  <FormField field={{ key: 'quantity', label: 'Quantity', type: 'number', required: true }} value={details.quantity} onChange={setDetail('quantity')} />
-                  <FormField field={{ key: 'planned_date', label: 'Installation date', type: 'date', required: true }} value={details.planned_date} onChange={setDetail('planned_date')} />
-                  <FormField field={{ key: 'installation_requirements', label: 'Special requirements', type: 'textarea', wide: true }} value={details.installation_requirements} onChange={setDetail('installation_requirements')} />
-                </FieldGrid>
-              </>
-            )}
-
-            {workflow === 'repair' && (
-              <>
-                <h4 className="text-sm font-semibold text-foreground">Problem</h4>
-                <FieldGrid>
-                  <FormField
-                    field={{ key: 'problem_category', label: 'Problem category', type: 'select', required: true }}
-                    value={details.problem_category}
-                    options={config.problem_categories || []}
-                    onChange={setDetail('problem_category')}
-                  />
-                  <FormField field={{ key: 'reported_date', label: 'Reported date', type: 'date' }} value={details.reported_date} onChange={setDetail('reported_date')} />
-                  <FormField field={{ key: 'problem_description', label: 'Problem description', type: 'textarea', required: true, wide: true }} value={details.problem_description} onChange={setDetail('problem_description')} />
-                  <FormField field={{ key: 'reported_by', label: 'Reported by', type: 'text' }} value={details.reported_by} onChange={setDetail('reported_by')} />
-                  <FormField field={{ key: 'expected_visit_date', label: 'Expected visit date', type: 'date' }} value={details.expected_visit_date} onChange={setDetail('expected_visit_date')} />
-                </FieldGrid>
-                {selectedProduct && <p className="text-xs text-muted-foreground">Product: {selectedProduct.name} {selectedProduct.serial_number ? `(S/N ${selectedProduct.serial_number})` : ''}</p>}
-              </>
-            )}
-
-            {workflow === 'amc' && (
-              <>
-                <h4 className="text-sm font-semibold text-foreground">AMC contract</h4>
-                {usableAmcs.length === 0 ? (
-                  <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    No active AMC contract covers this customer{selectedProduct ? ` and ${selectedProduct.name}` : ''}. Add a contract from "AMC contracts" on the Service & Maintenance page before booking a visit.
-                  </p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {usableAmcs.map((a) => (
-                      <ChoiceRow
-                        key={a.id}
-                        selected={amcId === a.id}
-                        onSelect={() => setAmcId(a.id)}
-                        title={a.amc_number}
-                        subtitle={`${fmtDate(a.start_date)} – ${fmtDate(a.end_date)} · ${a.visits_used}${a.planned_visits ? ` of ${a.planned_visits}` : ''} visits used`}
-                      />
-                    ))}
-                  </div>
-                )}
-                <FieldGrid>
-                  <FormField field={{ key: 'planned_date', label: 'Planned visit date', type: 'date' }} value={details.planned_date} onChange={setDetail('planned_date')} />
-                </FieldGrid>
-              </>
-            )}
-
-            <FieldGrid>
-              {workflow !== 'installation' && workflow !== 'amc' && (
-                <FormField field={{ key: 'planned_date', label: 'Planned date', type: 'date' }} value={details.planned_date} onChange={setDetail('planned_date')} />
-              )}
-              <FormField field={{ key: 'expected_completion', label: 'Expected completion', type: 'date' }} value={details.expected_completion} onChange={setDetail('expected_completion')} />
+              <FormField field={{ key: 'pincode', label: 'PIN code', type: 'text', maxLength: 6 }} value={details.pincode} onChange={setDetail('pincode')} />
+              <FormField field={{ key: 'problem_description', label: 'Problem', type: 'textarea', required: true, wide: true }} value={details.problem_description} onChange={setDetail('problem_description')} />
               <FormField field={{ key: 'customer_notes', label: 'Notes', type: 'textarea', wide: true }} value={details.customer_notes} onChange={setDetail('customer_notes')} />
             </FieldGrid>
           </div>
         )}
 
-        {step === 3 && (
+        {current === 'visit' && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Ask whether someone needs to visit the site before the job can be classified. If yes, record that the customer agreed to the visit.
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => chooseVisit(true)}
+                className={cn(
+                  'rounded-xl border p-4 text-left transition-colors',
+                  siteVisitRequired === true ? 'border-indigo-400 bg-indigo-50' : 'border-border hover:bg-muted',
+                )}
+              >
+                <div className="text-base font-semibold text-foreground">Site visit required</div>
+                <p className="mt-1 text-sm text-muted-foreground">Someone will visit, then record the service type and product.</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => chooseVisit(false)}
+                className={cn(
+                  'rounded-xl border p-4 text-left transition-colors',
+                  siteVisitRequired === false ? 'border-indigo-400 bg-indigo-50' : 'border-border hover:bg-muted',
+                )}
+              >
+                <div className="text-base font-semibold text-foreground">No site visit</div>
+                <p className="mt-1 text-sm text-muted-foreground">The executive records the service types and product types on the next step. More than one of each is allowed.</p>
+              </button>
+            </div>
+
+            {siteVisitRequired === true && (
+              <div className="space-y-3 rounded-lg border border-border p-3">
+                <h4 className="text-sm font-semibold text-foreground">Customer acknowledgement</h4>
+                <label className="flex items-start gap-2 text-sm text-foreground">
+                  <Checkbox
+                    checked={ack.acknowledged}
+                    onCheckedChange={(value) => setAck((current) => ({ ...current, acknowledged: value === true }))}
+                    aria-label="Customer acknowledged the site visit"
+                  />
+                  <span>The customer acknowledged the site visit on this call.</span>
+                </label>
+                <FieldGrid>
+                  <FormField
+                    field={{ key: 'ack_name', label: 'Acknowledged by', type: 'text', required: true }}
+                    value={ack.name}
+                    onChange={(value) => setAck((current) => ({ ...current, name: value }))}
+                  />
+                  <FormField
+                    field={{ key: 'ack_notes', label: 'Acknowledgement notes', type: 'textarea', required: true, wide: true }}
+                    value={ack.notes}
+                    onChange={(value) => setAck((currentAck) => ({ ...currentAck, notes: value }))}
+                  />
+                </FieldGrid>
+                <label className="block text-xs font-medium text-muted-foreground">
+                  Acknowledgement file <span className="text-rose-600">*</span>
+                  <input
+                    type="file"
+                    className="mt-1 block w-full text-sm text-foreground"
+                    onChange={(event) => setAckFile(event.target.files?.[0] || null)}
+                  />
+                </label>
+                {ackFile && <p className="text-xs text-muted-foreground">{ackFile.name}</p>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {current === 'classify' && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              No site visit is needed, so record the service types and product types now. Select every one that applies.
+            </p>
+            <FieldGrid>
+              <MultiPicker
+                label="Service type"
+                required
+                options={typeOptions}
+                selected={serviceTypesSelected}
+                onToggle={(value) => setServiceTypesSelected((list) => toggleValue(list, value))}
+              />
+              <MultiPicker
+                label="Product type"
+                required
+                options={INSTALLATION_PRODUCT_CATEGORIES}
+                selected={productTypesSelected}
+                onToggle={(value) => setProductTypesSelected((list) => toggleValue(list, value))}
+              />
+            </FieldGrid>
+            {customerType === 'Existing' && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold">Lead{leadRequired && <span className="text-rose-600"> *</span>}</h4>
+                {!profile ? <p className="text-sm text-muted-foreground">Loading leads and products…</p> : profile.leads.length === 0 ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">No lead exists for this customer yet.</p>
+                ) : profile.leads.map((lead) => (
+                  <ChoiceRow
+                    key={lead.id}
+                    selected={classify.lead_id === lead.id}
+                    onSelect={() => setClassify((prev) => ({ ...prev, lead_id: lead.id }))}
+                    title={lead.company || 'Lead'}
+                    subtitle={[lead.sub_category || lead.category, lead.status].filter(Boolean).join(' · ')}
+                  />
+                ))}
+                <h4 className="text-sm font-semibold">Registered product</h4>
+                {(profile?.products || []).length === 0 && <p className="text-sm text-muted-foreground">No registered product yet. The product types above are enough to continue.</p>}
+                {(profile?.products || []).map((product) => (
+                  <ChoiceRow
+                    key={product.id}
+                    selected={classify.product_id === product.id}
+                    onSelect={() => setClassify((prev) => ({ ...prev, product_id: product.id }))}
+                    title={product.name}
+                    subtitle={[product.category, product.model, product.serial_number].filter(Boolean).join(' · ')}
+                  />
+                ))}
+              </div>
+            )}
+            {selectedWorkflows.has('installation') && (
+              <FieldGrid>
+                <FormField field={{ key: 'product_name', label: 'Product name', type: 'text', required: true }} value={classify.product_name} onChange={(value) => setClassify((prev) => ({ ...prev, product_name: value }))} />
+                <FormField field={{ key: 'product_model', label: 'Model', type: 'text', required: true }} value={classify.product_model} onChange={(value) => setClassify((prev) => ({ ...prev, product_model: value }))} />
+                <FormField field={{ key: 'serial_number', label: 'Serial number', type: 'text' }} value={classify.serial_number} onChange={(value) => setClassify((prev) => ({ ...prev, serial_number: value }))} />
+                <FormField field={{ key: 'quantity', label: 'Quantity', type: 'number', required: true }} value={classify.quantity} onChange={(value) => setClassify((prev) => ({ ...prev, quantity: value }))} />
+                <FormField field={{ key: 'planned_date', label: 'Planned date', type: 'date', required: true }} value={classify.planned_date} onChange={(value) => setClassify((prev) => ({ ...prev, planned_date: value }))} />
+                <FormField field={{ key: 'installation_requirements', label: 'Special requirements', type: 'textarea', wide: true }} value={classify.installation_requirements} onChange={(value) => setClassify((prev) => ({ ...prev, installation_requirements: value }))} />
+              </FieldGrid>
+            )}
+            {selectedWorkflows.has('repair') && (
+              <FieldGrid>
+                <FormField
+                  field={{ key: 'problem_category', label: 'Problem category', type: 'select', required: true }}
+                  value={classify.problem_category}
+                  options={meta?.config?.problem_categories || []}
+                  onChange={(value) => setClassify((prev) => ({ ...prev, problem_category: value }))}
+                />
+              </FieldGrid>
+            )}
+            {selectedWorkflows.has('amc') && (
+              <div className="space-y-1.5">
+                <h4 className="text-sm font-semibold">AMC contract</h4>
+                {(profile?.amcs || []).filter((item) => item.effective_status === 'Active').map((contract) => (
+                  <ChoiceRow
+                    key={contract.id}
+                    selected={classify.amc_id === contract.id}
+                    onSelect={() => setClassify((prev) => ({ ...prev, amc_id: contract.id }))}
+                    title={contract.amc_number}
+                    subtitle={`${contract.start_date || ''} to ${contract.end_date || ''}`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {current === 'review' && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 rounded-lg border border-border p-3 md:grid-cols-2">
               <ReadRow label="Customer type">{customerType}</ReadRow>
               <ReadRow label="Customer">{customer?.company_name}</ReadRow>
-              <ReadRow label="Lead">{selectedLead ? `${selectedLead.company} — ${selectedLead.sub_category || selectedLead.category || selectedLead.status}` : 'None'}</ReadRow>
-              <ReadRow label="Service type">{details.service_type}</ReadRow>
+              <ReadRow label="Name">{details.contact_person}</ReadRow>
+              <ReadRow label="Phone">{details.mobile}</ReadRow>
+              <ReadRow label="Address">{[details.site_address, details.city, details.state, details.pincode].filter(Boolean).join(', ')}</ReadRow>
               <ReadRow label="Priority">{details.priority}</ReadRow>
-              <ReadRow label="Contact">{[details.contact_person, details.mobile].filter(Boolean).join(' · ')}</ReadRow>
-              <ReadRow label="Site address">{[details.site_address, details.city, details.pincode].filter(Boolean).join(', ')}</ReadRow>
-              {workflow === 'installation' && (
-                <ReadRow label="Product">{[details.product_name, details.product_model, `Qty ${details.quantity}`].filter(Boolean).join(' · ')}</ReadRow>
-              )}
-              {workflow !== 'installation' && selectedProduct && (
-                <ReadRow label="Product">{[selectedProduct.name, selectedProduct.serial_number].filter(Boolean).join(' · ')}</ReadRow>
-              )}
-              {workflow === 'repair' && <ReadRow label="Problem">{`${details.problem_category}: ${details.problem_description}`}</ReadRow>}
-              <ReadRow label="Planned date">{fmtDate(details.planned_date || details.expected_visit_date)}</ReadRow>
-              <ReadRow label="Expected completion">{fmtDate(details.expected_completion)}</ReadRow>
+              <div className="md:col-span-2"><ReadRow label="Problem">{details.problem_description}</ReadRow></div>
+              {details.customer_notes && <div className="md:col-span-2"><ReadRow label="Notes">{details.customer_notes}</ReadRow></div>}
+              <ReadRow label="Site visit">{siteVisitRequired ? 'Required' : 'Not required'}</ReadRow>
+              {siteVisitRequired && <ReadRow label="Acknowledged by">{ack.name}</ReadRow>}
+              {siteVisitRequired && <div className="md:col-span-2"><ReadRow label="Acknowledgement notes">{ack.notes}</ReadRow></div>}
+              {siteVisitRequired && <ReadRow label="Acknowledgement file">{ackFile?.name}</ReadRow>}
+              {siteVisitRequired === false && <div className="md:col-span-2"><ReadRow label="Service types">{serviceTypesSelected.join(', ')}</ReadRow></div>}
+              {siteVisitRequired === false && <div className="md:col-span-2"><ReadRow label="Product types">{productTypesSelected.join(', ')}</ReadRow></div>}
             </div>
             <p className="text-xs text-muted-foreground">
-              After creating the request you can assign a technician and add documents, drawings, program files and photos from the request screen.
+              {siteVisitRequired
+                ? 'After the site visit, record any remaining service and product details. The technician is assigned after that.'
+                : 'The technician can be assigned once this request is created.'}
             </p>
           </div>
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-          <Button variant="outline" onClick={step === 0 ? onClose : back} disabled={busy}>
-            {step === 0 ? 'Cancel' : (<><ChevronLeft className="mr-1 h-4 w-4" />Back</>)}
+          <Button variant="outline" onClick={current === 'type' ? onClose : back} disabled={busy}>
+            {current === 'type' ? 'Cancel' : (<><ChevronLeft className="mr-1 h-4 w-4" />Back</>)}
           </Button>
           <div className="flex gap-2">
-            {step > 0 && customer && (
+            {current !== 'type' && customer && (
               <Button variant="outline" onClick={() => submit(true)} disabled={busy}>Save as draft</Button>
             )}
-            {step < STEPS.length - 1 ? (
+            {current !== 'review' ? (
               <Button onClick={next} disabled={busy}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button>
             ) : (
               <Button onClick={() => submit(false)} disabled={busy}>{busy ? 'Creating…' : 'Create request'}</Button>

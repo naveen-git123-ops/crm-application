@@ -289,6 +289,49 @@ def tabs_for(service_type: str) -> List[str]:
     return list(TABS_BY_WORKFLOW.get(workflow_for(service_type) or '', TABS_BY_WORKFLOW[WF_REPAIR]))
 
 
+def selected_labels(payload: Dict[str, Any], list_key: str, single_key: str) -> List[str]:
+    """Unique labels from a multi-select list, or the legacy single field."""
+    raw = payload.get(list_key)
+    out: List[str] = []
+    if isinstance(raw, list):
+        for item in raw:
+            text = str(item or '').strip()
+            if text and text not in out:
+                out.append(text)
+        return out
+    single = str(payload.get(single_key) or '').strip()
+    return [single] if single else []
+
+
+def selected_service_types(payload: Dict[str, Any]) -> List[str]:
+    return selected_labels(payload, 'service_types', 'service_type')
+
+
+def selected_product_types(payload: Dict[str, Any]) -> List[str]:
+    return selected_labels(payload, 'product_types', 'product_category')
+
+
+def workflows_for_types(service_types: Iterable[str]) -> List[str]:
+    out: List[str] = []
+    for service_type in service_types:
+        workflow = workflow_for(service_type)
+        if workflow and workflow not in out:
+            out.append(workflow)
+    return out
+
+
+def tabs_for_types(service_types: Iterable[str]) -> List[str]:
+    types = [str(item or '').strip() for item in service_types if str(item or '').strip()]
+    if not types:
+        return tabs_for('')
+    out: List[str] = []
+    for service_type in types:
+        for tab in tabs_for(service_type):
+            if tab not in out:
+                out.append(tab)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Small parsers / validators
 # ---------------------------------------------------------------------------
@@ -340,12 +383,57 @@ def validate_serial(value: Any) -> bool:
     return bool(re.fullmatch(r'[A-Z0-9][A-Z0-9\-_/\.]{2,59}', serial))
 
 
+def site_visit_answer(value: Any) -> Optional[bool]:
+    """Yes/No for 'does this call need a site visit?'. None means it was not answered."""
+    if isinstance(value, bool):
+        return value
+    text = str(value if value is not None else '').strip().lower()
+    if text in ('yes', 'true', '1'):
+        return True
+    if text in ('no', 'false', '0'):
+        return False
+    return None
+
+
+def validate_call_intake(payload: Dict[str, Any]) -> List[str]:
+    """What the representative can collect on the phone, before anyone knows the service or product."""
+    errors: List[str] = []
+    if str(payload.get('priority') or 'Medium') not in PRIORITIES:
+        errors.append('Priority must be Low, Medium, High or Critical')
+    if _blank(payload.get('contact_person')):
+        errors.append('Name is required')
+    if _blank(payload.get('mobile')) or not validate_mobile(payload.get('mobile')):
+        errors.append('A valid phone number is required')
+    if not _blank(payload.get('email')) and not validate_email(payload.get('email')):
+        errors.append('Email address is not valid')
+    if _blank(payload.get('site_address')):
+        errors.append('Address is required')
+    if not _blank(payload.get('pincode')) and not validate_pincode(payload.get('pincode')):
+        errors.append('PIN code must be 6 digits')
+    if len(str(payload.get('problem_description') or '').strip()) < 5:
+        errors.append('Describe the problem the customer reported')
+    visit = site_visit_answer(payload.get('site_visit_required'))
+    if visit is None:
+        errors.append('Say whether a site visit is required')
+    elif visit:
+        ack = payload.get('site_visit_acknowledgement')
+        ack = ack if isinstance(ack, dict) else {}
+        if not ack.get('acknowledged'):
+            errors.append('Record the customer acknowledgement for the site visit')
+        if _blank(ack.get('name')):
+            errors.append('Enter the name of the person who acknowledged the site visit')
+        if _blank(ack.get('notes')):
+            errors.append('Acknowledgement notes are required')
+    return errors
+
+
 def validate_create(payload: Dict[str, Any], config: Optional[Dict[str, Any]] = None, *, draft: bool = False) -> List[str]:
     """Server-side validation for a new (or newly submitted) service request."""
     cfg = merge_config(config)
     errors: List[str] = []
     ctype = str(payload.get('customer_type') or '').strip()
-    stype = str(payload.get('service_type') or '').strip()
+    service_types = selected_service_types(payload)
+    product_types = selected_product_types(payload)
 
     if ctype not in CUSTOMER_TYPES:
         errors.append('Select whether this is a New or Existing customer')
@@ -355,10 +443,30 @@ def validate_create(payload: Dict[str, Any], config: Optional[Dict[str, Any]] = 
     if draft:
         return errors
 
-    if stype not in allowed_service_types(ctype, cfg):
-        errors.append(f'"{stype or "Service type"}" is not available for {ctype.lower()} customers')
+    # The call only captures who called and what they said. Service type and product come after the visit,
+    # unless no visit is needed and the executive classifies the job now.
+    if not service_types:
+        if isinstance(payload.get('service_types'), list):
+            errors.append('Select at least one service type')
+        errors.extend(validate_call_intake(payload))
         return errors
-    workflow = workflow_for(stype)
+
+    if isinstance(payload.get('product_types'), list) and not product_types:
+        errors.append('Select at least one product type')
+    if product_types and _blank(payload.get('product_category')):
+        payload = {**payload, 'product_category': product_types[0]}
+    if 'site_visit_required' in payload:
+        errors.extend(validate_call_intake(payload))
+
+    allowed = allowed_service_types(ctype, cfg)
+    for stype in service_types:
+        if stype not in allowed:
+            errors.append(f'"{stype}" is not available for {ctype.lower()} customers')
+    if any(stype not in allowed for stype in service_types):
+        return errors
+    stype = service_types[0]
+    workflows = workflows_for_types(service_types)
+    workflow = workflows[0] if workflows else None
 
     if str(payload.get('priority') or 'Medium') not in PRIORITIES:
         errors.append('Priority must be Low, Medium, High or Critical')
@@ -391,10 +499,10 @@ def validate_create(payload: Dict[str, Any], config: Optional[Dict[str, Any]] = 
     if ctype == CUSTOMER_EXISTING:
         if cfg.get('require_lead_for_existing') and _blank(payload.get('lead_id')):
             errors.append('Select the existing lead this service belongs to')
-        if _blank(payload.get('product_id')):
+        if _blank(payload.get('product_id')) and not product_types:
             errors.append('Select the affected product, or register it first')
 
-    if workflow == WF_INSTALL:
+    if WF_INSTALL in workflows:
         for field, label in (
             ('product_category', 'Product category'),
             ('product_name', 'Product name'),
@@ -409,12 +517,12 @@ def validate_create(payload: Dict[str, Any], config: Optional[Dict[str, Any]] = 
             errors.append('Quantity must be a number')
         if _blank(payload.get('planned_date')):
             errors.append('Installation / planned date is required')
-    elif workflow == WF_REPAIR:
+    if WF_REPAIR in workflows:
         if _blank(payload.get('problem_category')):
             errors.append('Problem category is required')
         if len(str(payload.get('problem_description') or '').strip()) < 5:
             errors.append('Describe the problem (at least 5 characters)')
-    elif workflow == WF_AMC:
+    if WF_AMC in workflows:
         if cfg.get('amc_required') and _blank(payload.get('amc_id')):
             errors.append('Select an active AMC contract for this visit')
     return errors
@@ -451,6 +559,7 @@ def validate_section(section: str, data: Any) -> List[str]:
 
 ATTACHMENT_CATEGORIES = (
     'Customer Documents',
+    'Site Visit Acknowledgement',
     'Drawing',
     'Program/Configuration File',
     'Technical Document',
@@ -593,12 +702,15 @@ def work_blockers(ctx: Dict[str, Any]) -> List[str]:
     cfg = merge_config(ctx.get('config'))
     attachments = ctx.get('attachments') or []
     workflow = service.get('workflow')
+    workflows = service.get('workflows') or ([workflow] if workflow else [])
     out: List[str] = []
 
+    if not _text(service, 'service_type') and not service.get('service_types'):
+        out.append('Record the service type and product details')
     if not _has_technician(service) and not cfg.get('allow_unassigned'):
         out.append('Assign a technician')
 
-    if workflow == WF_INSTALL:
+    if WF_INSTALL in workflows:
         for field, label in (
             ('product_name', 'Product name'),
             ('product_model', 'Product model'),
@@ -635,7 +747,7 @@ def work_blockers(ctx: Dict[str, Any]) -> List[str]:
         if pending:
             out.append(f'Complete the mandatory commissioning checks ({len(pending)} item(s) pending)')
 
-    elif workflow == WF_REPAIR:
+    if WF_REPAIR in workflows:
         entries = data.get('troubleshooting') or []
         if not entries:
             out.append('Record at least one troubleshooting / inspection entry')
@@ -671,7 +783,7 @@ def work_blockers(ctx: Dict[str, Any]) -> List[str]:
             if not _text(final, 'operational_status'):
                 out.append('Record the product operational status')
 
-    elif workflow == WF_AMC:
+    if WF_AMC in workflows:
         amc = data.get('amc') or {}
         if not _text(amc, 'actual_visit_date'):
             out.append('Record the actual visit date')
@@ -683,7 +795,11 @@ def work_blockers(ctx: Dict[str, Any]) -> List[str]:
         if not _text(amc, 'work_performed'):
             out.append('Record the work performed')
 
-    missing = missing_evidence(workflow or '', attachments, cfg)
+    missing: List[str] = []
+    for item_workflow in workflows or [workflow or '']:
+        for item in missing_evidence(item_workflow, attachments, cfg):
+            if item not in missing:
+                missing.append(item)
     if missing:
         out.append('Upload the mandatory photos/videos: ' + ', '.join(missing))
     out.extend(_vendor_blockers(ctx))
@@ -750,8 +866,18 @@ def transition_blockers(old: str, new: str, ctx: Dict[str, Any], reason: str = '
         out.append('Assign a technician before the work starts')
     if new == 'Scheduled' and not (_text(service, 'planned_date') or _text(service, 'expected_visit_date')):
         out.append('Set a planned date before scheduling')
+    if not _text(service, 'service_type') and new in (
+        'Assigned', 'Scheduled', 'In Progress', 'Inspection Pending', 'Report Pending', 'Waiting for Vendor',
+    ):
+        out.append('Record the service type and product details before moving this request on')
     if old == 'Draft' and new == 'New':
-        out.extend(validate_create({**service, 'customer_type': service.get('customer_type')}, cfg))
+        merged = {**service, 'customer_type': service.get('customer_type')}
+        if not _text(service, 'service_type'):
+            intake = ((ctx.get('data') or {}).get('intake') or {})
+            if isinstance(intake, dict):
+                merged['site_visit_required'] = intake.get('site_visit_required')
+                merged['site_visit_acknowledgement'] = intake.get('acknowledgement') or {}
+        out.extend(validate_create(merged, cfg))
     if new == 'Waiting for Vendor':
         if service.get('workflow') != WF_REPAIR:
             out.append('Vendor repair only applies to repair requests')

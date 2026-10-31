@@ -102,6 +102,36 @@ export function FieldGrid({ children, className }) {
   return <div className={cn('grid grid-cols-1 gap-3 md:grid-cols-2', className)}>{children}</div>;
 }
 
+/** Toggle buttons for a field that can have more than one value. */
+export function MultiPicker({ label, options, selected, onToggle, required }) {
+  return (
+    <div className="space-y-1 md:col-span-2">
+      <div className="text-xs font-medium text-muted-foreground">
+        {label}
+        {required && <span className="text-rose-600"> *</span>}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {(options || []).map((option) => {
+          const on = selected.includes(option);
+          return (
+            <button
+              key={option}
+              type="button"
+              onClick={() => onToggle(option)}
+              className={cn(
+                'rounded-full border px-2.5 py-1 text-xs',
+                on ? 'border-indigo-400 bg-indigo-50 font-medium text-indigo-800' : 'border-border text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {option}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function ReadRow({ label, children }) {
   return (
     <div className="min-w-0">

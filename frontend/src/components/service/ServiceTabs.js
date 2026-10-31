@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { CheckCircle2, Circle, Pencil, Plus, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -7,10 +8,11 @@ import {
 } from '@/components/ui/dialog';
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import {
-  EVIDENCE_CATEGORIES, INPUT_CLASS, TAB_SECTIONS, fmtDate, fmtDateTime, serviceApi,
+  EVIDENCE_CATEGORIES, INPUT_CLASS, INSTALLATION_PRODUCT_CATEGORIES, SITE_VISIT_ACK_CATEGORY, TAB_SECTIONS,
+  fmtDate, fmtDateTime, serviceApi,
 } from '@/lib/serviceUtils';
 import {
-  BlockerList, FieldGrid, FormField, PriorityBadge, ReadRow, SectionCard, StatusBadge,
+  BlockerList, FieldGrid, FormField, MultiPicker, PriorityBadge, ReadRow, SectionCard, StatusBadge,
 } from '@/components/service/ServiceFields';
 import { AttachmentPanel } from '@/components/service/AttachmentPanel';
 import { SectionForm, TroubleshootingForm } from '@/components/service/SectionForm';
@@ -58,6 +60,7 @@ function EditDetailsDialog({ ctx, open, onClose }) {
       { key: 'planned_date', label: 'Planned date', type: 'date' },
       { key: 'expected_visit_date', label: 'Expected visit date', type: 'date' },
       { key: 'expected_completion', label: 'Expected completion', type: 'date' },
+      { key: 'problem_description', label: 'Problem reported on the call', type: 'textarea', wide: true },
     ];
     if (s.workflow === 'installation') {
       base.push(
@@ -73,7 +76,6 @@ function EditDetailsDialog({ ctx, open, onClose }) {
       base.push(
         { key: 'problem_category', label: 'Problem category', type: 'select', options: config.problem_categories },
         { key: 'reported_date', label: 'Reported date', type: 'date' },
-        { key: 'problem_description', label: 'Problem description', type: 'textarea', wide: true },
         { key: 'reported_by', label: 'Reported by', type: 'text' },
       );
     }
@@ -190,6 +192,437 @@ function AssignmentCard({ ctx }) {
   );
 }
 
+function IntakeProgress({ service, intake }) {
+  const required = intake?.site_visit_required;
+  const visitDone = required === false || (required === true && Boolean(intake?.site_visit_done));
+  const classified = Boolean(service.service_type);
+  const assigned = Boolean(service.assigned_employee_id);
+  const steps = [
+    { label: 'Call details', done: true },
+    { label: required === false ? 'No site visit' : 'Site visit', done: visitDone },
+    { label: 'Service and product', done: classified },
+    { label: 'Assign technician', done: assigned },
+  ];
+  return (
+    <ol className="flex flex-wrap gap-1.5 text-xs font-medium">
+      {steps.map((item, idx) => (
+        <li
+          key={item.label}
+          className={cnStep(item.done, idx === steps.findIndex((step) => !step.done))}
+        >
+          {idx + 1}. {item.label}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function cnStep(done, current) {
+  if (current) return 'rounded-full border border-indigo-300 bg-indigo-50 px-2.5 py-0.5 text-indigo-800';
+  if (done) return 'rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-emerald-800';
+  return 'rounded-full border border-border px-2.5 py-0.5 text-muted-foreground';
+}
+
+function SiteVisitCard({ ctx }) {
+  const { detail, run, caps, reload } = ctx;
+  const intake = detail.data?.intake || {};
+  const ack = intake.acknowledgement || {};
+  const s = detail.service;
+  const closed = ['Closed', 'Cancelled'].includes(s.status);
+  const canRecord = Boolean(caps.coordinate) && !closed && (!detail.locked || caps.manage);
+  const [findings, setFindings] = useState(intake.site_visit_findings || '');
+  const [ackUpload, setAckUpload] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const ackFiles = (detail.attachments || []).filter((file) => file.category === SITE_VISIT_ACK_CATEGORY);
+
+  useEffect(() => {
+    setFindings(intake.site_visit_findings || '');
+  }, [intake.site_visit_findings]);
+
+  if (!intake || !Object.prototype.hasOwnProperty.call(intake, 'site_visit_required')) return null;
+  if (intake.site_visit_required == null) {
+    return (
+      <SectionCard title="Site visit" description="The call did not record whether a visit is required.">
+        <p className="text-sm text-muted-foreground">Answer the site visit step on the request before recording the service type and product.</p>
+      </SectionCard>
+    );
+  }
+
+  const uploadAck = async () => {
+    if (!ackUpload) return;
+    setBusy(true);
+    try {
+      const form = new FormData();
+      form.append('file', ackUpload);
+      form.append('category', SITE_VISIT_ACK_CATEGORY);
+      form.append('description', ack.notes || 'Site visit acknowledgement');
+      await serviceApi.upload(`/service-requests/${s.id}/attachments`, form);
+      setAckUpload(null);
+      toast.success('Acknowledgement file uploaded');
+      await reload();
+    } catch (err) {
+      toast.error(errorText(err, 'Could not upload the acknowledgement'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await run(() => serviceApi.post(`/service-requests/${s.id}/site-visit`, { findings }), 'Site visit recorded');
+    } catch {
+      /* shown by run() */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SectionCard
+      title="Site visit"
+      description={intake.site_visit_required
+        ? 'The customer agreed to a visit. Mark it done once someone has been to the site.'
+        : 'No site visit was needed on this call.'}
+    >
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <ReadRow label="Site visit">{intake.site_visit_required ? 'Required' : 'Not required'}</ReadRow>
+        {intake.site_visit_required && <ReadRow label="Acknowledged by">{ack.name}</ReadRow>}
+        {intake.site_visit_required && <ReadRow label="Acknowledged">{ack.acknowledged ? 'Yes' : 'No'}</ReadRow>}
+        {intake.site_visit_required && ack.notes && <div className="md:col-span-3"><ReadRow label="Acknowledgement notes">{ack.notes}</ReadRow></div>}
+        {intake.site_visit_required && (
+          <div className="md:col-span-3">
+            <ReadRow label="Acknowledgement file">
+              {ackFiles.length ? ackFiles.map((file) => file.file_name).join(', ') : 'Required'}
+            </ReadRow>
+          </div>
+        )}
+        {intake.site_visit_done && (
+          <>
+            <ReadRow label="Visit recorded">{intake.site_visit_done_by || 'Yes'}</ReadRow>
+            <ReadRow label="Recorded at">{fmtDateTime(intake.site_visit_done_at)}</ReadRow>
+          </>
+        )}
+      </div>
+      {intake.site_visit_required && canRecord && ackFiles.length === 0 && (
+        <div className="mt-3 space-y-2">
+          <p className="text-sm text-amber-900">The customer acknowledgement file is still required.</p>
+          <input type="file" className="block w-full text-sm" onChange={(event) => setAckUpload(event.target.files?.[0] || null)} />
+          <Button onClick={uploadAck} disabled={busy || !ackUpload}>{busy ? 'Uploading…' : 'Upload acknowledgement'}</Button>
+        </div>
+      )}
+      {intake.site_visit_required && canRecord && (
+        <div className="mt-3 space-y-3">
+          <FormField
+            field={{ key: 'visit-findings', label: 'What was found on the visit', type: 'textarea', wide: true }}
+            value={findings}
+            onChange={setFindings}
+          />
+          <div className="flex justify-end">
+            <Button onClick={save} disabled={busy || ackFiles.length === 0}>
+              {busy ? 'Saving…' : intake.site_visit_done ? 'Update visit notes' : 'Site visit completed'}
+            </Button>
+          </div>
+        </div>
+      )}
+      {intake.site_visit_required && intake.site_visit_done && intake.site_visit_findings && !canRecord && (
+        <div className="mt-3"><ReadRow label="Findings">{intake.site_visit_findings}</ReadRow></div>
+      )}
+    </SectionCard>
+  );
+}
+
+function FieldDetailsCard({ ctx }) {
+  const { detail, meta, run, caps } = ctx;
+  const s = detail.service;
+  const intake = detail.data?.intake;
+  const config = detail.config || {};
+  const closed = ['Closed', 'Cancelled'].includes(s.status);
+  const canRecord = Boolean(caps.coordinate) && !closed && (!detail.locked || caps.manage);
+  const visitBlocks = Boolean(intake) && intake.site_visit_required !== false && !intake.site_visit_done;
+  const [editing, setEditing] = useState(!s.service_type);
+  const [profile, setProfile] = useState(null);
+  const [form, setForm] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState([]);
+  const [newProductOpen, setNewProductOpen] = useState(false);
+  const [newProduct, setNewProduct] = useState({ category: '', name: '', model: '', serial_number: '' });
+
+  const serviceTypes = meta?.service_types_by_customer?.[s.customer_type] || [];
+  const selectedWorkflows = new Set((form.service_types || []).map((item) => meta?.workflow_by_service_type?.[item]).filter(Boolean));
+  const leadRequired = s.customer_type === 'Existing' && config.require_lead_for_existing !== false;
+
+  useEffect(() => {
+    setEditing(!s.service_type);
+    setForm({
+      service_types: s.service_types?.length ? s.service_types : (s.service_type ? [s.service_type] : []),
+      product_types: s.product_types?.length ? s.product_types : (s.product_category ? [s.product_category] : []),
+      lead_id: s.lead_id || '',
+      product_id: s.product_id || '',
+      amc_id: s.amc_id || '',
+      product_name: s.product_name || '',
+      product_model: s.product_model || '',
+      serial_number: s.serial_number || '',
+      quantity: s.quantity || '1',
+      planned_date: s.planned_date || '',
+      installation_requirements: s.installation_requirements || '',
+      problem_category: s.problem_category || '',
+      problem_description: s.problem_description || '',
+    });
+  }, [s]);
+
+  useEffect(() => {
+    if (!editing || visitBlocks) return undefined;
+    let cancelled = false;
+    serviceApi.get(`/service/customers/${s.customer_id}/profile`)
+      .then((value) => { if (!cancelled) setProfile(value); })
+      .catch(() => { if (!cancelled) setProfile({ leads: [], products: [], amcs: [] }); });
+    return () => { cancelled = true; };
+  }, [editing, visitBlocks, s.customer_id]);
+
+  const setField = (key) => (value) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const usableAmcs = (profile?.amcs || []).filter((a) => {
+    if (a.effective_status !== 'Active') return false;
+    const covered = a.covered_product_ids || [];
+    return !form.product_id || covered.length === 0 || covered.includes(form.product_id);
+  });
+
+  const registerProduct = async () => {
+    setBusy(true);
+    setError([]);
+    try {
+      const created = await serviceApi.post('/service/products', {
+        ...newProduct, customer_id: s.customer_id, lead_id: form.lead_id || null,
+      });
+      const next = await serviceApi.get(`/service/customers/${s.customer_id}/profile`);
+      setProfile(next);
+      setForm((prev) => ({ ...prev, product_id: created.id }));
+      setNewProductOpen(false);
+      setNewProduct({ category: '', name: '', model: '', serial_number: '' });
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail.map(String) : [errorText(err, 'Could not register the product')]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = async () => {
+    setBusy(true);
+    setError([]);
+    try {
+      await run(() => serviceApi.post(`/service-requests/${s.id}/field-details`, {
+        service_types: form.service_types,
+        service_type: (form.service_types || [])[0],
+        product_types: form.product_types,
+        product_category: (form.product_types || [])[0],
+        lead_id: form.lead_id || null,
+        product_id: form.product_id || null,
+        amc_id: selectedWorkflows.has('amc') ? form.amc_id || null : null,
+        product_name: form.product_name,
+        product_model: form.product_model,
+        serial_number: form.serial_number,
+        quantity: form.quantity,
+        planned_date: form.planned_date,
+        installation_requirements: form.installation_requirements,
+        problem_category: form.problem_category,
+        problem_description: form.problem_description,
+      }), 'Service and product details saved');
+      setEditing(false);
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail.map(String) : [errorText(err, 'Could not save')]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SectionCard
+      title="Service and product"
+      description="Filled after the site visit, when the problem and the product are known. The technician is assigned in the next step."
+      actions={s.service_type && canRecord && !editing && (
+        <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button>
+      )}
+    >
+      {visitBlocks && (
+        <p className="text-sm text-amber-900">
+          Complete the site visit first. After the visit, record the service type, product and the other job details here.
+        </p>
+      )}
+
+      {!visitBlocks && s.service_type && !editing && (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <ReadRow label="Service type">{(s.service_types || []).join(', ') || s.service_type}</ReadRow>
+          <ReadRow label="Product">{[s.product_name, s.product_model].filter(Boolean).join(' · ')}</ReadRow>
+          <ReadRow label="Product type">{(s.product_types || []).join(', ') || s.product_category}</ReadRow>
+          {s.problem_category && <ReadRow label="Problem category">{s.problem_category}</ReadRow>}
+        </div>
+      )}
+
+      {!visitBlocks && editing && canRecord && (
+        <div className="space-y-4">
+          {error.length > 0 && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800" role="alert">
+              <ul className="list-disc space-y-0.5 pl-5">{error.map((item) => <li key={item}>{item}</li>)}</ul>
+            </div>
+          )}
+          <FieldGrid>
+            <MultiPicker
+              label="Service type"
+              required
+              options={serviceTypes}
+              selected={form.service_types || []}
+              onToggle={(value) => setForm((prev) => ({
+                ...prev,
+                service_types: (prev.service_types || []).includes(value)
+                  ? prev.service_types.filter((item) => item !== value)
+                  : [...(prev.service_types || []), value],
+              }))}
+            />
+            <MultiPicker
+              label="Product type"
+              required
+              options={INSTALLATION_PRODUCT_CATEGORIES}
+              selected={form.product_types || []}
+              onToggle={(value) => setForm((prev) => ({
+                ...prev,
+                product_types: (prev.product_types || []).includes(value)
+                  ? prev.product_types.filter((item) => item !== value)
+                  : [...(prev.product_types || []), value],
+              }))}
+            />
+          </FieldGrid>
+
+          {s.customer_type === 'Existing' && (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold text-foreground">Lead{leadRequired && <span className="text-rose-600"> *</span>}</h4>
+                {!profile ? (
+                  <p className="text-sm text-muted-foreground">Loading leads and products…</p>
+                ) : profile.leads.length === 0 ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    No lead exists for this customer. Create the lead from the Leads screen first, then come back.
+                  </p>
+                ) : (
+                  <div className="max-h-40 space-y-1.5 overflow-y-auto">
+                    {profile.leads.map((lead) => (
+                      <button
+                        key={lead.id}
+                        type="button"
+                        onClick={() => setField('lead_id')(lead.id)}
+                        className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${form.lead_id === lead.id ? 'border-indigo-400 bg-indigo-50' : 'border-border hover:bg-muted'}`}
+                      >
+                        <span className="font-medium">{lead.company || 'Lead'}</span>
+                        <span className="mt-0.5 block text-xs text-muted-foreground">{[lead.sub_category || lead.category, lead.status].filter(Boolean).join(' · ')}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-foreground">Registered product</h4>
+                  {!newProductOpen && (
+                    <Button variant="outline" size="sm" onClick={() => setNewProductOpen(true)}>
+                      <Plus className="mr-1 h-3.5 w-3.5" />Register product
+                    </Button>
+                  )}
+                </div>
+                {!newProductOpen && (
+                  <div className="max-h-40 space-y-1.5 overflow-y-auto">
+                    {(profile?.products || []).length === 0 && profile && <p className="text-sm text-muted-foreground">No registered products yet.</p>}
+                    {(profile?.products || []).map((product) => (
+                      <button
+                        key={product.id}
+                        type="button"
+                        onClick={() => setField('product_id')(product.id)}
+                        className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${form.product_id === product.id ? 'border-indigo-400 bg-indigo-50' : 'border-border hover:bg-muted'}`}
+                      >
+                        <span className="font-medium">{product.name}</span>
+                        <span className="mt-0.5 block text-xs text-muted-foreground">{[product.category, product.model, product.serial_number].filter(Boolean).join(' · ')}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {newProductOpen && (
+                  <div className="space-y-3 rounded-lg border border-border p-3">
+                    <FieldGrid>
+                      <FormField field={{ key: 'np-category', label: 'Product category', type: 'text', required: true }} value={newProduct.category} onChange={(value) => setNewProduct((p) => ({ ...p, category: value }))} />
+                      <FormField field={{ key: 'np-name', label: 'Product name', type: 'text', required: true }} value={newProduct.name} onChange={(value) => setNewProduct((p) => ({ ...p, name: value }))} />
+                      <FormField field={{ key: 'np-model', label: 'Model', type: 'text' }} value={newProduct.model} onChange={(value) => setNewProduct((p) => ({ ...p, model: value }))} />
+                      <FormField field={{ key: 'np-serial', label: 'Serial number', type: 'text' }} value={newProduct.serial_number} onChange={(value) => setNewProduct((p) => ({ ...p, serial_number: value }))} />
+                    </FieldGrid>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" onClick={() => setNewProductOpen(false)} disabled={busy}>Cancel</Button>
+                      <Button onClick={registerProduct} disabled={busy || !newProduct.name.trim() || !newProduct.category.trim()}>
+                        {busy ? 'Saving…' : 'Register product'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {selectedWorkflows.has('installation') && (
+            <FieldGrid>
+              <FormField field={{ key: 'product_name', label: 'Product name', type: 'text', required: true }} value={form.product_name} onChange={setField('product_name')} />
+              <FormField field={{ key: 'product_model', label: 'Model', type: 'text', required: true }} value={form.product_model} onChange={setField('product_model')} />
+              <FormField field={{ key: 'serial_number', label: 'Serial number', type: 'text' }} value={form.serial_number} onChange={setField('serial_number')} />
+              <FormField field={{ key: 'quantity', label: 'Quantity', type: 'number', required: true }} value={form.quantity} onChange={setField('quantity')} />
+              <FormField field={{ key: 'planned_date', label: 'Planned date', type: 'date', required: true }} value={form.planned_date} onChange={setField('planned_date')} />
+              <FormField field={{ key: 'installation_requirements', label: 'Special requirements', type: 'textarea', wide: true }} value={form.installation_requirements} onChange={setField('installation_requirements')} />
+            </FieldGrid>
+          )}
+
+          {selectedWorkflows.has('repair') && (
+            <FieldGrid>
+              <FormField
+                field={{ key: 'problem_category', label: 'Problem category', type: 'select', required: true }}
+                value={form.problem_category}
+                options={config.problem_categories || []}
+                onChange={setField('problem_category')}
+              />
+              <FormField field={{ key: 'problem_description', label: 'Problem', type: 'textarea', required: true, wide: true }} value={form.problem_description} onChange={setField('problem_description')} />
+            </FieldGrid>
+          )}
+
+          {selectedWorkflows.has('amc') && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-foreground">AMC contract</h4>
+              {usableAmcs.length === 0 ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  No active AMC contract covers this customer. Add a contract from AMC contracts before booking the visit.
+                </p>
+              ) : usableAmcs.map((contract) => (
+                <button
+                  key={contract.id}
+                  type="button"
+                  onClick={() => setField('amc_id')(contract.id)}
+                  className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${form.amc_id === contract.id ? 'border-indigo-400 bg-indigo-50' : 'border-border hover:bg-muted'}`}
+                >
+                  <span className="font-medium">{contract.amc_number}</span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">{fmtDate(contract.start_date)} to {fmtDate(contract.end_date)}</span>
+                </button>
+              ))}
+              <FieldGrid>
+                <FormField field={{ key: 'planned_date', label: 'Planned visit date', type: 'date' }} value={form.planned_date} onChange={setField('planned_date')} />
+              </FieldGrid>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            {s.service_type && <Button variant="outline" onClick={() => { setEditing(false); setError([]); }} disabled={busy}>Cancel</Button>}
+            <Button onClick={save} disabled={busy || !(form.service_types || []).length}>{busy ? 'Saving…' : 'Save service and product'}</Button>
+          </div>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 export function OverviewTab({ ctx }) {
   const { detail, run, ask } = ctx;
   const s = detail.service;
@@ -222,9 +655,16 @@ export function OverviewTab({ ctx }) {
   };
 
   const completion = detail.next_statuses.find((o) => o.status === 'Completed');
+  const intake = detail.data?.intake;
+  const showIntake = Boolean(intake) || !s.service_type;
 
   return (
     <div className="space-y-4">
+      {showIntake && (
+        <SectionCard title="How this request moves" description="The call is recorded first. Service type and product come after the visit. The technician is assigned last.">
+          <IntakeProgress service={s} intake={intake} />
+        </SectionCard>
+      )}
       <SectionCard
         title="Status"
         actions={<StatusBadge status={s.status} />}
@@ -261,7 +701,7 @@ export function OverviewTab({ ctx }) {
       >
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <ReadRow label="Service ID">{s.service_code}</ReadRow>
-          <ReadRow label="Service type">{s.service_type}</ReadRow>
+          <ReadRow label="Service type">{(s.service_types || []).join(', ') || s.service_type}</ReadRow>
           <ReadRow label="Customer type">{s.customer_type}</ReadRow>
           <ReadRow label="Priority"><PriorityBadge priority={s.priority} /></ReadRow>
           <ReadRow label="Request date">{fmtDate(s.request_date)}</ReadRow>
@@ -274,6 +714,9 @@ export function OverviewTab({ ctx }) {
           <ReadRow label="Technician">{s.assigned_name || 'Unassigned'}</ReadRow>
           <ReadRow label="Engineer">{s.engineer_name}</ReadRow>
           <ReadRow label="Completed">{s.completed_at ? fmtDateTime(s.completed_at) : '—'}</ReadRow>
+          {s.problem_description && s.workflow !== 'repair' && (
+            <div className="md:col-span-3"><ReadRow label="Problem reported on the call">{s.problem_description}</ReadRow></div>
+          )}
           {s.workflow === 'repair' && (
             <>
               <ReadRow label="Problem category">{s.problem_category}</ReadRow>
@@ -293,7 +736,17 @@ export function OverviewTab({ ctx }) {
         </div>
       </SectionCard>
 
-      {caps.coordinate && !closed && <AssignmentCard ctx={ctx} />}
+      {showIntake && <SiteVisitCard ctx={ctx} />}
+      {showIntake && <FieldDetailsCard ctx={ctx} />}
+
+      {s.service_type && caps.coordinate && !closed && <AssignmentCard ctx={ctx} />}
+      {!s.service_type && (
+        <SectionCard title="Assign technician" description="This step opens after the service type and product are saved.">
+          <p className="text-sm text-muted-foreground">
+            After the visit, record the service type and product. Then assign the technician who will do the work.
+          </p>
+        </SectionCard>
+      )}
 
       <EditDetailsDialog ctx={ctx} open={editOpen} onClose={() => setEditOpen(false)} />
       <Dialog open={Boolean(blocked)} onOpenChange={(value) => { if (!value) setBlocked(null); }}>
@@ -658,6 +1111,7 @@ const EVENT_LABELS = {
   created: 'Created', status_change: 'Status change', assignment: 'Assignment', section_updated: 'Work updated',
   updated: 'Details updated', locked_edit: 'Locked record edited', attachment: 'File added',
   attachment_removed: 'File removed', vendor_repair: 'Vendor repair', report: 'Report', visit: 'Visit',
+  site_visit: 'Site visit', field_details: 'Service and product',
 };
 
 export function HistoryTab({ ctx }) {

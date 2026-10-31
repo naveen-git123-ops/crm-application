@@ -334,7 +334,7 @@ export function ServiceMaintenance() {
                   <td className="max-w-[12rem] truncate py-2 pr-3 text-muted-foreground" title={row.lead_label || ''}>{row.lead_label || '—'}</td>
                   <td className="max-w-[12rem] truncate py-2 pr-3" title={row.product_name || ''}>{row.product_name || '—'}</td>
                   <td className="py-2 pr-3 font-mono text-xs">{row.serial_number || '—'}</td>
-                  <td className="py-2 pr-3">{row.service_type || '—'}</td>
+                  <td className="py-2 pr-3">{row.service_type || 'Not recorded yet'}</td>
                   <td className="py-2 pr-3"><PriorityBadge priority={row.priority} /></td>
                   <td className="py-2 pr-3">{row.assigned_name || <span className="text-muted-foreground">Unassigned</span>}</td>
                   <td className="py-2 pr-3"><StatusBadge status={row.status} /></td>

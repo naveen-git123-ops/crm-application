@@ -10,7 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/page';
-import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save, Calendar, Check, SearchX, FolderOpen } from 'lucide-react';
+import { Plus, Minus, Edit, Trash2, Search, Mail, Phone, Filter, X, FileText, Eye, Upload, Download, History, Save, Calendar, Check, SearchX, FolderOpen, ChevronDown, MapPin } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { API_ENDPOINT, BACKEND_BASE_URL } from '@/lib/apiConfig';
 import { getApiErrorMessage } from '@/lib/apiErrors';
@@ -1074,6 +1074,287 @@ function formatTelemetryPriorLine(item) {
   if (da) bits.push(`Data: ${da}`);
   if (df || dt) bits.push(`${df || '—'}→${dt || '—'}`);
   return bits.join(' · ');
+}
+
+const CGW_MOBILE_FILE_GROUPS = [
+  {
+    title: 'Flow metre files',
+    keys: ['bw_geo_flowmeter', 'calibration_certificate', 'service_report', 'telemetry', 'telemetry_excel_prior', 'telemetry_service_prior'],
+  },
+  {
+    title: 'Piezometer files',
+    keys: ['piezometer_bw', 'piezometer_calibration', 'piezometer_telemetry', 'piezometer_excel_prior', 'piezometer_service_report'],
+  },
+  {
+    title: 'Additional files',
+    keys: ['water_quality_certificate', 'cte', 'cto', 'rwss_watco_phed_noc', 'approval_letter', 'rain_water_harvesting_data', 'additional_doc'],
+  },
+];
+
+/** Compact validity tile used on the mobile cards (colour + text, never colour alone). */
+function CgwValidityChip({ label, value }) {
+  const u = value ? renewalUrgency(value) : 'empty';
+  const tone =
+    u === 'overdue'
+      ? 'border-red-200 bg-red-50 text-red-700'
+      : u === 'dueSoon'
+        ? 'border-amber-200 bg-amber-50 text-amber-800'
+        : u === 'ok'
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          : 'border-border bg-muted text-muted-foreground';
+  return (
+    <div className={cn('min-w-0 rounded-lg border px-1.5 py-1.5', tone)}>
+      <p className="truncate text-[10px] font-bold uppercase tracking-wide opacity-80">{label}</p>
+      <p className="mt-0.5 whitespace-nowrap font-mono text-[11px] font-semibold tabular-nums">{value || '—'}</p>
+      {u === 'overdue' ? (
+        <p className="text-[10px] font-bold uppercase leading-tight">Expired</p>
+      ) : u === 'dueSoon' ? (
+        <p className="text-[10px] font-semibold leading-tight">Within 30 days</p>
+      ) : null}
+    </div>
+  );
+}
+
+function CgwMobileSection({ title, rows }) {
+  const visible = rows.filter(([, v]) => v !== null && v !== undefined && v !== '' && v !== '—');
+  return (
+    <section>
+      <h4 className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{title}</h4>
+      {visible.length ? (
+        <dl className="mt-1.5 divide-y divide-border/70">
+          {visible.map(([label, value]) => (
+            <div key={label} className="flex items-start justify-between gap-4 py-2 text-sm">
+              <dt className="shrink-0 text-muted-foreground">{label}</dt>
+              <dd className="min-w-0 break-words text-right font-medium text-foreground">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="mt-1.5 text-sm text-muted-foreground">Nothing recorded.</p>
+      )}
+    </section>
+  );
+}
+
+/** Phone-friendly card for one customer group (replaces the 60-column grid below md). */
+function CgwMobileGroupCard({ group, canManage, canDeleteCgw, onOpenGroup, onEdit, onDelete, onOpenNoc, onOpenMedia }) {
+  const [expanded, setExpanded] = useState(false);
+  const anchor = group.rows[0] || {};
+  const name = anchor.customer_name || 'Unnamed customer';
+  const urgency = renewalUrgency(anchor.renewal_date);
+  const accent =
+    urgency === 'overdue' ? 'border-l-red-500' : urgency === 'dueSoon' ? 'border-l-amber-400' : 'border-l-primary/40';
+  const phone = (anchor.person_mobile_number || anchor.system_mobile_number || '').toString().trim();
+  const email = (anchor.email_id || '').toString().trim();
+  const panelId = `cgw-mobile-panel-${anchor.id}`;
+  const unitCount = group.rows.length;
+  const isDraft = (item) => String(item?.status || '').toLowerCase() === 'draft';
+  const actionBtn = 'inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-background text-sm font-semibold text-foreground transition-colors hover:bg-muted active:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+
+  return (
+    <article
+      aria-label={`CGWA records for ${name}`}
+      className={cn('overflow-hidden rounded-2xl border border-l-4 border-border bg-card shadow-soft', accent)}
+    >
+      <div className="p-4 pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="break-words text-base font-bold leading-snug text-foreground">{name}</h3>
+            {anchor.location ? (
+              <p className="mt-1 flex items-start gap-1.5 text-sm text-muted-foreground">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 break-words">{anchor.location}</span>
+              </p>
+            ) : null}
+            {anchor.contact_person ? (
+              <p className="mt-0.5 text-sm text-muted-foreground">Contact: {anchor.contact_person}</p>
+            ) : null}
+          </div>
+          <span className="shrink-0 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">
+            {unitCount} {unitCount === 1 ? 'unit' : 'units'}
+          </span>
+        </div>
+        {phone || email ? (
+          <div className="mt-3 flex gap-2">
+            {phone ? (
+              <a href={`tel:${phone.replace(/[^\d+]/g, '')}`} className={actionBtn} aria-label={`Call ${anchor.contact_person || name} on ${phone}`}>
+                <Phone className="h-4 w-4" aria-hidden="true" /> Call
+              </a>
+            ) : null}
+            {email ? (
+              <a href={`mailto:${email}`} className={actionBtn} aria-label={`Email ${email}`}>
+                <Mail className="h-4 w-4" aria-hidden="true" /> Email
+              </a>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="space-y-3 border-t border-border bg-muted/40 p-3">
+        {group.rows.map((item) => {
+          const serialLine = [item.flow_meter_make, item.flow_meter_size, item.flow_meter_serial].filter(Boolean).join(' · ');
+          return (
+            <div key={item.id} className="rounded-xl border border-border bg-card p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-sm font-bold text-primary">{item.inventory_id || '—'}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{serialLine || 'No flow metre details yet'}</p>
+                </div>
+                {isDraft(item) ? (
+                  <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold uppercase text-foreground">Draft</span>
+                ) : null}
+              </div>
+              <div className="mt-2.5 grid grid-cols-3 gap-2">
+                <CgwValidityChip label="NOC upto" value={item.noc_valid_upto} />
+                <CgwValidityChip label="Calib." value={item.calibration_valid_to} />
+                <CgwValidityChip label="Telem." value={item.telemetry_valid_to} />
+              </div>
+              {canManage || item.noc_document_url ? (
+                <div className="mt-2.5 flex gap-2">
+                  {canManage ? (
+                    <Button type="button" variant="outline" className="h-11 flex-1 rounded-xl" onClick={() => onOpenNoc(item)}>
+                      <FileText className="mr-1.5 h-4 w-4" aria-hidden="true" /> NOC
+                    </Button>
+                  ) : (
+                    <Button type="button" variant="outline" className="h-11 flex-1 rounded-xl" onClick={() => onOpenNoc(item, { startInPreviewMode: true })}>
+                      <Eye className="mr-1.5 h-4 w-4" aria-hidden="true" /> View NOC
+                    </Button>
+                  )}
+                  {canManage ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 w-11 shrink-0 rounded-xl p-0"
+                      aria-label={`${isDraft(item) ? 'Continue draft for' : 'Edit'} ${item.customer_name || item.inventory_id || 'record'}`}
+                      onClick={() => onEdit(item)}
+                    >
+                      <Edit className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  ) : null}
+                  {canManage && canDeleteCgw ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 w-11 shrink-0 rounded-xl p-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      aria-label={`Delete ${item.customer_name || item.inventory_id || 'record'}`}
+                      onClick={() => onDelete(item.id)}
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex divide-x divide-border border-t border-border">
+        <button
+          type="button"
+          className="flex h-12 flex-1 items-center justify-center gap-1.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          aria-expanded={expanded}
+          aria-controls={panelId}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? 'Hide details' : 'All details'}
+          <ChevronDown className={cn('h-4 w-4 transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="flex h-12 flex-1 items-center justify-center gap-1.5 text-sm font-semibold text-primary transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          onClick={() => onOpenGroup(group)}
+        >
+          <Eye className="h-4 w-4" aria-hidden="true" /> Open
+        </button>
+      </div>
+
+      {expanded ? (
+        <div id={panelId} className="space-y-5 border-t border-border p-4">
+          <CgwMobileSection
+            title="NOC"
+            rows={[
+              ['NOC number', anchor.noc_no],
+              ['Application no.', anchor.noc_application_no],
+              ['Project', anchor.noc_project_name],
+              ['Type', anchor.noc_type],
+              ['Project status', anchor.noc_project_status],
+              ['Valid from', anchor.noc_valid_from],
+              ['Renewal date', anchor.renewal_date],
+            ]}
+          />
+          {group.rows.map((item) => {
+            const fileSections = CGW_MOBILE_FILE_GROUPS.map((g) => ({
+              title: g.title,
+              files: g.keys
+                .map((k) => ({ key: k, count: (item?.cgw_attachments?.[k] || []).length }))
+                .filter((f) => f.count > 0),
+            })).filter((g) => g.files.length > 0);
+            return (
+              <div key={item.id} className="space-y-4 rounded-xl border border-border bg-muted/30 p-3">
+                <p className="font-mono text-xs font-bold text-primary">{item.inventory_id || '—'}</p>
+                <CgwMobileSection
+                  title="Flow metre"
+                  rows={[
+                    ['Make', item.flow_meter_make],
+                    ['Size', item.flow_meter_size],
+                    ['Serial', item.flow_meter_serial],
+                    ['Calibration from', item.calibration_valid_from],
+                    ['Telemetry', item.telemetry_applicable],
+                    ['Company', formatTelemetryCompanyDisplay(item)],
+                    ['Communication', item.telemetry_communication_via],
+                    ['SIM', formatTelemetrySimLine(item)],
+                    ['Product code', item.telemetry_product_code],
+                    ['Telemetry serial', item.telemetry_serial_number],
+                    [
+                      'Portal',
+                      item.telemetry_portal_url ? (
+                        <a href={item.telemetry_portal_url} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
+                          Open portal
+                        </a>
+                      ) : null,
+                    ],
+                    ['Username', item.telemetry_username],
+                    ['Valid from', item.telemetry_valid_from],
+                    ['Prior year', formatTelemetryPriorLine(item)],
+                  ]}
+                />
+                <CgwMobileSection title="Piezometer" rows={[['Summary', piezometerSummaryCellText(item)]]} />
+                <section>
+                  <h4 className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Files</h4>
+                  {fileSections.length ? (
+                    <div className="mt-2 space-y-3">
+                      {fileSections.map((g) => (
+                        <div key={g.title}>
+                          <p className="mb-1.5 text-xs font-semibold text-foreground">{g.title}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {g.files.map((f) => (
+                              <button
+                                key={f.key}
+                                type="button"
+                                onClick={() => onOpenMedia(item, f.key)}
+                                className="inline-flex h-10 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 text-xs font-semibold text-primary transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                aria-label={`Preview ${f.count} ${f.count === 1 ? 'file' : 'files'}: ${cgwUploadCategoryLabel(f.key)}`}
+                              >
+                                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                                {cgwUploadCategoryLabel(f.key)} ({f.count})
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-1.5 text-sm text-muted-foreground">No files uploaded.</p>
+                  )}
+                </section>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </article>
+  );
 }
 
 const CGWFlowMetre = ({ mode = 'view' }) => {
@@ -3234,7 +3515,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
           value={nocValidUptoFilter}
           onChange={(e) => setNocValidUptoFilter(e.target.value)}
           className={cn(
-            'h-9 sm:h-10 rounded-lg border px-2 sm:px-3 text-xs sm:text-sm bg-card text-foreground max-w-[220px] sm:max-w-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+            'hidden md:block h-10 rounded-lg border px-3 text-sm bg-card text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
             nocValidUptoFilter
               ? 'border-amber-400 ring-1 ring-amber-200 font-medium'
               : 'border-input',
@@ -3252,7 +3533,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
           value={telemValidToFilter}
           onChange={(e) => setTelemValidToFilter(e.target.value)}
           className={cn(
-            'h-9 sm:h-10 rounded-lg border px-2 sm:px-3 text-xs sm:text-sm bg-card text-foreground max-w-[220px] sm:max-w-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+            'hidden md:block h-10 rounded-lg border px-3 text-sm bg-card text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
             telemValidToFilter
               ? 'border-amber-400 ring-1 ring-amber-200 font-medium'
               : 'border-input',
@@ -4499,10 +4780,10 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
             id="cgw-search-all"
             type="search"
             autoComplete="off"
-            placeholder="Search customer, CGWA ID, project, location, NOC number, application number…"
+            placeholder="Search customer, CGWA ID, NOC, location…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 pr-10 h-10 [&::-webkit-search-cancel-button]:appearance-none"
+            className="pl-10 pr-10 h-12 md:h-10 text-base md:text-sm [&::-webkit-search-cancel-button]:appearance-none"
           />
           {searchTerm ? (
             <button
@@ -4514,6 +4795,28 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
           ) : null}
+        </div>
+        <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1 md:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Quick filters">
+          {[
+            { label: 'All', active: !nocValidUptoFilter && !telemValidToFilter, apply: () => { setNocValidUptoFilter(''); setTelemValidToFilter(''); } },
+            { label: 'NOC expired', active: nocValidUptoFilter === 'expired' && !telemValidToFilter, apply: () => { setNocValidUptoFilter('expired'); setTelemValidToFilter(''); } },
+            { label: 'NOC due in 90 days', active: nocValidUptoFilter === 'expiring_90' && !telemValidToFilter, apply: () => { setNocValidUptoFilter('expiring_90'); setTelemValidToFilter(''); } },
+            { label: 'Telemetry due in 90 days', active: telemValidToFilter === 'expiring_90' && !nocValidUptoFilter, apply: () => { setTelemValidToFilter('expiring_90'); setNocValidUptoFilter(''); } },
+            { label: 'Telemetry expired', active: telemValidToFilter === 'expired' && !nocValidUptoFilter, apply: () => { setTelemValidToFilter('expired'); setNocValidUptoFilter(''); } },
+          ].map((chip) => (
+            <button
+              key={chip.label}
+              type="button"
+              aria-pressed={chip.active}
+              onClick={chip.apply}
+              className={cn(
+                'inline-flex h-10 shrink-0 items-center rounded-full border px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                chip.active ? 'border-primary bg-primary text-primary-foreground shadow-soft' : 'border-border bg-card text-foreground hover:bg-muted',
+              )}
+            >
+              {chip.label}
+            </button>
+          ))}
         </div>
         <p className="sr-only" role="status" aria-live="polite">
           {filteredItems.length} {filteredItems.length === 1 ? 'record' : 'records'} found
@@ -4581,8 +4884,26 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
       {/* Inventory grid */}
       {filteredItems.length > 0 ? (
         <Card className="overflow-hidden">
+          <p className="border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold text-muted-foreground md:hidden" aria-hidden="true">
+            {totalGroups} {totalGroups === 1 ? 'customer' : 'customers'} · {filteredItems.length} {filteredItems.length === 1 ? 'record' : 'records'}
+          </p>
+          <div className="space-y-3 bg-muted/30 p-3 md:hidden">
+            {pagedGroups.map((group) => (
+              <CgwMobileGroupCard
+                key={group.key}
+                group={group}
+                canManage={canManage}
+                canDeleteCgw={canDeleteCgw}
+                onOpenGroup={openCustomerPreview}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onOpenNoc={openNocDialog}
+                onOpenMedia={openMediaDialog}
+              />
+            ))}
+          </div>
           <div
-            className="table-scroll overflow-x-auto overflow-y-scroll h-[calc(100vh-240px)] min-h-[400px] max-h-[calc(100vh-240px)] scrollbar-thin"
+            className="table-scroll hidden md:block overflow-x-auto overflow-y-scroll h-[calc(100vh-240px)] min-h-[400px] max-h-[calc(100vh-240px)] scrollbar-thin"
             style={{ scrollbarWidth: 'auto' }}
             tabIndex={0}
             role="region"
@@ -5098,16 +5419,16 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
           </div>
           <div className="border-t border-border bg-muted/50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm">
             <div className="text-muted-foreground" aria-live="polite">
-              Showing customer groups <span className="font-medium text-foreground tabular-nums">{totalGroups === 0 ? 0 : pageStartIndex + 1}</span> to{' '}
+              Showing customers <span className="font-medium text-foreground tabular-nums">{totalGroups === 0 ? 0 : pageStartIndex + 1}</span> to{' '}
               <span className="font-medium text-foreground tabular-nums">{Math.min(pageStartIndex + pageSize, totalGroups)}</span> of{' '}
               <span className="font-medium text-foreground tabular-nums">{totalGroups}</span>
             </div>
-            <div className="flex flex-wrap items-center gap-2" role="navigation" aria-label="Pagination">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex sm:flex-wrap" role="navigation" aria-label="Pagination">
               <select
                 value={pageSize}
                 onChange={(e) => setPageSize(Number(e.target.value))}
                 aria-label="Rows per page"
-                className="h-10 rounded-lg border border-input px-2 text-sm bg-card text-foreground focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                className="order-last col-span-3 h-11 sm:order-none sm:col-span-1 sm:h-10 rounded-lg border border-input px-2 text-sm bg-card text-foreground focus-visible:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
               >
                 {PAGE_SIZE_OPTIONS.map((size) => (
                   <option key={size} value={size}>{size} / page</option>
@@ -5117,7 +5438,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 px-3 text-sm border-input text-foreground hover:bg-muted"
+                className="h-11 sm:h-9 px-3 text-sm border-input text-foreground hover:bg-muted"
                 disabled={safeCurrentPage <= 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               >
@@ -5130,7 +5451,7 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 px-3 text-sm border-input text-foreground hover:bg-muted"
+                className="h-11 sm:h-9 px-3 text-sm border-input text-foreground hover:bg-muted"
                 disabled={safeCurrentPage >= totalPages}
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               >

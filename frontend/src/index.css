@@ -312,3 +312,101 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.35);
 }
+
+/* ---------- Responsive tables: rows become labelled cards on phones ---------- */
+@media (max-width: 767px) {
+  .rt-cards {
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  .rt-cards table {
+    display: block;
+    width: 100%;
+    min-width: 0 !important;
+    border: 0;
+  }
+  .rt-cards thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .rt-cards tbody {
+    display: block;
+  }
+  .rt-cards tbody tr {
+    display: block;
+    margin: 0 0 0.75rem;
+    padding: 0.25rem 0.95rem;
+    border: 1px solid hsl(var(--border)) !important;
+    border-radius: 1rem;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 18px -10px rgb(15 23 42 / 0.16);
+  }
+  :where(.rt-cards tbody tr) {
+    background-color: hsl(var(--card));
+  }
+  .rt-cards tbody td {
+    display: block;
+    position: relative;
+    min-width: 0 !important;
+    max-width: none !important;
+    min-height: 2.25rem;
+    padding: 0.65rem 0 0.65rem 40% !important;
+    border: 0 !important;
+    border-bottom: 1px solid hsl(var(--border) / 0.6) !important;
+    background: transparent !important;
+    text-align: left !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
+  .rt-cards tbody td:last-child {
+    border-bottom: 0 !important;
+  }
+  .rt-cards tbody td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 0;
+    top: 0.75rem;
+    width: 36%;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.3;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+  .rt-cards tbody td[data-label=""],
+  .rt-cards tbody td:not([data-label]),
+  .rt-cards tbody td[colspan] {
+    padding-left: 0 !important;
+  }
+  .rt-cards tbody td[data-label=""]::before,
+  .rt-cards tbody td:not([data-label])::before,
+  .rt-cards tbody td[colspan]::before {
+    display: none;
+  }
+  .rt-cards tbody td[colspan] {
+    text-align: center !important;
+  }
+  .rt-cards tbody td .truncate {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    max-width: none;
+  }
+  /* approve / reject style button groups: big, equal-width touch targets */
+  .rt-cards tbody td[data-label=""] > div.flex {
+    width: 100%;
+  }
+  .rt-cards tbody td[data-label=""] > div.flex > button {
+    flex: 1 1 0;
+    min-height: 2.75rem;
+    justify-content: center;
+  }
+}

@@ -480,7 +480,7 @@ def mount_service_routes(api_router) -> None:
             'history': [sm.row_dict(h) for h in history],
             'product': product, 'amc': amc,
             'report_status': report.status if report else 'Not started',
-            'tabs': rules.tabs_for(svc.service_type),
+            'tabs': rules.tabs_for_types(service.get('service_types') or []),
             'next_statuses': next_statuses,
             'caps': ctx.caps,
             'can_edit': rules.can_edit_service(ctx.caps, service, ctx.employee_id),
@@ -492,7 +492,8 @@ def mount_service_routes(api_router) -> None:
                             'repair_inspection', 'amc')
             },
             'config': {k: cfg[k] for k in ('problem_categories', 'vendor_stages', 'vendor_approval_required',
-                                           'ack_required_types', 'mandatory_evidence')},
+                                           'ack_required_types', 'mandatory_evidence', 'require_lead_for_existing',
+                                           'amc_required')},
         }
 
     @api_router.get('/service-requests/{service_id}')
@@ -518,6 +519,40 @@ def mount_service_routes(api_router) -> None:
         with _guarded(ctx.db):
             sm.assign_technician(ctx.db, svc, ctx.actor, ctx.caps, employee=employee, engineer=engineer,
                                  schedule=body.get('schedule') or {})
+        return build_detail(ctx, svc)
+
+    @api_router.post('/service-requests/{service_id}/site-visit')
+    def complete_service_site_visit(service_id: str, body: Dict[str, Any] = Body(...), ctx: _Ctx = Depends(ctx_dep)):
+        svc = load_service(ctx, service_id)
+        need(ctx, 'coordinate', 'Only a service coordinator can record the site visit')
+        with _guarded(ctx.db):
+            sm.complete_site_visit(ctx.db, svc, body, ctx.actor, ctx.caps)
+        return build_detail(ctx, svc)
+
+    @api_router.post('/service-requests/{service_id}/field-details')
+    def save_service_field_details(service_id: str, body: Dict[str, Any] = Body(...), ctx: _Ctx = Depends(ctx_dep)):
+        svc = load_service(ctx, service_id)
+        need(ctx, 'coordinate', 'Only a service coordinator can record service and product details')
+        db = ctx.db
+        cfg = sm.get_config(db)
+        with _guarded(db):
+            product = None
+            if body.get('product_id'):
+                product = db.query(sm.ServiceProductModel).filter(sm.ServiceProductModel.id == body['product_id']).first()
+                if not product:
+                    raise ServiceError('The selected product was not found', 404)
+            lead = None
+            if body.get('lead_id'):
+                customer = find_customer(db, svc.customer_id)
+                lead = resolve_lead(db, body.get('lead_id'), customer)
+            amc = None
+            if body.get('amc_id'):
+                amc = db.query(sm.ServiceAmcModel).filter(sm.ServiceAmcModel.id == body['amc_id']).first()
+            elif body.get('service_type') == rules.ST_AMC and product is not None:
+                amc = sm.active_amc_for(db, svc.customer_id, product.id)
+            if amc is not None:
+                body = {**body, 'amc_id': amc.id}
+            sm.record_field_details(db, svc, body, ctx.actor, ctx.caps, product=product, lead=lead, amc=amc, config=cfg)
         return build_detail(ctx, svc)
 
     @api_router.post('/service-requests/{service_id}/status')

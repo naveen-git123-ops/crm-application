@@ -122,9 +122,35 @@ def row_dict(obj) -> Dict[str, Any]:
     return out
 
 
+def classification_of(svc) -> Dict[str, List[str]]:
+    """Every service type and product type on the request. Older rows have just the single columns."""
+    doc = _loads(getattr(svc, 'data_json', None), {})
+    raw = doc.get('classification') if isinstance(doc.get('classification'), dict) else {}
+
+    def labels(key: str, single: Optional[str]) -> List[str]:
+        out: List[str] = []
+        for item in raw.get(key) or []:
+            text = str(item or '').strip()
+            if text and text not in out:
+                out.append(text)
+        if not out and _s(single):
+            out.append(_s(single))
+        return out
+
+    return {
+        'service_types': labels('service_types', getattr(svc, 'service_type', None)),
+        'product_types': labels('product_types', getattr(svc, 'product_category', None)),
+    }
+
+
 def service_dict(svc) -> Dict[str, Any]:
     out = row_dict(svc)
-    out['workflow'] = svc.workflow or rules.workflow_for(svc.service_type)
+    chosen = classification_of(svc)
+    out['service_types'] = chosen['service_types']
+    out['product_types'] = chosen['product_types']
+    workflows = rules.workflows_for_types(chosen['service_types'])
+    out['workflows'] = workflows
+    out['workflow'] = (workflows[0] if workflows else None) or svc.workflow or rules.workflow_for(svc.service_type)
     return out
 
 
@@ -732,6 +758,27 @@ def checklist_templates(cfg: Dict[str, Any], product_category: Optional[str]) ->
     return {key: rules.checklist_items(cfg, key, product_category) for key in cfg['checklists']}
 
 
+def _intake_doc(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Call outcome stored on the request until a technician classifies the job."""
+    required = rules.site_visit_answer(data.get('site_visit_required'))
+    ack_in = data.get('site_visit_acknowledgement') if isinstance(data.get('site_visit_acknowledgement'), dict) else {}
+    doc: Dict[str, Any] = {
+        'site_visit_required': required,
+        'site_visit_done': False,
+        'site_visit_done_at': None,
+        'site_visit_done_by': None,
+        'site_visit_findings': None,
+        'acknowledgement': None,
+    }
+    if required:
+        doc['acknowledgement'] = {
+            'acknowledged': bool(ack_in.get('acknowledged')),
+            'name': _s(ack_in.get('name')) or None,
+            'notes': _s(ack_in.get('notes')) or None,
+        }
+    return doc
+
+
 def _seed_data(workflow: Optional[str], product_category: Optional[str], cfg: Dict[str, Any]) -> Dict[str, Any]:
     def rows(key):
         return _checklist_rows(rules.checklist_items(cfg, key, product_category))
@@ -817,17 +864,37 @@ def create_service(db: Session, payload: Dict[str, Any], actor: Actor, *, custom
             raise ServiceError('The selected lead belongs to a different customer', 422)
         data['lead_id'] = lead['id']
 
+    service_types = rules.selected_service_types(data)
+    product_types = rules.selected_product_types(data)
+    if service_types and not _s(data.get('service_type')):
+        data['service_type'] = service_types[0]
+    if product_types and not _s(data.get('product_category')):
+        data['product_category'] = product_types[0]
     errors = rules.validate_create(data, cfg, draft=draft)
     if errors:
         raise ServiceError(errors, 422)
     stype = _s(data.get('service_type'))
-    workflow = rules.workflow_for(stype)
-    if workflow == rules.WF_AMC and not draft:
+    workflows = rules.workflows_for_types(service_types or ([stype] if stype else []))
+    workflow = workflows[0] if workflows else None
+    if rules.WF_AMC in workflows and not draft:
         _check_amc(amc, customer['id'], data.get('product_id'), stype)
-    if workflow == rules.WF_INSTALL and _s(data.get('serial_number')) and not draft:
+    if rules.WF_INSTALL in workflows and _s(data.get('serial_number')) and not draft:
         _assert_serial_free(db, data['serial_number'])
 
     svc_status = 'Draft' if draft else 'New'
+    seed: Dict[str, Any] = {}
+    if workflows:
+        for item_workflow in workflows:
+            seed.update(_seed_data(item_workflow, data.get('product_category'), cfg))
+    else:
+        seed = _seed_data(None, data.get('product_category'), cfg)
+    if not stype or 'site_visit_required' in data:
+        seed['intake'] = _intake_doc(data)
+    if service_types or product_types:
+        seed['classification'] = {
+            'service_types': service_types or ([stype] if stype else []),
+            'product_types': product_types,
+        }
     for attempt in range(5):
         svc = ServiceRequestModel(
             service_code=next_service_code(db), client_request_id=client_id,
@@ -840,7 +907,7 @@ def create_service(db: Session, payload: Dict[str, Any], actor: Actor, *, custom
             quantity=_qty(data.get('quantity')),
             request_date=_today().isoformat(), status=svc_status,
             created_by_id=actor.id, created_by_name=actor.name,
-            data_json=_dumps(_seed_data(workflow, data.get('product_category'), cfg)),
+            data_json=_dumps(seed),
         )
         for field in ('customer_name', 'company_name', 'contact_person', 'mobile', 'email', 'billing_address',
                       'site_address', 'city', 'state', 'pincode', 'customer_notes', 'product_category',
@@ -867,7 +934,7 @@ def create_service(db: Session, payload: Dict[str, Any], actor: Actor, *, custom
             if attempt == 4:
                 raise ServiceError('Could not allocate a service ID, please retry', 409)
     add_history(db, svc.id, 'created', actor, to_status=svc_status,
-                detail=f'{svc.customer_type} customer - {svc.service_type or "draft"}')
+                detail=f'{svc.customer_type} customer - {svc.service_type or ("draft" if draft else "call logged")}')
     if not draft:
         notify(db, svc, 'created', f'New service request {svc.service_code} for {svc.customer_name}',
                coordinators=True)
@@ -1068,10 +1135,173 @@ def _after_completion(db: Session, svc, ctx: Dict[str, Any]) -> None:
                 amc.next_planned_date = _s(block.get('next_service_date'))[:10]
 
 
+def complete_site_visit(db: Session, svc, payload: Dict[str, Any], actor: Actor, caps: Dict[str, bool]) -> Any:
+    """Record that the site visit happened, so the job can be classified."""
+    if not caps.get('coordinate'):
+        raise ServiceError('Only a service coordinator can record the site visit', 403)
+    guard_edit(svc, actor, caps, _s(payload.get('reason')))
+    if svc.status == 'Draft':
+        raise ServiceError('Submit the request before recording the site visit', 409)
+    doc = _loads(svc.data_json, {})
+    intake = doc.get('intake') if isinstance(doc.get('intake'), dict) else {}
+    if intake.get('site_visit_required') is not True:
+        raise ServiceError('This request does not need a site visit', 409)
+    ack_files = db.query(ServiceAttachmentModel).filter(
+        ServiceAttachmentModel.service_id == svc.id,
+        ServiceAttachmentModel.category == 'Site Visit Acknowledgement',
+    ).count()
+    if ack_files < 1:
+        raise ServiceError('Upload the site visit acknowledgement before recording the visit', 409)
+    intake['site_visit_done'] = True
+    intake['site_visit_done_at'] = _now().isoformat(timespec='seconds')
+    intake['site_visit_done_by'] = actor.name
+    findings = _s(payload.get('findings')) or None
+    intake['site_visit_findings'] = findings
+    doc['intake'] = intake
+    svc.data_json = _dumps(doc)
+    add_history(db, svc.id, 'site_visit', actor, detail=findings or 'Site visit completed')
+    db.commit()
+    db.refresh(svc)
+    return svc
+
+
+_FIELD_COLUMNS = (
+    'product_category', 'product_name', 'product_model', 'serial_number', 'problem_category',
+    'problem_description', 'planned_date', 'installation_requirements', 'expected_visit_date',
+    'expected_completion', 'reported_by', 'reported_date', 'priority',
+)
+
+
+def record_field_details(db: Session, svc, payload: Dict[str, Any], actor: Actor, caps: Dict[str, bool], *,
+                         product=None, lead: Optional[Dict[str, Any]] = None, amc=None,
+                         config: Optional[Dict[str, Any]] = None) -> Any:
+    """Service type, product and the rest of the job, filled once the visit (if any) is done."""
+    if not caps.get('coordinate'):
+        raise ServiceError('Only a service coordinator can record service and product details', 403)
+    guard_edit(svc, actor, caps, _s(payload.get('reason')))
+    if svc.status == 'Draft':
+        raise ServiceError('Submit the request before recording service and product details', 409)
+    cfg = rules.merge_config(config if config is not None else get_config(db))
+    doc = _loads(svc.data_json, {})
+    intake = doc.get('intake') if isinstance(doc.get('intake'), dict) else None
+    if isinstance(intake, dict):
+        if intake.get('site_visit_required') is None:
+            raise ServiceError('Say whether a site visit is required before recording service and product details', 409)
+        if intake.get('site_visit_required') and not intake.get('site_visit_done'):
+            raise ServiceError('Complete the site visit before recording service and product details', 409)
+
+    data: Dict[str, Any] = {
+        'customer_type': svc.customer_type,
+        'customer_id': svc.customer_id,
+        'contact_person': svc.contact_person,
+        'mobile': svc.mobile,
+        'email': svc.email,
+        'site_address': svc.site_address,
+        'city': svc.city,
+        'state': svc.state,
+        'pincode': svc.pincode,
+        'priority': svc.priority,
+        'problem_description': svc.problem_description,
+        'problem_category': svc.problem_category,
+        'product_category': svc.product_category,
+        'product_name': svc.product_name,
+        'product_model': svc.product_model,
+        'serial_number': svc.serial_number,
+        'quantity': svc.quantity,
+        'planned_date': svc.planned_date,
+        'expected_visit_date': svc.expected_visit_date,
+        'expected_completion': svc.expected_completion,
+        'lead_id': svc.lead_id,
+        'product_id': svc.product_id,
+        'amc_id': svc.amc_id,
+        'installation_requirements': svc.installation_requirements,
+        'reported_by': svc.reported_by,
+        'reported_date': svc.reported_date,
+        'customer_notes': svc.customer_notes,
+    }
+    for key, value in payload.items():
+        if key != 'reason':
+            data[key] = value
+    if product is not None:
+        if product.customer_id != svc.customer_id:
+            raise ServiceError('The selected product belongs to a different customer', 422)
+        data['product_id'] = product.id
+        for field, source in (('product_category', 'category'), ('product_name', 'name'),
+                              ('product_model', 'model'), ('serial_number', 'serial_number')):
+            if not _s(data.get(field)):
+                data[field] = getattr(product, source) or ''
+    if lead is not None:
+        if lead.get('customer_id') and lead['customer_id'] != svc.customer_id:
+            raise ServiceError('The selected lead belongs to a different customer', 422)
+        data['lead_id'] = lead['id']
+    service_types = rules.selected_service_types(data)
+    product_types = rules.selected_product_types(data)
+    if service_types:
+        data['service_type'] = service_types[0]
+    if isinstance(data.get('product_types'), list) and product_types:
+        data['product_category'] = product_types[0]
+
+    errors = rules.validate_create(data, cfg, draft=False)
+    if errors:
+        raise ServiceError(errors, 422)
+    stype = _s(data.get('service_type'))
+    workflows = rules.workflows_for_types(service_types or ([stype] if stype else []))
+    workflow = workflows[0] if workflows else None
+    if rules.WF_AMC in workflows:
+        _check_amc(amc, svc.customer_id, data.get('product_id'), stype)
+    if rules.WF_INSTALL in workflows and _s(data.get('serial_number')):
+        _assert_serial_free(db, data['serial_number'], product.id if product is not None else svc.product_id)
+
+    previous_type = svc.service_type
+    previous_workflows = rules.workflows_for_types(classification_of(svc)['service_types'])
+    svc.service_type = stype
+    svc.workflow = workflow
+    svc.lead_id = _s(data.get('lead_id')) or None
+    if lead is not None:
+        svc.lead_label = (f"{lead.get('company') or ''} - {lead.get('status') or ''}".strip(' -') or None)
+    svc.product_id = _s(data.get('product_id')) or None
+    svc.amc_id = amc.id if amc is not None and rules.WF_AMC in workflows else None
+    svc.quantity = _qty(data.get('quantity'))
+    for field in _FIELD_COLUMNS:
+        value = data.get(field)
+        if field == 'serial_number':
+            value = rules.normalize_serial(value) or None
+        elif field == 'priority':
+            value = _s(value) or 'Medium'
+        else:
+            value = _s(value) or None
+        setattr(svc, field, value)
+    if rules.WF_REPAIR in workflows and not svc.reported_date:
+        svc.reported_date = svc.request_date
+    classification = {
+        'service_types': service_types or ([stype] if stype else []),
+        'product_types': product_types,
+    }
+    if not previous_type or workflows != previous_workflows:
+        seeded: Dict[str, Any] = {}
+        for item_workflow in workflows:
+            seeded.update(_seed_data(item_workflow, _s(data.get('product_category')) or None, cfg))
+        if isinstance(intake, dict):
+            seeded['intake'] = intake
+        seeded['classification'] = classification
+        svc.data_json = _dumps(seeded)
+    else:
+        kept = _loads(svc.data_json, {})
+        kept['classification'] = classification
+        svc.data_json = _dumps(kept)
+    add_history(db, svc.id, 'field_details', actor,
+                detail=f'{", ".join(classification["service_types"])} - {", ".join(classification["product_types"]) or svc.product_name or "product not named"}')
+    db.commit()
+    db.refresh(svc)
+    return svc
+
+
 def assign_technician(db: Session, svc, actor: Actor, caps: Dict[str, bool], *, employee: Dict[str, Any],
                       engineer: Optional[Dict[str, Any]] = None, schedule: Optional[Dict[str, Any]] = None) -> Any:
     if not caps.get('coordinate'):
         raise ServiceError('Only a service coordinator can assign technicians', 403)
+    if not _s(svc.service_type):
+        raise ServiceError('Record the service type and product details before assigning a technician', 409)
     if svc.status in rules.TERMINAL_STATUSES:
         raise ServiceError(f'A {svc.status.lower()} request cannot be reassigned', 409)
     if not employee or not employee.get('employee_id'):
@@ -1106,7 +1336,12 @@ def assign_technician(db: Session, svc, actor: Actor, caps: Dict[str, bool], *, 
 
 def update_section(db: Session, svc, section: str, value: Any, actor: Actor, caps: Dict[str, bool],
                    reason: str = '') -> Dict[str, Any]:
-    allowed = rules.SECTIONS_BY_WORKFLOW.get(svc.workflow or '', ())
+    chosen = classification_of(svc)
+    allowed: List[str] = []
+    for item_workflow in rules.workflows_for_types(chosen['service_types']) or [svc.workflow or '']:
+        for name in rules.SECTIONS_BY_WORKFLOW.get(item_workflow, ()):
+            if name not in allowed:
+                allowed.append(name)
     if section not in allowed:
         raise ServiceError(f'"{section}" does not apply to {svc.service_type or "this request"}', 400)
     locked = guard_edit(svc, actor, caps, reason)
@@ -1872,11 +2107,13 @@ def list_services(db: Session, caps: Dict[str, bool], employee_id: Optional[str]
         query = query.filter(M.status.in_(rules.CARD_STATUSES[card]))
     if status:
         query = query.filter(M.status == status)
-    for column, value in ((M.customer_type, customer_type), (M.service_type, service_type), (M.priority, priority),
+    for column, value in ((M.customer_type, customer_type), (M.priority, priority),
                           (M.assigned_employee_id, technician), (M.lead_id, lead_id),
                           (M.customer_id, customer_id), (M.product_id, product_id)):
         if value:
             query = query.filter(column == value)
+    if service_type:
+        query = query.filter(or_(M.service_type == service_type, M.data_json.ilike(f'%"{service_type}"%')))
     if date_from:
         query = query.filter(M.request_date >= date_from)
     if date_to:
@@ -1899,6 +2136,11 @@ def list_services(db: Session, caps: Dict[str, bool], employee_id: Optional[str]
             'id', 'service_code', 'request_date', 'customer_name', 'customer_type', 'product_category',
             'product_name', 'serial_number', 'service_type', 'priority', 'assigned_employee_id', 'assigned_name',
             'status', 'expected_completion', 'lead_id', 'lead_label', 'mobile', 'workflow')}
+        chosen = classification_of(svc)
+        if chosen['service_types']:
+            item['service_type'] = ', '.join(chosen['service_types'])
+        if chosen['product_types']:
+            item['product_category'] = ', '.join(chosen['product_types'])
         item['overdue'] = is_overdue(svc)
         items.append(item)
     return {'items': items, 'total': total, 'page': page, 'page_size': page_size}

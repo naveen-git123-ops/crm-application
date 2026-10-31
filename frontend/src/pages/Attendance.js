@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ResponsiveTable } from '@/components/ui/responsive-table';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import {
@@ -196,6 +197,100 @@ const deriveDayCellModel = (record, isFutureDate, isSunday, isHoliday) => {
   circleClass = 'bg-rose-500 text-white shadow-sm';
   return { letter, circleClass, statusText };
 };
+
+/** Phone version of one employee's month grid row: stats + a 7-column calendar. */
+function AttendanceMobileGridCard({ empData, gridMonth, holidays, lateCount, dept }) {
+  const [year, month] = gridMonth.split('-').map(Number);
+  const monthStart = new Date(year, month - 1, 1);
+  const days = eachDayOfInterval({ start: monthStart, end: endOfMonth(monthStart) });
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let totalWorkingDays = 0;
+  let presentDays = 0;
+  let halfDayCount = 0;
+  let tourCount = 0;
+
+  const cells = days.map((day) => {
+    const dateStr = format(day, 'yyyy-MM-dd');
+    const dayDate = new Date(day);
+    dayDate.setHours(0, 0, 0, 0);
+    const isFutureDate = dayDate > today;
+    const isSunday = day.getDay() === 0;
+    const isHoliday = holidays.includes(dateStr);
+    const record = empData.records[dateStr];
+    const model = deriveDayCellModel(record, isFutureDate, isSunday, isHoliday);
+    if (!isFutureDate && !isSunday && !isHoliday) {
+      totalWorkingDays += 1;
+      const credit = presentDayCredit(record);
+      if (credit > 0) presentDays += credit;
+      if (record?.status === 'Half Day') halfDayCount += 1;
+      if (record?.is_tour === 1 && record?.tour_approval_status === 'approved') tourCount += 1;
+    }
+    return { day, dateStr, model, isToday: dayDate.getTime() === today.getTime() };
+  });
+
+  const stats = [
+    { label: 'Present', value: `${formatDayCount(presentDays)}/${totalWorkingDays}`, tone: 'text-foreground' },
+    { label: 'Half day', value: halfDayCount, tone: 'text-teal-600' },
+    { label: 'Tours', value: tourCount, tone: 'text-fuchsia-600' },
+    { label: 'Late', value: lateCount, tone: 'text-amber-600' },
+  ];
+
+  return (
+    <article
+      aria-label={`Attendance for ${empData.employee_name}`}
+      className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft"
+    >
+      <div className="flex items-center gap-3 p-4 pb-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+          {nameInitials(empData.employee_name)}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-foreground">{empData.employee_name}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {empData.employee_id}
+            {dept && dept !== '—' ? ` · ${dept}` : ''}
+          </p>
+        </div>
+      </div>
+      <dl className="grid grid-cols-4 divide-x divide-border border-y border-border bg-muted/40">
+        {stats.map((s) => (
+          <div key={s.label} className="px-1 py-2.5 text-center">
+            <dd className={`text-base font-bold tabular-nums ${s.tone}`}>{s.value}</dd>
+            <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{s.label}</dt>
+          </div>
+        ))}
+      </dl>
+      <div className="p-3">
+        <div className="mb-1 grid grid-cols-7 text-center text-[10px] font-bold uppercase text-muted-foreground" aria-hidden="true">
+          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+            <span key={i}>{d}</span>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-y-1.5">
+          {Array.from({ length: monthStart.getDay() }).map((_, i) => (
+            <span key={`pad-${i}`} />
+          ))}
+          {cells.map(({ day, dateStr, model, isToday }) => (
+            <div
+              key={dateStr}
+              role="img"
+              aria-label={`${format(day, 'EEEE d MMMM')}: ${model.statusText}`}
+              className="flex flex-col items-center gap-0.5"
+            >
+              <span className={`text-[10px] tabular-nums ${isToday ? 'font-bold text-primary' : 'text-muted-foreground'}`}>{getDate(day)}</span>
+              <span
+                className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold leading-none ${model.circleClass} ${isToday ? 'ring-2 ring-primary ring-offset-1' : ''}`}
+              >
+                {model.letter}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </article>
+  );
+}
 
 export const Attendance = () => {
   const { user, checkTodayWorkLog } = useAuth();
@@ -1212,6 +1307,13 @@ export const Attendance = () => {
     if (gridPage > gridPageCount) setGridPage(gridPageCount);
   }, [gridPage, gridPageCount]);
 
+  // keep the active tab visible in the horizontally scrolling tab strip (phones)
+  useEffect(() => {
+    document
+      .querySelector('[data-tab-active="true"]')
+      ?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }, [activeTab]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1242,8 +1344,12 @@ export const Attendance = () => {
 
       {/* Tabs: admin/HR/accountant full set; employees get punch + personal grid + summary */}
       {showAttendanceTabs && (
-        <Card className="p-1.5 sm:p-2">
-          <div className="flex gap-1 flex-wrap items-center [&_button]:min-h-[44px]">
+        <Card className="sticky top-0 z-20 p-1.5 shadow-soft md:static sm:p-2">
+          <div
+            role="tablist"
+            aria-label="Attendance sections"
+            className="flex snap-x items-center gap-1 overflow-x-auto md:flex-wrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&_button]:min-h-[44px] [&_button]:shrink-0 [&_button]:snap-start [&_button]:whitespace-nowrap"
+          >
             {[
               { id: 'punch', label: 'Mark Attendance', icon: Clock, show: true },
               {
@@ -1268,16 +1374,19 @@ export const Attendance = () => {
                 return (
                   <Button
                     key={tab.id}
+                    role="tab"
+                    aria-selected={on}
+                    data-tab-active={on ? 'true' : undefined}
                     variant="ghost"
                     size="sm"
                     className={`rounded-xl gap-2 px-3.5 sm:px-4 transition-colors ${
                       on
-                        ? 'bg-indigo-50 text-indigo-800 shadow-sm'
+                        ? 'bg-primary/10 text-primary shadow-sm'
                         : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                     }`}
                     onClick={() => setActiveTab(tab.id)}
                   >
-                    <Icon className={`h-4 w-4 shrink-0 ${on ? 'text-indigo-600' : 'text-muted-foreground'}`} />
+                    <Icon className={`h-4 w-4 shrink-0 ${on ? 'text-primary' : 'text-muted-foreground'}`} />
                     <span className="font-medium">{tab.label}</span>
                   </Button>
                 );
@@ -1296,7 +1405,7 @@ export const Attendance = () => {
           </div> */}
 
           <div className="mb-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl border border-border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground sm:gap-2 sm:px-3 sm:py-2 sm:text-sm">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1 md:flex-wrap md:overflow-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>span]:shrink-0 [&>span]:whitespace-nowrap">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200/80">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-bold text-white">
                 P
@@ -1347,14 +1456,14 @@ export const Attendance = () => {
             </span>
             </div>
 
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:ml-auto">
-              <div className="inline-flex rounded-lg bg-muted p-1">
+            <div className="flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:shrink-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+              <div className="grid grid-cols-2 rounded-lg bg-muted p-1 sm:inline-flex">
                 <Button
                   type="button"
                   size="sm"
                   variant="ghost"
                   onClick={() => setGridViewMode('today')}
-                  className={`h-8 rounded-md px-3 text-xs font-semibold sm:h-9 sm:px-4 sm:text-sm ${
+                  className={`h-10 rounded-md px-3 text-sm font-semibold sm:h-9 sm:px-4 ${
                     gridViewMode === 'today'
                       ? 'bg-card text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
@@ -1367,7 +1476,7 @@ export const Attendance = () => {
                   size="sm"
                   variant="ghost"
                   onClick={() => setGridViewMode('month')}
-                  className={`h-8 rounded-md px-3 text-xs font-semibold sm:h-9 sm:px-4 sm:text-sm ${
+                  className={`h-10 rounded-md px-3 text-sm font-semibold sm:h-9 sm:px-4 ${
                     gridViewMode === 'month'
                       ? 'bg-card text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
@@ -1379,12 +1488,12 @@ export const Attendance = () => {
               {gridViewMode === 'month' && (
                 <div className="flex items-center gap-1.5">
                   <Calendar className="hidden h-4 w-4 shrink-0 text-primary sm:block" aria-hidden />
-                  <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
+                  <div className="flex w-full items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 sm:w-auto">
                     <Button
                       type="button"
                       size="icon"
                       variant="ghost"
-                      className="h-8 w-8 shrink-0"
+                      className="h-10 w-10 shrink-0 sm:h-8 sm:w-8"
                       onClick={() => setGridMonth(format(subMonths(new Date(`${gridMonth}-01`), 1), 'yyyy-MM'))}
                       aria-label="Previous month"
                     >
@@ -1394,13 +1503,13 @@ export const Attendance = () => {
                       type="month"
                       value={gridMonth}
                       onChange={(e) => setGridMonth(e.target.value)}
-                      className="h-8 min-w-[9.5rem] cursor-pointer border-0 bg-transparent px-1 text-center text-xs font-semibold text-foreground outline-none sm:min-w-[11rem] sm:text-sm"
+                      className="h-10 min-w-0 flex-1 cursor-pointer border-0 bg-transparent px-1 text-center text-sm font-semibold text-foreground outline-none sm:h-8 sm:min-w-[11rem] sm:flex-none"
                     />
                     <Button
                       type="button"
                       size="icon"
                       variant="ghost"
-                      className="h-8 w-8 shrink-0"
+                      className="h-10 w-10 shrink-0 sm:h-8 sm:w-8"
                       onClick={() => setGridMonth(format(addMonths(new Date(`${gridMonth}-01`), 1), 'yyyy-MM'))}
                       aria-label="Next month"
                     >
@@ -1570,7 +1679,25 @@ export const Attendance = () => {
             </div>
           ) : (
             <>
-            <div className="overflow-x-auto rounded-2xl border border-border bg-muted/40 shadow-inner">
+            <div className="space-y-3 md:hidden">
+              {gridRowsSorted.length === 0 ? (
+                <p className="rounded-2xl border border-border bg-muted/40 p-8 text-center text-sm text-muted-foreground">No attendance data yet for this month.</p>
+              ) : filteredGridRowsForTable.length === 0 ? (
+                <p className="rounded-2xl border border-border bg-muted/40 p-8 text-center text-sm text-muted-foreground">No employees match your search or department filter.</p>
+              ) : (
+                pagedGridRows.map((empData) => (
+                  <AttendanceMobileGridCard
+                    key={empData.employee_id}
+                    empData={empData}
+                    gridMonth={gridMonth}
+                    holidays={holidays}
+                    lateCount={lateLogins[empData.employee_id]?.count || 0}
+                    dept={getDeptForGridRow(empData.employee_id)}
+                  />
+                ))
+              )}
+            </div>
+            <div className="hidden overflow-x-auto rounded-2xl border border-border bg-muted/40 shadow-inner md:block">
               <table className="w-full border-collapse text-xs sm:text-sm">
                 <thead>
                   <tr className="border-b border-border/80">
@@ -1753,7 +1880,7 @@ export const Attendance = () => {
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-9 rounded-xl border-border"
+                    className="h-11 w-11 rounded-xl border-border sm:h-9 sm:w-auto"
                     onClick={() => setGridPage((p) => Math.max(1, p - 1))}
                     disabled={gridPage <= 1}
                     aria-label="Previous page"
@@ -1764,7 +1891,7 @@ export const Attendance = () => {
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-9 rounded-xl border-border"
+                    className="h-11 w-11 rounded-xl border-border sm:h-9 sm:w-auto"
                     onClick={() => setGridPage((p) => Math.min(gridPageCount, p + 1))}
                     disabled={gridPage >= gridPageCount}
                     aria-label="Next page"
@@ -1781,7 +1908,7 @@ export const Attendance = () => {
 
       {/* Regularize Attendance - Admin only */}
       {canManageAttendanceFull && activeTab === 'regularize' && (
-        <Card className="p-5 sm:p-6">
+        <Card className="p-4 sm:p-6">
           <div className="mb-6">
             <h3 className="text-lg font-semibold text-foreground">Regularize Attendance</h3>
             <p className="text-sm text-muted-foreground mt-1">Mark an employee as present for a specific date with standard office hours (9:15 AM - 7:00 PM)</p>
@@ -2017,8 +2144,8 @@ export const Attendance = () => {
 
       {/* Tour Requests - Admin/Manager */}
       {canApproveTour && activeTab === 'tour' && (
-        <Card className="p-5 sm:p-6 overflow-hidden">
-          <div className="mb-4 flex items-center justify-between">
+        <Card className="p-4 sm:p-6 overflow-hidden">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between [&>button]:h-10 [&>button]:self-start sm:[&>button]:h-9 sm:[&>button]:self-auto">
             <div>
               <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                 <Briefcase className="h-5 w-5 text-amber-600" />
@@ -2039,7 +2166,7 @@ export const Attendance = () => {
           </div>
 
           <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2 sm:flex [&_button]:h-11 sm:[&_button]:h-9">
               {['Pending', 'Approved', 'Rejected'].map((status) => (
                 <Button
                   key={status}
@@ -2052,11 +2179,11 @@ export const Attendance = () => {
                 </Button>
               ))}
             </div>
-            <div className="sm:ml-auto flex items-center gap-2">
+            <div className="flex flex-col gap-2 sm:ml-auto sm:flex-row sm:items-center">
               <select
                 value={tourEmployeeFilter}
                 onChange={(e) => setTourEmployeeFilter(e.target.value)}
-                className="h-9 rounded-lg border border-input px-3 text-sm text-foreground bg-white min-w-[220px]"
+                className="h-11 w-full rounded-lg border border-input bg-white px-3 text-sm text-foreground sm:h-9 sm:w-auto sm:min-w-[220px]"
               >
                 <option value="">All employees</option>
                 {Array.from(new Set((tourPending || []).map((r) => r.employee_name).filter(Boolean))).sort().map((name) => (
@@ -2066,7 +2193,7 @@ export const Attendance = () => {
               {tourStatusFilter === 'Pending' && (
                 <Button
                   size="sm"
-                  className="bg-green-600 hover:bg-green-700 text-white"
+                  className="h-11 w-full bg-green-600 text-white hover:bg-green-700 sm:h-9 sm:w-auto"
                   onClick={handleApproveAllTours}
                   disabled={tourLoading}
                 >
@@ -2083,7 +2210,7 @@ export const Attendance = () => {
           ) : tourPending.filter((row) => !tourEmployeeFilter || row.employee_name === tourEmployeeFilter).length === 0 ? (
             <p className="text-center py-8 text-muted-foreground">No {tourStatusFilter.toLowerCase()} tour requests.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <ResponsiveTable>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted">
@@ -2160,15 +2287,15 @@ export const Attendance = () => {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ResponsiveTable>
           )}
         </Card>
       )}
 
       {/* Late Punch-In Requests - Admin / HR */}
       {canManageAttendanceFull && activeTab === 'latepunchin' && (
-        <Card className="p-5 sm:p-6 overflow-hidden">
-          <div className="mb-4 flex items-center justify-between">
+        <Card className="p-4 sm:p-6 overflow-hidden">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between [&>button]:h-10 [&>button]:self-start sm:[&>button]:h-9 sm:[&>button]:self-auto">
             <div>
               <h3 className="text-lg font-semibold text-foreground">Late Punch-In Approval Requests</h3>
               <p className="text-sm text-muted-foreground">
@@ -2186,7 +2313,7 @@ export const Attendance = () => {
           </div>
 
           <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2 sm:flex [&_button]:h-11 sm:[&_button]:h-9">
               {['Pending', 'Approved', 'Rejected'].map((status) => (
                 <Button
                   key={status}
@@ -2200,11 +2327,11 @@ export const Attendance = () => {
               ))}
             </div>
             <div className="sm:ml-auto">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <select
                   value={latePunchInEmployeeFilter}
                   onChange={(e) => setLatePunchInEmployeeFilter(e.target.value)}
-                  className="h-9 rounded-lg border border-input px-3 text-sm text-foreground bg-white min-w-[220px]"
+                  className="h-11 w-full rounded-lg border border-input bg-white px-3 text-sm text-foreground sm:h-9 sm:w-auto sm:min-w-[220px]"
                 >
                   <option value="">All employees</option>
                   {Array.from(new Set((latePunchInRequests || []).map((r) => r.employee_name).filter(Boolean))).sort().map((name) => (
@@ -2214,7 +2341,7 @@ export const Attendance = () => {
                 {latePunchInStatusFilter === 'Pending' && (
                   <Button
                     size="sm"
-                    className="bg-green-600 hover:bg-green-700 text-white"
+                    className="h-11 w-full bg-green-600 text-white hover:bg-green-700 sm:h-9 sm:w-auto"
                     onClick={handleApproveAllLatePunchIn}
                     disabled={latePunchInLoading}
                   >
@@ -2232,7 +2359,7 @@ export const Attendance = () => {
           ) : latePunchInRequests.filter((req) => !latePunchInEmployeeFilter || req.employee_name === latePunchInEmployeeFilter).length === 0 ? (
             <p className="text-center py-8 text-muted-foreground">No {latePunchInStatusFilter.toLowerCase()} late punch-in requests.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <ResponsiveTable>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted">
@@ -2314,15 +2441,15 @@ export const Attendance = () => {
                   })}
                 </tbody>
               </table>
-            </div>
+            </ResponsiveTable>
           )}
         </Card>
       )}
 
       {/* Late Punch-Out Requests - Admin / HR */}
       {canManageAttendanceFull && activeTab === 'latepunchout' && (
-        <Card className="p-5 sm:p-6 overflow-hidden">
-          <div className="mb-4 flex items-center justify-between">
+        <Card className="p-4 sm:p-6 overflow-hidden">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between [&>button]:h-10 [&>button]:self-start sm:[&>button]:h-9 sm:[&>button]:self-auto">
             <div>
               <h3 className="text-lg font-semibold text-foreground">Late Punch-Out Approval Requests</h3>
               <p className="text-sm text-muted-foreground">
@@ -2340,7 +2467,7 @@ export const Attendance = () => {
           </div>
 
           <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2 sm:flex [&_button]:h-11 sm:[&_button]:h-9">
               {['Pending', 'Approved', 'Rejected'].map((status) => (
                 <Button
                   key={status}
@@ -2354,11 +2481,11 @@ export const Attendance = () => {
               ))}
             </div>
             <div className="sm:ml-auto">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <select
                   value={latePunchOutEmployeeFilter}
                   onChange={(e) => setLatePunchOutEmployeeFilter(e.target.value)}
-                  className="h-9 rounded-lg border border-input px-3 text-sm text-foreground bg-white min-w-[220px]"
+                  className="h-11 w-full rounded-lg border border-input bg-white px-3 text-sm text-foreground sm:h-9 sm:w-auto sm:min-w-[220px]"
                 >
                   <option value="">All employees</option>
                   {Array.from(new Set((latePunchOutRequests || []).map((r) => r.employee_name).filter(Boolean))).sort().map((name) => (
@@ -2368,7 +2495,7 @@ export const Attendance = () => {
                 {latePunchOutStatusFilter === 'Pending' && (
                   <Button
                     size="sm"
-                    className="bg-green-600 hover:bg-green-700 text-white"
+                    className="h-11 w-full bg-green-600 text-white hover:bg-green-700 sm:h-9 sm:w-auto"
                     onClick={handleApproveAllLatePunchOut}
                     disabled={latePunchOutLoading}
                   >
@@ -2386,7 +2513,7 @@ export const Attendance = () => {
           ) : latePunchOutRequests.filter((req) => !latePunchOutEmployeeFilter || req.employee_name === latePunchOutEmployeeFilter).length === 0 ? (
             <p className="text-center py-8 text-muted-foreground">No {latePunchOutStatusFilter.toLowerCase()} late punch-out requests.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <ResponsiveTable>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted">
@@ -2468,15 +2595,15 @@ export const Attendance = () => {
                   })}
                 </tbody>
               </table>
-            </div>
+            </ResponsiveTable>
           )}
         </Card>
       )}
 
       {/* Half Day Punch-In Requests - Admin / HR */}
       {canManageAttendanceFull && activeTab === 'halfdaypunchin' && (
-        <Card className="p-5 sm:p-6 overflow-hidden">
-          <div className="mb-4 flex items-center justify-between">
+        <Card className="p-4 sm:p-6 overflow-hidden">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between [&>button]:h-10 [&>button]:self-start sm:[&>button]:h-9 sm:[&>button]:self-auto">
             <div>
               <h3 className="text-lg font-semibold text-foreground">Half Day Punch-In Approval Requests</h3>
               <p className="text-sm text-muted-foreground">
@@ -2487,7 +2614,7 @@ export const Attendance = () => {
               {halfDayPunchInLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
           </div>
-          <div className="mb-4 flex gap-2">
+          <div className="mb-4 grid grid-cols-3 gap-2 sm:flex [&_button]:h-11 sm:[&_button]:h-9">
             {['Pending', 'Approved', 'Rejected'].map((status) => (
               <Button key={status} size="sm" variant={halfDayPunchInStatusFilter === status ? 'default' : 'outline'} className={halfDayPunchInStatusFilter === status ? '' : 'border-border'} onClick={() => setHalfDayPunchInStatusFilter(status)}>
                 {status}
@@ -2499,7 +2626,7 @@ export const Attendance = () => {
           ) : halfDayPunchInRequests.length === 0 ? (
             <p className="text-center py-8 text-muted-foreground">No {halfDayPunchInStatusFilter.toLowerCase()} half-day punch-in requests.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <ResponsiveTable>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted">
@@ -2537,15 +2664,15 @@ export const Attendance = () => {
                   })}
                 </tbody>
               </table>
-            </div>
+            </ResponsiveTable>
           )}
         </Card>
       )}
 
       {/* Early Punch-Out Requests - Admin / HR */}
       {canManageAttendanceFull && activeTab === 'earlypunchout' && (
-        <Card className="p-5 sm:p-6 overflow-hidden">
-          <div className="mb-4 flex items-center justify-between">
+        <Card className="p-4 sm:p-6 overflow-hidden">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between [&>button]:h-10 [&>button]:self-start sm:[&>button]:h-9 sm:[&>button]:self-auto">
             <div>
               <h3 className="text-lg font-semibold text-foreground">Early Punch-Out Approval Requests</h3>
               <p className="text-sm text-muted-foreground">
@@ -2556,7 +2683,7 @@ export const Attendance = () => {
               {earlyPunchOutLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
           </div>
-          <div className="mb-4 flex gap-2">
+          <div className="mb-4 grid grid-cols-3 gap-2 sm:flex [&_button]:h-11 sm:[&_button]:h-9">
             {['Pending', 'Approved', 'Rejected'].map((status) => (
               <Button key={status} size="sm" variant={earlyPunchOutStatusFilter === status ? 'default' : 'outline'} className={earlyPunchOutStatusFilter === status ? '' : 'border-border'} onClick={() => setEarlyPunchOutStatusFilter(status)}>
                 {status}
@@ -2568,7 +2695,7 @@ export const Attendance = () => {
           ) : earlyPunchOutRequests.length === 0 ? (
             <p className="text-center py-8 text-muted-foreground">No {earlyPunchOutStatusFilter.toLowerCase()} early punch-out requests.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <ResponsiveTable>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted">
@@ -2606,23 +2733,23 @@ export const Attendance = () => {
                   })}
                 </tbody>
               </table>
-            </div>
+            </ResponsiveTable>
           )}
         </Card>
       )}
 
       {/* Report by date range - Admin/HR */}
       {canManageAttendanceFull && activeTab === 'report' && (
-        <Card className="p-5 sm:p-6 overflow-hidden">
+        <Card className="p-4 sm:p-6 overflow-hidden">
           <h3 className="text-lg font-semibold text-foreground mb-4">Attendance Report (Date Range)</h3>
-          <div className="flex flex-wrap gap-3 mb-4">
+          <div className="mb-4 grid grid-cols-1 gap-3 sm:flex sm:flex-wrap">
             <div>
               <label htmlFor="attendance-field-5" className="block text-xs text-muted-foreground mb-1">Start</label>
               <input id="attendance-field-5"
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="h-10 rounded-lg border border-input px-3 text-sm text-foreground"
+                className="h-11 w-full rounded-lg border border-input px-3 text-sm text-foreground sm:h-10 sm:w-auto"
               />
             </div>
             <div>
@@ -2631,7 +2758,7 @@ export const Attendance = () => {
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="h-10 rounded-lg border border-input px-3 text-sm text-foreground"
+                className="h-11 w-full rounded-lg border border-input px-3 text-sm text-foreground sm:h-10 sm:w-auto"
               />
             </div>
             <div>
@@ -2639,7 +2766,7 @@ export const Attendance = () => {
               <select id="attendance-field-7"
                 value={selectedEmployee}
                 onChange={(e) => setSelectedEmployee(e.target.value)}
-                className="h-10 rounded-lg border border-input px-3 text-sm text-foreground bg-white min-w-[180px]"
+                className="h-11 w-full rounded-lg border border-input bg-white px-3 text-sm text-foreground sm:h-10 sm:w-auto sm:min-w-[180px]"
               >
                 <option value="">All employees</option>
                 {employees.map((emp) => (
@@ -2647,13 +2774,13 @@ export const Attendance = () => {
                 ))}
               </select>
             </div>
-            <div className="flex items-end">
-              <Button onClick={fetchReport} disabled={reportLoading}>
+            <div className="flex items-end sm:items-end">
+              <Button className="h-11 w-full sm:h-10 sm:w-auto" onClick={fetchReport} disabled={reportLoading}>
                 {reportLoading ? 'Loading…' : 'Load Report'}
               </Button>
             </div>
           </div>
-          <div className="overflow-x-auto border border-border rounded-lg">
+          <ResponsiveTable className="border border-border rounded-lg">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted border-b border-border">
@@ -2690,7 +2817,7 @@ export const Attendance = () => {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ResponsiveTable>
           {report.length === 0 && !reportLoading && (
             <p className="text-center py-8 text-muted-foreground">Select date range and click Load Report.</p>
           )}
@@ -2699,7 +2826,7 @@ export const Attendance = () => {
 
       {/* Monthly summary - summary tab when tabs shown; always for employees without tab bar */}
       {(activeTab === 'summary' || (!showAttendanceTabs && !canManageAttendance)) && (
-        <Card className="p-5 sm:p-6 overflow-hidden">
+        <Card className="p-4 sm:p-6 overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div>
               <h3 className="text-lg font-semibold text-foreground">Monthly Overview</h3>
@@ -2707,13 +2834,13 @@ export const Attendance = () => {
                 {canManageAttendance ? 'Present, late, absent summary per employee' : 'Your attendance summary'}
               </p>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex flex-wrap items-center gap-2 [&_input]:h-11 sm:[&_input]:h-10 [&_button]:h-11 sm:[&_button]:h-10">
               <label htmlFor="attendance-field-8" className="text-sm font-medium text-foreground">Month</label>
               <input id="attendance-field-8"
                 type="month"
                 value={summaryMonth}
                 onChange={(e) => setSummaryMonth(e.target.value)}
-                className="h-10 rounded-lg border border-input px-3 text-sm text-foreground"
+                className="h-11 w-full rounded-lg border border-input px-3 text-sm text-foreground sm:h-10 sm:w-auto"
               />
               <Button
                 type="button"
@@ -2727,7 +2854,7 @@ export const Attendance = () => {
               </Button>
             </div>
           </div>
-          <div className="overflow-x-auto border border-border rounded-lg">
+          <ResponsiveTable className="border border-border rounded-lg">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted border-b border-border">
@@ -2755,7 +2882,7 @@ export const Attendance = () => {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ResponsiveTable>
           {attendanceSummary.length === 0 && (
             <p className="text-center py-8 text-muted-foreground">No summary for this month.</p>
           )}
@@ -2764,9 +2891,9 @@ export const Attendance = () => {
 
       {/* Recent attendance history - employees: only on punch tab when tab bar exists */}
       {!canManageAttendance && (!showAttendanceTabs || activeTab === 'punch') && (
-        <Card className="p-5 sm:p-6 overflow-hidden">
+        <Card className="p-4 sm:p-6 overflow-hidden">
           <h3 className="text-lg font-semibold text-foreground mb-4">Recent History</h3>
-          <div className="overflow-x-auto">
+          <ResponsiveTable>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
@@ -2804,7 +2931,7 @@ export const Attendance = () => {
                   ))}
               </tbody>
             </table>
-          </div>
+          </ResponsiveTable>
           {attendance.filter((r) => r.employee_id === user?.employee_id).length === 0 && (
             <p className="text-center py-8 text-muted-foreground">No attendance records yet.</p>
           )}

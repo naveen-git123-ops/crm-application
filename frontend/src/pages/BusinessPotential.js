@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { Search, TrendingUp, Eye, Upload, Download } from 'lucide-react';
+import { Search, TrendingUp, Eye, Upload, Download, SlidersHorizontal, Phone, Mail, MapPin, ChevronRight } from 'lucide-react';
 import {
   BPO_STATUS_FILTERS,
   BPO_STATUS_TONES,
@@ -183,6 +183,97 @@ function rowContact(row) {
   return row?.contact_phone || parseCommunicationContacts(row?.communication_address).contact;
 }
 
+/** Phone-friendly card for one Business Potential record. */
+function BpoMobileCard({ row, onOpen }) {
+  const tone = validEndRowTone(row.validity_end);
+  const days = daysUntilExpiry(row.validity_end);
+  const phone = String(rowContact(row) || '').trim();
+  const email = String(rowEmail(row) || '').trim();
+  const accent =
+    tone === 'red' ? 'border-l-red-500' : tone === 'yellow' ? 'border-l-yellow-400' : tone === 'sky' ? 'border-l-sky-400' : 'border-l-border';
+  const expiryTone =
+    tone === 'red' ? 'bg-red-50 text-red-700' : tone === 'yellow' ? 'bg-yellow-50 text-yellow-800' : tone === 'sky' ? 'bg-sky-50 text-sky-800' : 'bg-muted text-foreground';
+  const actionBtn =
+    'inline-flex h-11 flex-1 items-center justify-center gap-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted active:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
+  return (
+    <article className={cn('overflow-hidden rounded-2xl border border-l-4 border-border bg-card shadow-soft', accent)}>
+      <button
+        type="button"
+        onClick={() => onOpen(row)}
+        className="block w-full p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        aria-label={`Open details for ${row.project_name || 'record'}`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="line-clamp-2 min-w-0 text-base font-bold leading-snug text-foreground">{displayValue(row.project_name)}</h3>
+          <ChevronRight className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </div>
+        {row.district_name || row.village_name ? (
+          <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 truncate">{[row.village_name, row.district_name].filter(Boolean).join(', ')}</span>
+          </p>
+        ) : null}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <span className={cn('inline-flex rounded-full px-2.5 py-1 text-xs font-semibold', BPO_STATUS_TONES[row.bpo_status] || BPO_STATUS_TONES.new)}>
+            {bpoStatusLabel(row.bpo_status)}
+          </span>
+          {row.application_status ? (
+            <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">{row.application_status}</span>
+          ) : null}
+          {row.source_label ? (
+            <span className={cn('inline-flex rounded-full px-2.5 py-1 text-xs font-medium', SOURCE_TONES[row.source_key] || SOURCE_TONES.nocap_old)}>
+              {row.source_label}
+            </span>
+          ) : null}
+        </div>
+        <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5 text-sm">
+          <div className="min-w-0">
+            <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">NOC number</dt>
+            <dd className="truncate font-mono text-xs font-semibold text-foreground">{displayValue(row.noc_number)}</dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Application no.</dt>
+            <dd className="truncate font-mono text-xs font-semibold text-foreground">{displayValue(row.application_number)}</dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Valid until</dt>
+            <dd className="font-mono text-xs font-semibold text-foreground">{displayDate(row.validity_end)}</dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Type</dt>
+            <dd className="truncate text-xs font-medium text-foreground">{displayValue(row.application_type)}</dd>
+          </div>
+        </dl>
+        {days !== null ? (
+          <p className={cn('mt-3 inline-flex rounded-lg px-2.5 py-1 text-xs font-bold', expiryTone)}>
+            {days < 0 ? `Expired ${Math.abs(days)} days ago` : days === 0 ? 'Expires today' : `Expires in ${days} days`}
+          </p>
+        ) : null}
+        {row.last_follow_up_notes ? (
+          <p className="mt-3 line-clamp-2 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">Last follow-up: </span>
+            {row.last_follow_up_notes}
+          </p>
+        ) : null}
+      </button>
+      {phone || email ? (
+        <div className="flex divide-x divide-border border-t border-border">
+          {phone ? (
+            <a href={`tel:${phone.replace(/[^\d+]/g, '')}`} className={actionBtn} aria-label={`Call ${phone}`}>
+              <Phone className="h-4 w-4" aria-hidden="true" /> Call
+            </a>
+          ) : null}
+          {email ? (
+            <a href={`mailto:${email}`} className={actionBtn} aria-label={`Email ${email}`}>
+              <Mail className="h-4 w-4" aria-hidden="true" /> Email
+            </a>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 export function BusinessPotential() {
   const { user } = useAuth();
   const isAdmin = isAdminUser(user);
@@ -204,6 +295,7 @@ export function BusinessPotential() {
   const [catalog, setCatalog] = useState(null);
   const catalogCacheRef = useRef({ key: '', rows: null, promise: null });
   const [bpoStatus, setBpoStatus] = useState('');
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
@@ -406,13 +498,13 @@ export function BusinessPotential() {
     () => (
       isAdmin ? (
         <>
-          <Button className="h-9" variant="outline" disabled={exporting || total === 0} onClick={exportExcel}>
-            <Download className="h-4 w-4 mr-1.5" />
-            {exporting ? 'Exporting…' : 'Export Excel'}
+          <Button className="h-10 w-10 p-0 sm:h-9 sm:w-auto sm:px-3" variant="outline" aria-label="Export Excel" disabled={exporting || total === 0} onClick={exportExcel}>
+            <Download className="h-4 w-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">{exporting ? 'Exporting…' : 'Export Excel'}</span>
           </Button>
-          <Button className="h-9" variant="outline" disabled={importing} onClick={importExcel}>
-            <Upload className="h-4 w-4 mr-1.5" />
-            {importing ? 'Importing…' : meta.total ? 'Re-import Excel' : 'Import Excel'}
+          <Button className="h-10 w-10 p-0 sm:h-9 sm:w-auto sm:px-3" variant="outline" aria-label={meta.total ? 'Re-import Excel' : 'Import Excel'} disabled={importing} onClick={importExcel}>
+            <Upload className="h-4 w-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">{importing ? 'Importing…' : meta.total ? 'Re-import Excel' : 'Import Excel'}</span>
           </Button>
         </>
       ) : null
@@ -427,10 +519,10 @@ export function BusinessPotential() {
   });
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 min-w-0 flex-col -mx-4 -mt-4 p-3 sm:-mx-6 sm:-mt-6 lg:-mx-8 lg:-mt-8 lg:-mb-8" data-testid="business-potential-page">
+    <div className="flex min-h-0 min-w-0 flex-col md:h-[calc(100dvh-3.5rem)] -mx-4 -mt-4 p-3 sm:-mx-6 sm:-mt-6 lg:-mx-8 lg:-mt-8 lg:-mb-8" data-testid="business-potential-page">
       <Card className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2.5 sm:p-3 space-y-2">
         <div className="flex shrink-0 flex-col gap-2 xl:flex-row xl:items-center">
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Validity filter">
             {COLOR_FILTERS.map((item) => {
               const selected = validityBand === item.key;
               const count = item.key ? bandCounts?.[item.key] : (meta.total || total);
@@ -438,9 +530,10 @@ export function BusinessPotential() {
                 <button
                   key={item.key || 'all'}
                   type="button"
+                  aria-pressed={selected}
                   onClick={() => setValidityBand(item.key)}
                   className={cn(
-                    'inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium',
+                    'inline-flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 text-sm font-medium md:h-8 md:px-2.5 md:text-xs',
                     selected ? item.active : 'border-border bg-white text-foreground hover:bg-muted',
                   )}
                 >
@@ -453,29 +546,46 @@ export function BusinessPotential() {
               );
             })}
           </div>
-          <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="relative min-w-0">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
+            <div className="flex min-w-0 gap-2 md:contents">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground md:left-2.5 md:h-3.5 md:w-3.5" />
               <Input aria-label="Search project, NOC, email, contact, district…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search project, NOC, email, contact, district…"
-                className="h-8 pl-8 text-sm"
+                className="h-11 pl-9 text-base md:h-8 md:pl-8 md:text-sm"
               />
             </div>
-            <select value={district} onChange={(e) => setDistrict(e.target.value)} className="h-8 rounded-md border border-input bg-white px-2 text-sm">
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen((v) => !v)}
+              aria-expanded={mobileFiltersOpen}
+              aria-controls="bpo-filter-selects"
+              className="relative inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-input bg-card px-3.5 text-sm font-semibold text-foreground md:hidden"
+            >
+              <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+              Filters
+              {[district, applicationType, bpoStatus].filter(Boolean).length > 0 ? (
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-bold text-primary-foreground">
+                  {[district, applicationType, bpoStatus].filter(Boolean).length}
+                </span>
+              ) : null}
+            </button>
+            </div>
+            <select value={district} onChange={(e) => setDistrict(e.target.value)} className={cn('h-11 rounded-md border border-input bg-white px-3 text-sm md:h-8 md:px-2', !mobileFiltersOpen && 'hidden md:block')}>
               <option value="">All districts</option>
               {meta.districts.map((d) => (
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>
-            <select value={applicationType} onChange={(e) => setApplicationType(e.target.value)} className="h-8 rounded-md border border-input bg-white px-2 text-sm">
+            <select value={applicationType} onChange={(e) => setApplicationType(e.target.value)} className={cn('h-11 rounded-md border border-input bg-white px-3 text-sm md:h-8 md:px-2', !mobileFiltersOpen && 'hidden md:block')}>
               <option value="">All application types</option>
               {meta.application_types.map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
-            <select value={bpoStatus} onChange={(e) => setBpoStatus(e.target.value)} className="h-8 rounded-md border border-input bg-white px-2 text-sm">
+            <select value={bpoStatus} onChange={(e) => setBpoStatus(e.target.value)} className={cn('h-11 rounded-md border border-input bg-white px-3 text-sm md:h-8 md:px-2', !mobileFiltersOpen && 'hidden md:block')}>
               {BPO_STATUS_FILTERS.map((item) => (
                 <option key={item.key || 'all'} value={item.key}>{item.label}</option>
               ))}
@@ -495,7 +605,12 @@ export function BusinessPotential() {
         ) : (
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border">
             <div className="min-h-0 flex-1 overflow-auto">
-            <table className="min-w-full text-[13px] leading-5">
+            <div className="space-y-3 bg-muted/30 p-3 md:hidden">
+              {items.map((row) => (
+                <BpoMobileCard key={row.id} row={row} onOpen={setSelected} />
+              ))}
+            </div>
+            <table className="hidden min-w-full text-[13px] leading-5 md:table">
               <thead className="sticky top-0 z-10 bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground shadow-[inset_0_-1px_0_0_rgb(226,232,240)]">
                 <tr>
                   <th className="px-2 py-1.5 font-semibold">Project</th>
@@ -602,23 +717,23 @@ export function BusinessPotential() {
                 {' '}of{' '}
                 <span className="font-medium text-foreground">{total.toLocaleString('en-IN')}</span>
               </p>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex sm:flex-wrap">
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="h-8 shrink-0 rounded-md border border-input bg-white px-2 text-sm"
+                  className="order-last col-span-3 h-11 shrink-0 rounded-md border border-input bg-white px-2 text-sm sm:order-none sm:col-span-1 sm:h-8"
                 >
                   {PAGE_SIZE_OPTIONS.map((n) => (
                     <option key={n} value={n}>{n} / page</option>
                   ))}
                 </select>
-                <Button type="button" variant="outline" className="h-8 shrink-0 px-3" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                <Button type="button" variant="outline" className="h-11 shrink-0 px-3 sm:h-8" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                   Prev
                 </Button>
                 <span className="min-w-[88px] shrink-0 text-center tabular-nums text-foreground">
                   Page {safePage} / {totalPages}
                 </span>
-                <Button type="button" variant="outline" className="h-8 shrink-0 px-3" disabled={safePage >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                <Button type="button" variant="outline" className="h-11 shrink-0 px-3 sm:h-8" disabled={safePage >= totalPages} onClick={() => setPage((p) => p + 1)}>
                   Next
                 </Button>
               </div>
@@ -629,7 +744,7 @@ export function BusinessPotential() {
 
       <Dialog open={!!selected} onOpenChange={(open) => { if (!open) setSelected(null); }}>
         <DialogContent className="max-w-3xl bg-white rounded-xl border shadow-xl p-0 max-h-[90vh] overflow-y-auto">
-          <div className="bg-gradient-to-r from-slate-900 to-indigo-900 text-white px-6 py-5 rounded-t-xl">
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-900 text-white px-4 py-5 sm:px-6 rounded-t-xl">
             <DialogHeader>
               <DialogTitle className="text-xl font-bold text-white tracking-tight">
                 {selected?.project_name || 'Business potential'}
@@ -647,7 +762,7 @@ export function BusinessPotential() {
               )}
             </DialogHeader>
           </div>
-          <div className="p-6 space-y-5">
+          <div className="p-4 sm:p-6 space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-xl border border-border bg-muted p-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">BPO status</p>

@@ -106,11 +106,11 @@ export const SUMMARY_CARDS = [
 export const CUSTOMER_TYPE_COPY = {
   New: {
     title: 'New customer',
-    hint: 'First-time job: site inspection, installation and commissioning.',
+    hint: 'They are not in the system yet. On this call you only need their name, address, number, the problem and any notes.',
   },
   Existing: {
     title: 'Existing customer',
-    hint: 'Troubleshooting, repair, general service, preventive maintenance or AMC visit.',
+    hint: 'They are already in the system. Find them, then record what they told you on the call.',
   },
 };
 
@@ -267,6 +267,8 @@ export const CHECKLIST_KEYS = {
 export function checklistRows(labels) {
   return (labels || []).map((label) => ({ id: uid(), label, done: false, remark: '', required: true }));
 }
+
+export const SITE_VISIT_ACK_CATEGORY = 'Site Visit Acknowledgement';
 
 export const INSTALLATION_PRODUCT_CATEGORIES = [
   'Electrical Automation',
