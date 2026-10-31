@@ -8,7 +8,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { getApiErrorMessage } from '@/lib/apiErrors';
-import { CUSTOMER_TYPE_COPY, INSTALLATION_PRODUCT_CATEGORIES, SITE_VISIT_ACK_CATEGORY, serviceApi, uid } from '@/lib/serviceUtils';
+import { CUSTOMER_TYPE_COPY, INSTALLATION_PRODUCT_CATEGORIES, SITE_VISIT_ACK_CATEGORY, serviceApi, serviceTypesForCustomer, uid, workflowsForServiceTypes } from '@/lib/serviceUtils';
 import { cn } from '@/lib/utils';
 import { FieldGrid, FormField, MultiPicker, ReadRow } from '@/components/service/ServiceFields';
 
@@ -21,11 +21,8 @@ const STEP_LABEL = {
   review: 'Review',
 };
 
-function stepIdsFor(visitRequired) {
-  const ids = ['type', 'customer', 'call', 'visit'];
-  if (visitRequired === false) ids.push('classify');
-  ids.push('review');
-  return ids;
+function stepIdsFor() {
+  return ['type', 'customer', 'call', 'visit', 'classify', 'review'];
 }
 
 const blankClassify = {
@@ -35,6 +32,51 @@ const blankClassify = {
 
 function toggleValue(list, value) {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+}
+
+function customerFromService(service) {
+  if (!service?.customer_id) return null;
+  return {
+    id: service.customer_id,
+    customer_id: service.customer_code,
+    company_name: service.customer_name,
+    contact_person_name: service.contact_person,
+    phone: service.mobile,
+    email: service.email,
+    address_line: service.site_address,
+    city: service.city,
+    state: service.state,
+    pincode: service.pincode,
+  };
+}
+
+function firstIncompleteStep({
+  customerType, customer, details, siteVisitRequired, ack, hasAckFile,
+  serviceTypesSelected, productTypesSelected, classify, selectedWorkflows, leadRequired,
+}) {
+  const ids = stepIdsFor();
+  const errorsFor = (id) => {
+    if (id === 'type' && !customerType) return true;
+    if (id === 'customer' && !customer) return true;
+    if (id === 'call') {
+      return !details.contact_person.trim() || !validMobile(details.mobile) || !details.site_address.trim()
+        || details.problem_description.trim().length < 5;
+    }
+    if (id === 'visit') {
+      if (siteVisitRequired == null) return true;
+      if (siteVisitRequired && (!ack.acknowledged || !ack.name.trim() || !ack.notes.trim() || !hasAckFile)) return true;
+    }
+    if (id === 'classify') {
+      if (serviceTypesSelected.length === 0) return true;
+      if (selectedWorkflows.has('installation') && productTypesSelected.length === 0) return true;
+      if (selectedWorkflows.has('installation') && (!classify.product_name.trim() || !classify.product_model.trim() || !classify.planned_date)) return true;
+      if (selectedWorkflows.has('repair') && !classify.problem_category) return true;
+      if (leadRequired && !classify.lead_id) return true;
+    }
+    return false;
+  };
+  const index = ids.findIndex(errorsFor);
+  return index === -1 ? ids.length - 1 : index;
 }
 
 const blankDetails = {
@@ -80,7 +122,7 @@ function ChoiceRow({ selected, onSelect, title, subtitle, badge }) {
   );
 }
 
-export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
+export function CreateServiceRequest({ open, onClose, meta, onCreated, draftId = null }) {
   const [step, setStep] = useState(0);
   const [customerType, setCustomerType] = useState('');
   const [query, setQuery] = useState('');
@@ -96,22 +138,113 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
   const [serviceTypesSelected, setServiceTypesSelected] = useState([]);
   const [productTypesSelected, setProductTypesSelected] = useState([]);
   const [classify, setClassify] = useState(blankClassify);
+  const [newProductOpen, setNewProductOpen] = useState(false);
+  const [newProduct, setNewProduct] = useState({ category: '', name: '', model: '', serial_number: '' });
   const [profile, setProfile] = useState(null);
   const [errors, setErrors] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [draftService, setDraftService] = useState(null);
+  const [ackFileOnRecord, setAckFileOnRecord] = useState(false);
   const requestId = useRef(uid());
+  const loadedDraft = useRef(null);
 
   const reset = useCallback(() => {
     setStep(0); setCustomerType(''); setQuery(''); setResults([]); setCustomer(null);
     setNewCustomerOpen(false); setNewCustomer(blankCustomer); setDetails(blankDetails);
     setSiteVisitRequired(null); setAck(blankAck); setAckFile(null);
-    setServiceTypesSelected([]); setProductTypesSelected([]); setClassify(blankClassify); setProfile(null); setErrors([]);
+    setServiceTypesSelected([]); setProductTypesSelected([]); setClassify(blankClassify);
+    setNewProductOpen(false); setNewProduct({ category: '', name: '', model: '', serial_number: '' });
+    setDraftService(null); setAckFileOnRecord(false); setProfile(null); setErrors([]);
     requestId.current = uid();
+    loadedDraft.current = null;
   }, []);
 
   useEffect(() => {
-    if (open) reset();
-  }, [open, reset]);
+    if (!open) return undefined;
+    if (!draftId) {
+      reset();
+      return undefined;
+    }
+    if (loadedDraft.current === draftId) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const detail = await serviceApi.get(`/service-requests/${draftId}`);
+        if (cancelled) return;
+        const service = detail.service || {};
+        const intake = detail.data?.intake || {};
+        const acknowledgement = intake.acknowledgement || {};
+        const nextDetails = {
+          priority: service.priority || 'Medium',
+          contact_person: service.contact_person || '',
+          mobile: service.mobile || '',
+          email: service.email || '',
+          site_address: service.site_address || '',
+          city: service.city || '',
+          state: service.state || '',
+          pincode: service.pincode || '',
+          customer_notes: service.customer_notes || '',
+          problem_description: service.problem_description || '',
+        };
+        const nextAck = {
+          acknowledged: Boolean(acknowledgement.acknowledged),
+          name: acknowledgement.name || service.contact_person || '',
+          notes: acknowledgement.notes || '',
+        };
+        const nextTypes = service.service_types?.length ? service.service_types : (service.service_type ? [service.service_type] : []);
+        const nextProducts = service.product_types?.length ? service.product_types : (service.product_category ? [service.product_category] : []);
+        const nextClassify = {
+          ...blankClassify,
+          lead_id: service.lead_id || '',
+          product_id: service.product_id || '',
+          amc_id: service.amc_id || '',
+          product_name: service.product_name || '',
+          product_model: service.product_model || '',
+          serial_number: service.serial_number || '',
+          quantity: service.quantity || '1',
+          planned_date: service.planned_date || '',
+          installation_requirements: service.installation_requirements || '',
+          problem_category: service.problem_category || '',
+        };
+        const hasAckFile = (detail.attachments || []).some((file) => file.category === SITE_VISIT_ACK_CATEGORY);
+        const nextCustomer = customerFromService(service);
+        const visitRequired = typeof intake.site_visit_required === 'boolean' ? intake.site_visit_required : null;
+        const workflows = workflowsForServiceTypes(nextTypes, meta);
+        setCustomerType(service.customer_type || '');
+        setCustomer(nextCustomer);
+        setDetails(nextDetails);
+        setSiteVisitRequired(visitRequired);
+        setAck(nextAck);
+        setAckFile(null);
+        setAckFileOnRecord(hasAckFile);
+        setServiceTypesSelected(nextTypes);
+        setProductTypesSelected(nextProducts);
+        setClassify(nextClassify);
+        setDraftService(service);
+        loadedDraft.current = service.id;
+        setErrors([]);
+        requestId.current = service.client_request_id || uid();
+        setStep(firstIncompleteStep({
+          customerType: service.customer_type || '',
+          customer: nextCustomer,
+          details: nextDetails,
+          siteVisitRequired: visitRequired,
+          ack: nextAck,
+          hasAckFile,
+          serviceTypesSelected: nextTypes,
+          productTypesSelected: nextProducts,
+          classify: nextClassify,
+          selectedWorkflows: workflows,
+          leadRequired: service.customer_type === 'Existing' && meta?.config?.require_lead_for_existing !== false,
+        }));
+      } catch (err) {
+        if (!cancelled) {
+          setErrors(errorList(err, 'Could not open this draft'));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, draftId, reset, meta]);
 
   useEffect(() => {
     if (!open || step !== 1 || newCustomerOpen) return undefined;
@@ -158,12 +291,32 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
     }
   };
 
+  const registerProduct = async () => {
+    if (!customer) return;
+    setBusy(true);
+    setErrors([]);
+    try {
+      const created = await serviceApi.post('/service/products', {
+        ...newProduct, customer_id: customer.id, lead_id: classify.lead_id || null,
+      });
+      const next = await serviceApi.get(`/service/customers/${customer.id}/profile`);
+      setProfile(next);
+      setClassify((prev) => ({ ...prev, product_id: created.id }));
+      setNewProductOpen(false);
+      setNewProduct({ category: '', name: '', model: '', serial_number: '' });
+    } catch (err) {
+      setErrors(errorList(err, 'Could not register the product'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const setDetail = (key) => (value) => setDetails((prev) => ({ ...prev, [key]: value }));
-  const stepIds = stepIdsFor(siteVisitRequired);
+  const stepIds = stepIdsFor();
   const safeStep = Math.min(step, stepIds.length - 1);
   const current = stepIds[safeStep];
-  const typeOptions = customerType ? meta?.service_types_by_customer?.[customerType] || [] : [];
-  const selectedWorkflows = new Set(serviceTypesSelected.map((item) => meta?.workflow_by_service_type?.[item]).filter(Boolean));
+  const typeOptions = serviceTypesForCustomer(customerType, meta);
+  const selectedWorkflows = workflowsForServiceTypes(serviceTypesSelected, meta);
   const leadRequired = customerType === 'Existing' && meta?.config?.require_lead_for_existing !== false;
 
   useEffect(() => {
@@ -193,12 +346,12 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
         if (!ack.acknowledged) out.push('Record the customer acknowledgement for the site visit');
         if (!ack.name.trim()) out.push('Enter the name of the person who acknowledged the site visit');
         if (!ack.notes.trim()) out.push('Acknowledgement notes are required');
-        if (!ackFile) out.push('Attach the customer acknowledgement');
+        if (!ackFile && !ackFileOnRecord) out.push('Attach the customer acknowledgement');
       }
     }
     if (id === 'classify') {
       if (serviceTypesSelected.length === 0) out.push('Select at least one service type');
-      if (productTypesSelected.length === 0) out.push('Select at least one product type');
+      if (selectedWorkflows.has('installation') && productTypesSelected.length === 0) out.push('Select at least one product type');
       if (selectedWorkflows.has('installation')) {
         if (!classify.product_name.trim()) out.push('Product name is required');
         if (!classify.product_model.trim()) out.push('Product model is required');
@@ -207,6 +360,7 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
       }
       if (selectedWorkflows.has('repair') && !classify.problem_category) out.push('Problem category is required');
       if (customerType === 'Existing' && leadRequired && !classify.lead_id) out.push('Select the existing lead this service belongs to');
+      if (customerType === 'Existing' && !classify.product_id) out.push('Select the affected product, or register it');
       if (selectedWorkflows.has('amc') && meta?.config?.amc_required !== false && !classify.amc_id) out.push('Select an active AMC contract');
     }
     return out;
@@ -231,6 +385,48 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
     }
   };
 
+  const persistDraftFields = async (id, payload) => {
+    try {
+      await serviceApi.put(`/service-requests/${id}`, {
+        contact_person: payload.contact_person,
+        mobile: payload.mobile,
+        email: payload.email,
+        site_address: payload.site_address,
+        city: payload.city,
+        state: payload.state,
+        pincode: payload.pincode,
+        customer_notes: payload.customer_notes,
+        problem_description: payload.problem_description,
+        problem_category: payload.problem_category,
+        priority: payload.priority,
+        service_type: payload.service_type,
+        product_category: payload.product_category,
+        product_name: payload.product_name,
+        product_model: payload.product_model,
+        serial_number: payload.serial_number,
+        quantity: payload.quantity,
+        planned_date: payload.planned_date,
+        installation_requirements: payload.installation_requirements,
+        lead_id: payload.lead_id,
+        product_id: payload.product_id,
+      });
+    } catch {
+      /* older servers ignore some of these fields */
+    }
+  };
+
+  const submitExistingDraft = async (id) => {
+    try {
+      const submitted = await serviceApi.post(`/service-requests/${id}/submit`, {});
+      if (submitted?.service?.status && submitted.service.status !== 'Draft') return submitted;
+    } catch (err) {
+      if (err?.response?.status && err.response.status !== 404) throw err;
+    }
+    const submitted = await serviceApi.post(`/service-requests/${id}/status`, { status: 'New' });
+    if (submitted?.service?.status && submitted.service.status !== 'Draft') return submitted;
+    throw new Error('The draft was saved, but it could not be submitted');
+  };
+
   const submit = async (asDraft) => {
     if (!asDraft) {
       const problems = stepIds.flatMap((id) => stepErrors(id));
@@ -239,29 +435,63 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
         return;
       }
     }
+    if (!customer) {
+      setErrors(['Select a customer, or add a new one']);
+      return;
+    }
     setBusy(true);
     setErrors([]);
     try {
+      const serviceTypes = serviceTypesSelected.map((item) => String(item || '').trim()).filter(Boolean);
+      const productTypes = productTypesSelected.map((item) => String(item || '').trim()).filter(Boolean);
+      const existingId = draftService?.id || draftId || null;
       const payload = {
         ...details,
+        ...classify,
         customer_type: customerType,
         customer_id: customer.id,
         site_visit_required: siteVisitRequired,
         site_visit_acknowledgement: siteVisitRequired ? ack : null,
         client_request_id: requestId.current,
+        draft_id: existingId,
         save_as_draft: asDraft,
-        ...(siteVisitRequired === false ? {
-          ...classify,
-          service_types: serviceTypesSelected,
-          service_type: serviceTypesSelected[0],
-          product_types: productTypesSelected,
-          product_category: productTypesSelected[0],
-          lead_id: classify.lead_id || null,
-          product_id: classify.product_id || null,
-          amc_id: selectedWorkflows.has('amc') ? classify.amc_id || null : null,
-        } : {}),
+        service_types: serviceTypes,
+        service_type: serviceTypes[0],
+        product_types: productTypes,
+        product_category: productTypes[0],
+        lead_id: classify.lead_id || null,
+        product_id: classify.product_id || null,
+        amc_id: selectedWorkflows.has('amc') ? classify.amc_id || null : null,
       };
-      const detail = await serviceApi.post('/service-requests', payload);
+      let detail = await serviceApi.post('/service-requests', payload);
+      const savedId = detail?.service?.id;
+      if (existingId) {
+        await persistDraftFields(existingId, payload);
+      }
+      if (!asDraft && detail?.service?.status === 'Draft') {
+        try {
+          detail = await submitExistingDraft(savedId || existingId);
+        } catch (submitErr) {
+          const fresh = await serviceApi.post('/service-requests', {
+            ...payload,
+            client_request_id: uid(),
+            draft_id: null,
+            save_as_draft: false,
+          });
+          if (fresh?.service?.status === 'Draft') throw submitErr;
+          if (existingId) {
+            try {
+              await serviceApi.post(`/service-requests/${existingId}/status`, {
+                status: 'Cancelled',
+                reason: `Submitted as ${fresh.service.service_code}`,
+              });
+            } catch {
+              /* the new request is the one that matters */
+            }
+          }
+          detail = fresh;
+        }
+      }
       if (siteVisitRequired && ackFile && detail?.service?.id) {
         const form = new FormData();
         form.append('file', ackFile);
@@ -273,11 +503,20 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
           toast.error(getApiErrorMessage(err, 'The request was created, but the acknowledgement file did not upload. Add it on the request.'));
         }
       }
-      toast.success(detail.created === false
-        ? `${detail.service.service_code} was already created`
-        : `${detail.service.service_code} ${asDraft ? 'saved as draft' : 'created'}`);
-      onCreated?.(detail.service.id);
-      onClose();
+      if (asDraft) {
+        setDraftService(detail.service);
+        loadedDraft.current = detail.service.id;
+        if (siteVisitRequired && ackFile) setAckFileOnRecord(true);
+        toast.success(`${detail.service.service_code} saved as draft`);
+        onCreated?.(detail.service.id, { draft: true, service: detail.service });
+        return;
+      }
+      if (detail?.service?.status === 'Draft') {
+        setErrors(['The draft was saved, but it is still a draft. Click Submit request again.']);
+        return;
+      }
+      toast.success(`${detail.service.service_code} submitted`);
+      onCreated?.(detail.service.id, { draft: false, service: detail.service });
     } catch (err) {
       setErrors(errorList(err, 'Could not create the service request'));
     } finally {
@@ -289,7 +528,7 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
     <Dialog open={open} onOpenChange={(value) => { if (!value && !busy) onClose(); }}>
       <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto" data-testid="create-service-dialog">
         <DialogHeader>
-          <DialogTitle>Create service request</DialogTitle>
+          <DialogTitle>{draftService?.service_code ? `Continue draft ${draftService.service_code}` : 'Create service request'}</DialogTitle>
           <DialogDescription>
             Step {safeStep + 1} of {stepIds.length}: {STEP_LABEL[current]}
           </DialogDescription>
@@ -406,7 +645,7 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
                   <div className="text-xs text-emerald-800">
                     {[customer.customer_id, customer.contact_person_name, customer.phone, customer.city].filter(Boolean).join(' · ')}
                   </div>
-                  <p className="mt-2 text-xs text-emerald-900">Next, record what they said on the call. Product and service type come later.</p>
+                  <p className="mt-2 text-xs text-emerald-900">Next, record what they said on the call.</p>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setCustomer(null)}>Change</Button>
               </div>
@@ -417,7 +656,7 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
         {current === 'call' && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              This is the phone call. Write down the name, address, number, notes and the problem in the customer&apos;s words. Service type and product are not known yet.
+              This is the phone call. Write down the name, address, number, notes and the problem in the customer&apos;s words. Service type and product are on the next steps.
             </p>
             <FieldGrid>
               <FormField field={{ key: 'contact_person', label: 'Name', type: 'text', required: true }} value={details.contact_person} onChange={setDetail('contact_person')} />
@@ -454,7 +693,7 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
                 )}
               >
                 <div className="text-base font-semibold text-foreground">Site visit required</div>
-                <p className="mt-1 text-sm text-muted-foreground">Someone will visit, then record the service type and product.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Someone will visit. Record the customer acknowledgement, then the service and product on the next step.</p>
               </button>
               <button
                 type="button"
@@ -509,7 +748,7 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
         {current === 'classify' && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              No site visit is needed, so record the service types and product types now. Select every one that applies.
+              Select every service type that applies. Product type is required only for Installation & Commissioning. For an existing customer, also choose the lead and the registered product.
             </p>
             <FieldGrid>
               <MultiPicker
@@ -519,13 +758,15 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
                 selected={serviceTypesSelected}
                 onToggle={(value) => setServiceTypesSelected((list) => toggleValue(list, value))}
               />
-              <MultiPicker
-                label="Product type"
-                required
-                options={INSTALLATION_PRODUCT_CATEGORIES}
-                selected={productTypesSelected}
-                onToggle={(value) => setProductTypesSelected((list) => toggleValue(list, value))}
-              />
+              {selectedWorkflows.has('installation') && (
+                <MultiPicker
+                  label="Product type"
+                  required
+                  options={INSTALLATION_PRODUCT_CATEGORIES}
+                  selected={productTypesSelected}
+                  onToggle={(value) => setProductTypesSelected((list) => toggleValue(list, value))}
+                />
+              )}
             </FieldGrid>
             {customerType === 'Existing' && (
               <div className="space-y-2">
@@ -541,8 +782,28 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
                     subtitle={[lead.sub_category || lead.category, lead.status].filter(Boolean).join(' · ')}
                   />
                 ))}
-                <h4 className="text-sm font-semibold">Registered product</h4>
-                {(profile?.products || []).length === 0 && <p className="text-sm text-muted-foreground">No registered product yet. The product types above are enough to continue.</p>}
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold">Registered product <span className="text-rose-600">*</span></h4>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setNewProductOpen((open) => !open)} disabled={busy}>
+                    {newProductOpen ? 'Cancel' : 'Register product'}
+                  </Button>
+                </div>
+                {(profile?.products || []).length === 0 && !newProductOpen && <p className="text-sm text-muted-foreground">No registered product yet. Register one, then select it.</p>}
+                {newProductOpen && (
+                  <div className="space-y-3 rounded-lg border border-border p-3">
+                    <FieldGrid>
+                      <FormField field={{ key: 'np-category', label: 'Product category', type: 'text', required: true }} value={newProduct.category} onChange={(value) => setNewProduct((prev) => ({ ...prev, category: value }))} />
+                      <FormField field={{ key: 'np-name', label: 'Product name', type: 'text', required: true }} value={newProduct.name} onChange={(value) => setNewProduct((prev) => ({ ...prev, name: value }))} />
+                      <FormField field={{ key: 'np-model', label: 'Model', type: 'text' }} value={newProduct.model} onChange={(value) => setNewProduct((prev) => ({ ...prev, model: value }))} />
+                      <FormField field={{ key: 'np-serial', label: 'Serial number', type: 'text' }} value={newProduct.serial_number} onChange={(value) => setNewProduct((prev) => ({ ...prev, serial_number: value }))} />
+                    </FieldGrid>
+                    <div className="flex justify-end">
+                      <Button type="button" onClick={registerProduct} disabled={busy || !newProduct.name.trim() || !newProduct.category.trim()}>
+                        {busy ? 'Saving…' : 'Save product'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {(profile?.products || []).map((product) => (
                   <ChoiceRow
                     key={product.id}
@@ -606,13 +867,11 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
               {siteVisitRequired && <ReadRow label="Acknowledged by">{ack.name}</ReadRow>}
               {siteVisitRequired && <div className="md:col-span-2"><ReadRow label="Acknowledgement notes">{ack.notes}</ReadRow></div>}
               {siteVisitRequired && <ReadRow label="Acknowledgement file">{ackFile?.name}</ReadRow>}
-              {siteVisitRequired === false && <div className="md:col-span-2"><ReadRow label="Service types">{serviceTypesSelected.join(', ')}</ReadRow></div>}
-              {siteVisitRequired === false && <div className="md:col-span-2"><ReadRow label="Product types">{productTypesSelected.join(', ')}</ReadRow></div>}
+              <div className="md:col-span-2"><ReadRow label="Service types">{serviceTypesSelected.join(', ')}</ReadRow></div>
+              {selectedWorkflows.has('installation') && <div className="md:col-span-2"><ReadRow label="Product types">{productTypesSelected.join(', ')}</ReadRow></div>}
             </div>
             <p className="text-xs text-muted-foreground">
-              {siteVisitRequired
-                ? 'After the site visit, record any remaining service and product details. The technician is assigned after that.'
-                : 'The technician can be assigned once this request is created.'}
+              The first selected service type is saved on the request. The technician can be assigned once this request is created.
             </p>
           </div>
         )}
@@ -623,12 +882,12 @@ export function CreateServiceRequest({ open, onClose, meta, onCreated }) {
           </Button>
           <div className="flex gap-2">
             {current !== 'type' && customer && (
-              <Button variant="outline" onClick={() => submit(true)} disabled={busy}>Save as draft</Button>
+              <Button variant="outline" onClick={() => submit(true)} disabled={busy} title="Open the draft later and click Submit request">Save as draft</Button>
             )}
             {current !== 'review' ? (
               <Button onClick={next} disabled={busy}>Next<ChevronRight className="ml-1 h-4 w-4" /></Button>
             ) : (
-              <Button onClick={() => submit(false)} disabled={busy}>{busy ? 'Creating…' : 'Create request'}</Button>
+              <Button onClick={() => submit(false)} disabled={busy}>{busy ? 'Saving…' : draftService ? 'Submit request' : 'Create request'}</Button>
             )}
           </div>
         </div>

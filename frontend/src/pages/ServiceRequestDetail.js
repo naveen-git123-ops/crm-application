@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useRegisterPageHeader } from '@/contexts/PageHeaderContext';
 import { DETAIL_TABS, serviceApi } from '@/lib/serviceUtils';
+import { CreateServiceRequest } from '@/components/service/CreateServiceRequest';
 import { PriorityBadge, StatusBadge, useReasonPrompt } from '@/components/service/ServiceFields';
 import {
   CustomerTab, FilesTab, HistoryTab, InspectionTab, OverviewTab, VisitsTab, WorkLogTab, errorText,
@@ -120,6 +121,30 @@ export function ServiceRequestDetail() {
     );
   }
   if (!detail || !meta || !lookups) return <div className="p-6 text-sm text-muted-foreground">Loading service request…</div>;
+
+  if (detail.service.status === 'Draft') {
+    return (
+      <div className="p-4 md:p-6">
+        <CreateServiceRequest
+          open
+          draftId={detail.service.id}
+          meta={meta}
+          onClose={() => navigate('/service-maintenance')}
+          onCreated={(id, result) => {
+            if (result?.draft) {
+              load();
+              return;
+            }
+            if (id && id !== detail.service.id) {
+              navigate(`/service-maintenance/${id}`, { replace: true });
+              return;
+            }
+            load();
+          }}
+        />
+      </div>
+    );
+  }
 
   const s = detail.service;
   const caps = detail.caps;

@@ -270,6 +270,38 @@ export function checklistRows(labels) {
 
 export const SITE_VISIT_ACK_CATEGORY = 'Site Visit Acknowledgement';
 
+export const SERVICE_TYPES_BY_CUSTOMER = {
+  New: ['Installation & Commissioning', 'Repair and Troubleshooting'],
+  Existing: ['Troubleshooting / Breakdown', 'Repair', 'General Service', 'Preventive Maintenance', 'AMC Visit'],
+};
+
+export const WORKFLOW_BY_SERVICE_TYPE = {
+  'Installation & Commissioning': 'installation',
+  'On-site Commissioning': 'installation',
+  'Repair and Troubleshooting': 'repair',
+  'Repair and Trouble shooting': 'repair',
+  'Troubleshooting / Breakdown': 'repair',
+  Repair: 'repair',
+  'General Service': 'repair',
+  'Preventive Maintenance': 'repair',
+  'AMC Visit': 'amc',
+};
+
+export function serviceTypesForCustomer(customerType, meta) {
+  if (customerType === 'New') return SERVICE_TYPES_BY_CUSTOMER.New;
+  const fromMeta = meta?.service_types_by_customer?.[customerType];
+  if (Array.isArray(fromMeta) && fromMeta.length) return fromMeta;
+  return SERVICE_TYPES_BY_CUSTOMER[customerType] || [];
+}
+
+export function workflowForServiceType(type, meta) {
+  return meta?.workflow_by_service_type?.[type] || WORKFLOW_BY_SERVICE_TYPE[type] || '';
+}
+
+export function workflowsForServiceTypes(types, meta) {
+  return new Set((types || []).map((item) => workflowForServiceType(item, meta)).filter(Boolean));
+}
+
 export const INSTALLATION_PRODUCT_CATEGORIES = [
   'Electrical Automation',
   'Instrumentation',

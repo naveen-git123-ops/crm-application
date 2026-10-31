@@ -521,6 +521,22 @@ def mount_service_routes(api_router) -> None:
                                  schedule=body.get('schedule') or {})
         return build_detail(ctx, svc)
 
+    @api_router.post('/service-requests/{service_id}/intake')
+    def save_service_intake(service_id: str, body: Dict[str, Any] = Body(...), ctx: _Ctx = Depends(ctx_dep)):
+        svc = load_service(ctx, service_id)
+        need(ctx, 'coordinate', 'Only a service coordinator can update the call details')
+        with _guarded(ctx.db):
+            sm.update_intake(ctx.db, svc, body, ctx.actor, ctx.caps)
+        return build_detail(ctx, svc)
+
+    @api_router.post('/service-requests/{service_id}/submit')
+    def submit_service_draft(service_id: str, body: Optional[Dict[str, Any]] = Body(None), ctx: _Ctx = Depends(ctx_dep)):
+        svc = load_service(ctx, service_id)
+        need(ctx, 'coordinate', 'Only a service coordinator can submit a draft')
+        with _guarded(ctx.db):
+            sm.submit_draft(ctx.db, svc, ctx.actor, ctx.caps, reason_of(body or {}))
+        return build_detail(ctx, svc)
+
     @api_router.post('/service-requests/{service_id}/site-visit')
     def complete_service_site_visit(service_id: str, body: Dict[str, Any] = Body(...), ctx: _Ctx = Depends(ctx_dep)):
         svc = load_service(ctx, service_id)

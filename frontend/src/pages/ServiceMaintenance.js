@@ -53,6 +53,7 @@ export function ServiceMaintenance() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [createOpen, setCreateOpen] = useState(false);
+  const [draftId, setDraftId] = useState(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
   const [amcOpen, setAmcOpen] = useState(false);
@@ -207,7 +208,7 @@ export function ServiceMaintenance() {
       {caps.coordinate && <Button variant="outline" size="sm" onClick={() => setAmcOpen(true)}>AMC contracts</Button>}
       {caps.manage && <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}><Settings2 className="mr-1 h-4 w-4" />Settings</Button>}
       {caps.coordinate && (
-        <Button size="sm" onClick={() => setCreateOpen(true)} data-testid="create-service-request">
+        <Button size="sm" onClick={() => { setDraftId(null); setCreateOpen(true); }} data-testid="create-service-request">
           <Plus className="mr-1 h-4 w-4" />Create Service Request
         </Button>
       )}
@@ -325,7 +326,14 @@ export function ServiceMaintenance() {
                 <tr
                   key={row.id}
                   className="cursor-pointer border-b border-border hover:bg-muted"
-                  onClick={() => navigate(`/service-maintenance/${row.id}`)}
+                  onClick={() => {
+                    if (row.status === 'Draft') {
+                      setDraftId(row.id);
+                      setCreateOpen(true);
+                      return;
+                    }
+                    navigate(`/service-maintenance/${row.id}`);
+                  }}
                 >
                   <td className="whitespace-nowrap py-2 pr-3 font-mono text-xs">{row.service_code}</td>
                   <td className="whitespace-nowrap py-2 pr-3">{fmtDate(row.request_date)}</td>
@@ -374,9 +382,19 @@ export function ServiceMaintenance() {
       {meta && (
         <CreateServiceRequest
           open={createOpen}
-          onClose={() => setCreateOpen(false)}
+          draftId={draftId}
+          onClose={() => { setCreateOpen(false); setDraftId(null); }}
           meta={meta}
-          onCreated={(id) => navigate(`/service-maintenance/${id}`)}
+          onCreated={(id, result) => {
+            if (result?.draft) {
+              setDraftId(id);
+              loadList();
+              return;
+            }
+            setCreateOpen(false);
+            setDraftId(null);
+            navigate(`/service-maintenance/${id}`);
+          }}
         />
       )}
       <ServiceHistoryDialog open={historyOpen} onClose={() => setHistoryOpen(false)} onOpenService={(id) => navigate(`/service-maintenance/${id}`)} />

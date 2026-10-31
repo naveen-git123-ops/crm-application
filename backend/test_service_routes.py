@@ -259,7 +259,7 @@ def test_requires_login_and_permission(world):
 def test_meta_reports_capabilities(world):
     meta = world.get('/api/service/meta', headers=COORD).json()
     assert meta['caps']['coordinate'] and not meta['caps']['manage']
-    assert 'Installation & Commissioning' in meta['service_types_by_customer']['New']
+    assert meta['service_types_by_customer']['New'] == ['Installation & Commissioning', 'Repair and Troubleshooting']
     assert 'Installation & Commissioning' not in meta['service_types_by_customer']['Existing']
     assert 'Closed' in meta['statuses'] and meta['attachment_limits']['video_mb'] == 100
     assert world.get('/api/service/meta', headers=ADMIN).json()['caps']['manage']

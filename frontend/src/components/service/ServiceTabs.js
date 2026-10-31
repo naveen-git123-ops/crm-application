@@ -9,7 +9,7 @@ import {
 import { getApiErrorMessage } from '@/lib/apiErrors';
 import {
   EVIDENCE_CATEGORIES, INPUT_CLASS, INSTALLATION_PRODUCT_CATEGORIES, SITE_VISIT_ACK_CATEGORY, TAB_SECTIONS,
-  fmtDate, fmtDateTime, serviceApi,
+  fmtDate, fmtDateTime, serviceApi, serviceTypesForCustomer, uid, workflowsForServiceTypes,
 } from '@/lib/serviceUtils';
 import {
   BlockerList, FieldGrid, FormField, MultiPicker, PriorityBadge, ReadRow, SectionCard, StatusBadge,
@@ -48,6 +48,7 @@ function EditDetailsDialog({ ctx, open, onClose }) {
   const s = detail.service;
   const config = detail.config;
   const fields = useMemo(() => {
+    const typeOptions = serviceTypesForCustomer(s.customer_type, ctx.meta);
     const base = [
       { key: 'priority', label: 'Priority', type: 'select', options: ctx.meta.priorities },
       { key: 'contact_person', label: 'Contact person', type: 'text', required: true },
@@ -62,6 +63,9 @@ function EditDetailsDialog({ ctx, open, onClose }) {
       { key: 'expected_completion', label: 'Expected completion', type: 'date' },
       { key: 'problem_description', label: 'Problem reported on the call', type: 'textarea', wide: true },
     ];
+    if (s.status === 'Draft' || !s.service_type) {
+      base.unshift({ key: 'service_type', label: 'Service type', type: 'select', required: true, options: typeOptions });
+    }
     if (s.workflow === 'installation') {
       base.push(
         { key: 'product_category', label: 'Product category', type: 'text' },
@@ -84,7 +88,7 @@ function EditDetailsDialog({ ctx, open, onClose }) {
       { key: 'remarks', label: 'Remarks', type: 'textarea', wide: true },
     );
     return base;
-  }, [s.workflow, config, ctx.meta.priorities]);
+  }, [s.workflow, s.customer_type, s.status, s.service_type, config, ctx.meta]);
 
   const [form, setForm] = useState({});
   const [busy, setBusy] = useState(false);
@@ -192,6 +196,231 @@ function AssignmentCard({ ctx }) {
   );
 }
 
+function CommentsCard({ ctx }) {
+  const { detail, saveSection, canWork } = ctx;
+  const entries = detail.data?.comments?.entries || [];
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const add = async () => {
+    const note = text.trim();
+    if (!note) return;
+    setBusy(true);
+    try {
+      await saveSection('comments', {
+        entries: [...entries, {
+          id: uid(),
+          text: note,
+          author: detail.caps?.coordinate ? 'Coordinator' : 'Technician',
+          at: new Date().toISOString(),
+        }],
+      });
+      setText('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SectionCard title="Comments and customer notes" description="Keep the customer notes and a running comment log until the ticket is resolved. Attachments go on the Files tab.">
+      {detail.service.customer_notes && (
+        <div className="mb-3">
+          <ReadRow label="Customer notes">{detail.service.customer_notes}</ReadRow>
+        </div>
+      )}
+      <ul className="space-y-2">
+        {entries.map((entry) => (
+          <li key={entry.id} className="rounded-lg border border-border p-2 text-sm">
+            <div className="text-xs text-muted-foreground">{entry.author || 'Team'} · {fmtDateTime(entry.at)}</div>
+            <p className="whitespace-pre-wrap text-foreground">{entry.text}</p>
+          </li>
+        ))}
+        {entries.length === 0 && <li className="text-sm text-muted-foreground">No comments yet.</li>}
+      </ul>
+      {canWork && (
+        <div className="mt-3 space-y-2">
+          <FormField field={{ key: 'ticket-comment', label: 'Add a comment', type: 'textarea', wide: true }} value={text} onChange={setText} />
+          <div className="flex justify-end">
+            <Button onClick={add} disabled={busy || !text.trim()}>{busy ? 'Saving…' : 'Add comment'}</Button>
+          </div>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function InstallationJobCard({ ctx }) {
+  const { detail, lookups, saveSection, canWork } = ctx;
+  const s = detail.service;
+  const proc = detail.data?.procurement || {};
+  const [form, setForm] = useState({
+    product_available: proc.product_available,
+    vendor_id: proc.vendor_id || '',
+    vendor_name: proc.vendor_name || '',
+    quote_amount: proc.quote_amount || '',
+    currency: proc.currency || 'INR',
+    delivery_date: proc.delivery_date || '',
+    notes: proc.notes || '',
+    product_received: Boolean(proc.product_received),
+  });
+  const [busy, setBusy] = useState(false);
+  const vendors = lookups?.vendors || [];
+  const assigned = Boolean(s.assigned_employee_id);
+
+  useEffect(() => {
+    setForm({
+      product_available: proc.product_available,
+      vendor_id: proc.vendor_id || '',
+      vendor_name: proc.vendor_name || '',
+      quote_amount: proc.quote_amount || '',
+      currency: proc.currency || 'INR',
+      delivery_date: proc.delivery_date || '',
+      notes: proc.notes || '',
+      product_received: Boolean(proc.product_received),
+    });
+  }, [proc.product_available, proc.vendor_id, proc.quote_amount, proc.delivery_date, proc.notes, proc.product_received, proc.vendor_name]);
+
+  const setAvailable = (value) => setForm((prev) => ({ ...prev, product_available: value }));
+
+  const save = async (extra = {}) => {
+    setBusy(true);
+    try {
+      const vendor = vendors.find((item) => item.id === form.vendor_id);
+      await saveSection('procurement', {
+        ...form,
+        ...extra,
+        vendor_name: vendor?.company_name || form.vendor_name,
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (s.workflow !== 'installation') return null;
+
+  const insp = detail.data?.inspection || {};
+  const ex = detail.data?.execution || {};
+  const com = detail.data?.commissioning || {};
+  const vendorPath = form.product_available === false;
+  const installDone = ex.status === 'Completed' && com.status === 'Successful';
+  const steps = [
+    { label: 'Assign technician', done: assigned },
+    { label: 'Product available?', done: form.product_available != null },
+    ...(vendorPath
+      ? [
+        { label: 'Vendor and pricing', done: Boolean(form.vendor_id && form.quote_amount) },
+        { label: 'Product received', done: form.product_received },
+      ]
+      : [{ label: 'Site visit', done: form.product_available === true && Boolean(insp.inspection_date) }]),
+    { label: 'Install and commission', done: installDone },
+    { label: 'Resolve ticket', done: ['Completed', 'Closed'].includes(s.status) },
+  ];
+
+  return (
+    <SectionCard
+      title="Installation job"
+      description="After the technician is assigned, first record whether the product is available. If it is, continue with the site visit. If it is not, source it from a vendor the same way as a lead."
+    >
+      <ol className="mb-4 flex flex-wrap gap-1.5 text-xs font-medium">
+        {steps.map((item, idx) => (
+          <li key={item.label} className={cnStep(item.done, idx === steps.findIndex((step) => !step.done))}>
+            {idx + 1}. {item.label}
+          </li>
+        ))}
+      </ol>
+
+      {!assigned && (
+        <p className="text-sm text-muted-foreground">Assign a technician first. Then the technician records whether the product is available.</p>
+      )}
+
+      {assigned && (
+        <div className="space-y-4">
+          <div>
+            <div className="mb-2 text-xs font-medium text-muted-foreground">Is the product available?</div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <button type="button" disabled={!canWork} onClick={() => setAvailable(true)} className={`rounded-xl border p-4 text-left ${form.product_available === true ? 'border-indigo-400 bg-indigo-50' : 'border-border hover:bg-muted'}`}>
+                <div className="font-semibold">Yes — product is available</div>
+                <p className="mt-1 text-sm text-muted-foreground">Continue with the site visit, installation and commissioning.</p>
+              </button>
+              <button type="button" disabled={!canWork} onClick={() => setAvailable(false)} className={`rounded-xl border p-4 text-left ${form.product_available === false ? 'border-indigo-400 bg-indigo-50' : 'border-border hover:bg-muted'}`}>
+                <div className="font-semibold">No — source from vendor</div>
+                <p className="mt-1 text-sm text-muted-foreground">Select the vendor, enter pricing, then mark the product received.</p>
+              </button>
+            </div>
+          </div>
+
+          {form.product_available === true && (
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+              Use the Inspection, Visits and Work Log tabs for the site visit, installation and commissioning. Add comments and files until the ticket is resolved.
+            </p>
+          )}
+
+          {form.product_available === false && (
+            <div className="space-y-3 rounded-lg border border-border p-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground" htmlFor="svc-vendor">Vendor</label>
+                <select id="svc-vendor" className={INPUT_CLASS} disabled={!canWork} value={form.vendor_id} onChange={(e) => setForm((prev) => ({ ...prev, vendor_id: e.target.value }))}>
+                  <option value="">Select vendor…</option>
+                  {vendors.map((vendor) => (
+                    <option key={vendor.id} value={vendor.id}>{vendor.company_name}</option>
+                  ))}
+                </select>
+              </div>
+              <FieldGrid>
+                <FormField field={{ key: 'quote_amount', label: 'Vendor price', type: 'number', required: true }} value={form.quote_amount} onChange={(value) => setForm((prev) => ({ ...prev, quote_amount: value }))} disabled={!canWork} />
+                <FormField field={{ key: 'currency', label: 'Currency', type: 'text' }} value={form.currency} onChange={(value) => setForm((prev) => ({ ...prev, currency: value }))} disabled={!canWork} />
+                <FormField field={{ key: 'delivery_date', label: 'Expected delivery', type: 'date' }} value={form.delivery_date} onChange={(value) => setForm((prev) => ({ ...prev, delivery_date: value }))} disabled={!canWork} />
+                <FormField field={{ key: 'proc-notes', label: 'Vendor / pricing notes', type: 'textarea', wide: true }} value={form.notes} onChange={(value) => setForm((prev) => ({ ...prev, notes: value }))} disabled={!canWork} />
+              </FieldGrid>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" disabled={!canWork} checked={form.product_received} onChange={(e) => setForm((prev) => ({ ...prev, product_received: e.target.checked }))} />
+                Product has been received and the site visit can start
+              </label>
+            </div>
+          )}
+
+          {canWork && form.product_available != null && (
+            <div className="flex justify-end">
+              <Button onClick={() => save()} disabled={busy}>{busy ? 'Saving…' : 'Save job details'}</Button>
+            </div>
+          )}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function RepairJobCard({ ctx }) {
+  const { detail } = ctx;
+  const s = detail.service;
+  if (s.workflow !== 'repair') return null;
+  const entries = detail.data?.troubleshooting || [];
+  const work = detail.data?.work || {};
+  const test = detail.data?.final_test || {};
+  const assigned = Boolean(s.assigned_employee_id);
+  const steps = [
+    { label: 'Assign technician', done: assigned },
+    { label: 'Inspect and diagnose', done: entries.some((entry) => entry.fault_identified) },
+    { label: 'Repair work', done: work.status === 'Completed' },
+    { label: 'Final test', done: test.outcome === 'Passed' },
+    { label: 'Resolve ticket', done: ['Completed', 'Closed'].includes(s.status) },
+  ];
+  return (
+    <SectionCard title="Repair job" description="After the technician is assigned, inspect, repair and test. Comments, files and customer notes stay on this ticket until it is resolved.">
+      <ol className="mb-4 flex flex-wrap gap-1.5 text-xs font-medium">
+        {steps.map((item, idx) => (
+          <li key={item.label} className={cnStep(item.done, idx === steps.findIndex((step) => !step.done))}>
+            {idx + 1}. {item.label}
+          </li>
+        ))}
+      </ol>
+      <p className="text-sm text-muted-foreground">
+        Use the Inspection and Work Log tabs for diagnosis and repair. Add comments below and attachments on the Files tab.
+      </p>
+    </SectionCard>
+  );
+}
+
 function IntakeProgress({ service, intake }) {
   const required = intake?.site_visit_required;
   const visitDone = required === false || (required === true && Boolean(intake?.site_visit_done));
@@ -233,17 +462,77 @@ function SiteVisitCard({ ctx }) {
   const [findings, setFindings] = useState(intake.site_visit_findings || '');
   const [ackUpload, setAckUpload] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [visitAnswer, setVisitAnswer] = useState(null);
+  const [ackForm, setAckForm] = useState({ acknowledged: false, name: s.contact_person || '', notes: '' });
   const ackFiles = (detail.attachments || []).filter((file) => file.category === SITE_VISIT_ACK_CATEGORY);
 
   useEffect(() => {
     setFindings(intake.site_visit_findings || '');
   }, [intake.site_visit_findings]);
 
-  if (!intake || !Object.prototype.hasOwnProperty.call(intake, 'site_visit_required')) return null;
+  const saveIntake = async () => {
+    setBusy(true);
+    try {
+      await run(() => serviceApi.post(`/service-requests/${s.id}/intake`, {
+        site_visit_required: visitAnswer,
+        site_visit_acknowledgement: visitAnswer ? ackForm : null,
+      }), visitAnswer ? 'Site visit acknowledgement saved' : 'No site visit recorded');
+      if (visitAnswer && ackUpload) {
+        const form = new FormData();
+        form.append('file', ackUpload);
+        form.append('category', SITE_VISIT_ACK_CATEGORY);
+        form.append('description', ackForm.notes);
+        try {
+          await serviceApi.upload(`/service-requests/${s.id}/attachments`, form);
+          toast.success('Acknowledgement file uploaded');
+          await reload();
+        } catch (err) {
+          toast.error(errorText(err, 'The acknowledgement was saved, but the file did not upload'));
+        }
+      }
+    } catch {
+      /* shown by run() */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!intake || !Object.prototype.hasOwnProperty.call(intake, 'site_visit_required')) {
+    if (s.status !== 'Draft') return null;
+  }
   if (intake.site_visit_required == null) {
     return (
-      <SectionCard title="Site visit" description="The call did not record whether a visit is required.">
-        <p className="text-sm text-muted-foreground">Answer the site visit step on the request before recording the service type and product.</p>
+      <SectionCard title="Site visit" description="Say whether a visit is required, then submit the draft.">
+        <div className="grid gap-3 md:grid-cols-2">
+          <button type="button" onClick={() => setVisitAnswer(true)} className={`rounded-xl border p-4 text-left ${visitAnswer === true ? 'border-indigo-400 bg-indigo-50' : 'border-border hover:bg-muted'}`}>
+            <div className="font-semibold text-foreground">Site visit required</div>
+            <p className="mt-1 text-sm text-muted-foreground">Record the customer acknowledgement below.</p>
+          </button>
+          <button type="button" onClick={() => setVisitAnswer(false)} className={`rounded-xl border p-4 text-left ${visitAnswer === false ? 'border-indigo-400 bg-indigo-50' : 'border-border hover:bg-muted'}`}>
+            <div className="font-semibold text-foreground">No site visit</div>
+            <p className="mt-1 text-sm text-muted-foreground">The executive can fill service and product next.</p>
+          </button>
+        </div>
+        {visitAnswer === true && (
+          <div className="mt-3 space-y-3 rounded-lg border border-border p-3">
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" checked={ackForm.acknowledged} onChange={(event) => setAckForm((prev) => ({ ...prev, acknowledged: event.target.checked }))} />
+              The customer acknowledged the site visit.
+            </label>
+            <FieldGrid>
+              <FormField field={{ key: 'draft-ack-name', label: 'Acknowledged by', type: 'text', required: true }} value={ackForm.name} onChange={(value) => setAckForm((prev) => ({ ...prev, name: value }))} />
+              <FormField field={{ key: 'draft-ack-notes', label: 'Acknowledgement notes', type: 'textarea', required: true, wide: true }} value={ackForm.notes} onChange={(value) => setAckForm((prev) => ({ ...prev, notes: value }))} />
+            </FieldGrid>
+            <input type="file" className="block w-full text-sm" onChange={(event) => setAckUpload(event.target.files?.[0] || null)} />
+          </div>
+        )}
+        {canRecord && visitAnswer != null && (
+          <div className="mt-3 flex justify-end">
+            <Button onClick={saveIntake} disabled={busy || (visitAnswer && (!ackForm.acknowledged || !ackForm.name.trim() || !ackForm.notes.trim() || !ackUpload))}>
+              {busy ? 'Saving…' : 'Save site visit answer'}
+            </Button>
+          </div>
+        )}
       </SectionCard>
     );
   }
@@ -339,7 +628,10 @@ function FieldDetailsCard({ ctx }) {
   const config = detail.config || {};
   const closed = ['Closed', 'Cancelled'].includes(s.status);
   const canRecord = Boolean(caps.coordinate) && !closed && (!detail.locked || caps.manage);
-  const visitBlocks = Boolean(intake) && intake.site_visit_required !== false && !intake.site_visit_done;
+  const visitBlocks = s.status !== 'Draft'
+    && Boolean(intake)
+    && intake.site_visit_required === true
+    && !intake.site_visit_done;
   const [editing, setEditing] = useState(!s.service_type);
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({});
@@ -348,8 +640,8 @@ function FieldDetailsCard({ ctx }) {
   const [newProductOpen, setNewProductOpen] = useState(false);
   const [newProduct, setNewProduct] = useState({ category: '', name: '', model: '', serial_number: '' });
 
-  const serviceTypes = meta?.service_types_by_customer?.[s.customer_type] || [];
-  const selectedWorkflows = new Set((form.service_types || []).map((item) => meta?.workflow_by_service_type?.[item]).filter(Boolean));
+  const serviceTypes = serviceTypesForCustomer(s.customer_type, meta);
+  const selectedWorkflows = workflowsForServiceTypes(form.service_types, meta);
   const leadRequired = s.customer_type === 'Existing' && config.require_lead_for_existing !== false;
 
   useEffect(() => {
@@ -412,7 +704,7 @@ function FieldDetailsCard({ ctx }) {
     setBusy(true);
     setError([]);
     try {
-      await run(() => serviceApi.post(`/service-requests/${s.id}/field-details`, {
+      const payload = {
         service_types: form.service_types,
         service_type: (form.service_types || [])[0],
         product_types: form.product_types,
@@ -428,6 +720,12 @@ function FieldDetailsCard({ ctx }) {
         installation_requirements: form.installation_requirements,
         problem_category: form.problem_category,
         problem_description: form.problem_description,
+      };
+      await run(() => serviceApi.post(`/service-requests/${s.id}/field-details`, payload).catch((err) => {
+        if (err?.response?.status === 404) {
+          return serviceApi.put(`/service-requests/${s.id}`, payload);
+        }
+        throw err;
       }), 'Service and product details saved');
       setEditing(false);
     } catch (err) {
@@ -441,7 +739,9 @@ function FieldDetailsCard({ ctx }) {
   return (
     <SectionCard
       title="Service and product"
-      description="Filled after the site visit, when the problem and the product are known. The technician is assigned in the next step."
+      description={s.status === 'Draft'
+        ? 'Save the service types and product types here, then submit the draft at the top of this page.'
+        : 'Filled after the site visit, when the problem and the product are known. The technician is assigned in the next step.'}
       actions={s.service_type && canRecord && !editing && (
         <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button>
       )}
@@ -455,8 +755,12 @@ function FieldDetailsCard({ ctx }) {
       {!visitBlocks && s.service_type && !editing && (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <ReadRow label="Service type">{(s.service_types || []).join(', ') || s.service_type}</ReadRow>
-          <ReadRow label="Product">{[s.product_name, s.product_model].filter(Boolean).join(' · ')}</ReadRow>
-          <ReadRow label="Product type">{(s.product_types || []).join(', ') || s.product_category}</ReadRow>
+          {s.workflow === 'installation' && (
+            <>
+              <ReadRow label="Product">{[s.product_name, s.product_model].filter(Boolean).join(' · ')}</ReadRow>
+              <ReadRow label="Product type">{(s.product_types || []).join(', ') || s.product_category}</ReadRow>
+            </>
+          )}
           {s.problem_category && <ReadRow label="Problem category">{s.problem_category}</ReadRow>}
         </div>
       )}
@@ -481,18 +785,20 @@ function FieldDetailsCard({ ctx }) {
                   : [...(prev.service_types || []), value],
               }))}
             />
-            <MultiPicker
-              label="Product type"
-              required
-              options={INSTALLATION_PRODUCT_CATEGORIES}
-              selected={form.product_types || []}
-              onToggle={(value) => setForm((prev) => ({
-                ...prev,
-                product_types: (prev.product_types || []).includes(value)
-                  ? prev.product_types.filter((item) => item !== value)
-                  : [...(prev.product_types || []), value],
-              }))}
-            />
+            {selectedWorkflows.has('installation') && (
+              <MultiPicker
+                label="Product type"
+                required
+                options={INSTALLATION_PRODUCT_CATEGORIES}
+                selected={form.product_types || []}
+                onToggle={(value) => setForm((prev) => ({
+                  ...prev,
+                  product_types: (prev.product_types || []).includes(value)
+                    ? prev.product_types.filter((item) => item !== value)
+                    : [...(prev.product_types || []), value],
+                }))}
+              />
+            )}
           </FieldGrid>
 
           {s.customer_type === 'Existing' && (
@@ -631,22 +937,36 @@ export function OverviewTab({ ctx }) {
   const caps = detail.caps;
   const closed = ['Closed', 'Cancelled'].includes(s.status);
 
+  const statusLabel = (next) => {
+    if (s.status === 'Draft' && next === 'New') return 'Submit request';
+    if (s.status === 'Draft' && next === 'Cancelled') return 'Discard draft';
+    return next;
+  };
+
   const move = (option) => {
     if (option.blockers.length > 0) {
       setBlocked(option);
       return;
     }
+    const submitting = s.status === 'Draft' && option.status === 'New';
     const send = (reason) => run(
-      () => serviceApi.post(`/service-requests/${s.id}/status`, { status: option.status, reason }),
-      `Status changed to ${option.status}`,
+      () => (submitting
+        ? serviceApi.post(`/service-requests/${s.id}/submit`, { reason }).catch((err) => {
+          if (err?.response?.status === 404) {
+            return serviceApi.post(`/service-requests/${s.id}/status`, { status: 'New', reason });
+          }
+          throw err;
+        })
+        : serviceApi.post(`/service-requests/${s.id}/status`, { status: option.status, reason })),
+      submitting ? 'Request submitted' : `Status changed to ${option.status}`,
     );
     if (option.reason_required) {
       ask({
-        title: `Move to ${option.status}`,
+        title: submitting ? 'Submit this draft' : `Move to ${option.status}`,
         description: s.status === 'Completed' || s.status === 'Closed'
           ? 'Enter why this finished request is being changed.'
           : 'Enter the reason. It is recorded in the history.',
-        confirmLabel: 'Change status',
+        confirmLabel: submitting ? 'Submit request' : 'Change status',
         run: send,
       });
     } else {
@@ -654,12 +974,38 @@ export function OverviewTab({ ctx }) {
     }
   };
 
+  const submitOption = detail.next_statuses.find((option) => option.status === 'New');
+
   const completion = detail.next_statuses.find((o) => o.status === 'Completed');
   const intake = detail.data?.intake;
   const showIntake = Boolean(intake) || !s.service_type;
 
   return (
     <div className="space-y-4">
+      {s.status === 'Draft' && (
+        <SectionCard
+          title="This request is still a draft"
+          description="Finish the call, site visit answer, and service and product details below. Then submit the request. It stays a draft until you do."
+        >
+          {submitOption && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={() => move(submitOption)}
+                variant={submitOption.blockers.length > 0 ? 'outline' : 'default'}
+                className={submitOption.blockers.length > 0 ? 'border-amber-300 text-amber-800' : undefined}
+              >
+                Submit request
+              </Button>
+              <p className="text-sm text-muted-foreground">
+                {submitOption.blockers.length > 0
+                  ? 'Some required details are still missing. Click Submit request to see them.'
+                  : 'This will open the request so a technician can be assigned.'}
+              </p>
+            </div>
+          )}
+        </SectionCard>
+      )}
+      {s.status === 'Draft' && <FieldDetailsCard ctx={ctx} />}
       {showIntake && (
         <SectionCard title="How this request moves" description="The call is recorded first. Service type and product come after the visit. The technician is assigned last.">
           <IntakeProgress service={s} intake={intake} />
@@ -683,7 +1029,7 @@ export function OverviewTab({ ctx }) {
                 className={option.blockers.length > 0 ? 'border-amber-300 text-amber-800' : undefined}
                 title={option.blockers.length > 0 ? 'Not ready — click to see why' : undefined}
               >
-                {option.status}
+                {statusLabel(option.status)}
               </Button>
             ))}
           </div>
@@ -736,23 +1082,26 @@ export function OverviewTab({ ctx }) {
         </div>
       </SectionCard>
 
-      {showIntake && <SiteVisitCard ctx={ctx} />}
-      {showIntake && <FieldDetailsCard ctx={ctx} />}
+      {(showIntake || s.status === 'Draft') && <SiteVisitCard ctx={ctx} />}
+      {s.status !== 'Draft' && showIntake && <FieldDetailsCard ctx={ctx} />}
 
       {s.service_type && caps.coordinate && !closed && <AssignmentCard ctx={ctx} />}
       {!s.service_type && (
-        <SectionCard title="Assign technician" description="This step opens after the service type and product are saved.">
+        <SectionCard title="Assign technician" description="This step opens after the service type and job details are saved.">
           <p className="text-sm text-muted-foreground">
-            After the visit, record the service type and product. Then assign the technician who will do the work.
+            After the visit, record the service type and job details. Then assign the technician who will do the work.
           </p>
         </SectionCard>
       )}
+      {s.service_type && s.status !== 'Draft' && <InstallationJobCard ctx={ctx} />}
+      {s.service_type && s.status !== 'Draft' && <RepairJobCard ctx={ctx} />}
+      {s.status !== 'Draft' && <CommentsCard ctx={ctx} />}
 
       <EditDetailsDialog ctx={ctx} open={editOpen} onClose={() => setEditOpen(false)} />
       <Dialog open={Boolean(blocked)} onOpenChange={(value) => { if (!value) setBlocked(null); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Cannot move to {blocked?.status} yet</DialogTitle>
+            <DialogTitle>{blocked?.status === 'New' && s.status === 'Draft' ? 'Cannot submit this draft yet' : `Cannot move to ${blocked?.status} yet`}</DialogTitle>
             <DialogDescription>Finish these first:</DialogDescription>
           </DialogHeader>
           <BlockerList items={blocked?.blockers} title="Still missing" />
@@ -883,9 +1232,18 @@ export function InspectionTab({ ctx }) {
   const { detail } = ctx;
   const workflow = detail.service.workflow;
   const sections = TAB_SECTIONS[workflow]?.inspection || [];
+  const proc = detail.data?.procurement || {};
+  const waitProduct = workflow === 'installation' && proc.product_available === false && !proc.product_received;
   return (
     <div className="space-y-4">
-      {sections.map((section) => sectionBlock(ctx, section))}
+      {workflow === 'installation' && <InstallationJobCard ctx={ctx} />}
+      {waitProduct ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          Site inspection opens after the product is received from the vendor.
+        </p>
+      ) : (
+        sections.map((section) => sectionBlock(ctx, section))
+      )}
       <EvidencePanel ctx={ctx} categories={EVIDENCE_CATEGORIES.inspection[workflow]} title="Inspection photos and videos" />
     </div>
   );
@@ -895,6 +1253,8 @@ export function WorkLogTab({ ctx }) {
   const { detail } = ctx;
   const workflow = detail.service.workflow;
   const sections = TAB_SECTIONS[workflow]?.worklog || [];
+  const proc = detail.data?.procurement || {};
+  const waitProduct = workflow === 'installation' && proc.product_available === false && !proc.product_received;
   const finalTest = detail.data?.final_test || {};
   const failed = finalTest.outcome && finalTest.outcome !== 'Passed';
   const visitsWithLog = detail.visits.filter((v) => v.work_log || v.parts_used || v.test_results);
@@ -906,7 +1266,11 @@ export function WorkLogTab({ ctx }) {
           plan a revisit, or send the product for vendor repair.
         </div>
       )}
-      {sections.map((section) => sectionBlock(ctx, section))}
+      {waitProduct ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          Installation and commissioning open after the product is received from the vendor.
+        </p>
+      ) : sections.map((section) => sectionBlock(ctx, section))}
       {sections.length === 0 && (
         <p className="rounded-lg border border-border bg-white p-4 text-sm text-muted-foreground">
           The AMC visit details are recorded on the Inspection tab. Visit-by-visit notes appear below and on the Visits tab.

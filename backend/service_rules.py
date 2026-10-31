@@ -21,6 +21,7 @@ CUSTOMER_TYPES = (CUSTOMER_NEW, CUSTOMER_EXISTING)
 
 ST_INSTALL = 'Installation & Commissioning'
 ST_COMMISSION = 'On-site Commissioning'
+ST_REPAIR_TROUBLE = 'Repair and Troubleshooting'
 ST_TROUBLE = 'Troubleshooting / Breakdown'
 ST_REPAIR = 'Repair'
 ST_GENERAL = 'General Service'
@@ -28,7 +29,7 @@ ST_PM = 'Preventive Maintenance'
 ST_AMC = 'AMC Visit'
 
 SERVICE_TYPES_BY_CUSTOMER = {
-    CUSTOMER_NEW: [ST_INSTALL, ST_COMMISSION],
+    CUSTOMER_NEW: [ST_INSTALL, ST_REPAIR_TROUBLE],
     CUSTOMER_EXISTING: [ST_TROUBLE, ST_REPAIR, ST_GENERAL, ST_PM, ST_AMC],
 }
 
@@ -39,6 +40,8 @@ WF_AMC = 'amc'
 WORKFLOW_BY_SERVICE_TYPE = {
     ST_INSTALL: WF_INSTALL,
     ST_COMMISSION: WF_INSTALL,
+    ST_REPAIR_TROUBLE: WF_REPAIR,
+    'Repair and Trouble shooting': WF_REPAIR,
     ST_TROUBLE: WF_REPAIR,
     ST_REPAIR: WF_REPAIR,
     ST_GENERAL: WF_REPAIR,
@@ -48,9 +51,9 @@ WORKFLOW_BY_SERVICE_TYPE = {
 
 # Sections of the per-request JSON document each workflow may write to.
 SECTIONS_BY_WORKFLOW = {
-    WF_INSTALL: ('inspection', 'execution', 'commissioning'),
-    WF_REPAIR: ('troubleshooting', 'work', 'final_test'),
-    WF_AMC: ('amc',),
+    WF_INSTALL: ('inspection', 'execution', 'commissioning', 'procurement', 'comments'),
+    WF_REPAIR: ('troubleshooting', 'work', 'final_test', 'comments'),
+    WF_AMC: ('amc', 'comments'),
 }
 
 # Detail-screen tabs that apply to each workflow (the rest are hidden).
@@ -451,7 +454,8 @@ def validate_create(payload: Dict[str, Any], config: Optional[Dict[str, Any]] = 
         errors.extend(validate_call_intake(payload))
         return errors
 
-    if isinstance(payload.get('product_types'), list) and not product_types:
+    workflows_preview = workflows_for_types(service_types)
+    if WF_INSTALL in workflows_preview and isinstance(payload.get('product_types'), list) and not product_types:
         errors.append('Select at least one product type')
     if product_types and _blank(payload.get('product_category')):
         payload = {**payload, 'product_category': product_types[0]}
@@ -720,6 +724,19 @@ def work_blockers(ctx: Dict[str, Any]) -> List[str]:
                 out.append(f'{label} is missing')
         if float(service.get('quantity') or 0) <= 0:
             out.append('Quantity must be greater than zero')
+        proc = data.get('procurement') if isinstance(data.get('procurement'), dict) else {}
+        available = proc.get('product_available')
+        received = bool(proc.get('product_received'))
+        if available is None:
+            out.append('Say whether the product is available')
+            return out
+        if available is False and not received:
+            if _blank(proc.get('vendor_id')) and _blank(proc.get('vendor_name')):
+                out.append('Select a vendor for the product')
+            if _blank(proc.get('quote_amount')):
+                out.append('Enter the vendor price')
+            out.append('Mark the product as received before the site visit can start')
+            return out
         insp = data.get('inspection') or {}
         if not _text(insp, 'inspection_date') or not _text(insp, 'inspector'):
             out.append('Record the site inspection (date and inspector)')
@@ -872,7 +889,11 @@ def transition_blockers(old: str, new: str, ctx: Dict[str, Any], reason: str = '
         out.append('Record the service type and product details before moving this request on')
     if old == 'Draft' and new == 'New':
         merged = {**service, 'customer_type': service.get('customer_type')}
-        if not _text(service, 'service_type'):
+        # Empty stored lists are not a classification attempt. A call-only draft can be submitted.
+        if not _text(service, 'service_type') and not (service.get('service_types') or []):
+            merged.pop('service_types', None)
+            if not (service.get('product_types') or []):
+                merged.pop('product_types', None)
             intake = ((ctx.get('data') or {}).get('intake') or {})
             if isinstance(intake, dict):
                 merged['site_visit_required'] = intake.get('site_visit_required')

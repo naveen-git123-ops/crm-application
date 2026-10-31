@@ -123,6 +123,7 @@ def add_evidence(db, svc, *categories):
 
 
 def finish_installation_work(db, svc):
+    sm.update_section(db, svc, 'procurement', {'product_available': True}, TECH_USER, TECH)
     sm.update_section(db, svc, 'inspection', {
         'inspection_date': '2026-11-04', 'inspector': 'Technician', 'site_readiness': 'Ready',
         'checklist': [done('Power available')],
@@ -141,7 +142,7 @@ def finish_installation_work(db, svc):
 # --- customer type routing ---------------------------------------------------
 
 def test_customer_type_decides_service_types():
-    assert rules.allowed_service_types('New') == [rules.ST_INSTALL, rules.ST_COMMISSION]
+    assert rules.allowed_service_types('New') == [rules.ST_INSTALL, rules.ST_REPAIR_TROUBLE]
     assert rules.default_service_type('New') == rules.ST_INSTALL
     assert rules.ST_INSTALL not in rules.allowed_service_types('Existing')
     assert rules.ST_AMC in rules.allowed_service_types('Existing')
@@ -233,6 +234,76 @@ def test_draft_is_saved_with_minimal_data(db):
     assert svc.status == 'Draft'
     with pytest.raises(ServiceError):
         sm.change_status(db, svc, 'New', COORD_USER, COORD)
+    with pytest.raises(ServiceError):
+        sm.submit_draft(db, svc, COORD_USER, COORD)
+
+
+def test_saving_a_draft_again_updates_the_same_record(db):
+    first, created = sm.create_service(
+        db, {**call_payload(), 'save_as_draft': True, 'client_request_id': 'draft-1'},
+        COORD_USER, customer=CUSTOMER,
+    )
+    assert created and first.status == 'Draft'
+    second, created_again = sm.create_service(
+        db, {**call_payload(), 'save_as_draft': True, 'client_request_id': 'draft-1',
+             'service_types': [rules.ST_INSTALL], 'product_types': ['Water and Waste Water'],
+             'product_name': 'RO Plant', 'product_model': 'RO-500', 'quantity': 1,
+             'planned_date': '2026-11-05'},
+        COORD_USER, customer=CUSTOMER,
+    )
+    assert not created_again and second.id == first.id
+    assert second.service_type == rules.ST_INSTALL
+    submitted, _ = sm.create_service(
+        db, {**call_payload(), 'save_as_draft': False, 'client_request_id': 'draft-1',
+             'service_types': [rules.ST_INSTALL], 'product_types': ['Water and Waste Water'],
+             'product_name': 'RO Plant', 'product_model': 'RO-500', 'quantity': 1,
+             'planned_date': '2026-11-05'},
+        COORD_USER, customer=CUSTOMER,
+    )
+    assert submitted.id == first.id and submitted.status == 'New'
+
+
+def test_draft_with_call_details_can_be_submitted_later(db):
+    svc, _ = sm.create_service(db, {**call_payload(), 'save_as_draft': True}, COORD_USER, customer=CUSTOMER)
+    assert svc.status == 'Draft'
+    assert not svc.service_type
+    sm.submit_draft(db, svc, COORD_USER, COORD)
+    assert svc.status == 'New'
+
+
+def test_draft_can_set_service_type_before_the_visit(db):
+    svc, _ = sm.create_service(db, {**call_payload(), 'save_as_draft': True}, COORD_USER, customer=CUSTOMER)
+    sm.record_field_details(db, svc, {
+        'service_types': [rules.ST_INSTALL],
+        'product_types': ['Water and Waste Water'],
+        'product_name': 'RO Plant',
+        'product_model': 'RO-500',
+        'quantity': 1,
+        'planned_date': '2026-11-05',
+    }, COORD_USER, COORD)
+    assert svc.service_type == rules.ST_INSTALL
+    sm.update_service(db, svc, {'service_type': rules.ST_COMMISSION}, COORD_USER, COORD)
+    assert svc.service_type == rules.ST_COMMISSION
+
+
+def test_draft_can_finish_details_then_submit(db):
+    product = make_product(db)
+    svc, _ = sm.create_service(
+        db, {**call_payload(customer_type='Existing'), 'save_as_draft': True, 'site_visit_required': False},
+        COORD_USER, customer=CUSTOMER,
+    )
+    assert svc.status == 'Draft'
+    sm.update_intake(db, svc, {'site_visit_required': False}, COORD_USER, COORD)
+    sm.record_field_details(db, svc, {
+        'service_types': [rules.ST_REPAIR, rules.ST_GENERAL],
+        'product_types': ['Instrumentation'],
+        'lead_id': 'lead-1',
+        'product_id': product.id,
+        'problem_category': 'Product Not Working',
+    }, COORD_USER, COORD, lead=LEAD, product=product)
+    sm.submit_draft(db, svc, COORD_USER, COORD)
+    assert svc.status == 'New'
+    assert svc.service_type == rules.ST_REPAIR
 
 
 def call_payload(**extra):
@@ -307,16 +378,40 @@ def test_site_visit_acknowledgement_notes_are_required(db):
 def test_executive_can_record_several_service_and_product_types(db):
     svc, _ = sm.create_service(db, call_payload(
         site_visit_required=False,
-        service_types=[rules.ST_INSTALL, rules.ST_COMMISSION],
+        service_types=[rules.ST_INSTALL],
         product_types=['Electrical Automation', 'Instrumentation'],
         product_name='RO Plant', product_model='RO-500', quantity=1, planned_date='2026-11-05',
     ), COORD_USER, customer=CUSTOMER)
     assert svc.service_type == rules.ST_INSTALL
     chosen = sm.classification_of(svc)
-    assert chosen['service_types'] == [rules.ST_INSTALL, rules.ST_COMMISSION]
+    assert chosen['service_types'] == [rules.ST_INSTALL]
     assert chosen['product_types'] == ['Electrical Automation', 'Instrumentation']
     assert svc.workflow == 'installation'
     assert 'inspection' in sm._loads(svc.data_json, {})
+
+
+def test_installation_vendor_path_waits_for_the_product(db):
+    svc = new_install(db)
+    assign(db, svc)
+    sm.update_section(db, svc, 'procurement', {
+        'product_available': False, 'vendor_id': 'v1', 'vendor_name': 'Acme Spares', 'quote_amount': '15000',
+    }, COORD_USER, COORD)
+    assert svc.status == 'Waiting for Vendor'
+    blockers = rules.work_blockers(sm.build_ctx(db, svc))
+    assert any('received' in item.lower() for item in blockers)
+    sm.update_section(db, svc, 'procurement', {'product_received': True, 'product_available': False}, COORD_USER, COORD)
+    assert svc.status == 'In Progress'
+
+
+def test_new_customer_repair_does_not_need_product_type(db):
+    svc, _ = sm.create_service(db, call_payload(
+        site_visit_required=False,
+        service_types=[rules.ST_REPAIR_TROUBLE],
+        problem_category='Product Not Working',
+    ), COORD_USER, customer=CUSTOMER)
+    assert svc.service_type == rules.ST_REPAIR_TROUBLE
+    assert svc.workflow == 'repair'
+    assert not svc.product_category
 
 
 def test_field_details_can_be_recorded_when_no_visit_is_needed(db):
@@ -437,6 +532,7 @@ def test_invalid_enum_and_dates_are_rejected(db):
 def test_installation_cannot_complete_with_commissioning_pending(db):
     svc = new_install(db)
     assign(db, svc)
+    sm.update_section(db, svc, 'procurement', {'product_available': True}, TECH_USER, TECH)
     sm.update_section(db, svc, 'inspection', {'inspection_date': '2026-11-04', 'inspector': 'T',
                                               'site_readiness': 'Ready'}, TECH_USER, TECH)
     sm.change_status(db, svc, 'In Progress', COORD_USER, COORD) if svc.status != 'In Progress' else None
@@ -801,6 +897,7 @@ def test_amc_dates_are_validated(db):
 def test_report_submit_is_blocked_until_work_is_done(db):
     svc = new_install(db)
     assign(db, svc)
+    sm.update_section(db, svc, 'procurement', {'product_available': True}, TECH_USER, TECH)
     with pytest.raises(ServiceError) as exc:
         sm.submit_report(db, svc, TECH_USER, TECH)
     assert len(exc.value.detail) >= 3
