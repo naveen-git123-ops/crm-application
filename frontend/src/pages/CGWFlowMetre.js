@@ -1957,12 +1957,15 @@ const CGWFlowMetre = ({ mode = 'view' }) => {
 
   const fetchCustomers = async () => {
     try {
-      const response = await axios.get(`${API}/customers`, {
+      const response = await axios.get(`${API}/customers?entity_type=0`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
-      setCustomers(response.data);
+      const rows = Array.isArray(response.data) ? response.data : [];
+      setCustomers(rows.filter((customer) => customer?.entity_type !== 1 && customer?.entity_type !== '1'));
     } catch (error) {
       console.error('Error fetching customers:', error);
+      setCustomers([]);
+      toast.error(getApiErrorMessage(error, 'Could not load the customer list'));
     }
   };
 

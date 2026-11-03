@@ -1561,9 +1561,20 @@ def migrate_customers_entity_type():
                     conn.execute(text('ALTER TABLE customers ADD COLUMN entity_type INTEGER NOT NULL DEFAULT 0'))
                 conn.commit()
         with engine.connect() as conn:
-            # All pre-existing ledger rows are customers; only rows explicitly set to 1 remain vendors
-            conn.execute(text('UPDATE customers SET entity_type = 0 WHERE entity_type IS NULL'))
-            conn.execute(text('UPDATE customers SET entity_type = 0 WHERE entity_type != 1'))
+            # Ledger ids are the source of truth: CUST* is a customer, VEND* is a vendor.
+            # NULL and any other value on a CUST row must stay selectable in Create Ledger and Create CGWA.
+            conn.execute(text(
+                "UPDATE customers SET entity_type = 0 "
+                "WHERE customer_id LIKE 'CUST%' AND (entity_type IS NULL OR entity_type <> 0)"
+            ))
+            conn.execute(text(
+                "UPDATE customers SET entity_type = 1 "
+                "WHERE customer_id LIKE 'VEND%' AND (entity_type IS NULL OR entity_type <> 1)"
+            ))
+            conn.execute(text(
+                'UPDATE customers SET entity_type = 0 '
+                'WHERE entity_type IS NULL AND (customer_id IS NULL OR customer_id NOT LIKE \'VEND%\')'
+            ))
             conn.commit()
         print('customers.entity_type migration applied (existing rows -> customers)')
     except Exception as e:
@@ -2316,6 +2327,18 @@ class EmployeeUpdateProfile(BaseModel):
     phone: Optional[str] = None
     profile_photo: Optional[str] = None
 
+def _ledger_text(value):
+    return '' if value is None else value
+
+
+def _ledger_flag(value):
+    return 1 if value in (True, 1, '1') else 0
+
+
+def _ledger_timestamp(value):
+    return value or datetime.now(timezone.utc)
+
+
 class CustomerContact(BaseModel):
     model_config = ConfigDict(extra="ignore", from_attributes=True)
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -2327,6 +2350,21 @@ class CustomerContact(BaseModel):
     is_primary: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
+
+    @field_validator('contact_person_name', 'customer_id', mode='before')
+    @classmethod
+    def blank_text(cls, value):
+        return _ledger_text(value)
+
+    @field_validator('is_primary', mode='before')
+    @classmethod
+    def primary_flag(cls, value):
+        return _ledger_flag(value)
+
+    @field_validator('created_at', mode='before')
+    @classmethod
+    def created_stamp(cls, value):
+        return _ledger_timestamp(value)
 
 class CustomerContactCreate(BaseModel):
     contact_person_name: str
@@ -2347,6 +2385,26 @@ class CustomerAddress(BaseModel):
     is_primary: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
+
+    @field_validator('address_line', 'customer_id', mode='before')
+    @classmethod
+    def blank_text(cls, value):
+        return _ledger_text(value)
+
+    @field_validator('country', mode='before')
+    @classmethod
+    def country_text(cls, value):
+        return value or 'India'
+
+    @field_validator('is_primary', mode='before')
+    @classmethod
+    def primary_flag(cls, value):
+        return _ledger_flag(value)
+
+    @field_validator('created_at', mode='before')
+    @classmethod
+    def created_stamp(cls, value):
+        return _ledger_timestamp(value)
 
 class CustomerAddressCreate(BaseModel):
     address_line: str
@@ -2386,6 +2444,35 @@ class Customer(BaseModel):
     attachments: Optional[List[CustomerAttachment]] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @field_validator('customer_id', 'company_name', 'contact_person_name', mode='before')
+    @classmethod
+    def blank_text(cls, value):
+        return _ledger_text(value)
+
+    @field_validator('country', mode='before')
+    @classmethod
+    def country_text(cls, value):
+        return value or 'India'
+
+    @field_validator('status', mode='before')
+    @classmethod
+    def status_text(cls, value):
+        text = str(value or '').strip().lower()
+        return 'Inactive' if text == 'inactive' else 'Active'
+
+    @field_validator('entity_type', mode='before')
+    @classmethod
+    def entity_int(cls, value):
+        try:
+            return 1 if int(value) == 1 else 0
+        except (TypeError, ValueError):
+            return 0
+
+    @field_validator('created_at', 'updated_at', mode='before')
+    @classmethod
+    def stamp(cls, value):
+        return _ledger_timestamp(value)
 
 class CustomerCreateUpdate(BaseModel):
     company_name: str
@@ -5595,14 +5682,30 @@ _safe_migrate(migrate_backfill_outside_office_tours)
 
 # ============= CUSTOMERS =============
 
+def _clean_customer_attachments(items) -> List[dict]:
+    cleaned = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        url = item.get('url')
+        if not url:
+            continue
+        cleaned.append({
+            'id': str(item.get('id') or uuid.uuid4()),
+            'file_name': str(item.get('file_name') or 'document.pdf'),
+            'url': str(url),
+        })
+    return cleaned
+
+
 def _customer_attachments_from_db(customer: CustomerModel) -> List[dict]:
     raw = getattr(customer, 'attachments_json', None)
     if raw is None or raw == '':
         return []
     if isinstance(raw, list):
-        return raw if all(isinstance(x, dict) for x in raw) else []
+        return _clean_customer_attachments(raw)
     if isinstance(raw, dict):
-        return [raw] if raw.get('id') and raw.get('url') else []
+        return _clean_customer_attachments([raw])
     if isinstance(raw, (bytes, bytearray)):
         try:
             raw = raw.decode('utf-8')
@@ -5612,7 +5715,7 @@ def _customer_attachments_from_db(customer: CustomerModel) -> List[dict]:
         return []
     try:
         data = json.loads(raw)
-        return data if isinstance(data, list) else []
+        return _clean_customer_attachments(data if isinstance(data, list) else [])
     except Exception:
         return []
 
@@ -5699,18 +5802,22 @@ def _assert_unique_ledger(
 
 
 def _next_ledger_id(db: Session, entity_type: int) -> str:
-    """Generate CUST##### or VEND##### id based on entity_type (0=customer, 1=vendor)."""
-    from sqlalchemy import or_
+    """Generate the next CUST##### or VEND##### id.
+
+    The number is taken from every existing id with that prefix, so a row stored
+    under the wrong ledger type cannot reuse an id that is already taken.
+    """
     prefix = 'VEND' if entity_type == 1 else 'CUST'
-    q = db.query(func.max(cast(func.substr(CustomerModel.customer_id, 5), Integer))).filter(
+    rows = db.query(CustomerModel.customer_id).filter(
         CustomerModel.customer_id.like(f'{prefix}%')
-    )
-    if entity_type == 1:
-        q = q.filter(CustomerModel.entity_type == 1)
-    else:
-        q = q.filter(or_(CustomerModel.entity_type == 0, CustomerModel.entity_type.is_(None)))
-    max_num = q.scalar()
-    return f'{prefix}{str((max_num or 0) + 1).zfill(5)}'
+    ).all()
+    max_num = 0
+    for (customer_id,) in rows:
+        suffix = (customer_id or '')[len(prefix):]
+        digits = ''.join(ch for ch in suffix if ch.isdigit())
+        if digits:
+            max_num = max(max_num, int(digits))
+    return f'{prefix}{str(max_num + 1).zfill(5)}'
 
 
 def _sync_customer_summary_from_related(customer: CustomerModel, db: Session) -> None:
@@ -5815,11 +5922,18 @@ def get_customers(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    q = db.query(CustomerModel).filter(CustomerModel.status == 'Active')
+    from sqlalchemy import or_
+
+    q = db.query(CustomerModel).filter(or_(
+        func.lower(CustomerModel.status) == 'active',
+        CustomerModel.status.is_(None),
+        CustomerModel.status == '',
+    ))
     if entity_type == 1:
         q = q.filter(CustomerModel.entity_type == 1)
     else:
-        q = q.filter(CustomerModel.entity_type == 0)
+        # Older rows were saved before entity_type existed. They are customers.
+        q = q.filter(or_(CustomerModel.entity_type == 0, CustomerModel.entity_type.is_(None)))
     customers = q.all()
     
     # Attach contacts and addresses
@@ -5830,11 +5944,23 @@ def get_customers(
     
     return customers
 
-@api_router.get('/customers/{customer_id}', response_model=Customer)
-def get_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+
+def _load_customer(db: Session, customer_ref: str) -> CustomerModel:
+    """Find a ledger row by internal id or by the visible CUST##### / VEND##### code."""
+    key = (customer_ref or '').strip()
+    customer = None
+    if key:
+        customer = db.query(CustomerModel).filter(CustomerModel.id == key).first()
+        if not customer:
+            customer = db.query(CustomerModel).filter(CustomerModel.customer_id == key).first()
     if not customer:
         raise HTTPException(status_code=404, detail='Customer not found')
+    return customer
+
+
+@api_router.get('/customers/{customer_id}', response_model=Customer)
+def get_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
+    customer = _load_customer(db, customer_id)
     
     # Attach contacts and addresses
     customer.contacts = db.query(CustomerContactModel).filter(CustomerContactModel.customer_id == customer.id).all()
@@ -5846,9 +5972,7 @@ def get_customer(customer_id: str, current_user: UserModel = Depends(get_current
 @api_router.put('/customers/{customer_id}', response_model=Customer)
 def update_customer(customer_id: str, cust_data: CustomerCreateUpdate, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_customers_manage(current_user, db)
-    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
-    if not customer:
-        raise HTTPException(status_code=404, detail='Customer not found')
+    customer = _load_customer(db, customer_id)
     
     company_name = _normalize_ledger_name(cust_data.company_name)
     gst_number = _normalize_gst(cust_data.gst_number)
@@ -5916,9 +6040,7 @@ def upload_customer_pdf_attachment(
     db: Session = Depends(get_db),
 ):
     """Upload one PDF to S3 and append URL to customer.attachments_json (same pattern as /documents/upload)."""
-    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
-    if not customer:
-        raise HTTPException(status_code=404, detail='Customer not found')
+    customer = _load_customer(db, customer_id)
     if not file.filename:
         raise HTTPException(status_code=400, detail='No file provided')
     fn_lower = file.filename.lower()
@@ -5963,9 +6085,7 @@ def delete_customer_pdf_attachment(
     current_user: UserModel = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
-    if not customer:
-        raise HTTPException(status_code=404, detail='Customer not found')
+    customer = _load_customer(db, customer_id)
     items = _customer_attachments_from_db(customer)
     removed = [x for x in items if x.get('id') == attachment_id]
     if not removed:
@@ -5987,19 +6107,14 @@ def delete_customer_pdf_attachment(
 
 @api_router.get('/customers/{customer_id}/contacts', response_model=List[CustomerContact])
 def get_customer_contacts(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
-    if not customer:
-        raise HTTPException(status_code=404, detail='Customer not found')
-    
-    contacts = db.query(CustomerContactModel).filter(CustomerContactModel.customer_id == customer_id).all()
+    customer = _load_customer(db, customer_id)
+    contacts = db.query(CustomerContactModel).filter(CustomerContactModel.customer_id == customer.id).all()
     return contacts
 
 @api_router.delete('/customers/{customer_id}')
 def delete_customer(customer_id: str, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_customers_manage(current_user, db)
-    customer = db.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
-    if not customer:
-        raise HTTPException(status_code=404, detail='Customer not found')
+    customer = _load_customer(db, customer_id)
     _customer_delete_attachment_files(_customer_attachments_from_db(customer))
     
     db.delete(customer)
@@ -17084,6 +17199,22 @@ try:
     backfill_opening_balances(SessionLocal)
 except Exception as e:
     print(f'Inventory setup skipped: {e}')
+
+@app.middleware('http')
+async def serve_customers_without_api_prefix(request: Request, call_next):
+    """`/customers` on the API host is the same resource as `/api/customers`.
+
+    Calls that omit the `/api` prefix otherwise miss every route and return
+    FastAPI's bare 404 `{"detail":"Not Found"}`.
+    """
+    path = request.scope.get('path') or ''
+    if path == '/customers' or path.startswith('/customers/'):
+        rewritten = '/api' + path
+        request.scope['path'] = rewritten
+        if request.scope.get('raw_path') is not None:
+            request.scope['raw_path'] = rewritten.encode('utf-8')
+    return await call_next(request)
+
 
 app.include_router(api_router)
 

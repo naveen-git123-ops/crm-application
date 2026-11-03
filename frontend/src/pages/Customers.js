@@ -11,6 +11,7 @@ import { Plus, Edit, Trash2, Search, Mail, Phone, MapPin, Building2, Store, X } 
 import { API_ENDPOINT } from '@/lib/apiConfig';
 import { useAuth } from '@/contexts/AuthContext';
 import { userCanManageAnyRecord, userHasPermission } from '@/lib/permissions';
+import { getApiErrorMessage } from '@/lib/apiErrors';
 
 const API = API_ENDPOINT;
 
@@ -81,6 +82,7 @@ export const Customers = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [dialogEntityType, setDialogEntityType] = useState(ENTITY_CUSTOMER);
+  const [loadError, setLoadError] = useState('');
 
   const entityType = activeTab === 'vendor' ? ENTITY_VENDOR : ENTITY_CUSTOMER;
   const entityLabel = activeTab === 'vendor' ? 'Vendor' : 'Customer';
@@ -131,13 +133,14 @@ export const Customers = () => {
 
   useEffect(() => {
     const term = searchTerm.toLowerCase();
+    const includes = (value) => String(value || '').toLowerCase().includes(term);
     const filtered = recordsForActiveTab.filter((cust) =>
-      cust.company_name.toLowerCase().includes(term) ||
-      cust.contact_person_name.toLowerCase().includes(term) ||
-      customerDisplayEmail(cust).toLowerCase().includes(term) ||
-      customerDisplayPhone(cust).toLowerCase().includes(term) ||
-      customerDisplayCity(cust).toLowerCase().includes(term) ||
-      cust.customer_id.toLowerCase().includes(term)
+      includes(cust.company_name) ||
+      includes(cust.contact_person_name) ||
+      includes(customerDisplayEmail(cust)) ||
+      includes(customerDisplayPhone(cust)) ||
+      includes(customerDisplayCity(cust)) ||
+      includes(cust.customer_id)
     );
     setFilteredRecords(filtered);
   }, [searchTerm, recordsForActiveTab]);
@@ -145,11 +148,20 @@ export const Customers = () => {
   const fetchRecords = async (type = entityType) => {
     try {
       const response = await axios.get(`${API}/customers?entity_type=${type}`, authHeaders());
-      setRecords(response.data);
-      setFilteredRecords(response.data);
-      return response.data;
+      const rows = Array.isArray(response.data) ? response.data : [];
+      setRecords(rows);
+      setFilteredRecords(rows);
+      setLoadError('');
+      return rows;
     } catch (error) {
-      toast.error(`Failed to load ${type === ENTITY_VENDOR ? 'vendors' : 'customers'}`);
+      const message = getApiErrorMessage(
+        error,
+        `Failed to load ${type === ENTITY_VENDOR ? 'vendors' : 'customers'}`
+      );
+      setRecords([]);
+      setFilteredRecords([]);
+      setLoadError(message);
+      toast.error(message);
       return null;
     } finally {
       setLoading(false);
@@ -225,10 +237,7 @@ export const Customers = () => {
       fetchRecords(savedType);
     } catch (error) {
       console.error('Error:', error);
-      const errorMsg = error.response?.data?.detail || 
-                       (error.response?.data && error.response.data[0]?.msg) ||
-                       'Operation failed';
-      toast.error(errorMsg);
+      toast.error(getApiErrorMessage(error, 'Operation failed'));
     }
   };
 
@@ -493,7 +502,9 @@ export const Customers = () => {
             <div role="status" aria-label="Loading" className="animate-spin rounded-full h-10 w-10 border-2 border-primary/60 border-t-transparent" />
           </div>
         ) : filteredRecords.length === 0 ? (
-          <p className="text-center py-12 text-muted-foreground">No {panelLabelPlural} found.</p>
+          <p className="text-center py-12 text-muted-foreground">
+            {loadError || `No ${panelLabelPlural} found.`}
+          </p>
         ) : (
           renderLedgerTable()
         )}
